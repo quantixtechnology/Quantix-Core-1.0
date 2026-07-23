@@ -3,21 +3,22 @@
 // Store isolation). No client filter is trusted. Reads only — no workflow change.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireStoreAdmin } from "@/lib/laundry-store-admin-auth"
+import { requireStoreAdmin, resolveStoreScope } from "@/lib/laundry-store-admin-auth"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   const g = await requireStoreAdmin(request)
   if (!g.ok) return g.res
-  const { businessId, storeId } = g.session
+  const eff = await resolveStoreScope(g.session, request)
+  if (!eff) return NextResponse.json({ error: "Select a store" }, { status: 400 })
 
   const now = new Date()
   const start = new Date(now); start.setHours(0, 0, 0, 0)
   const end = new Date(now); end.setHours(23, 59, 59, 999)
 
-  // LOCKED store scope applied to every query.
-  const scope = { businessId, storeId }
+  // Store staff are LOCKED to their store; a Super Admin targets the chosen store.
+  const scope = { businessId: eff.businessId, storeId: eff.storeId }
 
   const [todaysOrders, todaysPickup, todaysDelivery, pendingAudit, pendingPayment, readyProcessing, readyDelivery, completedToday] = await Promise.all([
     prisma.laundryOrder.count({ where: { ...scope, createdAt: { gte: start, lte: end } } }),

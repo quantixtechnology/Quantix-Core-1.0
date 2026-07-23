@@ -8,6 +8,15 @@ import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { STORE_ADMIN_ROLES } from "@/lib/laundry-store-admin-auth"
 import { resolveImageUrl } from "@/lib/image-url"
+import { isPlatformRole } from "@/lib/permissions"
+
+async function mintToken(userId: string) {
+  const token = createAccessToken()
+  const expiresAt = new Date(); expiresAt.setHours(expiresAt.getHours() + 24)
+  await prisma.refreshToken.create({ data: { userId, token, expiresAt } })
+  await prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } }).catch(() => {})
+  return token
+}
 
 export const runtime = "nodejs"
 
@@ -18,9 +27,16 @@ export async function POST(request: Request) {
     const password = String(b.password || "")
     if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
 
-    const user = await prisma.user.findFirst({ where: { email }, select: { id: true, name: true, passwordHash: true, isActive: true } })
+    const user = await prisma.user.findFirst({ where: { email }, select: { id: true, name: true, passwordHash: true, isActive: true, platformRole: true } })
     if (!user?.passwordHash || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
       return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 })
+    }
+
+    // Super Admin / Platform Admin — unrestricted access to every store, any time
+    // (mirrors their desktop access). They pick the store in the app.
+    if (user.platformRole && isPlatformRole(user.platformRole)) {
+      const token = await mintToken(user.id)
+      return NextResponse.json({ success: true, data: { token, staff: { name: user.name, isSuperAdmin: true, roleName: "Super Admin" } } })
     }
 
     // Must hold an active store-operational role bound to a store.

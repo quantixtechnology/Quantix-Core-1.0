@@ -16,7 +16,9 @@ import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 
 const TOKEN_KEY = "qx_store_token"
 
-interface Staff { name: string | null; businessId: string; businessName?: string | null; businessLogo?: string | null; roleName: string; storeId: string; storeName: string | null; storeCode: string | null }
+interface Staff { name: string | null; businessId: string; businessName?: string | null; businessLogo?: string | null; roleName: string; storeId: string; storeName: string | null; storeCode: string | null; isSuperAdmin?: boolean }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface SuperAdmin { name: string; businesses: { businessId: string; businessName: string; stores: { id: string; storeName: string; storeCode: string | null }[] }[] }
 
 function useOnline() {
   const [online, setOnline] = useState(true)
@@ -43,6 +45,7 @@ const fmtDay = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateSt
 export default function StoreAdminApp() {
   const [token, setToken] = useState<string | null>(null)
   const [staff, setStaff] = useState<Staff | null>(null)
+  const [sa, setSa] = useState<SuperAdmin | null>(null) // Super Admin awaiting a store pick
   const [booting, setBooting] = useState(true)
   const [tab, setTab] = useState<Tab>("dashboard")
   const [openOrderId, setOpenOrderId] = useState<string | null>(null)
@@ -58,14 +61,21 @@ export default function StoreAdminApp() {
     return res.json().catch(() => ({}))
   }, [token])
 
+  // Resolve the session via /me (routes Super Admins to the store picker).
+  const loadSession = useCallback(async (tk: string) => {
+    const j = await api("/api/laundry/store-admin/me", {}, tk)
+    if (!j.success) { localStorage.removeItem(TOKEN_KEY); return false }
+    setToken(tk)
+    if (j.data.isSuperAdmin) { setSa({ name: j.data.name, businesses: j.data.businesses || [] }); setStaff(null) }
+    else { setSa(null); setStaff(j.data) }
+    return true
+  }, [api])
+
   useEffect(() => {
     const tk = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null
     if (!tk) { setBooting(false); return }
-    api("/api/laundry/store-admin/me", {}, tk).then((j) => {
-      if (j.success) { setToken(tk); setStaff(j.data) } else localStorage.removeItem(TOKEN_KEY)
-    }).catch(() => {}).finally(() => setBooting(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    loadSession(tk).catch(() => {}).finally(() => setBooting(false))
+  }, [loadSession])
 
   const login = async () => {
     setError(null); setLoggingIn(true)
@@ -73,16 +83,23 @@ export default function StoreAdminApp() {
       const res = await fetch("/api/laundry/store-admin/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Login failed")
-      localStorage.setItem(TOKEN_KEY, j.data.token); setToken(j.data.token); setStaff(j.data.staff); setPassword("")
+      localStorage.setItem(TOKEN_KEY, j.data.token); setPassword("")
+      await loadSession(j.data.token)
     } catch (e) { setError(e instanceof Error ? e.message : "Login failed") } finally { setLoggingIn(false) }
   }
+  // Super Admin picks a business + store to operate as.
+  const pickStore = (b: SuperAdmin["businesses"][number], st: { id: string; storeName: string; storeCode: string | null }) =>
+    setStaff({ name: sa?.name ?? "Super Admin", isSuperAdmin: true, roleName: "Super Admin", businessId: b.businessId, businessName: b.businessName, businessLogo: null, storeId: st.id, storeName: st.storeName, storeCode: st.storeCode })
   const logout = async () => {
     try { await api("/api/laundry/store-admin/auth/logout", { method: "POST" }) } catch { /* noop */ }
-    localStorage.removeItem(TOKEN_KEY); setToken(null); setStaff(null)
+    localStorage.removeItem(TOKEN_KEY); setToken(null); setStaff(null); setSa(null)
   }
   const goOrders = (status: string) => { setOrdersStatus(status); setTab("orders") }
 
   if (booting) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
+
+  // Super Admin: pick a business + store to operate as (unrestricted).
+  if (token && !staff && sa) return <StorePicker sa={sa} onPick={pickStore} onLogout={logout} />
 
   if (!token || !staff) {
     return (
@@ -115,7 +132,7 @@ export default function StoreAdminApp() {
           {tab === "orders" && <Orders staff={staff} api={api} status={ordersStatus} setStatus={setOrdersStatus} onOpen={setOpenOrderId} />}
           {tab === "dispatch" && <Dispatch staff={staff} api={api} onOpen={setOpenOrderId} />}
           {tab === "scan" && <ScanScreen staff={staff} api={api} />}
-          {tab === "profile" && <Profile staff={staff} onLogout={logout} />}
+          {tab === "profile" && <Profile staff={staff} onLogout={logout} onSwitch={staff.isSuperAdmin ? () => { setStaff(null); setTab("dashboard") } : undefined} />}
         </>
       )}
 
@@ -185,7 +202,7 @@ function Header({ staff }: { staff: Staff }) {
 function Dashboard({ staff, api, onCounter, onTab }: { staff: Staff; api: Api; onCounter: (s: string) => void; onTab: (t: Tab) => void }) {
   const [counts, setCounts] = useState<Counts | null>(null)
   const [loading, setLoading] = useState(true)
-  const load = useCallback(() => { setLoading(true); api("/api/laundry/store-admin/dashboard").then((j) => { if (j.success) setCounts(j.data) }).finally(() => setLoading(false)) }, [api])
+  const load = useCallback(() => { setLoading(true); api(`/api/laundry/store-admin/dashboard?businessId=${staff.businessId}&storeId=${staff.storeId}`).then((j) => { if (j.success) setCounts(j.data) }).finally(() => setLoading(false)) }, [api, staff.businessId, staff.storeId])
   useEffect(() => { load() }, [load])
 
   const tiles: { key: keyof Counts; label: string; icon: React.ComponentType<{ className?: string }>; color: string; go: () => void }[] = [
@@ -788,7 +805,7 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
   )
 }
 
-function Profile({ staff, onLogout }: { staff: Staff; onLogout: () => void }) {
+function Profile({ staff, onLogout, onSwitch }: { staff: Staff; onLogout: () => void; onSwitch?: () => void }) {
   return (
     <div className="px-4 pt-6 space-y-4">
       <Header staff={staff} />
@@ -798,7 +815,35 @@ function Profile({ staff, onLogout }: { staff: Staff; onLogout: () => void }) {
         <div className="flex justify-between"><span className="text-slate-400">Store</span><span className="font-medium text-slate-700">{staff.storeName}</span></div>
         {staff.storeCode && <div className="flex justify-between"><span className="text-slate-400">Code</span><span className="font-mono text-slate-700">{staff.storeCode}</span></div>}
       </div>
+      {staff.isSuperAdmin && onSwitch && (
+        <button onClick={onSwitch} className="w-full h-12 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center justify-center gap-2"><Store className="h-5 w-5" /> Switch Store</button>
+      )}
       <button onClick={onLogout} className="w-full h-12 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 font-semibold flex items-center justify-center gap-2"><LogOut className="h-5 w-5" /> Sign Out</button>
+    </div>
+  )
+}
+
+function StorePicker({ sa, onPick, onLogout }: { sa: SuperAdmin; onPick: (b: SuperAdmin["businesses"][number], s: { id: string; storeName: string; storeCode: string | null }) => void; onLogout: () => void }) {
+  const [q, setQ] = useState("")
+  const rows = sa.businesses.flatMap((b) => b.stores.map((s) => ({ b, s })))
+  const filtered = rows.filter(({ b, s }) => !q.trim() || `${b.businessName} ${s.storeName} ${s.storeCode || ""}`.toLowerCase().includes(q.trim().toLowerCase()))
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-blue-600 text-white px-4 pt-5 pb-5 flex items-center justify-between">
+        <div><p className="text-[15px] font-bold">Super Admin</p><p className="text-[12px] text-blue-100">Choose a store to manage — {rows.length} across {sa.businesses.length} businesses</p></div>
+        <button onClick={onLogout} className="h-9 w-9 rounded-lg bg-white/10 flex items-center justify-center"><LogOut className="h-4 w-4" /></button>
+      </header>
+      <div className="p-3">
+        <div className="relative mb-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search business or store" className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
+        {filtered.length === 0 ? <p className="py-16 text-center text-sm text-slate-400">No stores.</p> : (
+          <div className="space-y-1.5">{filtered.map(({ b, s }) => (
+            <button key={`${b.businessId}-${s.id}`} onClick={() => onPick(b, s)} className="w-full text-left bg-white rounded-xl border border-slate-200 p-3 active:scale-[0.99] transition-transform">
+              <p className="font-medium text-[14px] text-slate-800">{s.storeName}</p>
+              <p className="text-[12px] text-slate-500">{b.businessName}{s.storeCode ? ` · ${s.storeCode}` : ""}</p>
+            </button>
+          ))}</div>
+        )}
+      </div>
     </div>
   )
 }
