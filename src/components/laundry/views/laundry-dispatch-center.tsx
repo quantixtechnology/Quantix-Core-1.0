@@ -303,11 +303,12 @@ export function LaundryDispatchCenter() {
                     <span className="font-mono font-bold text-slate-800 shrink-0">{job.orderNumber}</span>
                     <span className="text-slate-700 truncate max-w-[100px] lg:max-w-[140px]">{job.customerName}</span>
                     {job.customerPhone && <span className="text-slate-400 shrink-0 hidden xs:inline">{job.customerPhone}</span>}
-                    {fmtDay(job.scheduledDate) && <span className="text-slate-500 shrink-0 hidden sm:inline">{fmtDay(job.scheduledDate)}</span>}
-                    {job.timeSlot && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{job.timeSlot}</span>}
+                    {/* Core dispatch fields — always visible so the dispatcher never opens the Order to assign. */}
+                    {fmtDay(job.scheduledDate) && <span className="text-slate-500 shrink-0">{fmtDay(job.scheduledDate)}</span>}
+                    {job.timeSlot && <span className="text-slate-400 shrink-0 hidden sm:flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{job.timeSlot}</span>}
                     {isDel
-                      ? (job.amountDue > 0 ? <span className="shrink-0 font-semibold text-rose-600">{inr(job.amountDue)} due</span> : <span className="shrink-0 text-emerald-600 hidden sm:inline">Paid</span>)
-                      : (job.address && <span className="text-slate-400 truncate max-w-[80px] lg:max-w-[120px] hidden md:inline">{job.address}</span>)}
+                      ? (job.amountDue > 0 ? <span className="shrink-0 font-semibold text-rose-600">{inr(job.amountDue)} due</span> : <span className="shrink-0 text-emerald-600">Paid</span>)
+                      : (job.address && <span className="text-slate-400 truncate max-w-[90px] sm:max-w-[130px] lg:max-w-[180px] hidden sm:inline">{job.address}</span>)}
                     {isOverdue(job) && <Badge variant="outline" className="text-[9px] leading-none px-1 h-4 shrink-0 border-red-300 text-red-600 bg-red-50">OVERDUE</Badge>}
                     {job.bagCount > 0 && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><ShoppingBag className="h-2.5 w-2.5" />{job.bagCount}</span>}
                   </div>
