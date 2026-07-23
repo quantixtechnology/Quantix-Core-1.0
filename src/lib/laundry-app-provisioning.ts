@@ -24,9 +24,9 @@ export async function provisionTenantApps(platformBusinessId: string) {
   const d = await resolveDomains(platformBusinessId)
   if (!d) return { ok: false as const, error: "Business has no slug or mapped domain" }
 
-  await prisma.domainMapping.updateMany({ where: { businessId: platformBusinessId }, data: { executiveSslStatus: "provisioning" } }).catch(() => {})
-  // All three hosts through the same engine, in parallel. The Store host is
-  // provisioned identically; its status is reported live (no persisted column).
+  await prisma.domainMapping.updateMany({ where: { businessId: platformBusinessId }, data: { executiveSslStatus: "provisioning", storeSslStatus: "provisioning" } }).catch(() => {})
+  // All three hosts through the SAME engine, in parallel — identical vhost +
+  // server_names_hash fix + certbot + HSTS. Status persisted per host.
   const [cust, exec, store] = await Promise.all([provisionProductHost(d.customer), provisionProductHost(d.executive), provisionProductHost(d.store)])
 
   await prisma.domainMapping.updateMany({
@@ -36,6 +36,8 @@ export async function provisionTenantApps(platformBusinessId: string) {
       ...(cust.expiryDate ? { sslExpiryDate: new Date(cust.expiryDate) } : {}),
       executiveSslStatus: sslLabel(exec.ssl), executiveSslError: exec.error, executiveSslLastCheckedAt: new Date(),
       ...(exec.expiryDate ? { executiveSslExpiryDate: new Date(exec.expiryDate) } : {}),
+      storeSslStatus: sslLabel(store.ssl), storeSslError: store.error, storeSslLastCheckedAt: new Date(),
+      ...(store.expiryDate ? { storeSslExpiryDate: new Date(store.expiryDate) } : {}),
     },
   }).catch(() => {})
 
@@ -62,12 +64,11 @@ export interface TenantAppStatus {
 export async function getTenantAppStatus(platformBusinessId: string): Promise<TenantAppStatus | null> {
   const d = await resolveDomains(platformBusinessId)
   if (!d) return null
-  const dm = await prisma.domainMapping.findUnique({ where: { businessId: platformBusinessId }, select: { sslStatus: true, executiveSslStatus: true } })
+  const dm = await prisma.domainMapping.findUnique({ where: { businessId: platformBusinessId }, select: { sslStatus: true, executiveSslStatus: true, storeSslStatus: true } })
   const [custHttps, execHttps, storeHttps] = await Promise.all([httpsReachable(d.customer), httpsReachable(d.executive), httpsReachable(d.store)])
   return {
     customer: { url: `https://${d.customer}`, sslStatus: dm?.sslStatus ?? "pending", httpsReachable: custHttps },
     executive: { url: `https://${d.executive}`, sslStatus: dm?.executiveSslStatus ?? "pending", httpsReachable: execHttps },
-    // Store status derived from live reachability (active once its cert serves).
-    store: { url: `https://${d.store}`, sslStatus: storeHttps ? "active" : "pending", httpsReachable: storeHttps },
+    store: { url: `https://${d.store}`, sslStatus: dm?.storeSslStatus ?? "pending", httpsReachable: storeHttps },
   }
 }

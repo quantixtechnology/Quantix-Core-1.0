@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     // One background provision covers all three hosts. Heal when the customer host
     // is up and either the executive or the store host isn't secured yet.
     const execNeedsHeal = status.executive.sslStatus === "pending" || status.executive.sslStatus === "failed"
-    const storeNeedsHeal = !status.store.httpsReachable && status.store.sslStatus !== "provisioning"
+    const storeNeedsHeal = status.store.sslStatus === "pending" || status.store.sslStatus === "failed"
     if (status.customer.httpsReachable && (execNeedsHeal || storeNeedsHeal)) {
       void provisionTenantApps(guard.platformBusinessId).catch(() => {})
       if (execNeedsHeal) status.executive.sslStatus = "provisioning"
