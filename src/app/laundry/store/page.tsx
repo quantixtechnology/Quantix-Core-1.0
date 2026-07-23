@@ -295,14 +295,19 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [pay, setPay] = useState(false)
+  const [audit, setAudit] = useState(false)
   const load = useCallback(() => { setLoading(true); api(`/api/laundry/orders/${id}`).then((j) => { if (j.success) setOrder(j.data) }).finally(() => setLoading(false)) }, [api, id])
   useEffect(() => { load() }, [load])
 
   const primary = useMemo(() => order ? getTransitions(order.status).find((t) => t.primary) : null, [order])
+  const primaryLabel = primary?.action === "APPROVE_AUDIT" ? "Start Store Audit" : primary?.label
 
   const advance = async () => {
     if (!order || !primary) return
     if (primary.action === "COLLECT_PAYMENT") { setPay(true); return }
+    // The audit is NEVER a one-tap approve — it opens the real garment audit
+    // (edit garments, weight, photos) which approves via the same inspect API.
+    if (primary.action === "APPROVE_AUDIT") { setAudit(true); return }
     setBusy(true)
     try {
       const ep = ACTION_ENDPOINT[primary.action]
@@ -374,11 +379,120 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
       {primary && (
         <div className="fixed bottom-0 inset-x-0 p-3 bg-white border-t border-slate-200">
           <button onClick={advance} disabled={busy} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : primary.label}
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : primaryLabel}
           </button>
         </div>
       )}
       {pay && <PaymentSheet order={order} staff={staff} api={api} onClose={() => setPay(false)} onDone={() => { setPay(false); load() }} />}
+      {audit && <AuditScreen order={order} staff={staff} api={api} onClose={() => setAudit(false)} onDone={() => { setAudit(false); load() }} />}
+    </div>
+  )
+}
+
+// Store Audit — the SAME workflow as desktop: review/add garments, capture total
+// weight, damage/customer notes and photos, then Approve (or Reject) through the
+// existing inspect + items + uploads + transition APIs. No mobile-only shortcut.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AuditScreen({ order, staff, api, onClose, onDone }: { order: any; staff: Staff; api: Api; onClose: () => void; onDone: () => void }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [items, setItems] = useState<any[]>(order.items || [])
+  const [weight, setWeight] = useState(order.totalWeightKg ? String(order.totalWeightKg) : "")
+  const [notes, setNotes] = useState("")
+  const [photos, setPhotos] = useState<string[]>([])
+  const [busy, setBusy] = useState(false); const [uploading, setUploading] = useState(false); const [err, setErr] = useState<string | null>(null)
+  // add-garment
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [services, setServices] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [garments, setGarments] = useState<any[]>([])
+  const [svc, setSvc] = useState(""); const [gar, setGar] = useState(""); const [qty, setQty] = useState("1"); const [adding, setAdding] = useState(false)
+
+  useEffect(() => {
+    api(`/api/laundry/services?businessId=${staff.businessId}`).then((j) => { if (j.success) setServices(j.data || j.services || []) })
+    api(`/api/laundry/garments?businessId=${staff.businessId}`).then((j) => { if (j.success) setGarments(j.data || j.garments || []) })
+  }, [api, staff.businessId])
+  const reload = () => api(`/api/laundry/orders/${order.id}`).then((j) => { if (j.success) setItems(j.data.items || []) })
+
+  const addGarment = async () => {
+    const s = services.find((x) => x.id === svc), g = garments.find((x) => x.id === gar)
+    if (!s || !g) return
+    setAdding(true)
+    try {
+      const j = await api(`/api/laundry/orders/${order.id}/items`, { method: "POST", body: JSON.stringify({ items: [{ serviceId: s.id, garmentId: g.id, quantity: Math.max(1, Number(qty) || 1), weightKg: 0 }] }) })
+      if (!j.success) { setErr(j.error || "Could not add garment"); return }
+      setGar(""); setQty("1"); await reload()
+    } finally { setAdding(false) }
+  }
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const fd = new FormData(); fd.append("file", file); fd.append("businessId", staff.businessId); fd.append("type", "image"); fd.append("category", "audit")
+        const res = await fetch("/api/uploads", { method: "POST", body: fd })
+        const j = await res.json()
+        if (j.success && (j.url || j.data?.url)) setPhotos((p) => [...p, j.url || j.data.url])
+      }
+    } finally { setUploading(false) }
+  }
+  const finish = async (approve: boolean) => {
+    setErr(null); setBusy(true)
+    try {
+      // Persist audit data (weight/notes/photos) via the SAME inspect API desktop uses.
+      await api(`/api/laundry/orders/${order.id}/inspect`, { method: "PUT", body: JSON.stringify({
+        businessId: staff.businessId, auditedBy: staff.name, auditNotes: notes || null, auditPhotos: photos,
+        ...(weight ? { totalWeightKg: Number(weight) } : {}),
+      }) })
+      // Then move the order through the state machine (approve → payment, reject → cancel).
+      const j = await api(`/api/laundry/orders/${order.id}/transition`, { method: "POST", body: JSON.stringify({ toStatus: approve ? "PAYMENT_PENDING" : "CANCELLED", actorName: staff.name, note: approve ? "Audit approved" : "Audit rejected" }) })
+      if (!j.success) throw new Error(j.error || "Failed")
+      onDone()
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 bg-white flex flex-col">
+      <header className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div><h3 className="font-semibold text-slate-800">Store Audit</h3><p className="text-[11px] text-slate-400 font-mono">{order.orderNumber}</p></div>
+        <button onClick={onClose}><X className="h-5 w-5 text-slate-400" /></button>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Garments ({items.length})</p>
+          <div className="space-y-1">{items.map((it: { id: string; garmentName: string; serviceName: string; quantity: number }) => (
+            <div key={it.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-[13px]"><span>{it.quantity} × {it.garmentName} · {it.serviceName}</span></div>
+          ))}</div>
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+            <select value={svc} onChange={(e) => setSvc(e.target.value)} className="h-10 rounded-lg border border-slate-200 px-2 text-[12px] bg-white"><option value="">Service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            <select value={gar} onChange={(e) => setGar(e.target.value)} className="h-10 rounded-lg border border-slate-200 px-2 text-[12px] bg-white"><option value="">Garment</option>{garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+            <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className="h-10 w-12 rounded-lg border border-slate-200 px-2 text-[13px] text-center" />
+          </div>
+          <button onClick={addGarment} disabled={adding || !svc || !gar} className="w-full h-9 rounded-lg border border-blue-200 text-blue-700 text-[12px] font-medium disabled:opacity-40">{adding ? "Adding…" : "+ Add missing garment"}</button>
+        </section>
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Total Weight (kg)</p>
+          <input value={weight} onChange={(e) => setWeight(e.target.value)} inputMode="decimal" placeholder="e.g. 3.5" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-[15px]" />
+        </section>
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Photos <span className="text-slate-400 font-normal">(damage, missing, stains…)</span></p>
+          <div className="flex gap-2 flex-wrap">
+            {photos.map((p, i) => /* eslint-disable-next-line @next/next/no-img-element */ <img key={i} src={p} alt="" className="h-16 w-16 rounded-lg object-cover border border-slate-200" />)}
+            <label className="h-16 w-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400 cursor-pointer">
+              {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-6 w-6" />}
+              <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => upload(e.target.files)} />
+            </label>
+          </div>
+        </section>
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Notes</p>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Damage / missing / customer notes" className="w-full rounded-xl border border-slate-200 px-4 py-2 text-[14px]" />
+        </section>
+        {err && <p className="text-sm text-rose-600">{err}</p>}
+      </div>
+      <div className="p-3 border-t border-slate-200 grid grid-cols-2 gap-2 shrink-0">
+        <button onClick={() => finish(false)} disabled={busy} className="h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-50">Reject</button>
+        <button onClick={() => finish(true)} disabled={busy} className="h-12 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Approve Audit"}</button>
+      </div>
     </div>
   )
 }
@@ -468,8 +582,21 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
                     <div className="text-[12px] text-slate-500 truncate">{j.customerName}{mode === "pickup" && j.address ? ` · ${j.address}` : ""}{mode === "delivery" ? ` · ${j.amountDue > 0 ? inr(j.amountDue) + " due" : "Paid"}` : ""}</div>
                   </button>
                 </div>
+                {j.executiveId && (
+                  <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                    <span className={`px-1.5 py-0.5 rounded-full font-medium ${j.bucket === "accepted" || j.bucket === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                      {mode === "pickup" ? "Pickup" : "Delivery"} · {j.bucket === "accepted" ? "Accepted" : j.bucket === "completed" ? "Completed" : j.acceptance === "REJECTED" ? "Rejected" : "Pending acceptance"}
+                    </span>
+                    <span className="text-slate-500">Assigned to <span className="font-medium text-slate-700">{j.executiveName}</span></span>
+                  </div>
+                )}
                 <select value={j.executiveId || ""} onChange={(e) => assign(j.id, e.target.value || null)} className="mt-2 w-full h-9 rounded-lg border border-slate-200 px-2 text-[12px] bg-white">
-                  <option value="">— Unassigned —</option>{execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                  <option value="">{j.executiveId ? "Reassign / Unassign…" : "— Unassigned —"}</option>
+                  {execs.map((ex) => (
+                    <option key={ex.id} value={ex.id} disabled={!ex.isActive}>
+                      {ex.name}{ex.isActive === false ? " (inactive)" : ""}{ex.availability && ex.availability !== "AVAILABLE" ? ` · ${ex.availability}` : ""} — P{ex.todaysPickups ?? 0}/D{ex.todaysDeliveries ?? 0}
+                    </option>
+                  ))}
                 </select>
               </div>
             ))}</div>}
@@ -526,47 +653,136 @@ function ScanScreen({ staff, api }: { staff: Staff; api: Api }) {
   )
 }
 
+// Real order creation — the SAME backend as desktop: customer search/create
+// (customers APIs) → garment lines (services + garments) → orders POST, which
+// prices through the shared billing engine and drives the same state machine.
+// No simplified mobile lifecycle.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Api; onClose: () => void; onCreated: () => void }) {
-  const [kind, setKind] = useState<"pickup" | "walkin">("pickup")
-  const [name, setName] = useState(""); const [mobile, setMobile] = useState("")
-  const [address, setAddress] = useState(""); const [date, setDate] = useState(""); const [slot, setSlot] = useState(""); const [notes, setNotes] = useState("")
+  const [kind, setKind] = useState<"WALK_IN" | "HOME_PICKUP">("WALK_IN")
+  // customer
+  const [q, setQ] = useState("")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [matches, setMatches] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [customer, setCustomer] = useState<any>(null)
+  const [newName, setNewName] = useState(""); const [newMobile, setNewMobile] = useState(""); const [creatingCust, setCreatingCust] = useState(false)
+  // catalog
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [services, setServices] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [garments, setGarments] = useState<any[]>([])
+  const [svc, setSvc] = useState(""); const [gar, setGar] = useState(""); const [qty, setQty] = useState("1")
+  const [lines, setLines] = useState<{ serviceId: string; serviceName: string; garmentId: string; garmentName: string; quantity: number }[]>([])
+  // pickup
+  const [address, setAddress] = useState(""); const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
 
-  const submitPickup = async () => {
-    setErr(null); setBusy(true)
+  useEffect(() => {
+    api(`/api/laundry/services?businessId=${staff.businessId}`).then((j) => { if (j.success) setServices(j.data || j.services || []) })
+    api(`/api/laundry/garments?businessId=${staff.businessId}`).then((j) => { if (j.success) setGarments(j.data || j.garments || []) })
+  }, [api, staff.businessId])
+  useEffect(() => {
+    if (customer || q.trim().length < 2) { setMatches([]); return }
+    const t = setTimeout(() => api(`/api/laundry/customers/search?businessId=${staff.businessId}&q=${encodeURIComponent(q.trim())}`).then((j) => setMatches(j.success ? (j.data || []) : [])), 300)
+    return () => clearTimeout(t)
+  }, [q, customer, api, staff.businessId])
+
+  const createCustomer = async () => {
+    if (!newName.trim() || !newMobile.trim()) return
+    setCreatingCust(true)
     try {
-      const j = await api("/api/laundry/dispatch/pickup", { method: "POST", body: JSON.stringify({
-        businessId: staff.businessId, customerData: { name, phone: mobile || null },
-        pickupAddress: address || null, pickupDate: date || null, pickupTimeSlot: slot || null, notes: notes || null,
+      const j = await api("/api/laundry/customers", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, name: newName.trim(), mobile: newMobile.trim() }) })
+      if (j.success && j.data) setCustomer(j.data); else setErr(j.error || "Could not create customer")
+    } finally { setCreatingCust(false) }
+  }
+  const addLine = () => {
+    const s = services.find((x) => x.id === svc), g = garments.find((x) => x.id === gar)
+    if (!s || !g) return
+    setLines((p) => [...p, { serviceId: s.id, serviceName: s.name, garmentId: g.id, garmentName: g.name, quantity: Math.max(1, Number(qty) || 1) }])
+    setGar(""); setQty("1")
+  }
+  const submit = async () => {
+    setErr(null)
+    if (!customer) { setErr("Select or create a customer"); return }
+    if (lines.length === 0) { setErr("Add at least one garment"); return }
+    setBusy(true)
+    try {
+      const j = await api("/api/laundry/orders", { method: "POST", body: JSON.stringify({
+        businessId: staff.businessId, storeId: staff.storeId, customerId: customer.id, orderType: kind,
+        createdBy: staff.name,
+        items: lines.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity, weightKg: 0 })),
+        ...(kind === "HOME_PICKUP" ? { pickupRequired: true, pickupAddress: address || null, pickupDate: date || null, pickupTimeSlot: slot || null } : {}),
       }) })
-      if (!j.success) throw new Error(j.error || "Failed")
+      if (!j.success) throw new Error(j.error || "Failed to create order")
       onCreated()
     } catch (e) { setErr(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
+
   return (
-    <div className="fixed inset-0 z-40 bg-black/40 flex items-end" onClick={onClose}>
-      <div className="w-full bg-white rounded-t-2xl p-4 space-y-3 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-800">New Order</h3><button onClick={onClose}><X className="h-5 w-5 text-slate-400" /></button></div>
+    <div className="fixed inset-0 z-40 bg-white flex flex-col">
+      <header className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <h3 className="font-semibold text-slate-800">New Order</h3><button onClick={onClose}><X className="h-5 w-5 text-slate-400" /></button>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="grid grid-cols-2 gap-1.5 bg-slate-100 rounded-xl p-1">
-          <button onClick={() => setKind("pickup")} className={`h-9 rounded-lg text-[13px] font-medium ${kind === "pickup" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>Home Pickup</button>
-          <button onClick={() => setKind("walkin")} className={`h-9 rounded-lg text-[13px] font-medium ${kind === "walkin" ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>Walk-in</button>
+          {(["WALK_IN", "HOME_PICKUP"] as const).map((k) => (
+            <button key={k} onClick={() => setKind(k)} className={`h-9 rounded-lg text-[13px] font-medium ${kind === k ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>{k === "WALK_IN" ? "Walk-in" : "Home Pickup"}</button>
+          ))}
         </div>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px]" />
-        <input value={mobile} onChange={(e) => setMobile(e.target.value)} inputMode="tel" placeholder="Mobile" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px]" />
-        {kind === "pickup" ? (
-          <>
-            <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400 shrink-0" /><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Pickup address" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px]" /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-12 rounded-xl border border-slate-200 px-3 text-[14px]" />
-              <input value={slot} onChange={(e) => setSlot(e.target.value)} placeholder="Time slot" className="h-12 rounded-xl border border-slate-200 px-3 text-[14px]" />
+
+        {/* Customer */}
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Customer</p>
+          {customer ? (
+            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+              <div><p className="font-medium text-[14px] text-slate-800">{customer.name}</p><p className="text-[12px] text-slate-500">{customer.phone || customer.mobile}</p></div>
+              <button onClick={() => { setCustomer(null); setQ("") }} className="text-[12px] text-slate-500">Change</button>
             </div>
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instructions (optional)" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px]" />
-            {err && <p className="text-sm text-rose-600">{err}</p>}
-            <button onClick={submitPickup} disabled={busy || !name.trim()} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Create Pickup — appears in Dispatch"}</button>
-          </>
-        ) : (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-800">Walk-in garment intake with services &amp; pricing is best completed at the counter station; this quick form creates the customer + a pickup-free order. Full mobile garment/pricing selection lands in the next update.</div>
+          ) : (
+            <>
+              <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by mobile or name" className="w-full h-11 pl-9 rounded-xl border border-slate-200 text-[15px]" /></div>
+              {matches.length > 0 && <div className="space-y-1">{matches.slice(0, 6).map((c) => (
+                <button key={c.id} onClick={() => setCustomer(c)} className="w-full text-left bg-white border border-slate-200 rounded-lg px-3 py-2 text-[13px]"><span className="font-medium text-slate-800">{c.name}</span> · <span className="text-slate-500">{c.phone}</span></button>
+              ))}</div>}
+              <div className="rounded-xl border border-dashed border-slate-200 p-2.5 space-y-2">
+                <p className="text-[11px] text-slate-400">New customer</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" className="h-10 rounded-lg border border-slate-200 px-3 text-[14px]" />
+                  <input value={newMobile} onChange={(e) => setNewMobile(e.target.value)} inputMode="tel" placeholder="Mobile" className="h-10 rounded-lg border border-slate-200 px-3 text-[14px]" />
+                </div>
+                <button onClick={createCustomer} disabled={creatingCust || !newName.trim() || !newMobile.trim()} className="w-full h-10 rounded-lg bg-slate-800 text-white text-[13px] font-medium disabled:opacity-50">{creatingCust ? "Creating…" : "Create customer"}</button>
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* Garments */}
+        <section className="space-y-2">
+          <p className="text-[12px] font-semibold text-slate-600">Garments</p>
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+            <select value={svc} onChange={(e) => setSvc(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white"><option value="">Service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            <select value={gar} onChange={(e) => setGar(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white"><option value="">Garment</option>{garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+            <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className="h-11 w-14 rounded-xl border border-slate-200 px-2 text-[14px] text-center" />
+          </div>
+          <button onClick={addLine} disabled={!svc || !gar} className="w-full h-10 rounded-xl border border-blue-200 text-blue-700 text-[13px] font-medium disabled:opacity-40">+ Add garment</button>
+          {lines.length > 0 && <div className="space-y-1">{lines.map((l, i) => (
+            <div key={i} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-[13px]"><span>{l.quantity} × {l.garmentName} · {l.serviceName}</span><button onClick={() => setLines((p) => p.filter((_, j) => j !== i))}><X className="h-4 w-4 text-slate-400" /></button></div>
+          ))}</div>}
+          <p className="text-[10px] text-slate-400">Pricing is applied by the same billing engine on save — walk-ins go straight to Store Audit; the audit finalises weight, pricing and photos.</p>
+        </section>
+
+        {kind === "HOME_PICKUP" && (
+          <section className="space-y-2">
+            <p className="text-[12px] font-semibold text-slate-600">Pickup</p>
+            <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400 shrink-0" /><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Pickup address" className="w-full h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
+            <div className="grid grid-cols-2 gap-2"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /><input value={slot} onChange={(e) => setSlot(e.target.value)} placeholder="Time slot" className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
+          </section>
         )}
+        {err && <p className="text-sm text-rose-600">{err}</p>}
+      </div>
+      <div className="p-3 border-t border-slate-200 shrink-0">
+        <button onClick={submit} disabled={busy || !customer || lines.length === 0} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : `Create ${kind === "WALK_IN" ? "Walk-in" : "Pickup"} Order`}</button>
       </div>
     </div>
   )
