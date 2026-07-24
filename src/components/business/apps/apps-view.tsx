@@ -1,217 +1,83 @@
 "use client"
 
+// Business Admin → Mobile Apps. ONE place for every PWA belonging to THIS tenant:
+// Customer Website & PWA (<slug>), Store Admin PWA (store.<slug>) and Delivery
+// Executive PWA (delivery.<slug>). Reuses the shared AppShareCard (Open / Copy /
+// QR) and the product-agnostic provisioning status engine (/api/core/mobile-apps/
+// status → getTenantAppStatus). No duplicate distribution or provisioning logic.
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Loader2, Smartphone, Globe, Truck, LayoutDashboard, CheckCircle2, Clock, AlertCircle, XCircle } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
+import { AppShareCard } from "@/components/laundry/apps/app-share-card"
+import { authFetch } from "@/lib/admin-fetch"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
-import { PageHeader } from "@/components/admin/shared/page-header"
+import { Smartphone, Store as StoreIcon, Bike, Loader2, ShieldCheck, ShieldAlert, ExternalLink } from "lucide-react"
 
-interface AppCheck {
-  key: string
-  label: string
-  passed: boolean
-  priority: "critical" | "recommended" | "optional"
-}
-
-interface AppScore {
-  score: number
-  passed: number
-  total: number
-  checks: AppCheck[]
-}
-
-interface ReadinessData {
-  overallScore: number
-  readyForFlutter: boolean
-  apps: {
-    customer: AppScore
-    delivery: AppScore
-    pos: AppScore
-    admin: AppScore
-  }
-  topBlockers: { app: string; key: string; label: string; priority: string }[]
-}
-
-const appMeta = [
-  { key: "customer", label: "Customer App", icon: Smartphone, description: "Flutter mobile app for end customers", color: "text-blue-600" },
-  { key: "delivery", label: "Delivery App",  icon: Truck,       description: "Driver / delivery partner app",       color: "text-orange-600" },
-  { key: "pos",      label: "POS Billing",   icon: LayoutDashboard, description: "Point-of-sale billing terminal",  color: "text-purple-600" },
-  { key: "admin",    label: "Admin Panel",   icon: Globe,       description: "Business owner web dashboard",        color: "text-emerald-600" },
-] as const
-
-function scoreColor(score: number) {
-  if (score >= 80) return "text-emerald-600"
-  if (score >= 50) return "text-amber-600"
-  return "text-red-600"
-}
-
-function scoreLabel(score: number) {
-  if (score >= 80) return "Ready"
-  if (score >= 50) return "Partial"
-  return "Not Ready"
-}
-
-function ScoreBadge({ score }: { score: number }) {
-  if (score >= 80) return <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">Ready</Badge>
-  if (score >= 50) return <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">Partial</Badge>
-  return <Badge className="bg-red-100 text-red-700 border-0 text-xs">Not Ready</Badge>
-}
-
-function CheckIcon({ passed, priority }: { passed: boolean; priority: string }) {
-  if (passed) return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-  if (priority === "critical") return <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-  if (priority === "recommended") return <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-  return <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-}
+interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
+interface Status { customer: AppStatus; storeAdmin: AppStatus; deliveryExecutive: AppStatus }
 
 export function AppsView() {
   const { currentBusinessId } = useAdminStore()
   const { currentBusinessId: authBizId } = useAuthStore()
   const businessId = currentBusinessId || authBizId || ""
-
-  const [data, setData] = useState<ReadinessData | null>(null)
+  const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    if (!businessId) return
+  const load = useCallback(() => {
+    if (!businessId) { setLoading(false); return }
     setLoading(true)
-    try {
-      const res = await fetch(`/api/core/businesses/${businessId}/readiness-score`, {
-        headers: { "x-business-id": businessId },
-      })
-      const json = await res.json()
-      if (json.success) setData(json.data)
-    } finally {
-      setLoading(false)
-    }
+    authFetch(`/api/core/mobile-apps/status?businessId=${businessId}`)
+      .then((r) => r.json()).then((j) => { if (j.success) setStatus(j.data) }).catch(() => {}).finally(() => setLoading(false))
   }, [businessId])
-
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-  if (!data) return (
-    <div className="flex flex-col items-center justify-center py-20 gap-2">
-      <AlertCircle className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">Could not load readiness data</p>
-    </div>
-  )
+  const cards = [
+    { key: "customer", title: "Customer Website & PWA", description: "Customers browse, order and pay.", icon: <Smartphone className="h-5 w-5" />, s: status?.customer, note: "Your dedicated branded storefront + installable PWA." },
+    { key: "store", title: "Store Admin PWA", description: "Store staff run daily operations.", icon: <StoreIcon className="h-5 w-5" />, s: status?.storeAdmin, note: "store.<tenant> — reuses this Admin's backend, store-scoped." },
+    { key: "delivery", title: "Delivery Executive PWA", description: "Executives run assigned deliveries.", icon: <Bike className="h-5 w-5" />, s: status?.deliveryExecutive, note: "delivery.<tenant> — the delivery workflow." },
+  ]
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="App Readiness"
-        description="Check platform readiness before launching your apps"
-        icon={Smartphone}
-      />
-
-      {/* Overall score */}
-      <Card className="shadow-none">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Overall Readiness</p>
-              <p className={`text-4xl font-bold mt-1 ${scoreColor(data.overallScore)}`}>{data.overallScore}%</p>
-            </div>
-            <div className="text-right">
-              <Badge className={`text-sm px-3 py-1 ${data.readyForFlutter ? "bg-emerald-100 text-emerald-700 border-0" : "bg-amber-100 text-amber-700 border-0"}`}>
-                {data.readyForFlutter ? "✓ Ready for Flutter" : "Setup Incomplete"}
-              </Badge>
-              {data.topBlockers.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">{data.topBlockers.length} blockers remaining</p>
-              )}
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="mt-4 h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${data.overallScore >= 80 ? "bg-emerald-500" : data.overallScore >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-              style={{ width: `${data.overallScore}%` }}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Per-app cards */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {appMeta.map(({ key, label, icon: Icon, description, color }) => {
-          const app = data.apps[key as keyof typeof data.apps]
-          const isOpen = expanded === key
-          return (
-            <Card key={key} className="shadow-none">
-              <CardHeader className="pb-3 cursor-pointer" onClick={() => setExpanded(isOpen ? null : key)}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-                      <Icon className={`h-5 w-5 ${color}`} />
-                    </div>
-                    <div>
-                      <CardTitle className="text-sm">{label}</CardTitle>
-                      <CardDescription className="text-xs">{description}</CardDescription>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-xl font-bold ${scoreColor(app.score)}`}>{app.score}%</p>
-                    <ScoreBadge score={app.score} />
-                  </div>
-                </div>
-                <div className="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${app.score >= 80 ? "bg-emerald-500" : app.score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                    style={{ width: `${app.score}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{app.passed}/{app.total} checks passed · tap to {isOpen ? "collapse" : "expand"}</p>
-              </CardHeader>
-
-              {isOpen && (
-                <CardContent className="pt-0 space-y-1">
-                  {app.checks.map(check => (
-                    <div key={check.key} className="flex items-center gap-2 py-1">
-                      <CheckIcon passed={check.passed} priority={check.priority} />
-                      <span className={`text-xs flex-1 ${check.passed ? "text-foreground" : "text-muted-foreground"}`}>{check.label}</span>
-                      {!check.passed && (
-                        <Badge variant="outline" className={`text-[10px] h-4 px-1.5 ${check.priority === "critical" ? "border-red-200 text-red-600" : check.priority === "recommended" ? "border-amber-200 text-amber-600" : ""}`}>
-                          {check.priority}
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
-                </CardContent>
-              )}
-            </Card>
-          )
-        })}
+    <div className="animate-in fade-in duration-300 space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-xl bg-blue-50"><Smartphone className="size-5 text-blue-600" /></div>
+        <div>
+          <h2 className="text-base font-bold">Mobile Apps</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Every app for your business — Customer, Store Admin and Delivery Executive — with links, QR codes and provisioning status. All served from the same backend.</p>
+        </div>
       </div>
 
-      {/* Top blockers */}
-      {data.topBlockers.length > 0 && (
-        <Card className="shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top Blockers</CardTitle>
-            <CardDescription className="text-xs">Fix these to improve your readiness score</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1 p-0">
-            <div className="divide-y">
-              {data.topBlockers.map((b, i) => (
-                <div key={`${b.app}-${b.key}`} className="flex items-center gap-3 px-6 py-2.5">
-                  <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{b.label}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{b.app} app</p>
-                  </div>
-                  <Badge variant="outline" className={`text-[10px] h-4 px-1.5 shrink-0 ${b.priority === "critical" ? "border-red-200 text-red-600" : "border-amber-200 text-amber-600"}`}>
-                    {b.priority}
-                  </Badge>
-                </div>
-              ))}
+      {loading && !status ? (
+        <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin inline text-blue-600" /></div>
+      ) : !businessId ? (
+        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Select a business to view its apps.</CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {cards.map((c) => (
+            <div key={c.key} className="space-y-2">
+              <AppShareCard title={c.title} description={c.description} url={c.s?.url || ""} icon={c.icon} note={c.note} />
+              <StatusStrip s={c.s} loading={loading} url={c.s?.url} />
             </div>
-          </CardContent>
-        </Card>
+          ))}
+        </div>
       )}
+    </div>
+  )
+}
+
+function StatusStrip({ s, loading, url }: { s?: AppStatus; loading: boolean; url?: string }) {
+  const live = s?.httpsReachable
+  const ssl = s?.sslStatus ?? "pending"
+  const tone = loading ? "border-slate-200 text-slate-500 bg-slate-50"
+    : live ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+    : ssl === "failed" ? "border-rose-300 text-rose-700 bg-rose-50"
+    : "border-amber-300 text-amber-700 bg-amber-50"
+  const text = loading ? "Checking…" : live ? "HTTPS Live · SSL Active · Healthy" : ssl === "failed" ? "Provision Failed" : ssl === "provisioning" ? "Provisioning…" : "Provision · DNS · SSL Pending"
+  const Icon = live ? ShieldCheck : ShieldAlert
+  return (
+    <div className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${tone}`}>
+      <span className="flex items-center gap-1.5">{loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}<span className="font-medium">{text}</span></span>
+      {url && <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 opacity-80 hover:opacity-100"><ExternalLink className="h-3 w-3" />Install</a>}
     </div>
   )
 }

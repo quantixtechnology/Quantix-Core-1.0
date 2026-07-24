@@ -793,8 +793,10 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "branding": return <BrandingView />
       case "feature-flags": return <FeatureFlagsView />
       case "subscription-view": return <SubscriptionView />
+      // Unified "Mobile Apps" hub — the legacy customer-app / delivery-app /
+      // admin-app / website entries all land on the one apps page now.
       case "customer-app": return <AppsView />
-      case "delivery-app": return <DeliveryAppView />
+      case "delivery-app": return <AppsView />
       case "admin-app": return <AppsView />
       case "website": return <AppsView />
       case "onboarding-progress": return <WorkspaceOverview />

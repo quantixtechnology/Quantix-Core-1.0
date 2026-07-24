@@ -102,9 +102,7 @@ const platformNavItems: { key: BusinessPage; label: string; icon: React.Componen
   { key: "branding",            label: "Branding",       icon: Palette },
   { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
   { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
-  { key: "customer-app",        label: "Customer App",   icon: Smartphone },
-  { key: "delivery-app",        label: "Delivery App",   icon: Truck },
-  { key: "admin-app",           label: "Admin App",      icon: Globe },
+  { key: "customer-app",        label: "Mobile Apps",    icon: Smartphone },
   { key: "onboarding-progress", label: "Onboarding",     icon: LayoutDashboard },
 ]
 
