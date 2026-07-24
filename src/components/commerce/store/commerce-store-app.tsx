@@ -8,7 +8,7 @@
 // inventory and invoices are ALL enforced server-side. No duplicate models, APIs,
 // workflows or auth. One source of truth: the Commerce database.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Store, LogOut, Loader2, ClipboardList, Clock, ChefHat, PackageCheck, Truck, CheckCircle2,
   Users, LayoutGrid, User, Search, ChevronLeft, Phone, PlusCircle, X, RefreshCw, XCircle,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 
 const TOKEN_KEY = "qx_commerce_store_token"
+const REFRESH_KEY = "qx_commerce_store_refresh"
 const USER_KEY = "qx_commerce_store_user"
 
 interface Tenant { platformBusinessId: string; name: string; logo: string | null; primaryColor: string }
@@ -67,10 +68,49 @@ export function CommerceStoreApp({ tenant }: { tenant: Tenant }) {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("")
   const [loggingIn, setLoggingIn] = useState(false); const [error, setError] = useState<string | null>(null)
 
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(REFRESH_KEY); localStorage.removeItem(USER_KEY)
+    setToken(null); setUser(null)
+  }, [])
+
+  // Single-flight token refresh via the EXISTING /api/core/auth/refresh (rotation).
+  // The dashboard fires ~8 calls at once; if the access token has expired they must
+  // share ONE refresh, not stampede the endpoint.
+  const refreshingRef = useRef<Promise<string | null> | null>(null)
+  const refreshAccess = useCallback((): Promise<string | null> => {
+    if (refreshingRef.current) return refreshingRef.current
+    const p = (async () => {
+      const rt = typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null
+      if (!rt) return null
+      try {
+        const res = await fetch("/api/core/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: rt }) })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || !j?.success || !j?.data?.accessToken) return null
+        localStorage.setItem(TOKEN_KEY, j.data.accessToken)
+        if (j.data.refreshToken) localStorage.setItem(REFRESH_KEY, j.data.refreshToken)
+        setToken(j.data.accessToken)
+        return j.data.accessToken as string
+      } catch { return null }
+    })()
+    refreshingRef.current = p
+    p.finally(() => { refreshingRef.current = null })
+    return p
+  }, [])
+
+  // Every screen calls the SAME /api/core/* services through this helper. On a 401
+  // (expired/rotated access token) it transparently refreshes and retries ONCE; if
+  // refresh fails it drops to the login screen instead of silently blanking the UI.
   const api = useCallback<Api>(async (path, init = {}, tk?, biz?) => {
-    const res = await fetch(path, { ...init, headers: { ...(init.headers || {}), "Content-Type": "application/json", Authorization: `Bearer ${tk ?? token}`, "x-business-id": biz ?? user?.businessId ?? tenant.platformBusinessId } })
+    const bid = biz ?? user?.businessId ?? tenant.platformBusinessId
+    const call = (t: string | null | undefined) => fetch(path, { ...init, headers: { ...(init.headers || {}), "Content-Type": "application/json", Authorization: `Bearer ${t ?? ""}`, "x-business-id": bid } })
+    let res = await call(tk ?? token)
+    if (res.status === 401 && !tk) {
+      const nt = await refreshAccess()
+      if (nt) res = await call(nt)
+      else { clearSession(); return { success: false, error: "Session expired. Please sign in again." } }
+    }
     return res.json().catch(() => ({}))
-  }, [token, user, tenant.platformBusinessId])
+  }, [token, user, tenant.platformBusinessId, refreshAccess, clearSession])
 
   useEffect(() => {
     const on = () => setOnline(true); const off = () => setOnline(false)
@@ -90,14 +130,15 @@ export function CommerceStoreApp({ tenant }: { tenant: Tenant }) {
       const res = await fetch("/api/core/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Login failed")
-      const tk = j.data?.accessToken; const su = j.data?.user
+      const tk = j.data?.accessToken; const su = j.data?.user; const rt = j.data?.refreshToken
       if (!tk || !su) throw new Error("Login failed")
       const sess: SessionUser = { name: su.name, role: su.role, businessId: su.businessId, businessName: su.businessName, storeId: su.storeId }
       localStorage.setItem(TOKEN_KEY, tk); localStorage.setItem(USER_KEY, JSON.stringify(sess))
+      if (rt) localStorage.setItem(REFRESH_KEY, rt) // enables transparent 401 refresh
       setToken(tk); setUser(sess); setPassword("")
     } catch (e) { setError(e instanceof Error ? e.message : "Login failed") } finally { setLoggingIn(false) }
   }
-  const logout = () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); setToken(null); setUser(null) }
+  const logout = clearSession
   const goOrders = (status: string) => { setScreen(null); setOrdersStatus(status); setTab("orders") }
   const openModule = (s: Screen) => { setDrawer(false); setScreen(s) }
 
