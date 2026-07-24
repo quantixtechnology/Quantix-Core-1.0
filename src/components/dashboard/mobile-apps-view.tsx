@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { CommerceAppsHub } from '@/components/dashboard/commerce-apps-hub'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -214,7 +215,12 @@ export function MobileAppsView() {
   return (
     <div className="animate-in fade-in duration-300 space-y-6">
 
-      {/* Header */}
+      {/* Unified per-tenant app hub (Customer / Store Admin / Delivery Executive) */}
+      <CommerceAppsHub />
+
+      <div className="border-t pt-6" />
+
+      {/* Developer reference — Flutter/API integration */}
       <div className="flex items-start gap-3">
         <div className="p-2 rounded-xl bg-blue-50">
           <Smartphone className="size-5 text-blue-600" />
