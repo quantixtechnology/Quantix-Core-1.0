@@ -48,7 +48,10 @@ const PAYMENT_PREFERENCES = [
   { value: "CORPORATE_BILLING", label: "Corporate Billing" },
 ]
 
-const QUICK_NOTES = ["Starch Shirts", "Separate White Clothes", "Gentle Wash", "Express Delivery"]
+// Laundry Instructions — standard handling options that travel with the order
+// through every stage (stored in the SAME specialInstructions field, no backend
+// change). "Express Service" keeps the existing express pricing/turnaround link.
+const QUICK_NOTES = ["Starch", "Separate Whites", "Gentle Wash", "Steam Press", "Delicate Fabric", "Express Service", "Hanger Required", "Fold Only"]
 const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
 
 interface AddressRow { id?: string; addressType?: string; label?: string | null; isPickupDefault?: boolean; isDeliveryDefault?: boolean; isDefault?: boolean; addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
@@ -138,7 +141,7 @@ export default function LaundryNewOrder() {
   const [savedAddresses, setSavedAddresses] = useState<AddressRow[]>([])
   const [addressesLoading, setAddressesLoading] = useState(false)
   const [paymentPreference, setPaymentPreference] = useState("COD")
-  const [quickNotes, setQuickNotes] = useState<string[]>(["Separate White Clothes"])
+  const [quickNotes, setQuickNotes] = useState<string[]>(["Separate Whites"])
   const [otherInstructions, setOtherInstructions] = useState("")
   const [attachments, setAttachments] = useState<{ url: string; kind: string }[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
@@ -196,7 +199,7 @@ export default function LaundryNewOrder() {
   const maxTat = useMemo(() => {
     const hrs = selectedServices.map((s) => s.defaultTurnaroundHours).filter((h) => h > 0)
     const base = hrs.length ? Math.max(...hrs) : 0
-    return quickNotes.includes("Express Delivery") && base > 0 ? Math.max(4, Math.round(base / 2)) : base
+    return quickNotes.includes("Express Service") && base > 0 ? Math.max(4, Math.round(base / 2)) : base
   }, [selectedServices, quickNotes])
 
   const customerType = useMemo(() => (orderType === "CORPORATE" ? "CORPORATE" : orderType === "SUBSCRIPTION" ? "SUBSCRIPTION" : orderType === "HOME_PICKUP" ? "PICKUP" : "WALK_IN"), [orderType])
@@ -445,7 +448,7 @@ export default function LaundryNewOrder() {
         businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id, orderType,
         services: selectedServices.map((s) => ({ serviceId: s.id, serviceName: s.name, turnaroundHours: s.defaultTurnaroundHours })),
         items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity })),
-        isExpress: express || quickNotes.includes("Express Delivery"),
+        isExpress: express || quickNotes.includes("Express Service"),
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
         paymentPreference,
@@ -935,7 +938,7 @@ export default function LaundryNewOrder() {
             </Card>
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={CheckCircle2} title="Notes / Special Instructions" />
+              <CardHead icon={CheckCircle2} title="Laundry Instructions" />
               <CardContent className="px-5 pb-5 pt-0 space-y-3">
                 <div className="space-y-2.5">
                   {QUICK_NOTES.map((n) => (
