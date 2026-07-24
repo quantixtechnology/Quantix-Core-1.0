@@ -120,9 +120,17 @@ export function CommerceStoreApp({ tenant }: { tenant: Tenant }) {
   useEffect(() => {
     const tk = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null
     const u = typeof window !== "undefined" ? localStorage.getItem(USER_KEY) : null
-    if (tk && u) { try { setToken(tk); setUser(JSON.parse(u)) } catch { /* ignore */ } }
+    if (tk && u) {
+      try {
+        const parsed = JSON.parse(u) as SessionUser
+        // Heal any session (incl. ones stored before this fix, or a platform admin)
+        // that has no business context → scope to the store host's tenant business.
+        if (!parsed.businessId) parsed.businessId = tenant.platformBusinessId
+        setToken(tk); setUser(parsed)
+      } catch { /* ignore */ }
+    }
     setBooting(false)
-  }, [])
+  }, [tenant.platformBusinessId])
 
   const login = async () => {
     setError(null); setLoggingIn(true)
@@ -132,7 +140,11 @@ export function CommerceStoreApp({ tenant }: { tenant: Tenant }) {
       if (!res.ok || !j.success) throw new Error(j.error || "Login failed")
       const tk = j.data?.accessToken; const su = j.data?.user; const rt = j.data?.refreshToken
       if (!tk || !su) throw new Error("Login failed")
-      const sess: SessionUser = { name: su.name, role: su.role, businessId: su.businessId, businessName: su.businessName, storeId: su.storeId }
+      // The store host IS the tenant. A platform Super Admin has NO businessUser, so
+      // login returns businessId=undefined — without this fallback every tenant-scoped
+      // URL becomes /businesses/undefined/... → WHERE businessId="undefined" → 0 rows
+      // (blank Products/Customers/Inventory/Categories). Scope to the host's business.
+      const sess: SessionUser = { name: su.name, role: su.role, businessId: su.businessId || tenant.platformBusinessId, businessName: su.businessName || tenant.name, storeId: su.storeId }
       localStorage.setItem(TOKEN_KEY, tk); localStorage.setItem(USER_KEY, JSON.stringify(sess))
       if (rt) localStorage.setItem(REFRESH_KEY, rt) // enables transparent 401 refresh
       setToken(tk); setUser(sess); setPassword("")
