@@ -606,19 +606,31 @@ function ModuleScreen({ screen, tenant, user, api, onBack, onOpenOrder }: { scre
 function useList(api: Api, path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any[]>([]); const [loading, setLoading] = useState(true)
-  useEffect(() => { let live = true; setLoading(true); api(path).then((j) => { if (live) setData(j?.success ? (j.data || []) : []) }).finally(() => live && setLoading(false)); return () => { live = false } }, [api, path])
-  return { data, loading }
+  const [error, setError] = useState<string | null>(null); const [nonce, setNonce] = useState(0)
+  useEffect(() => {
+    let live = true; setLoading(true); setError(null)
+    api(path)
+      .then((j) => { if (!live) return; if (j?.success) setData(j.data || []); else setError(j?.error || "Couldn't load — please retry.") })
+      .catch(() => { if (live) setError("Network error — please retry.") })
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [api, path, nonce])
+  return { data, loading, error, reload: () => setNonce((n) => n + 1) }
 }
 function Spin({ color }: { color: string }) { return <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin inline" style={{ color }} /></div> }
 function Empty({ label }: { label: string }) { return <p className="py-16 text-center text-sm text-slate-400">{label}</p> }
+// Never render a load failure as a silent empty state — surface it with a retry.
+function ErrorState({ msg, onRetry, color }: { msg: string; onRetry: () => void; color: string }) {
+  return <div className="py-16 text-center space-y-3"><div className="flex justify-center"><AlertTriangle className="h-6 w-6 text-rose-400" /></div><p className="text-[13px] text-rose-600 px-8">{msg}</p><button onClick={onRetry} className="h-9 px-4 rounded-lg text-white text-[13px] font-medium" style={{ backgroundColor: color }}>Retry</button></div>
+}
 
 function ProductsModule({ tenant, user, api }: { tenant: Tenant; user: SessionUser; api: Api }) {
   const [q, setQ] = useState("")
-  const { data, loading } = useList(api, `/api/core/businesses/${user.businessId}/products?search=${encodeURIComponent(q)}&limit=100`)
+  const { data, loading, error, reload } = useList(api, `/api/core/businesses/${user.businessId}/products?search=${encodeURIComponent(q)}&limit=100`)
   return (
     <div className="space-y-3">
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search products" className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
-      {loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No products." /> : <div className="space-y-2">{data.map((p) => { const v = (p.variants || []).find((x: { isDefault?: boolean }) => x.isDefault) || (p.variants || [])[0]; const price = v?.price ?? p.price ?? 0; return (
+      {error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No products." /> : <div className="space-y-2">{data.map((p) => { const v = (p.variants || []).find((x: { isDefault?: boolean }) => x.isDefault) || (p.variants || [])[0]; const price = v?.price ?? p.price ?? 0; return (
         <div key={p.id} className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
           <div className="min-w-0"><p className="text-[14px] font-medium text-slate-800 truncate">{p.name}</p><p className="text-[11px] text-slate-400">{p.category?.name || "Uncategorized"} · {p.sku || p.status}{(p.variants?.length ?? 0) > 1 ? ` · ${p.variants.length} variants` : ""}</p></div>
           <div className="text-right shrink-0 ml-2"><p className="text-[14px] font-bold text-slate-800">{inr(price)}</p><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${p.status === "ACTIVE" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>{p.status}</span></div>
@@ -630,7 +642,7 @@ function ProductsModule({ tenant, user, api }: { tenant: Tenant; user: SessionUs
 }
 
 function CategoriesModule({ tenant, user, api }: { tenant: Tenant; user: SessionUser; api: Api }) {
-  const { data, loading } = useList(api, `/api/core/businesses/${user.businessId}/categories`)
+  const { data, loading, error, reload } = useList(api, `/api/core/businesses/${user.businessId}/categories`)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const render = (c: any, depth: number) => (
     <div key={c.id}>
@@ -641,18 +653,18 @@ function CategoriesModule({ tenant, user, api }: { tenant: Tenant; user: Session
       {Array.isArray(c.children) && c.children.length > 0 && <div className="mt-2 space-y-2">{c.children.map((ch: unknown) => render(ch, depth + 1))}</div>}
     </div>
   )
-  return loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No categories." /> : (
+  return error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No categories." /> : (
     <div className="space-y-2">{data.map((c) => render(c, 0))}<p className="text-[10px] text-slate-400 px-1 pt-1">Same Category tree as Website, POS & Desktop.</p></div>
   )
 }
 
 function CustomersModule({ tenant, user, api }: { tenant: Tenant; user: SessionUser; api: Api }) {
   const [q, setQ] = useState("")
-  const { data, loading } = useList(api, `/api/core/businesses/${user.businessId}/customers?search=${encodeURIComponent(q)}&limit=100`)
+  const { data, loading, error, reload } = useList(api, `/api/core/businesses/${user.businessId}/customers?search=${encodeURIComponent(q)}&limit=100`)
   return (
     <div className="space-y-3">
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, mobile or email" className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
-      {loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No customers." /> : <div className="space-y-2">{data.map((c) => (
+      {error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No customers." /> : <div className="space-y-2">{data.map((c) => (
         <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
           <div className="min-w-0"><p className="text-[14px] font-medium text-slate-800 truncate">{c.name}</p><p className="text-[11px] text-slate-400">{c.phone || c.email || "—"} · {c._count?.orders ?? 0} orders</p></div>
           {c.phone && <a href={`tel:${c.phone}`} className="h-9 w-9 rounded-lg bg-slate-50 flex items-center justify-center shrink-0"><Phone className="h-4 w-4 text-slate-500" /></a>}
@@ -665,9 +677,9 @@ function CustomersModule({ tenant, user, api }: { tenant: Tenant; user: SessionU
 
 function InventoryModule({ tenant, user, api }: { tenant: Tenant; user: SessionUser; api: Api }) {
   const scope = user.storeId ? `&storeId=${user.storeId}` : ""
-  const { data, loading } = useList(api, `/api/core/businesses/${user.businessId}/inventory?limit=200${scope}`)
+  const { data, loading, error, reload } = useList(api, `/api/core/businesses/${user.businessId}/inventory?limit=200${scope}`)
   const low = data.filter((i) => i.status === "LOW_STOCK" || i.status === "OUT_OF_STOCK")
-  return loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No inventory records." /> : (
+  return error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No inventory records." /> : (
     <div className="space-y-3">
       {low.length > 0 && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 text-[12px] text-amber-700"><AlertTriangle className="h-4 w-4" />{low.length} item{low.length > 1 ? "s" : ""} low or out of stock</div>}
       <div className="space-y-2">{data.map((i) => (
@@ -682,8 +694,8 @@ function InventoryModule({ tenant, user, api }: { tenant: Tenant; user: SessionU
 }
 
 function PaymentsModule({ tenant, user, api, onOpenOrder }: { tenant: Tenant; user: SessionUser; api: Api; onOpenOrder: (id: string) => void }) {
-  const { data, loading } = useList(api, `/api/core/payments?businessId=${user.businessId}&limit=100`)
-  return loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No payments." /> : (
+  const { data, loading, error, reload } = useList(api, `/api/core/payments?businessId=${user.businessId}&limit=100`)
+  return error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No payments." /> : (
     <div className="space-y-2">{data.map((p) => (
       <button key={p.id} onClick={() => p.order?.id && onOpenOrder(p.order.id)} className="w-full text-left bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
         <div className="min-w-0"><p className="text-[13px] font-medium text-slate-800">{p.order?.orderNumber || p.method}</p><p className="text-[11px] text-slate-400">{p.method} · {new Date(p.createdAt).toLocaleDateString("en-IN")}</p></div>
@@ -695,11 +707,11 @@ function PaymentsModule({ tenant, user, api, onOpenOrder }: { tenant: Tenant; us
 
 function InvoicesModule({ tenant, user, api, onOpenOrder }: { tenant: Tenant; user: SessionUser; api: Api; onOpenOrder: (id: string) => void }) {
   const [q, setQ] = useState("")
-  const { data, loading } = useList(api, `/api/core/businesses/${user.businessId}/invoices?search=${encodeURIComponent(q)}&limit=100`)
+  const { data, loading, error, reload } = useList(api, `/api/core/businesses/${user.businessId}/invoices?search=${encodeURIComponent(q)}&limit=100`)
   return (
     <div className="space-y-3">
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Invoice # or customer" className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
-      {loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No invoices." /> : <div className="space-y-2">{data.map((v) => (
+      {error ? <ErrorState msg={error} onRetry={reload} color={tenant.primaryColor} /> : loading ? <Spin color={tenant.primaryColor} /> : data.length === 0 ? <Empty label="No invoices." /> : <div className="space-y-2">{data.map((v) => (
         <button key={v.id} onClick={() => v.order?.id && onOpenOrder(v.order.id)} className="w-full text-left bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
           <div className="min-w-0"><p className="text-[13px] font-mono font-semibold text-slate-800">{v.invoiceNumber}</p><p className="text-[11px] text-slate-400">{v.customer?.name || "—"} · {v.order?.orderNumber || ""}</p></div>
           <div className="text-right shrink-0 ml-2"><p className="text-[14px] font-bold text-slate-800">{inr(v.totalAmount)}</p><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${v.status === "PAID" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>{v.status}</span></div>
