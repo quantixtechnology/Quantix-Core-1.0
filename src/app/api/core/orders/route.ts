@@ -25,11 +25,16 @@ export const GET = withMiddleware({ requireAuth: true })(async (req) => {
     const user = req.user!;
     const { searchParams } = new URL(req.url);
 
-    // Resolve businessId — platform admins pass it as a query param;
-    // business staff use their auth context (prevents cross-tenant leakage)
+    // Resolve businessId. Platform admins may pass an explicit ?businessId, but
+    // otherwise fall back to their tenant context (user.businessId, derived from
+    // the x-business-id header by the middleware) — the SAME context that scopes
+    // customers/products/inventory. Without this fallback the Store Admin's
+    // Orders/Packing/Dispatch screens (which send the header, not a query param)
+    // 400 for a Super Admin while every other module works. Business staff always
+    // use their own auth context (no cross-tenant override).
     let businessId: string;
     if (user.isPlatformAdmin) {
-      const qb = searchParams.get('businessId');
+      const qb = searchParams.get('businessId') || user.businessId;
       if (!qb) {
         return NextResponse.json(
           { success: false, error: 'businessId query parameter is required' },
