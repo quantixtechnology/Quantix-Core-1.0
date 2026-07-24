@@ -94,6 +94,15 @@ class CommerceProvisioner implements ProductProvisioner {
         })
       }
 
+      // Auto-provision the THREE public app hosts (customer <domain>, store
+      // store.<domain>, delivery delivery.<domain>) via the SAME shared engine
+      // Laundry uses — no duplicate DNS/Nginx/SSL logic. Background/best-effort
+      // (certbot needs DNS to resolve, which may lag creation); the Mobile Apps
+      // status view auto-heals it once DNS + server are ready.
+      void import("@/lib/laundry-app-provisioning")
+        .then((m) => m.provisionTenantApps(businessId))
+        .catch(() => { /* best-effort; retryable from Mobile Apps */ })
+
       return {
         success: true,
         message: `Commerce OS provisioned for business ${business.name}`,
