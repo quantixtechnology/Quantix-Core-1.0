@@ -25,9 +25,15 @@ export async function provisionTenantApps(platformBusinessId: string) {
   if (!d) return { ok: false as const, error: "Business has no slug or mapped domain" }
 
   await prisma.domainMapping.updateMany({ where: { businessId: platformBusinessId }, data: { executiveSslStatus: "provisioning", storeSslStatus: "provisioning" } }).catch(() => {})
-  // All three hosts through the SAME engine, in parallel — identical vhost +
-  // server_names_hash fix + certbot + HSTS. Status persisted per host.
-  const [cust, exec, store] = await Promise.all([provisionProductHost(d.customer), provisionProductHost(d.executive), provisionProductHost(d.store)])
+  // All three hosts through the SAME engine — identical vhost + server_names_hash
+  // fix + certbot + HSTS. Provisioned SEQUENTIALLY, never in parallel: certbot
+  // holds a global lock and manipulates nginx config for its http-01 challenge,
+  // so concurrent runs step on each other and some hosts fail to get a cert
+  // (observed: customer+delivery issued, store left without a :443 vhost → served
+  // another tenant's default cert → CN mismatch). Serial issuance is the fix.
+  const cust = await provisionProductHost(d.customer)
+  const exec = await provisionProductHost(d.executive)
+  const store = await provisionProductHost(d.store)
 
   await prisma.domainMapping.updateMany({
     where: { businessId: platformBusinessId },
