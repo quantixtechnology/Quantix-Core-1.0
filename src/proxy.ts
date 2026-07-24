@@ -61,12 +61,14 @@ export default function proxy(request: NextRequest) {
       return withSecurityHeaders(NextResponse.rewrite(url))
     }
 
-    // 0b) Dedicated Laundry Store Admin PWA host: store.<tenant>.<base> (and, on a
-    // custom domain, store.<customdomain>). Same architecture as the executive
-    // host — the whole subdomain IS the Store Admin app, served at the root.
+    // 0b) Dedicated Store Admin PWA host: store.<tenant>.<base> (and, on a custom
+    // domain, store.<customdomain>). The whole subdomain IS the Store Admin app,
+    // served at the root. The edge proxy can't query the DB, so it rewrites to the
+    // product-agnostic /store entry, which resolves the tenant's product (Laundry
+    // vs Commerce) server-side and renders the matching app.
     if (hostWithoutPort.startsWith('store.')) {
       const url = request.nextUrl.clone()
-      if (!pathname.startsWith('/laundry/store')) url.pathname = '/laundry/store'
+      if (!pathname.startsWith('/store')) url.pathname = '/store'
       url.searchParams.set('_store', '1')
       log(`[proxy] STORE host=${hostWithoutPort} → ${url.toString()}`)
       return withSecurityHeaders(NextResponse.rewrite(url))
