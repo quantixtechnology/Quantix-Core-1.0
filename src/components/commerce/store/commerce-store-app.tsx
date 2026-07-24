@@ -269,32 +269,53 @@ function CreateSheet({ tenant, user, api, onClose, onCreated }: { tenant: Tenant
   const [q, setQ] = useState("")
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [products, setProducts] = useState<any[]>([])
-  const [lines, setLines] = useState<{ itemId: string; itemName: string; unitPrice: number; quantity: number }[]>([])
-  const [cust, setCust] = useState({ name: "", phone: "" })
+  const [lines, setLines] = useState<{ itemId: string; variantId?: string; itemName: string; unitPrice: number; quantity: number }[]>([])
+  // Customer — reuse the SAME Desktop customer master API (search + create).
+  const [custQ, setCustQ] = useState("")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [custMatches, setCustMatches] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [customer, setCustomer] = useState<any>(null)
+  const [newCust, setNewCust] = useState({ name: "", phone: "" }); const [creatingCust, setCreatingCust] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
   const biz = user.businessId
   useEffect(() => {
     const t = setTimeout(() => api(`/api/core/businesses/${biz}/products?search=${encodeURIComponent(q.trim())}&limit=20`).then((j) => setProducts(j.success ? (j.data || []) : [])), 300)
     return () => clearTimeout(t)
   }, [q, api, biz])
+  useEffect(() => {
+    if (customer || custQ.trim().length < 2) { setCustMatches([]); return }
+    const t = setTimeout(() => api(`/api/core/businesses/${biz}/customers?search=${encodeURIComponent(custQ.trim())}&limit=8`).then((j) => setCustMatches(j.success ? (j.data || []) : [])), 300)
+    return () => clearTimeout(t)
+  }, [custQ, customer, api, biz])
+  const createCustomer = async () => {
+    if (!newCust.name.trim() || !newCust.phone.trim()) return
+    setCreatingCust(true)
+    try {
+      const j = await api(`/api/core/businesses/${biz}/customers`, { method: "POST", body: JSON.stringify({ name: newCust.name.trim(), phone: newCust.phone.trim() }) })
+      if (j.success && j.data) setCustomer(j.data); else setErr(j.error || "Could not create customer")
+    } finally { setCreatingCust(false) }
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const addProduct = (p: any) => {
     const v = (p.variants || []).find((x: { isDefault?: boolean }) => x.isDefault) || (p.variants || [])[0]
     const price = v?.price ?? p.price ?? 0
-    const itemId = v?.id || p.id
-    setLines((prev) => { const ex = prev.find((l) => l.itemId === itemId); if (ex) return prev.map((l) => l.itemId === itemId ? { ...l, quantity: l.quantity + 1 } : l); return [...prev, { itemId, itemName: p.name, unitPrice: price, quantity: 1 }] })
+    // itemId MUST be the PRODUCT id — the order engine keys inventory + the product
+    // master on it (deduct on CONFIRMED WHERE productId = item.itemId). Variant is
+    // tracked separately for pricing.
+    setLines((prev) => { const ex = prev.find((l) => l.itemId === p.id && l.variantId === v?.id); if (ex) return prev.map((l) => l === ex ? { ...l, quantity: l.quantity + 1 } : l); return [...prev, { itemId: p.id, variantId: v?.id, itemName: p.name, unitPrice: price, quantity: 1 }] })
   }
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0), [lines])
   const submit = async () => {
     setErr(null)
+    if (!customer) { setErr("Select or create a customer"); return }
     if (lines.length === 0) { setErr("Add at least one product"); return }
-    if (!cust.name.trim()) { setErr("Enter customer name"); return }
     setBusy(true)
     try {
       const j = await api("/api/core/orders", { method: "POST", body: JSON.stringify({
         businessId: biz, storeId: user.storeId, orderType, orderSource: "admin",
-        customerName: cust.name.trim(), customerPhone: cust.phone.trim() || undefined,
-        items: lines.map((l) => ({ itemType: "PRODUCT", itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unitPrice: l.unitPrice })),
+        customerId: customer.id, customerName: customer.name, customerPhone: customer.phone || undefined,
+        items: lines.map((l) => ({ itemType: "PRODUCT", itemId: l.itemId, variantId: l.variantId, itemName: l.itemName, quantity: l.quantity, unitPrice: l.unitPrice })),
       }) })
       if (!j.success) throw new Error(j.error || "Could not create order")
       onCreated()
@@ -305,14 +326,39 @@ function CreateSheet({ tenant, user, api, onClose, onCreated }: { tenant: Tenant
       <header className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0"><h3 className="font-semibold text-slate-800">New Order</h3><button onClick={onClose}><X className="h-5 w-5 text-slate-400" /></button></header>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="grid grid-cols-2 gap-1.5 bg-slate-100 rounded-xl p-1">{["STORE_PICKUP", "DELIVERY"].map((t) => (<button key={t} onClick={() => setOrderType(t)} className={`h-9 rounded-lg text-[13px] font-medium ${orderType === t ? "bg-white shadow-sm text-slate-800" : "text-slate-500"}`}>{t === "STORE_PICKUP" ? "Store Pickup" : "Home Delivery"}</button>))}</div>
-        <div className="grid grid-cols-2 gap-2"><input value={cust.name} onChange={(e) => setCust((c) => ({ ...c, name: e.target.value }))} placeholder="Customer name" className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /><input value={cust.phone} onChange={(e) => setCust((c) => ({ ...c, phone: e.target.value }))} inputMode="tel" placeholder="Mobile" className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
+        {/* Customer — SAME customer master as Desktop (/api/core/businesses/[id]/customers): search + create */}
+        <section className="space-y-2">
+          {customer ? (
+            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+              <div><p className="font-medium text-[14px] text-slate-800">{customer.name}</p><p className="text-[12px] text-slate-500">{customer.phone || customer.email || ""}</p></div>
+              <button onClick={() => { setCustomer(null); setCustQ("") }} className="text-[12px] font-medium text-slate-500">Change</button>
+            </div>
+          ) : (
+            <>
+              <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={custQ} onChange={(e) => setCustQ(e.target.value)} placeholder="Search customer by name, mobile or email" className="w-full h-11 pl-9 rounded-xl border border-slate-200 text-[15px]" /></div>
+              {custMatches.length > 0 && <div className="space-y-1">{custMatches.slice(0, 6).map((c) => (
+                <button key={c.id} onClick={() => { setCustomer(c); setCustMatches([]) }} className="w-full text-left bg-white border border-slate-200 rounded-lg px-3 py-2 text-[13px]"><span className="font-medium text-slate-800">{c.name}</span>{(c.phone || c.email) && <span className="text-slate-500"> · {c.phone || c.email}</span>}</button>
+              ))}</div>}
+              {custQ.trim().length >= 2 && custMatches.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-200 p-2.5 space-y-2">
+                  <p className="text-[11px] text-slate-400">No match — add new customer</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newCust.name} onChange={(e) => setNewCust((c) => ({ ...c, name: e.target.value }))} placeholder="Name" className="h-10 rounded-lg border border-slate-200 px-3 text-[14px]" />
+                    <input value={newCust.phone} onChange={(e) => setNewCust((c) => ({ ...c, phone: e.target.value }))} inputMode="tel" placeholder="Mobile" className="h-10 rounded-lg border border-slate-200 px-3 text-[14px]" />
+                  </div>
+                  <button onClick={createCustomer} disabled={creatingCust || !newCust.name.trim() || !newCust.phone.trim()} className="w-full h-10 rounded-lg bg-slate-800 text-white text-[13px] font-medium disabled:opacity-50">{creatingCust ? "Creating…" : "Create customer"}</button>
+                </div>
+              )}
+            </>
+          )}
+        </section>
         <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search products" className="w-full h-11 pl-9 rounded-xl border border-slate-200 text-[15px]" /></div>
         <div className="space-y-1">{products.slice(0, 8).map((p) => { const v = (p.variants || [])[0]; const price = v?.price ?? p.price ?? 0; return (<button key={p.id} onClick={() => addProduct(p)} className="w-full flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2 text-[13px]"><span className="text-slate-800">{p.name}</span><span className="text-slate-500">{inr(price)} +</span></button>) })}</div>
         {lines.length > 0 && <div className="bg-slate-50 rounded-xl p-2 space-y-1">{lines.map((l, i) => (<div key={i} className="flex items-center justify-between text-[13px] px-1"><span>{l.quantity} × {l.itemName}</span><div className="flex items-center gap-2"><span className="text-slate-500">{inr(l.unitPrice * l.quantity)}</span><button onClick={() => setLines((p) => p.filter((_, j) => j !== i))}><X className="h-4 w-4 text-slate-400" /></button></div></div>))}<div className="flex justify-between px-1 pt-1 border-t border-slate-200 text-[13px] font-semibold"><span>Subtotal</span><span>{inr(subtotal)}</span></div></div>}
         <p className="text-[10px] text-slate-400">Final pricing (tax, discounts, charges) is computed by the same Commerce pricing engine on save.</p>
         {err && <p className="text-sm text-rose-600">{err}</p>}
       </div>
-      <div className="p-3 border-t border-slate-200 shrink-0"><button onClick={submit} disabled={busy || lines.length === 0 || !cust.name.trim()} className="w-full h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: tenant.primaryColor }}>{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Create Order"}</button></div>
+      <div className="p-3 border-t border-slate-200 shrink-0"><button onClick={submit} disabled={busy || lines.length === 0 || !customer} className="w-full h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: tenant.primaryColor }}>{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Create Order"}</button></div>
     </div>
   )
 }
