@@ -132,6 +132,28 @@ export function CommerceStoreApp({ tenant }: { tenant: Tenant }) {
     setBooting(false)
   }, [tenant.platformBusinessId])
 
+  // ── Canonical Store Context ─────────────────────────────────────────────────
+  // The Order Engine (and store-scoped inventory) require a storeId. A store
+  // manager carries their own storeId from login; a platform Super Admin has no
+  // businessUser → no storeId, so Create Order would send storeId=undefined
+  // ("storeId is required"). Resolve the tenant's canonical store ONCE from the
+  // SAME Commerce stores service (prefer the main store, else first active) and
+  // fold it into the single user.storeId that every module already reads — no
+  // second store-context variable, no per-module guessing, no hardcoding.
+  useEffect(() => {
+    if (!token || !user || user.storeId || !user.businessId) return
+    let live = true
+    api(`/api/core/stores?businessId=${user.businessId}`).then((j) => {
+      if (!live || !j?.success || !Array.isArray(j.data) || j.data.length === 0) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const stores = j.data as any[]
+      const chosen = stores.find((s) => s.isMainStore && s.status === "ACTIVE") || stores.find((s) => s.status === "ACTIVE") || stores[0]
+      if (!chosen?.id) return
+      setUser((u) => { if (!u) return u; const nu = { ...u, storeId: chosen.id as string }; try { localStorage.setItem(USER_KEY, JSON.stringify(nu)) } catch { /* ignore */ } return nu })
+    })
+    return () => { live = false }
+  }, [token, user, api])
+
   const login = async () => {
     setError(null); setLoggingIn(true)
     try {
@@ -540,6 +562,7 @@ function CreateSheet({ tenant, user, api, onClose, onCreated }: { tenant: Tenant
     setErr(null)
     if (!customer) { setErr("Select or create a customer"); return }
     if (lines.length === 0) { setErr("Add at least one product"); return }
+    if (!user.storeId) { setErr("No store is configured for this business yet — add one in Desktop → Stores."); return }
     setBusy(true)
     try {
       const j = await api("/api/core/orders", { method: "POST", body: JSON.stringify({
