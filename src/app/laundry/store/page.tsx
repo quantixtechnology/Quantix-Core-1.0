@@ -30,7 +30,7 @@ function useOnline() {
   }, [])
   return online
 }
-interface Counts { todaysOrders: number; todaysPickup: number; todaysDelivery: number; pendingAudit: number; pendingPayment: number; readyProcessing: number; readyDelivery: number; completedToday: number }
+interface Counts { todaysOrders: number; todaysPickup: number; todaysDelivery: number; pendingReceipt: number; pendingAudit: number; pendingPayment: number; readyProcessing: number; readyDelivery: number; completedToday: number }
 type Tab = "dashboard" | "orders" | "dispatch" | "scan" | "profile"
 
 // Internal (side-effect) workflow actions → their dedicated endpoint. Non-internal
@@ -209,6 +209,7 @@ function Dashboard({ staff, api, onCounter, onTab }: { staff: Staff; api: Api; o
     { key: "todaysOrders", label: "Today's Orders", icon: ClipboardList, color: "text-slate-700 bg-slate-50 border-slate-200", go: () => onCounter("") },
     { key: "todaysPickup", label: "Today's Pickup", icon: Truck, color: "text-amber-700 bg-amber-50 border-amber-200", go: () => onTab("dispatch") },
     { key: "todaysDelivery", label: "Today's Delivery", icon: PackageCheck, color: "text-violet-700 bg-violet-50 border-violet-200", go: () => onTab("dispatch") },
+    { key: "pendingReceipt", label: "Pending Store Receipt", icon: ScanLine, color: "text-orange-700 bg-orange-50 border-orange-200", go: () => onCounter("IN_TRANSIT_TO_STORE") },
     { key: "pendingAudit", label: "Pending Audit", icon: ClipboardCheck, color: "text-blue-700 bg-blue-50 border-blue-200", go: () => onCounter("PENDING_STORE_AUDIT") },
     { key: "pendingPayment", label: "Pending Payment", icon: Wallet, color: "text-rose-700 bg-rose-50 border-rose-200", go: () => onCounter("PAYMENT_PENDING") },
     { key: "readyProcessing", label: "Ready for Processing", icon: Boxes, color: "text-indigo-700 bg-indigo-50 border-indigo-200", go: () => onCounter("READY_FOR_PROCESSING") },
@@ -316,7 +317,11 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
   const load = useCallback(() => { setLoading(true); api(`/api/laundry/orders/${id}`).then((j) => { if (j.success) setOrder(j.data) }).finally(() => setLoading(false)) }, [api, id])
   useEffect(() => { load() }, [load])
 
-  const primary = useMemo(() => order ? getTransitions(order.status).find((t) => t.primary) : null, [order])
+  // Chain of custody: internal transitions (executive pickup completion) and the
+  // store receive are NEVER one-tap here — receive happens by scanning the bag.
+  const primaryRaw = useMemo(() => order ? getTransitions(order.status).find((t) => t.primary) : null, [order])
+  const awaitingScanReceive = !!order && (order.status === "IN_TRANSIT_TO_STORE" || (order.status === "AWAITING_PICKUP_ASSIGNMENT" && order.fieldStatus === "PICKUP_COMPLETED"))
+  const primary = primaryRaw && !primaryRaw.internal && primaryRaw.action !== "RECEIVE_PICKUP_AT_STORE" ? primaryRaw : null
   const primaryLabel = primary?.action === "APPROVE_AUDIT" ? "Start Store Audit" : primary?.label
 
   const advance = async () => {
@@ -398,6 +403,13 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
           <button onClick={advance} disabled={busy} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
             {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : primaryLabel}
           </button>
+        </div>
+      )}
+      {!primary && awaitingScanReceive && (
+        <div className="fixed bottom-0 inset-x-0 p-3 bg-white border-t border-slate-200">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800 text-center font-medium">
+            Garments are in transit — scan the pickup bag in the <b>Scan</b> tab to receive them at the store.
+          </div>
         </div>
       )}
       {pay && <PaymentSheet order={order} staff={staff} api={api} onClose={() => setPay(false)} onDone={() => { setPay(false); load() }} />}
@@ -635,27 +647,35 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   const [bag, setBag] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const receiveBag = async (c: string) => {
-    const j = await api("/api/laundry/pickup-bags/receive", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, code: c, actorName: staff.name }) })
-    if (!j.success) return false
-    setBag(j.data); setGarment(null)
-    // Advance the order to Store Audit (best-effort; a no-op if already past it).
-    if (j.data?.orderId) await api(`/api/laundry/orders/${j.data.orderId}/transition`, { method: "POST", body: JSON.stringify({ toStatus: "PENDING_STORE_AUDIT", actorName: staff.name, note: "Pickup received at store (bag scan)" }) }).catch(() => {})
-    setMsg({ ok: true, text: j.alreadyReceived ? `Bag ${j.data.code} already received` : `Pickup received · ${j.data.orderNumber || j.data.code} → Store Audit` })
-    return true
+  // Chain of custody: preview the bag → the RECEIVER confirms (with condition).
+  const previewBag = async (c: string) => {
+    const j = await api("/api/laundry/bags/receive-at-store", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, storeId: staff.storeId, code: c, actorName: staff.name }) })
+    if (j.success && j.preview) { setBag({ ...j.data, code: c }); setGarment(null); return true }
+    if (j.success && j.alreadyReceived) { setMsg({ ok: true, text: j.message }); return true }
+    if (!j.success && j.error && !/No bag found/i.test(j.error)) { setMsg({ ok: false, text: j.error }); return true } // real validation error (wrong store etc.)
+    return false
+  }
+  const confirmReceive = async (condition: string) => {
+    if (!bag?.code) return
+    setBusy(true)
+    try {
+      const j = await api("/api/laundry/bags/receive-at-store", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, storeId: staff.storeId, code: bag.code, confirm: true, condition, actorName: staff.name }) })
+      if (!j.success) { setMsg({ ok: false, text: j.error || "Receive failed" }); return }
+      if (j.rejected) { setMsg({ ok: false, text: j.message || "Receipt rejected — returned to executive." }); setBag(null); return }
+      setMsg({ ok: true, text: `Received ${j.data.bag} · ${j.data.orderNumber} → Store Audit${j.exception ? " (exception recorded)" : ""}` })
+      setBag((b: typeof bag) => ({ ...b, received: true, orderId: j.data.orderId, orderNumber: j.data.orderNumber }))
+    } finally { setBusy(false) }
   }
   const lookup = async (raw: string) => {
     const c = raw.trim(); if (!c) return
     setBusy(true); setMsg(null); setGarment(null); setBag(null)
     try {
-      const isBag = /^(PB|PKG)-/i.test(c)
-      if (isBag) { if (await receiveBag(c)) return; setMsg({ ok: false, text: "Bag not found for this code." }); return }
-      // Garment code → identify the order.
+      // Bag first (pickup receive is the store's most common scan)…
+      if (await previewBag(c)) return
+      // …else a garment code → identify the order.
       const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c)}`)
       if (j.success) { setGarment(j.data); return }
-      // Fall back to a bag scan (some tenants reuse the pickup-bag QR through processing).
-      if (await receiveBag(c)) return
-      setMsg({ ok: false, text: j.error || "No garment or bag found for this code." })
+      setMsg({ ok: false, text: j.error || "No bag or garment found for this code." })
     } finally { setBusy(false); setCode("") }
   }
   const process = async () => {
@@ -672,17 +692,36 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   }
   return (
     <div className="px-4 pt-6 space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">Scan</h2>
-      <p className="text-[12px] text-slate-400 -mt-2">Scan a pickup bag to confirm it arrived, or a garment to open its order.</p>
+      <h2 className="text-lg font-bold text-slate-800">Receive Pickup Bag</h2>
+      <p className="text-[12px] text-slate-400 -mt-2">Scan the pickup bag QR (or enter the bag number) to confirm it arrived from the executive — or scan a garment to open its order.</p>
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
         <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder="Scan bag or garment code" className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
         <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> Look Up</>}</button>
       </div>
       {msg && <div className={`rounded-xl px-4 py-3 text-[14px] ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{msg.text}</div>}
-      {bag && bag.orderId && (
+      {bag && !bag.received && (
+        <div className="bg-white rounded-2xl border border-blue-200 p-4 space-y-3">
+          <p className="font-semibold text-slate-800">Receive at Store</p>
+          <div className="text-[13px] text-slate-600 space-y-1">
+            <p><span className="text-slate-400">Bag</span> · <span className="font-mono font-semibold">{bag.bag?.number}</span>{bag.bag?.service ? ` · ${bag.bag.service}` : ""}</p>
+            <p><span className="text-slate-400">Order</span> · <span className="font-mono">{bag.order?.orderNumber}</span></p>
+            {bag.customer && <p><span className="text-slate-400">Customer</span> · {bag.customer.name}{bag.customer.phone ? ` (${bag.customer.phone})` : ""}</p>}
+            {bag.executive && <p><span className="text-slate-400">Executive</span> · {bag.executive}</p>}
+            {bag.pickupCompletedAt && <p><span className="text-slate-400">Picked up</span> · {new Date(bag.pickupCompletedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+          </div>
+          <button onClick={() => confirmReceive("OK")} disabled={busy} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <><CheckCircle2 className="h-5 w-5" /> Receive — All OK</>}</button>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([["BAG_DAMAGED", "Bag Damaged"], ["SEAL_BROKEN", "Seal Broken"], ["GARMENTS_MISSING", "Items Missing"]] as const).map(([v, l]) => (
+              <button key={v} onClick={() => confirmReceive(v)} disabled={busy} className="h-10 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-semibold disabled:opacity-50">{l}</button>
+            ))}
+          </div>
+          <button onClick={() => confirmReceive("REJECT")} disabled={busy} className="w-full h-10 rounded-lg border border-rose-200 text-rose-600 text-[12px] font-semibold disabled:opacity-50">Reject Receipt — return to executive</button>
+        </div>
+      )}
+      {bag && bag.received && bag.orderId && (
         <div className="bg-white rounded-2xl border border-emerald-200 p-4 space-y-2">
           <p className="font-semibold text-emerald-800 flex items-center gap-1"><CheckCircle2 className="h-5 w-5" /> Pickup Received</p>
-          <p className="text-[13px] text-slate-500">Bag {bag.code} · {bag.orderNumber || "—"}</p>
+          <p className="text-[13px] text-slate-500">{bag.orderNumber}</p>
           <button onClick={() => onOpen(bag.orderId)} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold">Open Order · Start Store Audit</button>
         </div>
       )}

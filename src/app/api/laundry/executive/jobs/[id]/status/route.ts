@@ -58,7 +58,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (status === "PICKUP_COMPLETED") upd.pickupCompletedAt = new Date()
     await prisma.laundryOrder.update({ where: { id: order.id }, data: upd })
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: cfg.action, note: cfg.note(), actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
-    if (status === "PICKUP_COMPLETED") await notifyCustomerForOrder(order.id, session.businessId, { type: "ORDER_STATUS", title: "Items picked up", message: "Your laundry has been picked up and is on the way to our store." })
+    if (status === "PICKUP_COMPLETED") {
+      // Chain of custody: the executive's confirmation ends THEIR leg only — the
+      // order enters IN_TRANSIT_TO_STORE (never straight to store receipt; only the
+      // store can confirm that, via bag scan). Bags travel with the executive.
+      const advanced = await prisma.laundryOrder.updateMany({
+        where: { id: order.id, status: "AWAITING_PICKUP_ASSIGNMENT" },
+        data: { status: "IN_TRANSIT_TO_STORE" },
+      })
+      if (advanced.count > 0) {
+        await prisma.laundryOrderEvent.create({
+          data: {
+            orderId: order.id, businessId: session.businessId,
+            fromStatus: "AWAITING_PICKUP_ASSIGNMENT", toStatus: "IN_TRANSIT_TO_STORE", action: "PICKUP_COMPLETED",
+            actorId: session.executiveId, actorName: b.executiveName ?? "Executive",
+            note: "Pickup completed — garments in transit to store",
+          },
+        }).catch(() => null)
+      }
+      await prisma.laundryBag.updateMany({ where: { businessId: session.businessId, currentOrderId: order.id }, data: { status: "COLLECTED" } }).catch(() => null)
+      await notifyCustomerForOrder(order.id, session.businessId, { type: "ORDER_STATUS", title: "Items picked up", message: "Your garments have been collected. They are currently on the way to our store." })
+    }
     return NextResponse.json({ success: true, done: PICKUP_DONE.has(status) })
   } catch (e) {
     console.error("[executive-status] POST", e)

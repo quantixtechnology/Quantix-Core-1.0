@@ -200,18 +200,25 @@ export function LaundryDispatchCenter() {
         </button>
       </div>
 
-      {/* KPI strip — reflects the current work-type lens */}
-      <div className="grid grid-cols-5 gap-1.5">
+      {/* KPI strip — reflects the current work-type lens. "In Transit" = picked up
+          by the executive but NOT yet scanned in by the store (pending receipt). */}
+      <div className="grid grid-cols-6 gap-1.5">
         {[
           { key: "awaiting", label: "Unassigned", color: "text-amber-600 bg-amber-50 border-amber-200" },
           { key: "assigned", label: "Assigned", color: "text-blue-600 bg-blue-50 border-blue-200" },
           { key: "accepted", label: "Accepted", color: "text-indigo-600 bg-indigo-50 border-indigo-200" },
+          { key: "inTransit", label: "In Transit · Pending Receipt", color: "text-orange-600 bg-orange-50 border-orange-200" },
           { key: "completed", label: "Completed", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
           { key: "total", label: "Total", color: "text-slate-700 bg-slate-50 border-slate-200" },
         ].map((s) => {
-          const val = s.key === "total" ? byWorkType.length : (kpis[s.key] || 0)
-          const sp = s.key === "total" ? { pickup: byWorkType.filter((j) => j.kind === "pickup").length, delivery: byWorkType.filter((j) => j.kind === "delivery").length } : splitOf(s.key)
-          const clickable = s.key !== "total"
+          const inTransitJobs = byWorkType.filter((j) => j.status === "IN_TRANSIT_TO_STORE")
+          const val = s.key === "total" ? byWorkType.length : s.key === "inTransit" ? inTransitJobs.length : (kpis[s.key] || 0)
+          const sp = s.key === "total"
+            ? { pickup: byWorkType.filter((j) => j.kind === "pickup").length, delivery: byWorkType.filter((j) => j.kind === "delivery").length }
+            : s.key === "inTransit"
+              ? { pickup: inTransitJobs.filter((j) => j.kind === "pickup").length, delivery: inTransitJobs.filter((j) => j.kind === "delivery").length }
+              : splitOf(s.key)
+          const clickable = s.key !== "total" && s.key !== "inTransit"
           return (
             <button key={s.key} disabled={!clickable} onClick={() => clickable && setStatus(status === s.key ? "all" : s.key)}
               className={`rounded-lg border ${s.color} px-2 py-1.5 text-center transition-shadow ${clickable ? "hover:shadow-sm cursor-pointer" : ""} ${status === s.key ? "ring-2 ring-offset-1 ring-current" : ""}`}>

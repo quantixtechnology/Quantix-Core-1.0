@@ -14,7 +14,7 @@
 // ============================================================================
 
 export type LaundryOrderStatus =
-  | "DRAFT" | "AWAITING_PICKUP_ASSIGNMENT" | "PENDING_STORE_AUDIT" | "UNDER_AUDIT" | "PAYMENT_PENDING"
+  | "DRAFT" | "AWAITING_PICKUP_ASSIGNMENT" | "IN_TRANSIT_TO_STORE" | "PENDING_STORE_AUDIT" | "UNDER_AUDIT" | "PAYMENT_PENDING"
   | "READY_FOR_PROCESSING" | "PACKED" | "IN_TRANSIT_TO_PROCESSING"
   | "PROCESSING" | "QC_PENDING" | "RETURN_IN_TRANSIT"
   | "READY_FOR_DELIVERY" | "DELIVERED" | "CANCELLED"
@@ -32,6 +32,7 @@ export interface StatusMeta {
 export const STATUS_META: Record<LaundryOrderStatus, StatusMeta> = {
   DRAFT:                    { label: "Draft",                 department: "STORE_COUNTER" },
   AWAITING_PICKUP_ASSIGNMENT: { label: "Awaiting Pickup Assignment", department: "STORE_COUNTER" },
+  IN_TRANSIT_TO_STORE:      { label: "In Transit to Store",   department: "TRANSIT" },
   PENDING_STORE_AUDIT:      { label: "Pending Store Audit",   department: "STORE_COUNTER" },
   UNDER_AUDIT:              { label: "Under Audit",           department: "STORE_COUNTER" },
   PAYMENT_PENDING:          { label: "Payment Pending",       department: "STORE_COUNTER" },
@@ -63,7 +64,20 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   AWAITING_PICKUP_ASSIGNMENT: [
-    { to: "PENDING_STORE_AUDIT", action: "PICKUP_COMPLETED", label: "Pickup Completed", primary: true },
+    // Chain of custody: the EXECUTIVE completing the pickup moves the order into
+    // transit (fired by the executive status endpoint — internal, so no admin/store
+    // button can skip the executive's confirmation)…
+    { to: "IN_TRANSIT_TO_STORE", action: "PICKUP_COMPLETED", label: "Pickup Completed (Executive)", primary: true, internal: true },
+    // …while a STORE-side manual receive remains as the recovery path for orders
+    // that never went through an executive flow (legacy/walk-in drop).
+    { to: "PENDING_STORE_AUDIT", action: "RECEIVE_PICKUP_AT_STORE", label: "Pickup Received at Store" },
+    { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
+  ],
+  // Garments are with the executive, travelling to the store. ONLY the receiving
+  // store confirms receipt (bag scan in the Store PWA, or the admin bridge) — the
+  // executive can never mark their own handoff as received.
+  IN_TRANSIT_TO_STORE: [
+    { to: "PENDING_STORE_AUDIT", action: "RECEIVE_PICKUP_AT_STORE", label: "Receive at Store", primary: true },
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   PENDING_STORE_AUDIT: [
@@ -132,6 +146,9 @@ export const ACTION_LABELS: Record<string, string> = {
   HOLD_FOR_AUDIT: "Held for Audit",
   COMPLETE_AUDIT: "Store Audit Completed",
   REOPEN_AUDIT: "Audit Reopened",
+  RECEIVE_PICKUP_AT_STORE: "Pickup Received at Store",
+  RECEIVE_EXCEPTION: "Received with Exception",
+  RECEIVE_REJECTED: "Receipt Rejected — Returned to Executive",
   COLLECT_PAYMENT: "Payment Collected",
   PAY_LATER: "Approved to Proceed — Pay at Delivery",
   PACK_ORDER: "Packed & QR Generated",

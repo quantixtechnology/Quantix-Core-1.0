@@ -286,14 +286,14 @@ export function LaundryOrderDetail() {
               {!order.pickupCompletedAt && !order.pickupAcceptedAt && <p className="text-amber-600">Awaiting executive response</p>}
             </div>
           )}
-          {order.status === "AWAITING_PICKUP_ASSIGNMENT" && order.pickupCompletedAt && (
+          {(order.status === "AWAITING_PICKUP_ASSIGNMENT" || order.status === "IN_TRANSIT_TO_STORE") && order.pickupCompletedAt && (
             <div className="border-t border-amber-100 pt-2 mt-1">
               <Button size="sm" disabled={receiving} onClick={handlePickupReceived}
                 className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
                 {receiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                 Pickup Received — Send to Store Audit
               </Button>
-              <p className="text-[10px] text-slate-400 mt-1 text-center">Confirms the garments were physically received at the store.</p>
+              <p className="text-[10px] text-slate-400 mt-1 text-center">Admin fallback — the Store PWA receives by scanning the pickup bag.</p>
             </div>
           )}
         </CardContent>

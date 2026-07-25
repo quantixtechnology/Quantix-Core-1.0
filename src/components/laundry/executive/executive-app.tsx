@@ -210,7 +210,13 @@ function JobCard({ job, onOpen, tab }: { job: Job; onOpen: () => void; tab: stri
           </div>
           <p className="text-sm text-slate-700 mt-0.5">{job.customerName}</p>
         </div>
-        {done ? <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" /> : <StatusPill field={job.fieldStatus} />}
+        {done ? (
+          // Chain of custody: the executive's job ends at handover — receipt is the
+          // STORE's confirmation, shown here read-only so the executive knows.
+          job.status === "IN_TRANSIT_TO_STORE" ? (
+            <span className="text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 rounded-full px-2 py-1 shrink-0">In Transit · Receiver Pending</span>
+          ) : <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+        ) : <StatusPill field={job.fieldStatus} />}
       </div>
       <div className="mt-2 text-xs text-slate-500 space-y-1">
         {job.timeSlot && <p>🕑 {job.timeSlot}</p>}
