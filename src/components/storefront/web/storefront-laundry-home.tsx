@@ -270,7 +270,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
       )}
 
       {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
-      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
+      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} token={token} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
     </div>
   )
 }
@@ -1134,19 +1134,25 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
 // Subscription-only checkout (Case B) — plan added to cart, no garments. Places
 // a COD/pay-later purchase (pending customer due); allowance activates only when
 // the subscription is paid at collection. Reuses the shared checkout endpoint.
-function SubscriptionCheckoutSheet({ plan, businessId, brandColor, authCustomer, onDone, onClose }: { plan: Plan; businessId: string; brandColor: string; authCustomer: AuthCustomer; onDone: () => void; onClose: () => void }) {
+function SubscriptionCheckoutSheet({ plan, businessId, brandColor, token, authCustomer, onDone, onClose }: { plan: Plan; businessId: string; brandColor: string; token: string | null; authCustomer: AuthCustomer; onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState<{ due: number } | null>(null)
   const accentBg = { backgroundColor: brandColor }
   const place = async () => {
-    if (!name.trim() || !phone.trim()) { toast.error("Name and phone are required"); return }
+    // A logged-in customer is identified server-side from the auth token — their
+    // name/phone/email + customerId are authoritative and never re-asked here.
+    // Only guests must provide name + phone.
+    if (!authCustomer && (!name.trim() || !phone.trim())) { toast.error("Name and phone are required"); return }
     setSubmitting(true)
     try {
-      const res = await fetch("/api/core/storefront/laundry-checkout", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId, subscriptionPlanId: plan.id, customer: { name, phone }, paymentMethod: "COD" }) })
+      const res = await fetch("/api/core/storefront/laundry-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ businessId, subscriptionPlanId: plan.id, ...(authCustomer ? {} : { customer: { name, phone } }), paymentMethod: "COD" }),
+      })
       const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
+      if (!res.ok || !j.success) throw new Error(j.error === "PROFILE_INCOMPLETE" ? "Please add your name and phone to your profile before subscribing." : (j.error || "Checkout failed"))
       setDone({ due: j.data.allocation.totalDue })
     } catch (e) { toast.error(e instanceof Error ? e.message : "Checkout failed") } finally { setSubmitting(false) }
   }
