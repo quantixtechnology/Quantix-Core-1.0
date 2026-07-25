@@ -112,10 +112,12 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
     } catch { toast.error("Could not cancel") } finally { setCancelingPending(false) }
   }
   const refreshSummary = useCallback(() => {
-    if (!currentBusinessId || !authCustomer?.phone) { setSubSummary(null); return }
-    fetch("/api/core/storefront/laundry-subscription/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, phone: authCustomer.phone }) })
+    // Detect the logged-in customer's subscription via the auth token (works for
+    // email-OTP customers with no phone). Phone is only a guest fallback.
+    if (!currentBusinessId || !isAuthenticated) { setSubSummary(null); return }
+    fetch("/api/core/storefront/laundry-subscription/summary", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ businessId: currentBusinessId, phone: authCustomer?.phone }) })
       .then((r) => r.json()).then((j) => { if (j.success) setSubSummary(j.data) }).catch(() => {})
-  }, [currentBusinessId, authCustomer?.phone])
+  }, [currentBusinessId, isAuthenticated, token, authCustomer?.phone])
   useEffect(() => { refreshSummary() }, [refreshSummary])
 
   // Open the reused laundry checkout for the WHOLE cart: the service sheet at its

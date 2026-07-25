@@ -17,13 +17,21 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const { businessId, phone, customerId } = await request.json() as { businessId?: string; phone?: string; customerId?: string }
-    if (!businessId || (!phone && !customerId)) return NextResponse.json({ success: false, error: "businessId and phone are required" }, { status: 400 })
+    if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const platformId = biz.platformBusinessId || businessId
-    const customer = customerId
-      ? await prisma.customer.findFirst({ where: { id: customerId, businessId: platformId }, select: { id: true } })
-      : await prisma.customer.findFirst({ where: { businessId: platformId, phone }, select: { id: true } })
+
+    // Prefer the authenticated customer (Bearer token) — reliable for email-OTP
+    // customers who have no phone. Fall back to an explicit customerId, then phone.
+    let customer: { id: string } | null = null
+    const token = request.headers.get("authorization")?.replace("Bearer ", "").trim()
+    if (token) {
+      const rt = await prisma.refreshToken.findFirst({ where: { token, expiresAt: { gte: new Date() } }, select: { userId: true } })
+      if (rt?.userId) customer = await prisma.customer.findFirst({ where: { userId: rt.userId, businessId: platformId }, select: { id: true } })
+    }
+    if (!customer && customerId) customer = await prisma.customer.findFirst({ where: { id: customerId, businessId: platformId }, select: { id: true } })
+    if (!customer && phone) customer = await prisma.customer.findFirst({ where: { businessId: platformId, phone }, select: { id: true } })
     if (!customer) return NextResponse.json({ success: true, data: { active: null, pending: null } })
     return NextResponse.json({ success: true, data: await customerSubscriptionSummary(platformId, customer.id) })
   } catch (e) {
