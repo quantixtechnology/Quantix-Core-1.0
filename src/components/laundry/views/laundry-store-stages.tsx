@@ -21,11 +21,18 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Loader2, RefreshCw, Search, Clock, Package, CreditCard, QrCode, Truck,
-  PackageCheck, HandCoins, CheckCircle2, Printer, User, Phone, Shirt, IndianRupee, Navigation, MapPin,
+  PackageCheck, HandCoins, CheckCircle2, Printer, User, Phone, Shirt, IndianRupee, Navigation, MapPin, AlertTriangle, ClipboardCheck,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { useAdminStore } from "@/stores/admin-store"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
+
+// Only fully-audited orders belong in Packing & QR. auditComplete is computed by
+// the orders API (has garments AND none left un-inspected). undefined (older
+// response) is NOT treated as incomplete — the pack endpoint + UI block are the
+// hard enforcement; this filter just keeps the known-incomplete out of view.
+const auditReadyForPacking = (o: OrderRow) => o.auditComplete !== false
 
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -34,12 +41,13 @@ interface OrderRow {
   id: string; orderNumber: string; status: string; orderType: string; createdAt: string
   grandTotal: number; amountPaid: number; balanceDue: number; paymentStatus: string
   expectedDeliveryDate: string | null; itemCount: number; customerId?: string | null
+  auditComplete?: boolean
   store?: { storeName: string | null } | null
   customer?: { name: string; phone: string | null } | null
 }
 
 // ── Shared queue shell: list on the left, stage action panel on the right ──
-function useQueue(status: LaundryOrderStatus) {
+function useQueue(status: LaundryOrderStatus, filter?: (o: OrderRow) => boolean) {
   const { currentBusinessId } = useAuthStore()
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,9 +59,10 @@ function useQueue(status: LaundryOrderStatus) {
       const params = new URLSearchParams({ businessId: currentBusinessId, status, limit: "100" })
       if (search.trim()) params.set("search", search.trim())
       const json = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
-      setOrders(json.success ? json.data : [])
+      const rows: OrderRow[] = json.success ? json.data : []
+      setOrders(filter ? rows.filter(filter) : rows)
     } catch { setOrders([]) } finally { setLoading(false) }
-  }, [currentBusinessId, status, search])
+  }, [currentBusinessId, status, search, filter])
   useEffect(() => { load() }, [load])
   return { orders, loading, search, setSearch, load }
 }
@@ -264,8 +273,10 @@ interface PackHistoryRow { id: string; orderNumber: string; customer?: { name?: 
 
 export function LaundryPacking() {
   const { currentBusinessId, user } = useAuthStore()
+  const { setLaundryPage } = useAdminStore()
   const [tab, setTab] = useState<"pending" | "history">("pending")
-  const queue = useQueue("READY_FOR_PROCESSING")
+  // Incomplete-audit orders never appear in the Packing queue.
+  const queue = useQueue("READY_FOR_PROCESSING", auditReadyForPacking)
   const [selected, setSelected] = useState<OrderRow | null>(null)
   const [packet, setPacket] = useState<Packet | null>(null)
   const [busy, setBusy] = useState(false)
@@ -286,7 +297,7 @@ export function LaundryPacking() {
         body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name }),
       })
       const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.error || "Packing failed")
+      if (!res.ok || !j.success) throw new Error(j.message || j.error || "Packing failed")
       setPacket(j.data)
       toast.success(j.alreadyPacked ? `Packet already exists — ${j.data.packetNumber}` : `Packet created — ${j.data.packetNumber}`)
       queue.load()
@@ -361,7 +372,18 @@ export function LaundryPacking() {
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
           <OrderHeader o={selected} />
-          {!packet ? (
+          {selected.auditComplete === false ? (
+            // Safety net: an incomplete order must never be packable, even if it
+            // reaches this screen (legacy data / manual DB change). No override.
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-rose-700 font-semibold"><AlertTriangle className="h-5 w-5" /> Cannot Pack Order</div>
+              <p className="text-sm text-rose-700/90">This order cannot be packed because not all garments have been identified during Store Audit. Please return to Store Audit, identify all garments, complete the audit, and then try again.</p>
+              <div className="flex gap-2">
+                <Button onClick={() => setLaundryPage("audit-queue")} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><ClipboardCheck className="h-4 w-4" /> Go to Store Audit</Button>
+                <Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
+              </div>
+            </div>
+          ) : !packet ? (
             <>
               <p className="text-sm text-slate-500">Confirm the audited garments are packed into one package. A persistent packet identity (PKT-…) with a QR label is created — the Processing Center receives by scanning it.</p>
               <Button onClick={pack} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white w-full">

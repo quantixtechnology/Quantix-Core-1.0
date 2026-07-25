@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { getTransition, statusLabel } from "@/lib/laundry-workflow"
 import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { checkAuditComplete } from "@/lib/laundry-audit"
 
 export const runtime = "nodejs"
 
@@ -45,6 +46,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { status: 409 },
       )
     }
+    // Audit gate: an order may only LEAVE Store Audit once every garment has been
+    // identified & inspected. This keeps incomplete orders in Store Audit so they
+    // never reach Payment / Packing & QR. No override.
+    if (transition.action === "APPROVE_AUDIT" || transition.action === "COMPLETE_AUDIT") {
+      const audit = await checkAuditComplete(id)
+      if (!audit.ok) {
+        console.warn(`[laundry-order-transition] blocked ${order.orderNumber} audit approval: incomplete (expected ${audit.expected}, audited ${audit.audited})`)
+        return NextResponse.json({ success: false, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited }, { status: 409 })
+      }
+    }
+
     // Side-effect transitions (payment, packet, transit legs, delivery) must go
     // through their dedicated endpoints — the generic transition API cannot
     // skip the operational action.

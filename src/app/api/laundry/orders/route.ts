@@ -236,6 +236,9 @@ export async function GET(request: Request) {
           services: true,
           store: { select: { storeName: true, storeCode: true } },
           _count: { select: { items: true } },
+          // Un-inspected garments only — used to derive Store Audit completeness
+          // (auditComplete) without loading every item. Usually empty. Additive.
+          items: { where: { inspectedAt: null }, select: { id: true } },
           // Stored packet (for the Packing History read-only view). Additive.
           packet: { select: { packetNumber: true, qrValue: true, status: true, itemCount: true, packedBy: true, packedAt: true } },
         },
@@ -252,7 +255,13 @@ export async function GET(request: Request) {
       ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, phone: true, customerCode: true } })
       : []
     const custMap = new Map(customers.map((c) => [c.id, c]))
-    const data = orders.map((o) => ({ ...o, customer: o.customerId ? custMap.get(o.customerId) || null : null, itemCount: o._count.items }))
+    // auditComplete: has garments AND none left un-inspected (Store Audit done).
+    // Drives the Packing queue filter so incomplete orders never appear there.
+    const data = orders.map((o) => {
+      const { items, ...rest } = o
+      const auditComplete = o._count.items > 0 && (items?.length ?? 0) === 0
+      return { ...rest, customer: o.customerId ? custMap.get(o.customerId) || null : null, itemCount: o._count.items, auditComplete }
+    })
 
     return NextResponse.json({ success: true, data, total, limit, offset })
   } catch (error) {

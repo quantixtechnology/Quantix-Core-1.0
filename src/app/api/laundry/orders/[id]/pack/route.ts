@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { generatePacketNumber } from "@/lib/laundry-codes"
+import { checkAuditComplete } from "@/lib/laundry-audit"
 
 export const runtime = "nodejs"
 
@@ -35,8 +36,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (order.status !== "READY_FOR_PROCESSING") {
       return NextResponse.json({ error: `Order is not ready for packing (current: ${order.status})` }, { status: 409 })
     }
-    if (order._count.items === 0) {
-      return NextResponse.json({ error: "Order has no garments to pack" }, { status: 409 })
+    // Audit gate: never generate a package QR for an order whose Store Audit is
+    // incomplete (missing / un-identified garments) — the packet's garment
+    // contents would be wrong. Order stays untouched; the auditor must finish.
+    const audit = await checkAuditComplete(order.id)
+    if (!audit.ok) {
+      console.warn(`[laundry-order-pack] blocked ${order.orderNumber}: audit incomplete (expected ${audit.expected}, audited ${audit.audited})`)
+      return NextResponse.json({ success: false, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited }, { status: 409 })
     }
 
     const packetNumber = generatePacketNumber(order.orderNumber)
