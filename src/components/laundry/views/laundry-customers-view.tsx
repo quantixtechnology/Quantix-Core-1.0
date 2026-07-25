@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
+import { toast as sonnerToast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -528,7 +529,7 @@ export function LaundryCustomersView() {
                 {detail.notes && <div><p className="text-xs text-slate-400">Profile note</p><p className="text-slate-600 text-xs">{detail.notes}</p></div>}
               </div>}
 
-              {tab === "membership" && <MembershipTab m={membership} />}
+              {tab === "membership" && <MembershipTab m={membership} businessId={currentBusinessId || ""} onCollected={() => { if (openId && currentBusinessId) fetch(`/api/laundry/customers/${openId}/membership?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setMembership(j.success ? j.data : null)).catch(() => {}) }} />}
 
               {tab === "addresses" && <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -680,7 +681,19 @@ const M_STATUS: Record<string, { label: string; cls: string }> = {
   EXPIRED: { label: "Expired", cls: "border-rose-300 text-rose-700 bg-rose-50" },
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function MembershipTab({ m }: { m: any }) {
+function MembershipTab({ m, businessId, onCollected }: { m: any; businessId: string; onCollected: () => void }) {
+  const [collecting, setCollecting] = useState<string | null>(null)
+  const collect = async (method: string) => {
+    if (!m?.pendingPurchaseId) return
+    setCollecting(method)
+    try {
+      const res = await fetch("/api/laundry/subscriptions/collect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, purchaseId: m.pendingPurchaseId, amount: m.outstandingDue, method }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) { sonnerToast.error(j.error || "Collection failed"); return }
+      sonnerToast.success(j.activated ? `Payment received — membership ${j.membershipId} activated` : "Payment recorded")
+      onCollected()
+    } catch { sonnerToast.error("Collection failed") } finally { setCollecting(null) }
+  }
   if (!m || !m.hasMembership) return (
     <div className="py-10 text-center text-sm text-slate-400"><Repeat className="h-6 w-6 mx-auto mb-2 text-slate-300" />No laundry subscription for this customer.</div>
   )
@@ -715,10 +728,20 @@ function MembershipTab({ m }: { m: any }) {
         {m.kg && m.kg.total > 0 && <Bar label="KG remaining" used={m.kg.used} total={m.kg.total} tone="bg-violet-500" />}
         {m.orders?.max != null && <Bar label="Orders remaining (this cycle)" used={m.orders.used} total={m.orders.max} tone="bg-emerald-500" />}
       </div>
-      {m.outstandingDue > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 flex items-center justify-between">
-          <span className="text-xs font-medium text-amber-700">Outstanding due</span>
-          <span className="text-sm font-bold text-amber-800">{inr(m.outstandingDue)}</span>
+      {m.outstandingDue > 0 && m.pendingPurchaseId && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-amber-700">Outstanding due — collect to activate</span>
+            <span className="text-sm font-bold text-amber-800">{inr(m.outstandingDue)}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {["CASH", "UPI", "CARD"].map((mt) => (
+              <Button key={mt} size="sm" disabled={!!collecting} onClick={() => collect(mt)} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white">
+                {collecting === mt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : mt === "CASH" ? "Collect Cash" : mt === "UPI" ? "Collect UPI" : "Collect Card"}
+              </Button>
+            ))}
+          </div>
+          <button disabled className="w-full h-8 rounded-md border border-slate-200 bg-slate-50 text-xs font-medium text-slate-400 cursor-not-allowed">Pay Online (Razorpay) · Coming Soon</button>
         </div>
       )}
     </div>
