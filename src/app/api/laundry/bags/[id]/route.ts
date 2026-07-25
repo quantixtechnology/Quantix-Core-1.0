@@ -16,7 +16,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!bag) return NextResponse.json({ error: "Bag not found" }, { status: 404 })
     const guard = await requireLaundryPermission(request, bag.businessId, "laundry.orders.view")
     if (!guard.ok) return guard.res
-    return NextResponse.json({ success: true, data: bag })
+
+    // Full custody chain: every physical hand-off of this bag across its orders —
+    // assigned → picked up → received at store → dispatched → … — with the actor
+    // (sender/receiver) and timestamp on each, so ownership is auditable end to end.
+    const orderIds = [...new Set(bag.assignments.map((a) => a.orderId).filter(Boolean) as string[])]
+    const CUSTODY_ACTIONS = ["BAG_ASSIGNED", "PICKUP_COMPLETED", "RECEIVE_PICKUP_AT_STORE", "RECEIVE_EXCEPTION", "RECEIVE_REJECTED", "DISPATCH_TO_PROCESSING", "RECEIVE_AT_PROCESSING", "DISPATCH_TO_STORE", "RECEIVE_AT_STORE", "MARK_DELIVERED"]
+    const custody = orderIds.length
+      ? await prisma.laundryOrderEvent.findMany({
+          where: { orderId: { in: orderIds }, action: { in: CUSTODY_ACTIONS } },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, orderId: true, action: true, actorName: true, note: true, createdAt: true, fromStatus: true, toStatus: true },
+        })
+      : []
+    const orderNumberById = new Map(bag.assignments.map((a) => [a.orderId, a.orderNumber]))
+    return NextResponse.json({ success: true, data: { ...bag, custody: custody.map((e) => ({ ...e, orderNumber: orderNumberById.get(e.orderId) ?? null })) } })
   } catch (e) {
     console.error("[bag] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

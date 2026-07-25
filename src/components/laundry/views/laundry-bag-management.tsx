@@ -26,6 +26,19 @@ const STATUS_TONE: Record<string, string> = {
   CLEANING: "border-amber-300 text-amber-700 bg-amber-50",
 }
 const tone = (s: string) => STATUS_TONE[s] || "border-blue-300 text-blue-700 bg-blue-50"
+// Human labels for the bag's custody hand-offs (who held it, in order).
+const CUSTODY_LABEL: Record<string, string> = {
+  BAG_ASSIGNED: "Assigned to executive (pickup)",
+  PICKUP_COMPLETED: "Picked up from customer → in transit to store",
+  RECEIVE_PICKUP_AT_STORE: "Received at store",
+  RECEIVE_EXCEPTION: "Received at store (with exception)",
+  RECEIVE_REJECTED: "Receipt rejected — returned to executive",
+  DISPATCH_TO_PROCESSING: "Dispatched to processing center",
+  RECEIVE_AT_PROCESSING: "Received at processing center",
+  DISPATCH_TO_STORE: "Dispatched back to store",
+  RECEIVE_AT_STORE: "Received back at store",
+  MARK_DELIVERED: "Delivered to customer",
+}
 const FILTERS = ["ALL", "AVAILABLE", "COLLECTED", "RECEIVED_AT_STORE", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "DAMAGED", "LOST"] as const
 
 async function printBagLabels(bags: Bag[]) {
@@ -52,7 +65,8 @@ export function LaundryBagManagement() {
   const [genOpen, setGenOpen] = useState(false)
   const [genCount, setGenCount] = useState("50")
   const [busy, setBusy] = useState(false)
-  const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[] } | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[]; custody: any[] } | null>(null)
   const [releaseStage, setReleaseStage] = useState<string>("STORE_RECEIVE")
   const [savingStage, setSavingStage] = useState(false)
   const [manualReleaseTarget, setManualReleaseTarget] = useState<Bag | null>(null)
@@ -152,7 +166,7 @@ export function LaundryBagManagement() {
 
   const openDetail = async (bag: Bag) => {
     const j = await fetch(`/api/laundry/bags/${bag.id}`).then((r) => r.json())
-    if (j.success) setDetail({ bag: j.data, assignments: j.data.assignments || [] })
+    if (j.success) setDetail({ bag: j.data, assignments: j.data.assignments || [], custody: j.data.custody || [] })
   }
 
   const notAvailable = (s: string) => s !== "AVAILABLE" && s !== "DAMAGED" && s !== "LOST"
@@ -304,6 +318,23 @@ export function LaundryBagManagement() {
                   </div>
                 )}
               </div>
+              {detail.custody.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Custody Timeline</p>
+                  <div className="space-y-2 rounded-lg border border-slate-100 p-2.5">
+                    {detail.custody.map((e) => (
+                      <div key={e.id} className="flex gap-2 text-xs">
+                        <div className="mt-0.5 h-2 w-2 rounded-full bg-blue-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-slate-700 font-medium">{CUSTODY_LABEL[e.action] || e.action}</p>
+                          <p className="text-[11px] text-slate-400">{e.orderNumber ? `${e.orderNumber} · ` : ""}{e.actorName || "system"} · {new Date(e.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                          {e.note && <p className="text-[11px] text-slate-500 mt-0.5">{e.note}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
