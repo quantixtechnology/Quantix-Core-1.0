@@ -64,7 +64,8 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
   // Authenticated customer identity (reused from the shared Quantix session — no
   // laundry-specific login, no re-entering name/phone).
   const authCustomer = isAuthenticated && user ? { name: user.name, phone: user.phone || "", email: user.email || "" } : null
-  const [subSummary, setSubSummary] = useState<{ active: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; pending: { planName: string | null; due: number } | null } | null>(null)
+  const [subSummary, setSubSummary] = useState<{ active: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; pending: { planId: string; purchaseId: string; planName: string | null; due: number; createdAt: string } | null } | null>(null)
+  const [cancelingPending, setCancelingPending] = useState(false)
   const [services, setServices] = useState<Service[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
@@ -98,6 +99,18 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
 
   // Resolve THIS customer's subscription (active plan / pending due) from the
   // shared CustomerSubscription — same record used by walk-in + admin.
+  const cancelPending = async (purchaseId: string) => {
+    if (!currentBusinessId) return
+    setCancelingPending(true)
+    try {
+      const res = await fetch("/api/core/storefront/laundry-subscription/cancel", {
+        method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ businessId: currentBusinessId, purchaseId }),
+      })
+      const j = await res.json()
+      if (j.success) { toast.success("Subscription request cancelled"); refreshSummary() } else toast.error(j.error || "Could not cancel")
+    } catch { toast.error("Could not cancel") } finally { setCancelingPending(false) }
+  }
   const refreshSummary = useCallback(() => {
     if (!currentBusinessId || !authCustomer?.phone) { setSubSummary(null); return }
     fetch("/api/core/storefront/laundry-subscription/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, phone: authCustomer.phone }) })
@@ -187,11 +200,16 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
                 {plans.map((p) => {
                   const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
-                  const isPendingPlan = subSummary?.pending && subSummary.pending.planName === p.name
+                  const pendingForPlan = subSummary?.pending && subSummary.pending.planId === p.id ? subSummary.pending : null
                   const btn = isActivePlan ? (
                     <button onClick={() => nav.go("orders")} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50">✓ Active — View Plan</button>
-                  ) : isPendingPlan ? (
-                    <button onClick={() => setSubOnlyCheckout(p)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>Pay Now</button>
+                  ) : pendingForPlan ? (
+                    // One pending request per plan — Subscribe is replaced by Pay Now + Cancel.
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold text-amber-600 text-center leading-tight">Pending Payment · {inr(pendingForPlan.due)} due</p>
+                      <button onClick={() => setSubOnlyCheckout(p)} className="w-full rounded-lg h-8 text-xs font-semibold text-white active:opacity-80" style={accentBg}>Pay Now</button>
+                      <button onClick={() => cancelPending(pendingForPlan.purchaseId)} disabled={cancelingPending} className="w-full h-6 text-[11px] font-medium text-rose-600 disabled:opacity-50">Cancel Request</button>
+                    </div>
                   ) : subscriptionInCart?.id === p.id ? (
                     <button onClick={() => clearSubscription()} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
                   ) : (

@@ -185,14 +185,25 @@ export async function customerSubscriptionSummary(businessId: string, customerId
       cycleStart: activeSub.currentPeriodStart, cycleEnd: activeSub.currentPeriodEnd,
     } : null,
     pending: pending ? {
-      purchaseId: pending.id, planName: pendingPlanName, amount: pending.amount, amountPaid: pending.amountPaid,
-      due: Math.round((pending.amount - pending.amountPaid) * 100) / 100, status: "PAYMENT_PENDING",
+      purchaseId: pending.id, planId: pending.planId, planName: pendingPlanName, amount: pending.amount, amountPaid: pending.amountPaid,
+      due: Math.round((pending.amount - pending.amountPaid) * 100) / 100, status: "PAYMENT_PENDING", createdAt: pending.createdAt,
     } : null,
   }
 }
 
 export async function markPurchaseFailed(purchaseId: string, customerId: string) {
   return prisma.subscriptionPurchase.updateMany({ where: { id: purchaseId, customerId, status: { not: "ACTIVATED" } }, data: { status: "FAILED", paymentStatus: "FAILED" } })
+}
+
+// Customer cancels their own PENDING subscription request. Never touches an
+// activated purchase (a paid membership is cancelled through its own lifecycle).
+// Returns whether a pending row was actually cancelled so the caller can 404.
+export async function cancelSubscriptionPurchase(purchaseId: string, customerId: string) {
+  const r = await prisma.subscriptionPurchase.updateMany({
+    where: { id: purchaseId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING"] } },
+    data: { status: "CANCELLED", paymentStatus: "CANCELLED" },
+  })
+  return { ok: r.count > 0 }
 }
 
 export async function listSubscriptionPurchases(businessId: string, customerId: string) {
