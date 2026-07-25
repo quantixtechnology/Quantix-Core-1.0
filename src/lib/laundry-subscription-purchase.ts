@@ -48,8 +48,9 @@ export async function createSubscriptionPurchase({ businessId, customerId, planI
   const plan = await prisma.subscriptionPlan.findFirst({ where: { id: planId, businessId, isActive: true } })
   if (!plan) return { ok: false as const, error: "Plan not found" }
 
-  // Already actively subscribed to this plan? Don't double-charge.
-  const activeSub = await prisma.customerSubscription.findFirst({ where: { businessId, customerId, planId, status: "ACTIVE" } })
+  // Already subscribed to this plan (active OR in its grace window)? Never let a
+  // second membership be requested until the current one lapses.
+  const activeSub = await prisma.customerSubscription.findFirst({ where: { businessId, customerId, planId, status: { in: ["ACTIVE", "GRACE"] } } })
   if (activeSub) return { ok: false as const, error: "You already have an active subscription to this plan.", alreadyActive: true, subscriptionId: activeSub.id }
 
   // Reuse an existing open purchase for the same plan instead of stacking rows.
@@ -174,7 +175,7 @@ export async function applyPaymentToPurchase(purchaseId: string, amount: number)
 // plus any pending purchase due. Used by My Account + admin customer detail.
 export async function customerSubscriptionSummary(businessId: string, customerId: string) {
   const [activeSub, pending] = await Promise.all([
-    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: "ACTIVE" }, include: { plan: { select: { name: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
+    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
     prisma.subscriptionPurchase.findFirst({ where: { businessId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING"] } }, orderBy: { createdAt: "desc" } }),
   ])
   let pendingPlanName: string | null = null

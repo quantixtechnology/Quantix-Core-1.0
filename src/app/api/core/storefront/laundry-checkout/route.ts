@@ -126,6 +126,10 @@ export async function POST(request: Request) {
     if (subscriptionPlanId) {
       const res = await createSubscriptionPurchase({ businessId: platformId, customerId: customerRow.id, planId: subscriptionPlanId, laundryOrderId: order?.id })
       if (!res.ok) {
+        // Already an active/grace membership for this plan. For a subscription-only
+        // request that is the whole intent → REJECT (don't pretend it succeeded).
+        // For a mixed cart (has garments) → keep the order, just skip the add-on.
+        if (res.alreadyActive && !hasItems) return NextResponse.json({ success: false, error: res.error, alreadyActive: true }, { status: 409 })
         if (res.alreadyActive) subscription = null
         else return NextResponse.json({ success: false, error: res.error }, { status: 400 })
       } else {
