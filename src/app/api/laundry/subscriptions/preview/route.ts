@@ -10,7 +10,8 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType } from "@/lib/laundry-billing-server"
 import { explodePieces } from "@/lib/laundry-order-items"
-import { computeCoverage, type SubForCoverage, type CoverLine, type AllowanceMode } from "@/lib/laundry-subscription-consumption"
+import { computeCoverage, type SubForCoverage, type CoverLine } from "@/lib/laundry-subscription-consumption"
+import { subscriptionCoverageRules } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -28,7 +29,6 @@ export async function POST(request: Request) {
     const subs = customerId ? await prisma.customerSubscription.findMany({
       where: { businessId: platformId, customerId, status: { in: ["ACTIVE", "GRACE"] } },
       orderBy: { createdAt: "asc" },
-      include: { plan: { select: { coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } } },
     }) : []
 
     // Price the draft lines with the frozen engine (regular price).
@@ -41,7 +41,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: { covered: false, coveredAmount: 0, extraAmount: r2(lineInputs.reduce((n, l) => n + l.lineAmount, 0)), lines: lineInputs.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, lineAmount: l.lineAmount, coveredAmount: 0, extraAmount: l.lineAmount, status: "REGULAR" })) } })
     }
 
-    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: s.plan.coverageRules.map((r) => ({ serviceId: r.serviceId, garmentId: r.garmentId, mode: (r.allowanceMode === "PER_KG" ? "PER_KG" : "PER_PIECE") as AllowanceMode })) }))
+    // Eligibility from the Pricing Matrix (single source), same as apply.
+    const matrixRules = await subscriptionCoverageRules(biz.id)
+    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: matrixRules }))
     const result = computeCoverage(subInputs, lineInputs)
 
     const lines = result.lines.map((lc, i) => ({

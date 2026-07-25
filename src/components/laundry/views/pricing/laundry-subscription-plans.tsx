@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, Plus, Pencil, Repeat, Weight, Package, RefreshCw } from "lucide-react"
+import { Loader2, Plus, Pencil, Repeat, Weight, Package, RefreshCw, Info } from "lucide-react"
 import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
@@ -84,23 +84,6 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
   }
 
   // Cycle a garment's coverage: off → Per Piece → Per KG → off.
-  const cycleMode = (serviceId: string, key: string) => setCover((c) => {
-    const svc = { ...(c[serviceId] || {}) }
-    const cur = svc[key]
-    if (!cur) svc[key] = "PER_PIECE"
-    else if (cur === "PER_PIECE") svc[key] = "PER_KG"
-    else delete svc[key]
-    const next = { ...c, [serviceId]: svc }
-    if (Object.keys(svc).length === 0) delete next[serviceId]
-    return next
-  })
-  const modeBadge = (m?: Mode) => m === "PER_KG" ? "Per KG" : m === "PER_PIECE" ? "Per Piece" : "—"
-
-  const rulesFromCover = (): CoverageRule[] => {
-    const out: CoverageRule[] = []
-    for (const [serviceId, gm] of Object.entries(cover)) for (const [key, mode] of Object.entries(gm)) out.push({ serviceId, garmentId: key === ALL ? null : key, allowanceMode: mode })
-    return out
-  }
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Plan name is required"); return }
@@ -113,7 +96,7 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
         totalCredits: form.totalCredits || 0, maxOrdersPerCycle: form.maxOrdersPerCycle,
         allowanceKg: form.allowanceKg === "" ? null : form.allowanceKg, allowancePieces: form.allowancePieces === "" ? null : form.allowancePieces,
         autoRenew: form.autoRenew, graceDays: form.graceDays, isActive: form.isActive, image: form.image || null,
-        coverageRules: rulesFromCover(),
+        // Eligibility now comes from the Pricing Matrix — a plan no longer stores garment rules.
       }
       const res = await fetch(editing ? `/api/laundry/plans/${editing.id}` : `/api/laundry/plans`, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
@@ -155,7 +138,7 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
                 {p.autoRenew ? <span className="inline-flex items-center gap-1 rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5"><RefreshCw className="h-3 w-3" /> Auto-renew</span> : null}
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-slate-400">{p._count?.subscriptions ?? 0} subscriber{(p._count?.subscriptions ?? 0) === 1 ? "" : "s"} · {p.coverageRules?.length ?? 0} eligibility rule{(p.coverageRules?.length ?? 0) === 1 ? "" : "s"}</span>
+                <span className="text-xs text-slate-400">{p._count?.subscriptions ?? 0} subscriber{(p._count?.subscriptions ?? 0) === 1 ? "" : "s"} · eligibility via Pricing Matrix</span>
                 <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
               </div>
             </CardContent></Card>
@@ -199,35 +182,10 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
               <div className="space-y-1.5"><Label className="text-xs">Cloth Allowance (legacy)</Label><Input type="number" value={form.totalCredits} onChange={(e) => set("totalCredits", e.target.value)} placeholder="0" /></div>
             </div>
 
-            {/* Service + Garment eligibility with per-garment mode (Parts 3/4/5) */}
-            <div className="rounded-lg border p-3 space-y-2">
-              <Label className="text-xs font-semibold">Service &amp; Garment Eligibility</Label>
-              <p className="text-[10px] text-slate-400 -mt-1">Tap a garment to cycle Off → Per Piece → Per KG. Use “All garments” to cover a whole service.</p>
-              {services.length === 0 ? <p className="text-xs text-slate-400 py-2">No services configured yet.</p> : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {services.map((s) => {
-                    const svcCover = cover[s.id] || {}
-                    const chip = (key: string, label: string) => {
-                      const m = svcCover[key]
-                      return (
-                        <button key={key} type="button" onClick={() => cycleMode(s.id, key)}
-                          className={`rounded-md border px-2 h-7 text-xs font-medium transition-colors ${m === "PER_KG" ? "border-blue-500 bg-blue-50 text-blue-700" : m === "PER_PIECE" ? "border-violet-400 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                          {label}{m ? ` · ${modeBadge(m)}` : ""}
-                        </button>
-                      )
-                    }
-                    return (
-                      <div key={s.id} className="rounded-md bg-slate-50 border border-slate-100 p-2 space-y-1.5">
-                        <p className="text-xs font-medium text-slate-700">{s.name}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {chip(ALL, "All garments")}
-                          {garments.map((g) => chip(g.id, g.name))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+            {/* Garment eligibility is owned by the Pricing Matrix — not configured here. */}
+            <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3 flex items-start gap-2">
+              <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-blue-700 leading-snug">Garment eligibility (included / excluded, per-piece or per-KG) is defined once in the <span className="font-semibold">Pricing Matrix</span> — any garment marked <span className="font-semibold">Subscription Eligible</span> is automatically covered by every plan. A plan defines only the commercial terms above (price, allowance, cycle, limits).</p>
             </div>
 
             <div className="flex items-center gap-2"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium">{form.isActive ? "Active" : "Inactive"}</span></div>

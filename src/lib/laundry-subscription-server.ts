@@ -41,6 +41,26 @@ export async function grantAllowance(tx: Tx, sub: { id: string; businessId: stri
   return { kg, pieces }
 }
 
+// Subscription eligibility is defined ONCE in the Pricing Matrix, never per plan.
+// A garment is covered when LaundryGarment.subscriptionIncluded = true; its
+// PER_KG / PER_PIECE mode comes from the garment×service pricing rule. Returns the
+// coverage rules in the exact shape computeCoverage consumes. Keyed by the
+// LaundryBusiness id (garments + pricing rules live there).
+export async function subscriptionCoverageRules(laundryBusinessId: string): Promise<{ serviceId: string; garmentId: string | null; mode: AllowanceMode }[]> {
+  const eligible = await prisma.laundryGarment.findMany({ where: { businessId: laundryBusinessId, subscriptionIncluded: true }, select: { id: true } })
+  if (eligible.length === 0) return []
+  const gIds = eligible.map((g) => g.id)
+  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, garmentId: { in: gIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
+  const seen = new Set<string>()
+  const out: { serviceId: string; garmentId: string | null; mode: AllowanceMode }[] = []
+  for (const r of rules) {
+    if (!r.serviceId || !r.garmentId || seen.has(`${r.serviceId}|${r.garmentId}`)) continue
+    seen.add(`${r.serviceId}|${r.garmentId}`)
+    out.push({ serviceId: r.serviceId, garmentId: r.garmentId, mode: r.pricingType === "PER_KG" ? "PER_KG" : "PER_PIECE" })
+  }
+  return out
+}
+
 export interface ApplyResult {
   ok: boolean
   error?: string
@@ -86,13 +106,14 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
   const subs = await prisma.customerSubscription.findMany({
     where: { businessId: platformId, customerId: order.customerId, status: { in: ["ACTIVE", "GRACE"] } },
     orderBy: { createdAt: "asc" },
-    include: { plan: { select: { coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } } },
   })
   if (subs.length === 0) return fullExtra
 
+  // Coverage eligibility comes from the Pricing Matrix (single source), applied to
+  // EVERY active subscription — plans define allowance/limits, not garment lists.
+  const matrixRules = await subscriptionCoverageRules(order.businessId)
   const subInputs: SubForCoverage[] = subs.map((s) => ({
-    id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces,
-    rules: s.plan.coverageRules.map((r) => ({ serviceId: r.serviceId, garmentId: r.garmentId, mode: (r.allowanceMode === "PER_KG" ? "PER_KG" : "PER_PIECE") as AllowanceMode })),
+    id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: matrixRules,
   }))
   const lines: CoverLine[] = order.items.map((i) => ({
     itemId: i.id, serviceId: i.serviceId, garmentId: i.garmentId, quantity: i.quantity || 1,
