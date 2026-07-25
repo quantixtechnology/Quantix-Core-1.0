@@ -15,6 +15,7 @@
 import { prisma } from "@/lib/prisma"
 import { createHmac } from "crypto"
 import { grantAllowance } from "@/lib/laundry-subscription-server"
+import { generateMembershipNumber } from "@/lib/laundry-codes"
 
 export function cycleEnd(cycle: string, from: Date): Date {
   const d = new Date(from)
@@ -100,13 +101,14 @@ export async function confirmSubscriptionPurchase({ purchaseId, customerId, paym
   // Verified → mark paid, then activate the subscription (transaction-safe).
   const start = new Date()
   const end = cycleEnd(plan.billingCycle, start)
+  const membershipId = await generateMembershipNumber()
   const result = await prisma.$transaction(async (tx) => {
     // Reuse an existing active subscription if present.
     let sub = await tx.customerSubscription.findFirst({ where: { businessId: purchase.businessId, customerId, planId: plan.id, status: "ACTIVE" } })
     if (!sub) {
       sub = await tx.customerSubscription.create({
         data: {
-          businessId: purchase.businessId, customerId, planId: plan.id, status: "ACTIVE",
+          businessId: purchase.businessId, customerId, planId: plan.id, status: "ACTIVE", membershipId,
           currentPeriodStart: start, currentPeriodEnd: end, nextBillingDate: end,
           totalCredits: plan.totalCredits, usedCredits: 0, remainingCredits: plan.totalCredits,
           lastPaymentAmount: purchase.amount, lastPaymentAt: start,
@@ -149,11 +151,12 @@ export async function applyPaymentToPurchase(purchaseId: string, amount: number)
   if (!plan) return { applied, activated: false, error: "Plan not found" }
   const start = new Date()
   const end = cycleEnd(plan.billingCycle, start)
+  const membershipId = await generateMembershipNumber()
   const sub = await prisma.$transaction(async (tx) => {
     let s = await tx.customerSubscription.findFirst({ where: { businessId: purchase.businessId, customerId: purchase.customerId, planId: plan.id, status: "ACTIVE" } })
     if (!s) {
       s = await tx.customerSubscription.create({
-        data: { businessId: purchase.businessId, customerId: purchase.customerId, planId: plan.id, status: "ACTIVE",
+        data: { businessId: purchase.businessId, customerId: purchase.customerId, planId: plan.id, status: "ACTIVE", membershipId,
           currentPeriodStart: start, currentPeriodEnd: end, nextBillingDate: end,
           totalCredits: plan.totalCredits, usedCredits: 0, remainingCredits: plan.totalCredits,
           lastPaymentAmount: purchase.amount, lastPaymentAt: start },
@@ -188,6 +191,47 @@ export async function customerSubscriptionSummary(businessId: string, customerId
       purchaseId: pending.id, planId: pending.planId, planName: pendingPlanName, amount: pending.amount, amountPaid: pending.amountPaid,
       due: Math.round((pending.amount - pending.amountPaid) * 100) / 100, status: "PAYMENT_PENDING", createdAt: pending.createdAt,
     } : null,
+  }
+}
+
+// Full membership picture for a customer — the Membership Hub (admin Customer
+// detail, Store POS walk-in lookup, website/PWA). Merges the active/grace
+// subscription with any pending purchase (outstanding due). businessId = platform
+// Business id (subscriptions are keyed there).
+export async function customerMembership(platformBusinessId: string, customerId: string) {
+  const sub = await prisma.customerSubscription.findFirst({
+    where: { businessId: platformBusinessId, customerId, status: { in: ["ACTIVE", "GRACE"] } },
+    orderBy: { createdAt: "desc" },
+    include: { plan: { select: { name: true, price: true, billingCycle: true, maxOrdersPerCycle: true } }, usages: { select: { id: true } } },
+  })
+  const pending = await prisma.subscriptionPurchase.findFirst({
+    where: { businessId: platformBusinessId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING", "PROCESSING"] } },
+    orderBy: { createdAt: "desc" },
+  })
+  let pendingPlanName: string | null = null
+  if (pending) pendingPlanName = (await prisma.subscriptionPlan.findUnique({ where: { id: pending.planId }, select: { name: true } }))?.name || null
+  if (!sub && !pending) return { hasMembership: false as const }
+
+  const garmentsTotal = sub ? (sub.allowancePieces > 0 ? sub.allowancePieces : sub.totalCredits) : 0
+  const garmentsRemaining = sub ? (sub.allowancePieces > 0 ? sub.remainingPieces : sub.remainingCredits) : 0
+  const ordersMax = sub?.plan.maxOrdersPerCycle ?? null
+  const ordersUsed = sub?.usages.length ?? 0
+  return {
+    hasMembership: true as const,
+    membershipId: sub?.membershipId ?? null,
+    status: sub ? (sub.status as string) : "PENDING_PAYMENT", // ACTIVE | GRACE | PENDING_PAYMENT
+    planName: sub?.plan.name ?? pendingPlanName,
+    price: sub?.plan.price ?? pending?.amount ?? 0,
+    billingCycle: sub?.plan.billingCycle ?? null,
+    startDate: sub?.currentPeriodStart ?? null,
+    endDate: sub?.currentPeriodEnd ?? null,
+    renewalDate: sub?.nextBillingDate ?? null,
+    graceEndsAt: sub?.graceEndsAt ?? null,
+    garments: { total: garmentsTotal, used: Math.max(0, garmentsTotal - garmentsRemaining), remaining: garmentsRemaining },
+    kg: sub && sub.allowanceKg > 0 ? { total: sub.allowanceKg, used: sub.usedKg, remaining: sub.remainingKg } : null,
+    orders: { max: ordersMax, used: ordersUsed, remaining: ordersMax != null ? Math.max(0, ordersMax - ordersUsed) : null },
+    outstandingDue: pending ? Math.round((pending.amount - pending.amountPaid) * 100) / 100 : 0,
+    pendingPurchaseId: pending?.id ?? null,
   }
 }
 

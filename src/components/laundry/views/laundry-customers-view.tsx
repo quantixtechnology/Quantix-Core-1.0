@@ -63,12 +63,14 @@ export function LaundryCustomersView() {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [custSub, setCustSub] = useState<{ planName: string; status: string; remainingKg: number; remainingPieces: number; allowanceKg: number | null; allowancePieces: number | null; expiry: string; renewalDate: string; autoRenew: boolean } | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [membership, setMembership] = useState<any>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [savingEdit, setSavingEdit] = useState(false)
   const [timeline, setTimeline] = useState<TL[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
-  const [tab, setTab] = useState<"overview" | "addresses" | "dispatch-history" | "timeline" | "notes">("overview")
+  const [tab, setTab] = useState<"overview" | "membership" | "addresses" | "dispatch-history" | "timeline" | "notes">("overview")
   const [dispatchStatus, setDispatchStatus] = useState<any[]>([])
   const [scheduling, setScheduling] = useState(false)
   const [scheduleForm, setScheduleForm] = useState({ address: "", date: "", timeSlot: "", notes: "", assignNow: false, executiveId: "" })
@@ -132,7 +134,9 @@ export function LaundryCustomersView() {
   useEffect(() => { load() }, [load])
 
   const openCustomer = async (id: string, edit: boolean) => {
-    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true); setScheduling(false); setDispatchStatus([])
+    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setMembership(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true); setScheduling(false); setDispatchStatus([])
+    fetch(`/api/laundry/customers/${id}/membership?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => setMembership(j.success ? j.data : null)).catch(() => setMembership(null))
     // Active/GRACE subscription (Part 8) — detected, never assumed.
     fetch(`/api/laundry/subscriptions/active?businessId=${currentBusinessId}&customerId=${id}`).then((r) => r.json())
       .then((j) => setCustSub(j.success && j.data.length ? j.data[0] : null)).catch(() => setCustSub(null))
@@ -492,8 +496,8 @@ export function LaundryCustomersView() {
 
               {/* Tabs */}
               <div className="flex gap-1 border-b border-slate-100">
-                {(["overview", "addresses", "dispatch-history", "timeline", "notes"] as const).map((t) => (
-                  <button key={t} onClick={() => { setTab(t); if (t === "dispatch-history") loadDispatchHistory() }} className={`px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t === "dispatch-history" ? "Dispatch" : t}</button>
+                {(["overview", "membership", "addresses", "dispatch-history", "timeline", "notes"] as const).map((t) => (
+                  <button key={t} onClick={() => { setTab(t); if (t === "dispatch-history") loadDispatchHistory() }} className={`relative px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t === "dispatch-history" ? "Dispatch" : t}{t === "membership" && membership?.hasMembership && <span className={`ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle ${membership.status === "ACTIVE" ? "bg-emerald-500" : membership.status === "PENDING_PAYMENT" ? "bg-amber-500" : "bg-slate-300"}`} />}</button>
                 ))}
               </div>
 
@@ -523,6 +527,8 @@ export function LaundryCustomersView() {
                 )}
                 {detail.notes && <div><p className="text-xs text-slate-400">Profile note</p><p className="text-slate-600 text-xs">{detail.notes}</p></div>}
               </div>}
+
+              {tab === "membership" && <MembershipTab m={membership} />}
 
               {tab === "addresses" && <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -661,6 +667,60 @@ export function LaundryCustomersView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// Membership Hub — the customer's full laundry subscription at a glance.
+const mFmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
+const M_STATUS: Record<string, { label: string; cls: string }> = {
+  ACTIVE: { label: "Active", cls: "border-emerald-300 text-emerald-700 bg-emerald-50" },
+  GRACE: { label: "In Grace", cls: "border-amber-300 text-amber-700 bg-amber-50" },
+  PENDING_PAYMENT: { label: "Pending Payment", cls: "border-amber-300 text-amber-700 bg-amber-50" },
+  EXPIRED: { label: "Expired", cls: "border-rose-300 text-rose-700 bg-rose-50" },
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MembershipTab({ m }: { m: any }) {
+  if (!m || !m.hasMembership) return (
+    <div className="py-10 text-center text-sm text-slate-400"><Repeat className="h-6 w-6 mx-auto mb-2 text-slate-300" />No laundry subscription for this customer.</div>
+  )
+  const st = M_STATUS[m.status] || M_STATUS.EXPIRED
+  const Bar = ({ label, used, total, tone }: { label: string; used: number; total: number; tone: string }) => {
+    const pct = total > 0 ? Math.min(100, Math.round(((total - used) / total) * 100)) : 0
+    return (
+      <div className="rounded-lg border border-slate-100 p-2.5">
+        <div className="flex items-center justify-between text-xs"><span className="text-slate-500">{label}</span><span className="font-semibold text-slate-800">{Math.max(0, total - used)} / {total}</span></div>
+        <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className={`h-full ${tone}`} style={{ width: `${pct}%` }} /></div>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><Repeat className="h-4 w-4 text-blue-600" /> {m.planName || "Subscription"}</p>
+            <p className="mt-0.5 font-mono text-xs text-slate-500">{m.membershipId || "—"}</p>
+          </div>
+          <Badge variant="outline" className={`text-[10px] ${st.cls}`}>{st.label}</Badge>
+        </div>
+        <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
+          <div><p className="text-[10px] text-slate-400">Start</p><p className="font-medium text-slate-700">{mFmt(m.startDate)}</p></div>
+          <div><p className="text-[10px] text-slate-400">Valid Until</p><p className="font-medium text-slate-700">{mFmt(m.endDate)}</p></div>
+          <div><p className="text-[10px] text-slate-400">Renewal</p><p className="font-medium text-slate-700">{mFmt(m.renewalDate)}</p></div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {m.garments?.total > 0 && <Bar label="Garments remaining" used={m.garments.used} total={m.garments.total} tone="bg-blue-500" />}
+        {m.kg && m.kg.total > 0 && <Bar label="KG remaining" used={m.kg.used} total={m.kg.total} tone="bg-violet-500" />}
+        {m.orders?.max != null && <Bar label="Orders remaining (this cycle)" used={m.orders.used} total={m.orders.max} tone="bg-emerald-500" />}
+      </div>
+      {m.outstandingDue > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 flex items-center justify-between">
+          <span className="text-xs font-medium text-amber-700">Outstanding due</span>
+          <span className="text-sm font-bold text-amber-800">{inr(m.outstandingDue)}</span>
+        </div>
+      )}
     </div>
   )
 }

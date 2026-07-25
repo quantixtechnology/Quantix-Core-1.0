@@ -141,6 +141,8 @@ async function monthScoped(prefixCode: string, model: string, field: string): Pr
   return `${prefix}${padNumber(next, 6)}`
 }
 export const generateInvoiceNumber = () => monthScoped(CODES.INVOICE_PREFIX, "laundryInvoice", "invoiceNumber")
+// Membership ID — the permanent member identifier + QR payload. SUB-LND-YYYYMM-NNNNNN.
+export const generateMembershipNumber = () => monthScoped("SUB", "customerSubscription", "membershipId")
 export const generateReceiptNumber = () => monthScoped(CODES.RECEIPT_PREFIX, "laundryPayment", "receiptNumber")
 export const generatePaymentNumber = () => monthScoped(CODES.PAYMENT_PREFIX, "laundryPayment", "paymentNumber")
 

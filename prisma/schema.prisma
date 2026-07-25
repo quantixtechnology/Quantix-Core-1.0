@@ -1773,6 +1773,7 @@ model CustomerSubscription {
   businessId         String
   customerId         String
   planId             String
+  membershipId       String?                    @unique // SUB-LND-YYYYMM-NNNNNN — permanent member identifier + QR payload
   status             CustomerSubscriptionStatus @default(ACTIVE)
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
