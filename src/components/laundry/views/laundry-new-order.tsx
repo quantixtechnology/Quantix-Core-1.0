@@ -39,14 +39,19 @@ const ORDER_TYPES = [
   { value: "SUBSCRIPTION", label: "Subscription Customer" },
 ]
 
-const PAYMENT_PREFERENCES = [
-  { value: "FULL_ADVANCE", label: "Full Advance" },
-  { value: "PARTIAL_ADVANCE", label: "Partial Advance" },
-  { value: "COD", label: "COD" },
-  { value: "SUBSCRIPTION_BILLING", label: "Subscription Billing" },
-  { value: "WALLET", label: "Wallet" },
-  { value: "CORPORATE_BILLING", label: "Corporate Billing" },
+// Customer Type = WHEN payment is collected (a preference only — collection itself
+// stays at the existing post-audit step, the amount is finalised at Store Audit).
+// Maps to the existing paymentPreference label; drives no workflow/pricing.
+//   Subscription     → subscription applied automatically, only extras charged
+//   Pay Now          → full amount collected at Store Audit once the bill is final
+//   Pay After Service→ collected before delivery (trusted / corporate)
+type PayType = "SUBSCRIPTION" | "PAY_NOW" | "PAY_AFTER"
+const PAY_TYPES: { value: PayType; label: string; hint: string }[] = [
+  { value: "SUBSCRIPTION", label: "Subscription", hint: "Subscription applied automatically — only extra garments/services are charged." },
+  { value: "PAY_NOW", label: "Pay Now", hint: "Full payment collected at Store Audit once the final bill is ready." },
+  { value: "PAY_AFTER", label: "Pay After Service", hint: "Payment collected before delivery." },
 ]
+const payTypeToPreference = (t: PayType) => (t === "SUBSCRIPTION" ? "SUBSCRIPTION_BILLING" : t === "PAY_AFTER" ? "COD" : "FULL_ADVANCE")
 
 // Laundry Instructions — standard handling options that travel with the order
 // through every stage (stored in the SAME specialInstructions field, no backend
@@ -58,7 +63,7 @@ interface AddressRow { id?: string; addressType?: string; label?: string | null;
 interface CustomerResult {
   id: string; name: string; phone: string | null; email: string | null
   loyaltyTier: string; walletBalance: number; customerCode: string | null
-  totalOrders: number; addresses: AddressRow[]
+  totalOrders: number; addresses: AddressRow[]; accountType?: string | null
 }
 
 // Customer 360 — read-only lifecycle summary from /api/laundry/customers/[id]/stats.
@@ -140,7 +145,8 @@ export default function LaundryNewOrder() {
   const [pickupInstructions, setPickupInstructions] = useState("")
   const [savedAddresses, setSavedAddresses] = useState<AddressRow[]>([])
   const [addressesLoading, setAddressesLoading] = useState(false)
-  const [paymentPreference, setPaymentPreference] = useState("COD")
+  const [payType, setPayType] = useState<PayType>("PAY_NOW")
+  const [payTypeTouched, setPayTypeTouched] = useState(false)
   const [quickNotes, setQuickNotes] = useState<string[]>(["Separate Whites"])
   const [otherInstructions, setOtherInstructions] = useState("")
   const [attachments, setAttachments] = useState<{ url: string; kind: string }[]>([])
@@ -249,6 +255,16 @@ export default function LaundryNewOrder() {
       .then((j) => { if (!cancel) setSubInfo(j.success && j.data.length ? j.data[0] : null) }).catch(() => { if (!cancel) setSubInfo(null) })
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
+  // Auto-pick the payment preference from the customer (operator can still change
+  // it): active subscription → Subscription; Corporate account → Pay After Service;
+  // otherwise Pay Now. Never overrides a manual choice for the current customer.
+  useEffect(() => { setPayTypeTouched(false) }, [selectedCustomer])
+  useEffect(() => {
+    if (payTypeTouched) return
+    if (subInfo) setPayType("SUBSCRIPTION")
+    else if ((selectedCustomer?.accountType || "").toUpperCase() === "CORPORATE") setPayType("PAY_AFTER")
+    else setPayType("PAY_NOW")
+  }, [subInfo, selectedCustomer, payTypeTouched])
   // Customer 360 lifecycle summary (read-only) for the selected customer.
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null)
   const [lcLoading, setLcLoading] = useState(false)
@@ -451,7 +467,7 @@ export default function LaundryNewOrder() {
         isExpress: express || quickNotes.includes("Express Service"),
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
-        paymentPreference,
+        paymentPreference: payTypeToPreference(payType),
         pickupRequired: !isPickup ? pickupRequired : undefined,
         deliveryRequired,
         pickupDate: showPickupFields ? pickupDate : null, pickupTimeSlot: showPickupFields ? pickupTimeSlot : null,
@@ -926,14 +942,20 @@ export default function LaundryNewOrder() {
             </Card>
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={CreditCard} title="Payment Preference" />
+              <CardHead icon={CreditCard} title="Customer Type" />
               <CardContent className="px-5 pb-5 pt-0">
-                <RadioGroup value={paymentPreference} onValueChange={setPaymentPreference} className="space-y-2.5">
-                  {PAYMENT_PREFERENCES.map((p) => (
-                    <div key={p.value} className="flex items-center space-x-2"><RadioGroupItem value={p.value} id={`pp-${p.value}`} className="text-blue-600" /><Label htmlFor={`pp-${p.value}`} className="text-sm cursor-pointer">{p.label}</Label></div>
-                  ))}
+                <RadioGroup value={payType} onValueChange={(v) => { setPayType(v as PayType); setPayTypeTouched(true) }} className="space-y-2">
+                  {PAY_TYPES.map((p) => {
+                    const disabled = p.value === "SUBSCRIPTION" && !subInfo
+                    return (
+                      <label key={p.value} htmlFor={`ct-${p.value}`} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"} ${payType === p.value ? "border-blue-500 bg-blue-50/50" : "border-slate-200"}`}>
+                        <RadioGroupItem value={p.value} id={`ct-${p.value}`} disabled={disabled} className="text-blue-600 mt-0.5" />
+                        <span className="min-w-0"><span className="text-sm font-medium text-slate-800 block">{p.label}{p.value === "SUBSCRIPTION" && subInfo ? ` · ${subInfo.planName}` : ""}</span><span className="text-[11px] text-slate-500 leading-snug">{disabled ? "No active subscription for this customer." : p.hint}</span></span>
+                      </label>
+                    )
+                  })}
                 </RadioGroup>
-                <p className="mt-4 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2.5 text-[11px] text-amber-700 text-center leading-snug">Note: Payment will be<br />collected after Store Audit</p>
+                <p className="mt-3 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] text-amber-700 text-center leading-snug">Amount is finalised at Store Audit — payment collected there (or before delivery for Pay After Service).</p>
               </CardContent>
             </Card>
 
@@ -992,7 +1014,7 @@ export default function LaundryNewOrder() {
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Est. Delivery</p><p className="font-semibold text-slate-800">{expectedDelivery ? fmtDateTime(expectedDelivery) : "—"}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{isPickup || pickupRequired ? (pickupDate || "Required") : "Not Required"}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Delivery</p><p className="font-semibold text-slate-800">{deliveryRequired ? (deliveryDate || "Required") : "Not Required"}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Payment Pref.</p><p className="font-semibold text-slate-800">{PAYMENT_PREFERENCES.find((p) => p.value === paymentPreference)?.label}</p></div>
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Customer Type</p><p className="font-semibold text-slate-800">{PAY_TYPES.find((p) => p.value === payType)?.label}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Order Status</p><Badge variant="outline" className="mt-1 border-amber-300 text-amber-700 bg-amber-50">Pending Store Audit</Badge></div>
           </CardContent>
         </Card>

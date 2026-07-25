@@ -49,6 +49,7 @@ export async function GET(request: Request) {
         walletBalance: true,
         customerCode: true,
         totalOrders: true,
+        accountType: true, // RETAIL | CORPORATE — drives the New Order payment preference default
       },
       take: limit,
       orderBy: { name: "asc" },
