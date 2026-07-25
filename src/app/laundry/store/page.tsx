@@ -647,9 +647,10 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   const [bag, setBag] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  const scopeQs = `businessId=${encodeURIComponent(staff.businessId)}&storeId=${encodeURIComponent(staff.storeId)}`
   // Chain of custody: preview the bag → the RECEIVER confirms (with condition).
   const previewBag = async (c: string) => {
-    const j = await api("/api/laundry/bags/receive-at-store", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, storeId: staff.storeId, code: c, actorName: staff.name }) })
+    const j = await api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, actorName: staff.name }) })
     if (j.success && j.preview) { setBag({ ...j.data, code: c }); setGarment(null); return true }
     if (j.success && j.alreadyReceived) { setMsg({ ok: true, text: j.message }); return true }
     if (!j.success && j.error && !/No bag found/i.test(j.error)) { setMsg({ ok: false, text: j.error }); return true } // real validation error (wrong store etc.)
@@ -659,7 +660,7 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
     if (!bag?.code) return
     setBusy(true)
     try {
-      const j = await api("/api/laundry/bags/receive-at-store", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, storeId: staff.storeId, code: bag.code, confirm: true, condition, actorName: staff.name }) })
+      const j = await api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: bag.code, confirm: true, condition, actorName: staff.name }) })
       if (!j.success) { setMsg({ ok: false, text: j.error || "Receive failed" }); return }
       if (j.rejected) { setMsg({ ok: false, text: j.message || "Receipt rejected — returned to executive." }); setBag(null); return }
       setMsg({ ok: true, text: `Received ${j.data.bag} · ${j.data.orderNumber} → Store Audit${j.exception ? " (exception recorded)" : ""}` })

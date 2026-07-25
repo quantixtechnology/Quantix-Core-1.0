@@ -18,8 +18,7 @@
 // on the order timeline; the customer is notified.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { requireStoreAdmin, resolveStoreScope } from "@/lib/laundry-store-admin-auth"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
@@ -34,14 +33,18 @@ const RECEIVABLE = new Set(["IN_TRANSIT_TO_STORE", "AWAITING_PICKUP_ASSIGNMENT"]
 
 export async function POST(request: Request) {
   try {
-    const b = (await request.json().catch(() => ({}))) as { businessId?: string; code?: string; confirm?: boolean; condition?: string; note?: string; actorName?: string; storeId?: string }
+    const b = (await request.json().catch(() => ({}))) as { code?: string; confirm?: boolean; condition?: string; note?: string; actorName?: string }
     const code = String(b.code || "").trim()
-    if (!b.businessId || !code) return NextResponse.json({ success: false, error: "businessId and code are required" }, { status: 400 })
-    const guard = await requireLaundryPermission(request, b.businessId, "laundry.orders.create")
+    // Store-admin auth (same as every Store PWA endpoint): store staff resolve via
+    // their LaundryAccessAssignment, a Super Admin via ?businessId&storeId. Returns
+    // 401 for an unauthenticated caller BEFORE any business lookup.
+    const guard = await requireStoreAdmin(request)
     if (!guard.ok) return guard.res
-    const biz = await resolveLaundryBusiness(b.businessId)
-    if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
-    const lbId = biz.id
+    const scope = await resolveStoreScope(guard.session, request)
+    if (!scope) return NextResponse.json({ success: false, error: "Select a store" }, { status: 400 })
+    if (!code) return NextResponse.json({ success: false, error: "code is required" }, { status: 400 })
+    const lbId = scope.businessId
+    const receiverStoreId = scope.storeId
 
     // ── Resolve the bag (reusable first, then pickup bag) ─────────────────────
     const reusable = await prisma.laundryBag.findFirst({ where: { businessId: lbId, OR: [{ bagNumber: code }, { qrValue: code }] } })
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
     if (order.status === "CANCELLED" || order.status === "DELIVERED") {
       return NextResponse.json({ success: false, error: `Order ${order.orderNumber} is ${order.status.toLowerCase()} — this bag cannot be received.` }, { status: 409 })
     }
-    if (b.storeId && order.storeId && b.storeId !== order.storeId) {
+    if (receiverStoreId && order.storeId && receiverStoreId !== order.storeId) {
       const home = await prisma.laundryStore.findUnique({ where: { id: order.storeId }, select: { storeName: true } })
       return NextResponse.json({ success: false, error: `Wrong store — bag ${bagNumber} belongs to ${home?.storeName || "another store"}.` }, { status: 409 })
     }
