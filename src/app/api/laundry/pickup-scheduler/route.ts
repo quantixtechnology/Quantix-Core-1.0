@@ -14,6 +14,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { LaundryOrderStatus } from "@prisma/client"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
+import { PICKUP_QUEUE_STATUSES, dispatchBucketOf } from "@/lib/laundry-dispatch"
 
 export const runtime = "nodejs"
 
@@ -104,9 +105,15 @@ export async function GET(request: Request) {
     const debug = sp.get("_debug") === "1"
     // Optional store scope (Store Admin PWA passes its own storeId → isolation).
     const storeScope = sp.get("storeId") ? { storeId: sp.get("storeId") as string } : {}
+    // SINGLE SOURCE OF TRUTH: the pickup queue is driven by LaundryOrder.status, not
+    // by pickupCompletedAt. An order stays in Dispatch through AWAITING_PICKUP_ASSIGNMENT
+    // (unassigned/assigned/accepted/picked-up) and IN_TRANSIT_TO_STORE (pending store
+    // receipt), and only LEAVES when the store receives it (status → PENDING_STORE_AUDIT).
+    // Previously `pickupCompletedAt: null` dropped completed/in-transit pickups, so they
+    // vanished from Dispatch even though the order was mid-workflow.
     const where = type === "delivery"
       ? { businessId: lbId, ...storeScope, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
-      : { businessId: lbId, ...storeScope, pickupRequired: true, pickupCompletedAt: null, status: { notIn: [LaundryOrderStatus.CANCELLED, LaundryOrderStatus.READY_FOR_DELIVERY, LaundryOrderStatus.DELIVERED] } }
+      : { businessId: lbId, ...storeScope, pickupRequired: true, status: { in: PICKUP_QUEUE_STATUSES } }
 
     if (debug) console.log(`[DISPATCH_DEBUG] type=${type} where=${JSON.stringify(where)}`)
 
@@ -139,23 +146,10 @@ export async function GET(request: Request) {
     const execMap = new Map(execs.map((e) => [e.id, e]))
     const custMap = new Map(custs.map((c) => [c.id, c]))
 
-    // Correct MISSED: only if executive ACCEPTED and schedule expired and never completed
-    const bucketOf = (o: (typeof orders)[number]): string => {
-      if (o.status === "CANCELLED") return "cancelled"
-      if (type === "delivery") {
-        if (o.deliveryCompletedAt || o.status === "DELIVERED") return "completed"
-        if (o.deliveryExecutiveId) return o.deliveryAcceptedAt ? "accepted" : "assigned"
-        return "awaiting"
-      }
-      if (o.pickupCompletedAt) {
-        // Chain of custody: the executive finished, but the STORE hasn't scanned the
-        // bag in yet — keep the pickup visible as "pending store receipt", not done.
-        if (o.status === "IN_TRANSIT_TO_STORE") return "pending_receipt"
-        return "completed"
-      }
-      if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
-      return "awaiting"
-    }
+    // Bucketing is derived from LaundryOrder.status via the shared single-source-of-
+    // truth helper (src/lib/laundry-dispatch.ts) so Dispatch, Store Receive and the
+    // KPI counters can never disagree about a job's stage.
+    const bucketOf = (o: (typeof orders)[number]): string => dispatchBucketOf(o, type)
 
     const searchQ = sp.get("search")?.toLowerCase().trim() || ""
     const tabFilter = sp.get("tab")?.trim() || ""

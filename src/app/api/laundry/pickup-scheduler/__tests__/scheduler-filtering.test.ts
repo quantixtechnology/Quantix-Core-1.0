@@ -1,32 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-// ============================================================================
-// Tests for the scheduler's WHERE clause construction and filtering logic.
-//
-// Verifies that after removing the runtime updateMany() fixup, the correct
-// Prisma WHERE clause is built for both pickup and delivery scopes, and
-// that orders are correctly bucketed.
-//
-// These tests exercise the filter logic independently of Prisma by testing
-// the WHERE shapes and bucket classification.
-// ============================================================================
-
-// We need LaundryOrderStatus enum values for the WHERE clause comparisons
+import { describe, it, expect } from 'vitest'
 import { LaundryOrderStatus } from '@prisma/client'
+import { dispatchBucketOf, PICKUP_QUEUE_STATUSES, type DispatchOrderView } from '@/lib/laundry-dispatch'
 
-// The exact WHERE clause shapes from the GET handler (lines 111-113 after cleanup)
+// ============================================================================
+// Tests for the scheduler's WHERE clause construction and bucketing.
+//
+// SINGLE SOURCE OF TRUTH: the pickup queue is driven by LaundryOrder.status
+// (PICKUP_QUEUE_STATUSES), NOT by pickupCompletedAt. This is the fix for the
+// desync where a completed/in-transit pickup vanished from Dispatch because the
+// query filtered `pickupCompletedAt: null`. The bucket logic is imported from
+// the shared module so the route and these tests can never drift apart.
+// ============================================================================
+
+// The exact WHERE clause shapes from the GET handler.
 function buildPickupWhere(lbId: string) {
   return {
     businessId: lbId,
     pickupRequired: true,
-    pickupCompletedAt: null,
-    status: {
-      notIn: [
-        LaundryOrderStatus.CANCELLED,
-        LaundryOrderStatus.READY_FOR_DELIVERY,
-        LaundryOrderStatus.DELIVERED,
-      ],
-    },
+    status: { in: PICKUP_QUEUE_STATUSES },
   }
 }
 
@@ -39,43 +30,19 @@ function buildDeliveryWhere(lbId: string) {
   }
 }
 
-// Bucket classification logic (lines 147-157)
-type OrderRow = {
-  status: string
-  pickupCompletedAt: Date | null
-  deliveryCompletedAt: Date | null
-  deliveredAt: Date | null
-  pickupExecutiveId: string | null
-  deliveryExecutiveId: string | null
-  pickupAcceptedAt: Date | null
-  deliveryAcceptedAt: Date | null
-}
-
-function bucketOf(o: OrderRow, type: 'pickup' | 'delivery'): string {
-  if (o.status === 'CANCELLED') return 'cancelled'
-  if (type === 'delivery') {
-    if (o.deliveryCompletedAt || o.status === 'DELIVERED') return 'completed'
-    if (o.deliveryExecutiveId) return o.deliveryAcceptedAt ? 'accepted' : 'assigned'
-    return 'awaiting'
-  }
-  if (o.pickupCompletedAt) return 'completed'
-  if (o.pickupExecutiveId) return o.pickupAcceptedAt ? 'accepted' : 'assigned'
-  return 'awaiting'
-}
-
-// Simulate the fixup that was removed — we test WITHOUT it
+// Simulate the Prisma query filtering for the shapes above.
 function simulateQuery(orders: any[], where: Record<string, unknown>): any[] {
   return orders.filter((o: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(where)) {
       if (key === 'pickupRequired' || key === 'deliveryRequired') {
         if (o[key] !== value) return false
-      } else if (key === 'pickupCompletedAt') {
-        if (o.pickupCompletedAt !== null) return false
       } else if (key === 'deliveryCompletedAt') {
         if (o.deliveryCompletedAt !== null) return false
       } else if (key === 'status') {
-        const statusValue = value as { notIn?: string[] }
-        if (statusValue.notIn) {
+        const statusValue = value as { in?: string[]; notIn?: string[] }
+        if (statusValue.in) {
+          if (!statusValue.in.includes(o.status as string)) return false
+        } else if (statusValue.notIn) {
           if (statusValue.notIn.includes(o.status as string)) return false
         } else if (o.status !== value) {
           return false
@@ -88,90 +55,61 @@ function simulateQuery(orders: any[], where: Record<string, unknown>): any[] {
   })
 }
 
-describe('scheduler WHERE clause — pickup', () => {
-  it('filters orders by businessId, pickupRequired, pickupCompletedAt, and excluded statuses', () => {
-    const where = buildPickupWhere('biz-1')
-
-    expect(where).toEqual({
+describe('scheduler WHERE clause — pickup (status-driven)', () => {
+  it('selects orders by businessId, pickupRequired, and pickup-queue statuses', () => {
+    expect(buildPickupWhere('biz-1')).toEqual({
       businessId: 'biz-1',
       pickupRequired: true,
-      pickupCompletedAt: null,
-      status: {
-        notIn: [
-          LaundryOrderStatus.CANCELLED,
-          LaundryOrderStatus.READY_FOR_DELIVERY,
-          LaundryOrderStatus.DELIVERED,
-        ],
-      },
+      status: { in: [LaundryOrderStatus.AWAITING_PICKUP_ASSIGNMENT, LaundryOrderStatus.IN_TRANSIT_TO_STORE] },
     })
   })
 
   it('excludes non-HOME_PICKUP orders that lack pickupRequired', () => {
     const orders = [
-      // WALK_IN order — no pickup required, should be excluded
-      { businessId: 'biz-1', pickupRequired: false, pickupCompletedAt: null, status: 'PENDING' },
-      // STORE_DROP — no pickup required
-      { businessId: 'biz-1', pickupRequired: false, pickupCompletedAt: null, status: 'PROCESSING' },
-      // HOME_PICKUP — should be included
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'PENDING' },
+      { businessId: 'biz-1', pickupRequired: false, status: 'AWAITING_PICKUP_ASSIGNMENT' },
+      { businessId: 'biz-1', pickupRequired: true, status: 'AWAITING_PICKUP_ASSIGNMENT' },
     ]
-
     const result = simulateQuery(orders, buildPickupWhere('biz-1'))
     expect(result).toHaveLength(1)
     expect(result[0].pickupRequired).toBe(true)
   })
 
-  it('excludes orders with excluded statuses', () => {
+  it('KEEPS in-transit (picked-up) orders in the queue — the desync fix', () => {
     const orders = [
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'CANCELLED' },
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'READY_FOR_DELIVERY' },
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'DELIVERED' },
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'PROCESSING' },
+      // Picked up, in transit to store — MUST stay visible (pending store receipt).
+      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: new Date(), status: 'IN_TRANSIT_TO_STORE' },
+      // Awaiting assignment — visible.
+      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'AWAITING_PICKUP_ASSIGNMENT' },
     ]
-
     const result = simulateQuery(orders, buildPickupWhere('biz-1'))
-    expect(result).toHaveLength(1)
-    expect(result[0].status).toBe('PROCESSING')
+    expect(result).toHaveLength(2)
   })
 
-  it('excludes already-picked-up orders', () => {
+  it('drops orders once the store has received them (PENDING_STORE_AUDIT leaves the queue)', () => {
     const orders = [
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: new Date(), status: 'PROCESSING' },
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'PROCESSING' },
+      { businessId: 'biz-1', pickupRequired: true, status: 'PENDING_STORE_AUDIT' },
+      { businessId: 'biz-1', pickupRequired: true, status: 'PROCESSING' },
+      { businessId: 'biz-1', pickupRequired: true, status: 'IN_TRANSIT_TO_STORE' },
     ]
-
     const result = simulateQuery(orders, buildPickupWhere('biz-1'))
     expect(result).toHaveLength(1)
-    expect(result[0].pickupCompletedAt).toBeNull()
+    expect(result[0].status).toBe('IN_TRANSIT_TO_STORE')
   })
 
   it('excludes orders from other businesses', () => {
     const orders = [
-      { businessId: 'biz-2', pickupRequired: true, pickupCompletedAt: null, status: 'PENDING' },
-      { businessId: 'biz-1', pickupRequired: true, pickupCompletedAt: null, status: 'PENDING' },
+      { businessId: 'biz-2', pickupRequired: true, status: 'AWAITING_PICKUP_ASSIGNMENT' },
+      { businessId: 'biz-1', pickupRequired: true, status: 'AWAITING_PICKUP_ASSIGNMENT' },
     ]
-
     const result = simulateQuery(orders, buildPickupWhere('biz-1'))
     expect(result).toHaveLength(1)
     expect(result[0].businessId).toBe('biz-1')
   })
-
-  it('returns zero orders when no HOME_PICKUP orders exist for this business', () => {
-    const orders = [
-      { businessId: 'biz-1', pickupRequired: false, pickupCompletedAt: null, status: 'PROCESSING', orderType: 'STORE_DROP' },
-      { businessId: 'biz-1', pickupRequired: false, pickupCompletedAt: null, status: 'PENDING', orderType: 'WALK_IN' },
-    ]
-
-    const result = simulateQuery(orders, buildPickupWhere('biz-1'))
-    expect(result).toHaveLength(0)
-  })
 })
 
 describe('scheduler WHERE clause — delivery', () => {
-  it('filters orders by businessId, deliveryRequired, deliveryCompletedAt, and READY_FOR_DELIVERY status', () => {
-    const where = buildDeliveryWhere('biz-1')
-
-    expect(where).toEqual({
+  it('filters by businessId, deliveryRequired, deliveryCompletedAt, and READY_FOR_DELIVERY', () => {
+    expect(buildDeliveryWhere('biz-1')).toEqual({
       businessId: 'biz-1',
       deliveryRequired: true,
       deliveryCompletedAt: null,
@@ -184,19 +122,17 @@ describe('scheduler WHERE clause — delivery', () => {
       { businessId: 'biz-1', deliveryRequired: true, deliveryCompletedAt: null, status: 'PROCESSING' },
       { businessId: 'biz-1', deliveryRequired: true, deliveryCompletedAt: null, status: 'READY_FOR_DELIVERY' },
     ]
-
     const result = simulateQuery(orders, buildDeliveryWhere('biz-1'))
     expect(result).toHaveLength(1)
     expect(result[0].status).toBe('READY_FOR_DELIVERY')
   })
 })
 
-describe('bucketOf — pickup classification', () => {
-  const baseOrder = (overrides: Partial<OrderRow> = {}): OrderRow => ({
-    status: 'PENDING',
+describe('dispatchBucketOf — pickup classification (status-driven)', () => {
+  const baseOrder = (overrides: Partial<DispatchOrderView> = {}): DispatchOrderView => ({
+    status: 'AWAITING_PICKUP_ASSIGNMENT',
     pickupCompletedAt: null,
     deliveryCompletedAt: null,
-    deliveredAt: null,
     pickupExecutiveId: null,
     deliveryExecutiveId: null,
     pickupAcceptedAt: null,
@@ -205,32 +141,30 @@ describe('bucketOf — pickup classification', () => {
   })
 
   it('classifies cancelled orders', () => {
-    expect(bucketOf(baseOrder({ status: 'CANCELLED' }), 'pickup')).toBe('cancelled')
+    expect(dispatchBucketOf(baseOrder({ status: 'CANCELLED' }), 'pickup')).toBe('cancelled')
   })
-
-  it('classifies completed pickup', () => {
-    expect(bucketOf(baseOrder({ pickupCompletedAt: new Date() }), 'pickup')).toBe('completed')
+  it('classifies in-transit pickup as pending_receipt', () => {
+    expect(dispatchBucketOf(baseOrder({ status: 'IN_TRANSIT_TO_STORE', pickupCompletedAt: new Date() }), 'pickup')).toBe('pending_receipt')
   })
-
+  it('classifies legacy completed-but-awaiting pickup as pending_receipt (never lost)', () => {
+    expect(dispatchBucketOf(baseOrder({ pickupCompletedAt: new Date() }), 'pickup')).toBe('pending_receipt')
+  })
   it('classifies assigned pickup', () => {
-    expect(bucketOf(baseOrder({ pickupExecutiveId: 'exec-1' }), 'pickup')).toBe('assigned')
+    expect(dispatchBucketOf(baseOrder({ pickupExecutiveId: 'exec-1' }), 'pickup')).toBe('assigned')
   })
-
   it('classifies accepted pickup', () => {
-    expect(bucketOf(baseOrder({ pickupExecutiveId: 'exec-1', pickupAcceptedAt: new Date() }), 'pickup')).toBe('accepted')
+    expect(dispatchBucketOf(baseOrder({ pickupExecutiveId: 'exec-1', pickupAcceptedAt: new Date() }), 'pickup')).toBe('accepted')
   })
-
   it('classifies awaiting pickup', () => {
-    expect(bucketOf(baseOrder(), 'pickup')).toBe('awaiting')
+    expect(dispatchBucketOf(baseOrder(), 'pickup')).toBe('awaiting')
   })
 })
 
-describe('bucketOf — delivery classification', () => {
-  const baseOrder = (overrides: Partial<OrderRow> = {}): OrderRow => ({
+describe('dispatchBucketOf — delivery classification', () => {
+  const baseOrder = (overrides: Partial<DispatchOrderView> = {}): DispatchOrderView => ({
     status: 'READY_FOR_DELIVERY',
     pickupCompletedAt: null,
     deliveryCompletedAt: null,
-    deliveredAt: null,
     pickupExecutiveId: null,
     deliveryExecutiveId: null,
     pickupAcceptedAt: null,
@@ -239,22 +173,18 @@ describe('bucketOf — delivery classification', () => {
   })
 
   it('classifies completed delivery', () => {
-    expect(bucketOf(baseOrder({ deliveryCompletedAt: new Date() }), 'delivery')).toBe('completed')
+    expect(dispatchBucketOf(baseOrder({ deliveryCompletedAt: new Date() }), 'delivery')).toBe('completed')
   })
-
   it('classifies DELIVERED status as completed', () => {
-    expect(bucketOf(baseOrder({ status: 'DELIVERED' }), 'delivery')).toBe('completed')
+    expect(dispatchBucketOf(baseOrder({ status: 'DELIVERED' }), 'delivery')).toBe('completed')
   })
-
   it('classifies assigned delivery', () => {
-    expect(bucketOf(baseOrder({ deliveryExecutiveId: 'exec-1' }), 'delivery')).toBe('assigned')
+    expect(dispatchBucketOf(baseOrder({ deliveryExecutiveId: 'exec-1' }), 'delivery')).toBe('assigned')
   })
-
   it('classifies accepted delivery', () => {
-    expect(bucketOf(baseOrder({ deliveryExecutiveId: 'exec-1', deliveryAcceptedAt: new Date() }), 'delivery')).toBe('accepted')
+    expect(dispatchBucketOf(baseOrder({ deliveryExecutiveId: 'exec-1', deliveryAcceptedAt: new Date() }), 'delivery')).toBe('accepted')
   })
-
   it('classifies awaiting delivery', () => {
-    expect(bucketOf(baseOrder(), 'delivery')).toBe('awaiting')
+    expect(dispatchBucketOf(baseOrder(), 'delivery')).toBe('awaiting')
   })
 })
