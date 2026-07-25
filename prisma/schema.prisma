@@ -4614,6 +4614,25 @@ model LaundryOrder {
   @@index([deliveryExecutiveId])
 }
 
+// Permanent record of a Super-Admin permanent order deletion. Serves TWO purposes,
+// both by design free of any customer / garment / pricing / order-content data:
+//   1. Minimal system-security event — who (super admin) deleted what identifier, when.
+//   2. Order-number RETIREMENT — generateOrderNumber() consults the max here so a
+//      deleted order number is never reissued (sequence only ever moves forward).
+model LaundryDeletedOrderLog {
+  id             String   @id @default(cuid())
+  businessId     String
+  orderNumber    String // the retired identifier — never reissued
+  storeId        String?
+  deletedById    String? // platform Super Admin user id
+  deletedByName  String?
+  deletedByEmail String?
+  deletedAt      DateTime @default(now())
+
+  @@index([businessId])
+  @@index([orderNumber])
+}
+
 // ── Operational master data (per laundry business) ─────────────────────────
 // Category master — garment/service grouping (Wash, Dry Clean, Premium, …).
 model LaundryCategory {

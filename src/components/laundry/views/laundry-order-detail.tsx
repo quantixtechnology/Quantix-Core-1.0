@@ -6,10 +6,12 @@ import { useAdminStore } from "@/stores/admin-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Loader2, ChevronLeft, Clock, User, Phone, Shirt, ShoppingBag, Store as StoreIcon,
-  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation,
+  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation, Trash2, AlertTriangle,
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
@@ -87,6 +89,27 @@ export function LaundryOrderDetail() {
   const [scanCode, setScanCode] = useState("")
   const [assigning, setAssigning] = useState<"pickup" | "delivery" | null>(null)
   const [receiving, setReceiving] = useState(false)
+  // Permanent deletion — Super Admin only (server also enforces).
+  const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
+  const [delOpen, setDelOpen] = useState(false)
+  const [delConfirm, setDelConfirm] = useState("")
+  const [delPassword, setDelPassword] = useState("")
+  const [deleting, setDeleting] = useState(false)
+  const permanentlyDelete = async () => {
+    if (!order || !currentBusinessId) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/laundry/orders/${order.id}/permanent-delete`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, password: delPassword, confirm: delConfirm }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast.error(j.error || "Deletion failed"); return }
+      toast.success(`Order ${j.orderNumber} permanently deleted`)
+      setDelOpen(false); setDelConfirm(""); setDelPassword("")
+      setLaundryPage("orders")
+    } catch { toast.error("Deletion failed") } finally { setDeleting(false) }
+  }
 
   const load = useCallback(async () => {
     if (!selectedOrderId) return
@@ -375,7 +398,48 @@ export function LaundryOrderDetail() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Danger Zone — permanent deletion, Quantix Super Admin only. */}
+        {isSuperAdmin && (
+          <Card className="rounded-lg border-rose-200 bg-rose-50/40">
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2 text-rose-700"><AlertTriangle className="h-4 w-4" /> Danger Zone</CardTitle></CardHeader>
+            <CardContent className="p-3 pt-0 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-rose-700/80 max-w-md">Permanently erase this order and every related record (items, payments, invoice, packet, bags, packages, events, files). This cannot be undone and the order number is retired forever.</p>
+              <Button variant="outline" className="gap-1 border-rose-300 text-rose-700 hover:bg-rose-100 shrink-0" onClick={() => { setDelConfirm(""); setDelPassword(""); setDelOpen(true) }}>
+                <Trash2 className="h-4 w-4" /> Permanently Delete Order
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <Dialog open={delOpen} onOpenChange={(o) => { if (!deleting) setDelOpen(o) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700"><AlertTriangle className="h-5 w-5" /> Permanently Delete Order</DialogTitle>
+            <DialogDescription className="space-y-2 pt-1">
+              <span className="block">This permanently deletes <span className="font-mono font-semibold text-slate-700">{order.orderNumber}</span> and all of its data across every app, report and search. It cannot be recovered.</span>
+              <span className="block text-rose-600 font-medium">This is not an archive. There is no restore.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Type <span className="font-mono font-bold">DELETE</span> to confirm</label>
+              <Input value={delConfirm} onChange={(e) => setDelConfirm(e.target.value)} placeholder="DELETE" autoComplete="off" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Super Admin password</label>
+              <Input type="password" value={delPassword} onChange={(e) => setDelPassword(e.target.value)} placeholder="Re-enter your password" autoComplete="current-password" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDelOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button className="gap-1 bg-rose-600 hover:bg-rose-700 text-white" onClick={permanentlyDelete} disabled={deleting || delConfirm !== "DELETE" || !delPassword}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Permanently Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

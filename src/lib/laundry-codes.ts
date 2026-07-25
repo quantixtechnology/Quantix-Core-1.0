@@ -97,7 +97,16 @@ export async function generateProcessingCenterCode(businessCode: string): Promis
 // Scoped per store — sequential within the store.
 export async function generateOrderNumber(storeCode: string): Promise<string> {
   const prefix = `${CODES.ORDER_PREFIX}-${storeCode}-`
-  const next = await getNextSequential("laundryOrder", "orderNumber", prefix)
+  const liveNext = await getNextSequential("laundryOrder", "orderNumber", prefix)
+  // Retired numbers (from permanently-deleted orders) are NEVER reissued — the
+  // sequence only moves forward. Take the max of the live and the retired series.
+  const retired = await prisma.laundryDeletedOrderLog.findFirst({
+    where: { orderNumber: { startsWith: prefix } },
+    orderBy: { orderNumber: "desc" },
+    select: { orderNumber: true },
+  })
+  const retiredNext = retired ? parseInt(retired.orderNumber.split("-").pop() || "0", 10) + 1 : 1
+  const next = Math.max(liveNext, retiredNext)
   return `${prefix}${padNumber(next, 6)}`
 }
 
