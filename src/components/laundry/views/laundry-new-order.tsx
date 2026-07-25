@@ -255,6 +255,17 @@ export default function LaundryNewOrder() {
       .then((j) => { if (!cancel) setSubInfo(j.success && j.data.length ? j.data[0] : null) }).catch(() => { if (!cancel) setSubInfo(null) })
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
+  // Walk-in POS lookup: the full membership picture the moment a customer is picked
+  // (mobile/name search) — cashier instantly sees plan, validity, remaining, due.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [membership, setMembership] = useState<any>(null)
+  useEffect(() => {
+    if (!currentBusinessId || !selectedCustomer) { setMembership(null); return }
+    let cancel = false
+    fetch(`/api/laundry/customers/${selectedCustomer.id}/membership?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => { if (!cancel) setMembership(j.success ? j.data : null) }).catch(() => { if (!cancel) setMembership(null) })
+    return () => { cancel = true }
+  }, [currentBusinessId, selectedCustomer])
   // Auto-pick the payment preference from the customer (operator can still change
   // it): active subscription → Subscription; Corporate account → Pay After Service;
   // otherwise Pay Now. Never overrides a manual choice for the current customer.
@@ -572,6 +583,30 @@ export default function LaundryNewOrder() {
                           </div>
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedCustomer(null)}><X className="h-4 w-4" /></Button>
                         </div>
+
+                        {/* Walk-in membership panel — cashier sees it instantly. */}
+                        {membership?.hasMembership && (
+                          membership.status === "ACTIVE" || membership.status === "GRACE" ? (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-2.5">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-bold text-emerald-800 flex items-center gap-1"><BadgeCheck className="h-4 w-4" /> Subscription {membership.status === "GRACE" ? "In Grace" : "Active"}</p>
+                                <span className="text-[10px] font-mono text-emerald-700">{membership.membershipId}</span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-emerald-800">
+                                <span className="font-semibold">{membership.planName}</span>
+                                {membership.endDate && <span>Valid until <b>{fmtDate(new Date(membership.endDate))}</b></span>}
+                                {membership.garments?.total > 0 && <span>Garments <b>{membership.garments.remaining}/{membership.garments.total}</b></span>}
+                                {membership.orders?.max != null && <span>Orders <b>{membership.orders.remaining}/{membership.orders.max}</b></span>}
+                                {membership.kg?.total > 0 && <span>KG <b>{membership.kg.remaining}/{membership.kg.total}</b></span>}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 flex items-center justify-between">
+                              <p className="text-sm font-semibold text-amber-800">Subscription {membership.status === "PENDING_PAYMENT" ? "Pending Payment" : "Expired"}</p>
+                              {membership.outstandingDue > 0 && <span className="text-xs font-bold text-amber-800">Collect {inr(membership.outstandingDue)}</span>}
+                            </div>
+                          )
+                        )}
 
                         {lcLoading && !lifecycle ? (
                           <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /> Loading customer history…</div>
