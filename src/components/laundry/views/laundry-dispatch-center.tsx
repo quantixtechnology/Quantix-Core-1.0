@@ -44,6 +44,7 @@ const STATUS_TABS = [
   { key: "awaiting", label: "Unassigned" },
   { key: "assigned", label: "Assigned" },
   { key: "accepted", label: "Accepted" },
+  { key: "pending_receipt", label: "Pending Receipt" },
   { key: "completed", label: "Completed" },
 ] as const
 
@@ -51,13 +52,14 @@ const BUCKET_STYLES: Record<string, string> = {
   awaiting: "border-amber-200 text-amber-700 bg-amber-50",
   assigned: "border-blue-200 text-blue-700 bg-blue-50",
   accepted: "border-indigo-200 text-indigo-700 bg-indigo-50",
+  pending_receipt: "border-orange-200 text-orange-700 bg-orange-50",
   completed: "border-emerald-200 text-emerald-700 bg-emerald-50",
   cancelled: "border-slate-200 text-slate-400 bg-slate-50",
   rejected: "border-rose-200 text-rose-600 bg-rose-50",
   failed: "border-orange-200 text-orange-600 bg-orange-50",
 }
 const BUCKET_LABELS: Record<string, string> = {
-  awaiting: "Unassigned", assigned: "Assigned", accepted: "In Progress", completed: "Done",
+  awaiting: "Unassigned", assigned: "Assigned", accepted: "In Progress", pending_receipt: "In Transit · Awaiting Receipt", completed: "Done",
   cancelled: "Cancelled", rejected: "Rejected", failed: "Failed",
 }
 
@@ -121,7 +123,7 @@ export function LaundryDispatchCenter() {
 
   // KPIs reflect the current work-type lens (across all statuses).
   const kpis = useMemo(() => {
-    const c = { awaiting: 0, assigned: 0, accepted: 0, completed: 0 } as Record<string, number>
+    const c = { awaiting: 0, assigned: 0, accepted: 0, pending_receipt: 0, completed: 0 } as Record<string, number>
     for (const j of byWorkType) if (c[j.bucket] != null) c[j.bucket]++
     return c
   }, [byWorkType])
@@ -200,25 +202,20 @@ export function LaundryDispatchCenter() {
         </button>
       </div>
 
-      {/* KPI strip — reflects the current work-type lens. "In Transit" = picked up
-          by the executive but NOT yet scanned in by the store (pending receipt). */}
+      {/* KPI strip — reflects the current work-type lens. "Pending Receipt" = picked
+          up by the executive but NOT yet scanned in by the store (pickup only). */}
       <div className="grid grid-cols-6 gap-1.5">
         {[
           { key: "awaiting", label: "Unassigned", color: "text-amber-600 bg-amber-50 border-amber-200" },
           { key: "assigned", label: "Assigned", color: "text-blue-600 bg-blue-50 border-blue-200" },
           { key: "accepted", label: "Accepted", color: "text-indigo-600 bg-indigo-50 border-indigo-200" },
-          { key: "inTransit", label: "In Transit · Pending Receipt", color: "text-orange-600 bg-orange-50 border-orange-200" },
+          { key: "pending_receipt", label: "Pending Receipt", color: "text-orange-600 bg-orange-50 border-orange-200" },
           { key: "completed", label: "Completed", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
           { key: "total", label: "Total", color: "text-slate-700 bg-slate-50 border-slate-200" },
         ].map((s) => {
-          const inTransitJobs = byWorkType.filter((j) => j.status === "IN_TRANSIT_TO_STORE")
-          const val = s.key === "total" ? byWorkType.length : s.key === "inTransit" ? inTransitJobs.length : (kpis[s.key] || 0)
-          const sp = s.key === "total"
-            ? { pickup: byWorkType.filter((j) => j.kind === "pickup").length, delivery: byWorkType.filter((j) => j.kind === "delivery").length }
-            : s.key === "inTransit"
-              ? { pickup: inTransitJobs.filter((j) => j.kind === "pickup").length, delivery: inTransitJobs.filter((j) => j.kind === "delivery").length }
-              : splitOf(s.key)
-          const clickable = s.key !== "total" && s.key !== "inTransit"
+          const val = s.key === "total" ? byWorkType.length : (kpis[s.key] || 0)
+          const sp = s.key === "total" ? { pickup: byWorkType.filter((j) => j.kind === "pickup").length, delivery: byWorkType.filter((j) => j.kind === "delivery").length } : splitOf(s.key)
+          const clickable = s.key !== "total"
           return (
             <button key={s.key} disabled={!clickable} onClick={() => clickable && setStatus(status === s.key ? "all" : s.key)}
               className={`rounded-lg border ${s.color} px-2 py-1.5 text-center transition-shadow ${clickable ? "hover:shadow-sm cursor-pointer" : ""} ${status === s.key ? "ring-2 ring-offset-1 ring-current" : ""}`}>

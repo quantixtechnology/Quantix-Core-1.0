@@ -646,32 +646,56 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [bag, setBag] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [bulk, setBulk] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [queue, setQueue] = useState<any[]>([]) // bulk queue of previewed bags
 
   const scopeQs = `businessId=${encodeURIComponent(staff.businessId)}&storeId=${encodeURIComponent(staff.storeId)}`
+  const previewCall = (c: string) => api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, actorName: staff.name }) })
   // Chain of custody: preview the bag → the RECEIVER confirms (with condition).
   const previewBag = async (c: string) => {
-    const j = await api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, actorName: staff.name }) })
+    const j = await previewCall(c)
     if (j.success && j.preview) { setBag({ ...j.data, code: c }); setGarment(null); return true }
     if (j.success && j.alreadyReceived) { setMsg({ ok: true, text: j.message }); return true }
     if (!j.success && j.error && !/No bag found/i.test(j.error)) { setMsg({ ok: false, text: j.error }); return true } // real validation error (wrong store etc.)
     return false
   }
+  const doReceive = (c: string, condition: string) => api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, confirm: true, condition, actorName: staff.name }) })
   const confirmReceive = async (condition: string) => {
     if (!bag?.code) return
     setBusy(true)
     try {
-      const j = await api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: bag.code, confirm: true, condition, actorName: staff.name }) })
+      const j = await doReceive(bag.code, condition)
       if (!j.success) { setMsg({ ok: false, text: j.error || "Receive failed" }); return }
       if (j.rejected) { setMsg({ ok: false, text: j.message || "Receipt rejected — returned to executive." }); setBag(null); return }
       setMsg({ ok: true, text: `Received ${j.data.bag} · ${j.data.orderNumber} → Store Audit${j.exception ? " (exception recorded)" : ""}` })
       setBag((b: typeof bag) => ({ ...b, received: true, orderId: j.data.orderId, orderNumber: j.data.orderNumber }))
     } finally { setBusy(false) }
   }
+  // Bulk: queue each scanned bag, then receive them all in one pass.
+  const queueBag = async (c: string) => {
+    if (queue.some((q) => q.code === c)) { setMsg({ ok: false, text: "Already in the list" }); return true }
+    const j = await previewCall(c)
+    if (j.success && j.preview) { setQueue((q) => [{ code: c, order: j.data.order, customer: j.data.customer, bag: j.data.bag }, ...q]); setMsg(null); return true }
+    if (j.success && j.alreadyReceived) { setMsg({ ok: false, text: j.message }); return true }
+    if (!j.success && j.error && !/No bag found/i.test(j.error)) { setMsg({ ok: false, text: j.error }); return true }
+    return false
+  }
+  const receiveAll = async () => {
+    setBusy(true)
+    try {
+      let ok = 0, fail = 0
+      for (const q of queue) { const j = await doReceive(q.code, "OK"); if (j.success && j.received) ok++; else fail++ }
+      setMsg({ ok: fail === 0, text: `Received ${ok} bag${ok === 1 ? "" : "s"} → Store Audit${fail ? ` · ${fail} failed` : ""}` })
+      setQueue([])
+    } finally { setBusy(false) }
+  }
   const lookup = async (raw: string) => {
     const c = raw.trim(); if (!c) return
-    setBusy(true); setMsg(null); setGarment(null); setBag(null)
+    setBusy(true); setMsg(null); if (!bulk) { setGarment(null); setBag(null) }
     try {
-      // Bag first (pickup receive is the store's most common scan)…
+      if (bulk) { if (await queueBag(c)) return; const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c)}`); setMsg({ ok: false, text: j.success ? "That is a garment, not a pickup bag." : "No pickup bag found for this code." }); return }
+      // Single: bag first (pickup receive is the store's most common scan)…
       if (await previewBag(c)) return
       // …else a garment code → identify the order.
       const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c)}`)
@@ -693,13 +717,31 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   }
   return (
     <div className="px-4 pt-6 space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">Receive Pickup Bag</h2>
-      <p className="text-[12px] text-slate-400 -mt-2">Scan the pickup bag QR (or enter the bag number) to confirm it arrived from the executive — or scan a garment to open its order.</p>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-slate-800">Receive Pickup Bag</h2>
+        <button onClick={() => { setBulk((v) => !v); setBag(null); setGarment(null); setQueue([]); setMsg(null) }} className={`text-[12px] font-semibold rounded-full px-3 h-8 border ${bulk ? "bg-blue-600 text-white border-blue-600" : "bg-white text-blue-600 border-blue-200"}`}>{bulk ? "Bulk: On" : "Bulk"}</button>
+      </div>
+      <p className="text-[12px] text-slate-400 -mt-2">{bulk ? "Scan several pickup bags, then receive them all in one go." : "Scan the pickup bag QR (or enter the bag number) to confirm it arrived — or scan a garment to open its order."}</p>
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-        <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder="Scan bag or garment code" className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
-        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> Look Up</>}</button>
+        <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder={bulk ? "Scan pickup bag" : "Scan bag or garment code"} className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
+        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> {bulk ? "Add to List" : "Look Up"}</>}</button>
       </div>
       {msg && <div className={`rounded-xl px-4 py-3 text-[14px] ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{msg.text}</div>}
+      {bulk && queue.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
+          <p className="font-semibold text-slate-800">{queue.length} bag{queue.length === 1 ? "" : "s"} to receive</p>
+          <div className="space-y-1 max-h-56 overflow-y-auto">
+            {queue.map((q) => (
+              <div key={q.code} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-[13px]">
+                <div className="min-w-0"><p className="font-mono font-semibold text-slate-700 truncate">{q.bag?.number}</p><p className="text-[11px] text-slate-400 truncate">{q.order?.orderNumber} · {q.customer?.name || "—"}</p></div>
+                <button onClick={() => setQueue((qq) => qq.filter((x) => x.code !== q.code))} className="text-slate-300 hover:text-rose-500"><X className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          <button onClick={receiveAll} disabled={busy} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <><CheckCircle2 className="h-5 w-5" /> Receive All ({queue.length}) — All OK</>}</button>
+          <p className="text-[10px] text-slate-400 text-center">For a damaged/rejected bag, receive it individually in single mode.</p>
+        </div>
+      )}
       {bag && !bag.received && (
         <div className="bg-white rounded-2xl border border-blue-200 p-4 space-y-3">
           <p className="font-semibold text-slate-800">Receive at Store</p>

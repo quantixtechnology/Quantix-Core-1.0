@@ -147,7 +147,12 @@ export async function GET(request: Request) {
         if (o.deliveryExecutiveId) return o.deliveryAcceptedAt ? "accepted" : "assigned"
         return "awaiting"
       }
-      if (o.pickupCompletedAt) return "completed"
+      if (o.pickupCompletedAt) {
+        // Chain of custody: the executive finished, but the STORE hasn't scanned the
+        // bag in yet — keep the pickup visible as "pending store receipt", not done.
+        if (o.status === "IN_TRANSIT_TO_STORE") return "pending_receipt"
+        return "completed"
+      }
       if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
       return "awaiting"
     }
