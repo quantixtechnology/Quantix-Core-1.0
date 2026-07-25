@@ -131,7 +131,7 @@ export default function StoreAdminApp() {
           {tab === "dashboard" && <Dashboard staff={staff} api={api} onCounter={goOrders} onTab={setTab} />}
           {tab === "orders" && <Orders staff={staff} api={api} status={ordersStatus} setStatus={setOrdersStatus} onOpen={setOpenOrderId} />}
           {tab === "dispatch" && <Dispatch staff={staff} api={api} onOpen={setOpenOrderId} />}
-          {tab === "scan" && <ScanScreen staff={staff} api={api} />}
+          {tab === "scan" && <ScanScreen staff={staff} api={api} onOpen={setOpenOrderId} />}
           {tab === "profile" && <Profile staff={staff} onLogout={logout} onSwitch={staff.isSuperAdmin ? () => { setStaff(null); setTab("dashboard") } : undefined} />}
         </>
       )}
@@ -622,48 +622,79 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
   )
 }
 
-function ScanScreen({ staff, api }: { staff: Staff; api: Api }) {
+// Unified store scan: a Pickup Bag QR (PB-…/PKG-…) confirms the pickup was
+// physically RECEIVED AT STORE (more accurate than the manual bridge) and advances
+// the order to Store Audit; a garment barcode/GAR/ITM code identifies its order.
+// Either way the order is one tap away.
+function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (orderId: string) => void }) {
   const [code, setCode] = useState("")
   const [busy, setBusy] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [result, setResult] = useState<any>(null)
+  const [garment, setGarment] = useState<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [bag, setBag] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const lookup = async (c: string) => {
-    if (!c.trim()) return
-    setBusy(true); setMsg(null)
+  const receiveBag = async (c: string) => {
+    const j = await api("/api/laundry/pickup-bags/receive", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, code: c, actorName: staff.name }) })
+    if (!j.success) return false
+    setBag(j.data); setGarment(null)
+    // Advance the order to Store Audit (best-effort; a no-op if already past it).
+    if (j.data?.orderId) await api(`/api/laundry/orders/${j.data.orderId}/transition`, { method: "POST", body: JSON.stringify({ toStatus: "PENDING_STORE_AUDIT", actorName: staff.name, note: "Pickup received at store (bag scan)" }) }).catch(() => {})
+    setMsg({ ok: true, text: j.alreadyReceived ? `Bag ${j.data.code} already received` : `Pickup received · ${j.data.orderNumber || j.data.code} → Store Audit` })
+    return true
+  }
+  const lookup = async (raw: string) => {
+    const c = raw.trim(); if (!c) return
+    setBusy(true); setMsg(null); setGarment(null); setBag(null)
     try {
-      const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c.trim())}`)
-      if (!j.success) { setMsg({ ok: false, text: j.error || "Garment not found" }); setResult(null) }
-      else setResult(j.data)
+      const isBag = /^(PB|PKG)-/i.test(c)
+      if (isBag) { if (await receiveBag(c)) return; setMsg({ ok: false, text: "Bag not found for this code." }); return }
+      // Garment code → identify the order.
+      const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c)}`)
+      if (j.success) { setGarment(j.data); return }
+      // Fall back to a bag scan (some tenants reuse the pickup-bag QR through processing).
+      if (await receiveBag(c)) return
+      setMsg({ ok: false, text: j.error || "No garment or bag found for this code." })
     } finally { setBusy(false); setCode("") }
   }
   const process = async () => {
-    if (!result?.item) return
-    const item = result.item
+    if (!garment?.item) return
+    const item = garment.item
     const action = item.processingStatus === "WAITING" ? "START" : item.processingStatus === "IN_PROGRESS" ? (item.processingStage === "QC" ? "QC_PASS" : "COMPLETE") : null
     if (!action) { setMsg({ ok: false, text: `Garment is ${item.processingStatus}` }); return }
     setBusy(true)
     try {
       const j = await api(`/api/laundry/items/${item.id}/process`, { method: "POST", body: JSON.stringify({ action, actorName: staff.name, expectedStage: item.processingStage }) })
       if (!j.success) setMsg({ ok: false, text: j.error || "Action failed" })
-      else { setMsg({ ok: true, text: `${action === "START" ? "Started" : "Completed"} ${item.garmentName}` }); setResult(null) }
+      else { setMsg({ ok: true, text: `${action === "START" ? "Started" : "Completed"} ${item.garmentName}` }); setGarment(null) }
     } finally { setBusy(false) }
   }
   return (
     <div className="px-4 pt-6 space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">Scan Garment</h2>
+      <h2 className="text-lg font-bold text-slate-800">Scan</h2>
+      <p className="text-[12px] text-slate-400 -mt-2">Scan a pickup bag to confirm it arrived, or a garment to open its order.</p>
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-        <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder="Scan or type barcode" className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
-        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50"><ScanLine className="h-6 w-6" /> Look Up</button>
+        <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder="Scan bag or garment code" className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
+        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> Look Up</>}</button>
       </div>
       {msg && <div className={`rounded-xl px-4 py-3 text-[14px] ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{msg.text}</div>}
-      {result?.item && (
+      {bag && bag.orderId && (
+        <div className="bg-white rounded-2xl border border-emerald-200 p-4 space-y-2">
+          <p className="font-semibold text-emerald-800 flex items-center gap-1"><CheckCircle2 className="h-5 w-5" /> Pickup Received</p>
+          <p className="text-[13px] text-slate-500">Bag {bag.code} · {bag.orderNumber || "—"}</p>
+          <button onClick={() => onOpen(bag.orderId)} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold">Open Order · Start Store Audit</button>
+        </div>
+      )}
+      {garment?.item && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-2">
-          <p className="font-semibold text-slate-800">{result.item.garmentName}</p>
-          <p className="text-[13px] text-slate-500">{result.item.serviceName} · {result.order?.orderNumber}</p>
-          <p className="text-[12px] text-slate-400">Stage: {statusLabel(result.item.processingStage)} · {result.item.processingStatus}</p>
-          <button onClick={process} disabled={busy} className="w-full h-12 mt-1 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Process at this Workstation"}</button>
+          <p className="font-semibold text-slate-800">{garment.item.garmentName}</p>
+          <p className="text-[13px] text-slate-500">{garment.item.serviceName} · {garment.order?.orderNumber}</p>
+          <p className="text-[12px] text-slate-400">Stage: {statusLabel(garment.item.processingStage)} · {garment.item.processingStatus}</p>
+          {garment.order?.id && <button onClick={() => onOpen(garment.order.id)} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold">Open Order {garment.order.orderNumber}</button>}
+          {garment.item.processingStatus && garment.item.processingStatus !== "DONE" && (
+            <button onClick={process} disabled={busy} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : "Process at this Workstation"}</button>
+          )}
         </div>
       )}
     </div>
