@@ -170,6 +170,8 @@ export function LaundryBagManagement() {
         </div>
       </div>
 
+      <BagReconciliation businessId={currentBusinessId} />
+
       {/* Reusable Bag Release Stage — configurable per laundry */}
       <Card className="rounded-xl border-slate-200"><CardContent className="p-4 flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
@@ -315,4 +317,57 @@ function QrImage({ value, size = 150 }: { value: string; size?: number }) {
   useEffect(() => { QRCode.toDataURL(value, { width: size, margin: 1 }).then(setUrl).catch(() => setUrl(null)) }, [value, size])
   // eslint-disable-next-line @next/next/no-img-element
   return url ? <img src={url} alt={value} width={size} height={size} className="rounded border border-slate-200" /> : <div style={{ width: size, height: size }} className="rounded bg-slate-100" />
+}
+
+// Reconciliation — assigned vs returned per pickup executive; bags an executive
+// picked up but the store never scanned in are flagged so none go missing.
+const rcTime = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
+function BagReconciliation({ businessId }: { businessId: string | null }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [data, setData] = useState<any>(null)
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const load = useCallback(() => {
+    if (!businessId) return
+    setLoading(true)
+    fetch(`/api/laundry/bags/reconciliation?businessId=${businessId}`).then((r) => r.json()).then((j) => setData(j.success ? j.data : null)).catch(() => {}).finally(() => setLoading(false))
+  }, [businessId])
+  useEffect(() => { load() }, [load])
+  const s = data?.summary
+  if (!s || (s.inTransit === 0 && s.receivedToday === 0)) return null
+  return (
+    <Card className={`rounded-xl ${s.overdue > 0 ? "border-rose-200" : "border-slate-200"}`}>
+      <CardContent className="p-4 space-y-3">
+        <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ScanLine className="h-4 w-4 text-blue-600" /> Bag Reconciliation · Pending Store Receipt</span>
+          <span className="flex items-center gap-2 text-xs">
+            <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">{s.inTransit} in transit</Badge>
+            {s.overdue > 0 && <Badge variant="outline" className="border-rose-300 text-rose-700 bg-rose-50">{s.overdue} overdue</Badge>}
+            <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{s.receivedToday} received today</Badge>
+            <RotateCcw className={`h-3.5 w-3.5 text-slate-400 ${loading ? "animate-spin" : ""}`} onClick={(e) => { e.stopPropagation(); load() }} />
+          </span>
+        </button>
+        {open && (
+          <div className="space-y-2 border-t border-slate-100 pt-2">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {(data.executives as any[]).map((ex) => (
+              <div key={ex.executiveId} className={`rounded-lg border p-2.5 ${ex.overdue > 0 ? "border-rose-200 bg-rose-50/40" : "border-slate-100"}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-slate-800">{ex.executiveName}{ex.executivePhone ? <span className="text-[11px] text-slate-400"> · {ex.executivePhone}</span> : null}</p>
+                  <span className="text-xs flex items-center gap-1.5"><span className="text-orange-700 font-semibold">{ex.inTransit} pending</span>{ex.overdue > 0 && <span className="text-rose-700 font-semibold">· {ex.overdue} overdue</span>}<span className="text-emerald-700">· {ex.receivedToday} received</span></span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {(ex.orders as any[]).map((o) => (
+                    <span key={o.orderNumber} title={`Picked up ${rcTime(o.pickupCompletedAt)}${o.bags.length ? ` · ${o.bags.join(", ")}` : ""}`} className={`text-[10px] font-mono rounded px-1.5 py-0.5 border ${o.overdue ? "border-rose-300 text-rose-700 bg-rose-50" : "border-slate-200 text-slate-500 bg-slate-50"}`}>{o.orderNumber}{o.overdue ? " ⚠" : ""}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="text-[10px] text-slate-400">Bags an executive has picked up but the store has not yet scanned in. ⚠ = overdue ({data.thresholdHours}h+) — investigate.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
