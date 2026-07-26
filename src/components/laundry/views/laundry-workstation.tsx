@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -83,15 +84,18 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const j = await fetch(`/api/laundry/processing?businessId=${currentBusinessId}&stage=${stage}`).then((r) => r.json())
       setItems(j.items || [])
-    } catch { /* noop */ } finally { setLoading(false) }
+    } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId, stage])
   useEffect(() => { load() }, [load])
+  // Keep the department queue live: refresh on tab focus + a light poll so a
+  // garment moved here from an earlier stage appears without a manual refresh.
+  useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
   // Fetch business setting for scan sound + return_queue permission
   useEffect(() => {

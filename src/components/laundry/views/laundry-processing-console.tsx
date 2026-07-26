@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2 } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // Department tiles MUST cover every WORKSTATIONS stage — DRY (Drying) is a
 // first-class stage produced by default service routes (e.g. WASH→DRY→QC→PACKED).
@@ -50,15 +51,18 @@ export function LaundryProcessingConsole() {
   const [code, setCode] = useState("")
   const [looking, setLooking] = useState(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const j = await fetch(`/api/laundry/processing?businessId=${currentBusinessId}`).then((r) => r.json())
       setIncoming(j.incoming || []); setAwaitingBarcode(j.awaitingBarcode || []); setReadyToReturn(j.readyToReturn || []); setStageCounts(j.stageCounts || {})
-    } catch { /* noop */ } finally { setLoading(false) }
+    } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId])
   useEffect(() => { load() }, [load])
+  // Live queues: refresh on tab focus + a light poll so received packets and
+  // department counts update without a manual page refresh.
+  useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
   // Receive a dispatched packet → immediately open Barcode Generation.
   const receive = async (orderId: string) => {
@@ -112,7 +116,7 @@ export function LaundryProcessingConsole() {
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Factory className="h-5 w-5 text-blue-600" /> Processing Center</h1>
           <p className="text-sm text-slate-500">Receive dispatched packets, monitor department workload, and return completed orders to the store.</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => load()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
       </div>
 
       {/* QR / manual packet entry */}

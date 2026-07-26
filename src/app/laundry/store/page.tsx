@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 const TOKEN_KEY = "qx_store_token"
 
@@ -203,8 +204,9 @@ function Header({ staff }: { staff: Staff }) {
 function Dashboard({ staff, api, onCounter, onTab }: { staff: Staff; api: Api; onCounter: (s: string) => void; onTab: (t: Tab) => void }) {
   const [counts, setCounts] = useState<Counts | null>(null)
   const [loading, setLoading] = useState(true)
-  const load = useCallback(() => { setLoading(true); api(`/api/laundry/store-admin/dashboard?businessId=${staff.businessId}&storeId=${staff.storeId}`).then((j) => { if (j.success) setCounts(j.data) }).finally(() => setLoading(false)) }, [api, staff.businessId, staff.storeId])
+  const load = useCallback((silent = false) => { if (!silent) setLoading(true); api(`/api/laundry/store-admin/dashboard?businessId=${staff.businessId}&storeId=${staff.storeId}`).then((j) => { if (j.success) setCounts(j.data) }).finally(() => { if (!silent) setLoading(false) }) }, [api, staff.businessId, staff.storeId])
   useEffect(() => { load() }, [load])
+  useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
   const tiles: { key: keyof Counts; label: string; icon: React.ComponentType<{ className?: string }>; color: string; go: () => void }[] = [
     { key: "todaysOrders", label: "Today's Orders", icon: ClipboardList, color: "text-slate-700 bg-slate-50 border-slate-200", go: () => onCounter("") },
@@ -246,7 +248,7 @@ function Dashboard({ staff, api, onCounter, onTab }: { staff: Staff; api: Api; o
         <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3">
           <div className="flex items-center justify-between mb-2 px-1">
             <h2 className="text-[13px] font-semibold text-slate-700">Today at a glance</h2>
-            <button onClick={load} className="text-slate-400"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /></button>
+            <button onClick={() => load()} className="text-slate-400"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /></button>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {tiles.map((t) => { const Icon = t.icon; return (
@@ -268,14 +270,15 @@ function Orders({ staff, api, status, setStatus, onOpen }: { staff: Staff; api: 
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState("")
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true)
     const p = new URLSearchParams({ businessId: staff.businessId, storeId: staff.storeId, limit: "50" })
     if (status) p.set("status", status)
     if (q.trim()) p.set("search", q.trim())
-    api(`/api/laundry/orders?${p}`).then((j) => { if (j.success) setOrders(j.data) }).finally(() => setLoading(false))
+    api(`/api/laundry/orders?${p}`).then((j) => { if (j.success) setOrders(j.data) }).finally(() => { if (!silent) setLoading(false) })
   }, [api, staff, status, q])
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t) }, [load, q])
+  useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
   const chips = [["", "All"], ["PENDING_STORE_AUDIT", "Audit"], ["PAYMENT_PENDING", "Payment"], ["READY_FOR_PROCESSING", "Packing"], ["PROCESSING", "Processing"], ["READY_FOR_DELIVERY", "Delivery"], ["DELIVERED", "Done"]] as const
   return (

@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
@@ -52,18 +53,21 @@ function useQueue(status: LaundryOrderStatus, filter?: (o: OrderRow) => boolean)
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const params = new URLSearchParams({ businessId: currentBusinessId, status, limit: "100" })
       if (search.trim()) params.set("search", search.trim())
       const json = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
       const rows: OrderRow[] = json.success ? json.data : []
       setOrders(filter ? rows.filter(filter) : rows)
-    } catch { setOrders([]) } finally { setLoading(false) }
+    } catch { setOrders([]) } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId, status, search, filter])
   useEffect(() => { load() }, [load])
+  // Live queue: refresh on tab focus + a light poll so orders arriving from the
+  // previous stage (audit → payment → packing → …) appear without a manual refresh.
+  useAutoRefresh(() => load(true), { intervalMs: 12000 })
   return { orders, loading, search, setSearch, load }
 }
 
@@ -83,7 +87,7 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
           <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><Icon className="h-5 w-5 text-blue-600" /> {title}</h2>
           <p className="text-sm text-muted-foreground">{subtitle} — {orders.length} order{orders.length === 1 ? "" : "s"}</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => load()} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>

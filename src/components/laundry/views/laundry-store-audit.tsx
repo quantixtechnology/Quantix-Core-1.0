@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -69,16 +70,20 @@ export function LaundryStoreAudit() {
   const [saving, setSaving] = useState(false)
   const [acting, setActing] = useState(false)
 
-  const loadQueue = useCallback(async () => {
+  const loadQueue = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const res = await fetch(`/api/laundry/orders?businessId=${encodeURIComponent(currentBusinessId)}&status=PENDING_STORE_AUDIT&limit=100`)
       const json = await res.json()
       setRows(json.success ? json.data : [])
-    } catch { setRows([]) } finally { setLoading(false) }
+    } catch { setRows([]) } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId])
   useEffect(() => { loadQueue() }, [loadQueue])
+  // Live audit queue: refresh on focus + a light poll so an order just received
+  // at the store appears here without a manual refresh. Paused while inspecting an
+  // order (a detail is open) to avoid churn under the auditor.
+  useAutoRefresh(() => loadQueue(true), { intervalMs: 12000, enabled: !selectedId })
 
   const openOrder = useCallback(async (id: string) => {
     setSelectedId(id); setLoadingDetail(true); setDetail(null); setIntakeOpen(false)
