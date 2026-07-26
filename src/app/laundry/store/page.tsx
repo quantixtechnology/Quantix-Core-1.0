@@ -678,10 +678,22 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   const [bag, setBag] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [bulk, setBulk] = useState(false)
+  const [mode, setMode] = useState<"pickup" | "delivery">("pickup")
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [queue, setQueue] = useState<any[]>([]) // bulk queue of previewed bags
 
   const scopeQs = `businessId=${encodeURIComponent(staff.businessId)}&storeId=${encodeURIComponent(staff.storeId)}`
+  // Delivery bag returned by the executive after a completed delivery — same flow
+  // as desktop Bag Management "Receive Returned Bag" (marks returned + releases).
+  const deliveryReturn = async (raw: string) => {
+    const c = raw.trim(); if (!c) return
+    setBusy(true); setMsg(null); setBag(null); setGarment(null)
+    try {
+      const j = await api(`/api/laundry/bags/delivery-return?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, actorName: staff.name }) })
+      if (!j.success) { setMsg({ ok: false, text: j.error || "Not accepted" }); return }
+      setMsg({ ok: true, text: `Delivery bag ${j.data.bagNumber} received · ${j.data.orderNumber}${j.data.released ? " → Available" : ""}` })
+    } finally { setBusy(false); setCode("") }
+  }
   const previewCall = (c: string) => api(`/api/laundry/bags/receive-at-store?${scopeQs}`, { method: "POST", body: JSON.stringify({ code: c, actorName: staff.name }) })
   // Chain of custody: preview the bag → the RECEIVER confirms (with condition).
   const previewBag = async (c: string) => {
@@ -723,6 +735,7 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   }
   const lookup = async (raw: string) => {
     const c = raw.trim(); if (!c) return
+    if (mode === "delivery") { deliveryReturn(c); return }
     setBusy(true); setMsg(null); if (!bulk) { setGarment(null); setBag(null) }
     try {
       if (bulk) { if (await queueBag(c)) return; const j = await api(`/api/laundry/scan?barcode=${encodeURIComponent(c)}`); setMsg({ ok: false, text: j.success ? "That is a garment, not a pickup bag." : "No pickup bag found for this code." }); return }
@@ -749,10 +762,16 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
   return (
     <div className="px-4 pt-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-800">Receive Pickup Bag</h2>
-        <button onClick={() => { setBulk((v) => !v); setBag(null); setGarment(null); setQueue([]); setMsg(null) }} className={`text-[12px] font-semibold rounded-full px-3 h-8 border ${bulk ? "bg-blue-600 text-white border-blue-600" : "bg-white text-blue-600 border-blue-200"}`}>{bulk ? "Bulk: On" : "Bulk"}</button>
+        <h2 className="text-lg font-bold text-slate-800">{mode === "delivery" ? "Receive Returned Bag" : "Receive Pickup Bag"}</h2>
+        {mode === "pickup" && <button onClick={() => { setBulk((v) => !v); setBag(null); setGarment(null); setQueue([]); setMsg(null) }} className={`text-[12px] font-semibold rounded-full px-3 h-8 border ${bulk ? "bg-blue-600 text-white border-blue-600" : "bg-white text-blue-600 border-blue-200"}`}>{bulk ? "Bulk: On" : "Bulk"}</button>}
       </div>
-      <p className="text-[12px] text-slate-400 -mt-2">{bulk ? "Scan several pickup bags, then receive them all in one go." : "Scan the pickup bag QR (or enter the bag number) to confirm it arrived — or scan a garment to open its order."}</p>
+      {/* Mode: receive a pickup bag (in) vs a returned delivery bag (back). */}
+      <div className="flex rounded-xl border border-slate-200 overflow-hidden text-[12px] font-semibold">
+        {(["pickup", "delivery"] as const).map((m) => (
+          <button key={m} onClick={() => { setMode(m); setBulk(false); setBag(null); setGarment(null); setQueue([]); setMsg(null); setCode("") }} className={`flex-1 h-9 ${mode === m ? "bg-blue-600 text-white" : "bg-white text-slate-500"}`}>{m === "pickup" ? "Pickup Receive" : "Delivery Bag Return"}</button>
+        ))}
+      </div>
+      <p className="text-[12px] text-slate-400 -mt-2">{mode === "delivery" ? "Scan the delivery bag the executive brought back after a completed delivery — it's marked returned and freed for reuse." : bulk ? "Scan several pickup bags, then receive them all in one go." : "Scan the pickup bag QR (or enter the bag number) to confirm it arrived — or scan a garment to open its order."}</p>
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
         {/* Primary: open the device camera to scan the bag QR (mobile). The scanner
             also offers USB/Bluetooth modes via its settings gear for desktop guns. */}

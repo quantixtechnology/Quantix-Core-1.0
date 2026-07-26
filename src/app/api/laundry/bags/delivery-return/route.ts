@@ -7,6 +7,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { resolveStoreAdmin, resolveStoreScope, bearerToken } from "@/lib/laundry-store-admin-auth"
 import { logFieldEvent } from "@/lib/laundry-field-ops"
 
 export const runtime = "nodejs"
@@ -14,26 +15,41 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const b = await request.json().catch(() => ({}))
-    const businessId = b.businessId
     const raw = String(b.code || b.bagNumber || b.qrValue || "").trim()
-    if (!businessId || !raw) return NextResponse.json({ success: false, error: "businessId and a bag code are required" }, { status: 400 })
-    const guard = await requireLaundryPermission(request, businessId, "laundry.bags.view")
-    if (!guard.ok) return guard.res
-    const biz = await resolveLaundryBusiness(businessId)
-    if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
+    if (!raw) return NextResponse.json({ success: false, error: "A bag code is required" }, { status: 400 })
+
+    // Dual auth: Store PWA staff (store-scoped) OR desktop admin (permission).
+    let bizId: string | null = null
+    let actorName: string | null = null
+    const sa = await resolveStoreAdmin(bearerToken(request))
+    if (sa) {
+      const scope = await resolveStoreScope(sa, request)
+      if (!scope) return NextResponse.json({ success: false, error: "No store selected" }, { status: 403 })
+      bizId = scope.businessId
+      actorName = "Store staff"
+    } else {
+      const businessId = b.businessId
+      if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
+      const guard = await requireLaundryPermission(request, businessId, "laundry.bags.view")
+      if (!guard.ok) return guard.res
+      const biz = await resolveLaundryBusiness(businessId)
+      if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
+      bizId = biz.id
+      actorName = guard.ctx?.userName ?? "Staff"
+    }
 
     // Normalise a scanned QR to the reusable bag number when it matches one.
-    const bag = await prisma.laundryBag.findFirst({ where: { businessId: biz.id, OR: [{ bagNumber: raw }, { qrValue: raw }] }, select: { id: true, bagNumber: true, status: true, currentOrderId: true } })
+    const bag = await prisma.laundryBag.findFirst({ where: { businessId: bizId, OR: [{ bagNumber: raw }, { qrValue: raw }] }, select: { id: true, bagNumber: true, status: true, currentOrderId: true } })
     const bagNumber = bag?.bagNumber || raw
 
     const order = await prisma.laundryOrder.findFirst({
-      where: { businessId: biz.id, deliveryBagNumber: bagNumber, deliveryCompletedAt: { not: null }, deliveryBagReturnedAt: null },
+      where: { businessId: bizId, deliveryBagNumber: bagNumber, deliveryCompletedAt: { not: null }, deliveryBagReturnedAt: null },
       orderBy: { deliveredAt: "desc" },
       select: { id: true, orderNumber: true, customerId: true },
     })
     if (!order) {
       // Distinguish "already returned / never out" from "unknown bag".
-      const already = await prisma.laundryOrder.findFirst({ where: { businessId: biz.id, deliveryBagNumber: bagNumber, deliveryBagReturnedAt: { not: null } }, select: { orderNumber: true }, orderBy: { deliveredAt: "desc" } })
+      const already = await prisma.laundryOrder.findFirst({ where: { businessId: bizId, deliveryBagNumber: bagNumber, deliveryBagReturnedAt: { not: null } }, select: { orderNumber: true }, orderBy: { deliveredAt: "desc" } })
       if (already) return NextResponse.json({ success: false, error: `Bag ${bagNumber} was already returned (last: ${already.orderNumber}).` }, { status: 409 })
       return NextResponse.json({ success: false, error: `No delivered order is out with bag ${bagNumber}.` }, { status: 404 })
     }
@@ -51,7 +67,7 @@ export async function POST(request: Request) {
       released = true
     }
 
-    await logFieldEvent({ orderId: order.id, businessId: biz.id, action: "DELIVERY_BAG_RETURNED", note: `Delivery bag ${bagNumber} received back at store${released ? " · released to Available" : ""}`, actor: { id: guard.ctx?.userId ?? null, name: b.actorName ?? guard.ctx?.userName ?? "Staff" } })
+    await logFieldEvent({ orderId: order.id, businessId: bizId, action: "DELIVERY_BAG_RETURNED", note: `Delivery bag ${bagNumber} received back at store${released ? " · released to Available" : ""}`, actor: { id: null, name: b.actorName ?? actorName ?? "Staff" } })
 
     return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, bagNumber, released } })
   } catch (e) {
