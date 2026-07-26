@@ -30,6 +30,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
+import { printHtmlDocument } from "@/lib/print-utils"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
 // the orders API (has garments AND none left un-inspected). undefined (older
@@ -305,16 +306,14 @@ function QrImage({ value, size = 160 }: { value: string; size?: number }) {
 
 function printPacketLabel(p: { packetNumber: string; qrValue: string; itemCount: number }, orderNumber: string, storeName: string | null | undefined) {
   QRCode.toDataURL(p.qrValue, { width: 240, margin: 1 }).then((url) => {
-    const w = window.open("", "_blank", "width=420,height=520")
-    if (!w) return
-    w.document.write(`<html><head><title>${p.packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px">
+    // Print via a hidden iframe (never a popup — see printHtmlDocument). The QR
+    // is an inline data-URI, so there is nothing external to wait on.
+    printHtmlDocument(`<html><head><title>${p.packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px">
       <img src="${url}" width="240" height="240" />
       <h2 style="margin:8px 0 2px">${p.packetNumber}</h2>
       <p style="margin:2px">Order: ${orderNumber}</p>
       <p style="margin:2px">Store: ${storeName || "—"} · ${p.itemCount} garment(s)</p>
-      <script>window.onload = () => setTimeout(() => window.print(), 200)</script>
-    </body></html>`)
-    w.document.close()
+    </body></html>`, p.packetNumber)
   })
 }
 

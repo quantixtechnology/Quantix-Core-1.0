@@ -139,6 +139,62 @@ export function printReceipt(
 }
 
 // ============================================================================
+// Print an arbitrary HTML document via a hidden, same-page iframe
+// ============================================================================
+
+/**
+ * Print a self-contained HTML document string by rendering it into a hidden,
+ * same-page iframe and printing THAT — never a popup window.
+ *
+ * A popup (window.open + window.print) is unreliable: it can be blocked, it can
+ * leave a stuck blank window, and its window.print() froze the app for some
+ * users (the same hang the barcode-label print had — see laundry-label.ts).
+ * The iframe prints only its own document and is removed afterwards. Embed any
+ * images as data-URIs so there is no external resource to wait on.
+ *
+ * @param html - a complete HTML document string
+ * @param jobTitle - optional; names the print job / "Save as PDF" file (the
+ *   browser reads the TOP document's title, so it is set while printing and
+ *   restored afterwards)
+ */
+export function printHtmlDocument(html: string, jobTitle?: string): void {
+  if (typeof window === 'undefined') return;
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc || !iframe.contentWindow) { try { iframe.remove(); } catch { /* noop */ } return; }
+  doc.open(); doc.write(html); doc.close();
+  if (jobTitle) { try { doc.title = jobTitle; } catch { /* noop */ } }
+
+  const prevTitle = document.title;
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    document.title = prevTitle;
+    setTimeout(() => { try { iframe.remove(); } catch { /* noop */ } }, 1000);
+  };
+
+  let printed = false;
+  const printNow = () => {
+    if (printed) return;
+    printed = true;
+    if (jobTitle) document.title = jobTitle;
+    try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { /* noop */ }
+    cleanup();
+  };
+  // onafterprint restores state; onload usually fires for a written doc, and the
+  // short timeout is the safety net so a single print() runs at most once.
+  iframe.contentWindow.onafterprint = cleanup;
+  iframe.onload = printNow;
+  setTimeout(printNow, 300);
+}
+
+// ============================================================================
 // Generate Print HTML — Returns full HTML string for a receipt
 // ============================================================================
 

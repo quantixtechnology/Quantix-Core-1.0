@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2, Printer, QrCode as QrIcon, X } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
+import { printHtmlDocument } from "@/lib/print-utils"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import QRCode from "qrcode"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -48,9 +49,8 @@ function ReturnQr({ value, size = 150 }: { value: string; size?: number }) {
 }
 function printReturnLabel(packetNumber: string, orderNumber: string, storeName: string | null | undefined) {
   QRCode.toDataURL(packetNumber, { width: 240, margin: 1 }).then((url) => {
-    const w = window.open("", "_blank", "width=380,height=520"); if (!w) return
-    w.document.write(`<html><head><title>${packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px"><img src="${url}" width="240" height="240"/><h2 style="margin:8px 0 2px">${packetNumber}</h2><p style="margin:2px 0">${orderNumber}</p><p style="margin:2px 0;color:#555">${storeName || ""}</p><p style="margin:6px 0;font-size:12px;color:#777">Return to store — scan to receive</p></body></html>`)
-    w.document.close(); setTimeout(() => { try { w.focus(); w.print() } catch { /* noop */ } }, 300)
+    // Print via a hidden iframe (never a popup — see printHtmlDocument).
+    printHtmlDocument(`<html><head><title>${packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px"><img src="${url}" width="240" height="240"/><h2 style="margin:8px 0 2px">${packetNumber}</h2><p style="margin:2px 0">${orderNumber}</p><p style="margin:2px 0;color:#555">${storeName || ""}</p><p style="margin:6px 0;font-size:12px;color:#777">Return to store — scan to receive</p></body></html>`, packetNumber)
   }).catch(() => {})
 }
 
