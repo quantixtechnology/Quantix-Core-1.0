@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { generateSlots, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -57,7 +58,10 @@ const payTypeToPreference = (t: PayType) => (t === "SUBSCRIPTION" ? "SUBSCRIPTIO
 // through every stage (stored in the SAME specialInstructions field, no backend
 // change). "Express Service" keeps the existing express pricing/turnaround link.
 const QUICK_NOTES = ["Starch", "Separate Whites", "Gentle Wash", "Steam Press", "Delicate Fabric", "Express Service", "Hanger Required", "Fold Only"]
-const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
+// Slots are configured per business (Settings → Pickup & Delivery Time Slots);
+// these are only the fallback until the config loads.
+const FALLBACK_PICKUP_SLOTS = generateSlots(DEFAULT_PICKUP_SLOT)
+const FALLBACK_DELIVERY_SLOTS = generateSlots(DEFAULT_DELIVERY_SLOT)
 
 interface AddressRow { id?: string; addressType?: string; label?: string | null; isPickupDefault?: boolean; isDeliveryDefault?: boolean; isDefault?: boolean; addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
 interface CustomerResult {
@@ -137,6 +141,8 @@ export default function LaundryNewOrder() {
   const [customDeliveryDate, setCustomDeliveryDate] = useState("")
   const [pickupRequired, setPickupRequired] = useState(false)
   const [deliveryRequired, setDeliveryRequired] = useState(false)
+  const [pickupSlots, setPickupSlots] = useState<string[]>(FALLBACK_PICKUP_SLOTS)
+  const [deliverySlots, setDeliverySlots] = useState<string[]>(FALLBACK_DELIVERY_SLOTS)
   const [pickupDate, setPickupDate] = useState("")
   const [pickupTimeSlot, setPickupTimeSlot] = useState("")
   const [deliveryDate, setDeliveryDate] = useState("")
@@ -175,6 +181,14 @@ export default function LaundryNewOrder() {
   }, [currentBusinessId])
 
   const seededRef = useRef(false)
+  // Config-driven pickup/delivery slots (single source — Settings → Time Slots).
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/slot-config?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
+      .then((j) => { if (j.success) { setPickupSlots(j.data.pickupSlots?.length ? j.data.pickupSlots : FALLBACK_PICKUP_SLOTS); setDeliverySlots(j.data.deliverySlots?.length ? j.data.deliverySlots : FALLBACK_DELIVERY_SLOTS) } })
+      .catch(() => { /* keep fallback */ })
+  }, [currentBusinessId])
+
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/businesses/${currentBusinessId}`).then((r) => r.json())
@@ -906,7 +920,7 @@ export default function LaundryNewOrder() {
                       <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label><Input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
                       <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Time Slot</Label>
                         <Select value={pickupTimeSlot} onValueChange={setPickupTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                          <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                          <SelectContent>{pickupSlots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
                       </div>
                     </div>
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
@@ -942,7 +956,7 @@ export default function LaundryNewOrder() {
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Date</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Time Slot</Label>
                       <Select value={deliveryTimeSlot} onValueChange={setDeliveryTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                        <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                        <SelectContent>{deliverySlots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
                     </div>
                   </div>
                 )}

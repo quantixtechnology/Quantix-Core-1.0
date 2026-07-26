@@ -4274,6 +4274,15 @@ model LaundryOperationalConfig {
   expressTurnaroundHours Int?
   expressChargeType      String          @default("FIXED") // FIXED | PERCENT
   expressChargeValue     Float           @default(0)
+  // Delivery & Pickup time-slot windows — the SINGLE source of slots used
+  // everywhere pickup/delivery are scheduled (New Order, Ready for Delivery,
+  // Storefront). Start/end are "HH:MM"; duration is the slot length in minutes.
+  pickupSlotStart         String         @default("07:00")
+  pickupSlotEnd           String         @default("21:00")
+  pickupSlotDurationMin   Int            @default(120)
+  deliverySlotStart       String         @default("14:00")
+  deliverySlotEnd         String         @default("23:00")
+  deliverySlotDurationMin Int            @default(60)
   updatedAt              DateTime        @updatedAt
   createdAt              DateTime        @default(now())
 

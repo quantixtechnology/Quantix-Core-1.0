@@ -28,6 +28,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
@@ -589,6 +590,15 @@ export function LaundryReadyForDelivery() {
   const [execs, setExecs] = useState<{ id: string; name: string }[]>([])
   const [delAddresses, setDelAddresses] = useState<{ id: string; addressLine1: string; area: string | null; city: string; label?: string | null; addressType?: string | null; isDeliveryDefault?: boolean }[]>([])
   const [delAddrLoading, setDelAddrLoading] = useState(false)
+  const [deliverySlots, setDeliverySlots] = useState<string[]>(generateSlots(DEFAULT_DELIVERY_SLOT))
+
+  // Config-driven delivery slots (Settings → Time Slots) — same source everywhere.
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/slot-config?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
+      .then((j) => { if (j.success && j.data.deliverySlots?.length) setDeliverySlots(j.data.deliverySlots) })
+      .catch(() => { /* keep fallback */ })
+  }, [currentBusinessId])
 
   const openOrder = async (o: OrderRow | null) => {
     setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
@@ -683,7 +693,12 @@ export function LaundryReadyForDelivery() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={delForm.date} onChange={(e) => setDelForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" /></div>
-                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={delForm.timeSlot} onChange={(e) => setDelForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" placeholder="e.g. 14:00–16:00" /></div>
+                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label>
+                      <select value={delForm.timeSlot} onChange={(e) => setDelForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white">
+                        <option value="">Select slot…</option>
+                        {deliverySlots.map((s) => { const past = slotIsPast(s, delForm.date); return <option key={s} value={s} disabled={past}>{s}{past ? " (passed)" : ""}</option> })}
+                      </select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={delForm.assignNow} onChange={(e) => setDelForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
