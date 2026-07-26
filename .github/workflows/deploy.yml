@@ -209,9 +209,14 @@ jobs:
             sleep 30
             POLL=$((POLL + 1))
 
-            # Capture HTTP code, headers, body, and stderr separately
+            # Capture HTTP code, headers, body, and stderr separately.
+            # NOTE: `set +e` around curl — a transient timeout (exit 28) must NOT
+            # abort the step under `set -eo pipefail`; the loop already classifies
+            # CURL_EXIT and `continue`s. Without this, one slow poll killed the whole
+            # monitor even though the detached deploy was succeeding.
             rm -f /tmp/poll.headers /tmp/poll.body /tmp/poll.stderr
 
+            set +e
             HTTP_CODE=$(curl \
               --silent \
               --show-error \
@@ -222,8 +227,8 @@ jobs:
               $RESOLVE_FLAG \
               -H "Cache-Control: no-cache" \
               "${APP_URL}/deploy-status.json" 2>/tmp/poll.stderr)
-
             CURL_EXIT=$?
+            set -e
 
             # Extract Content-Type from headers
             CONTENT_TYPE=$(grep -i "^content-type:" /tmp/poll.headers 2>/dev/null | head -1 | cut -d' ' -f2- | tr -d '\r')
