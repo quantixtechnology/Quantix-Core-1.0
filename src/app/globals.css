@@ -212,3 +212,33 @@ html {
 * {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ── Field-ops / Admin PWA frame ─────────────────────────────────────────────
+   The Delivery (executive) and Admin (store) PWAs are phone-first. On a WIDE
+   viewport — Chrome's "Request Desktop Site", or the installed app opened in a
+   laptop window — the mobile layout must NOT stretch. .pwa-shell locks it to a
+   centered phone-width column. Full-width fixed bottom bars (.fixed.inset-x-0)
+   and the floating action button (.fixed.right-4) are re-centered to the same
+   column purely in CSS, so the app bodies need no changes. Full-screen modals
+   (.fixed.inset-0) are left covering the viewport intentionally. */
+.pwa-shell { min-height: 100dvh; }
+@media (min-width: 520px) {
+  body:has(.pwa-shell) { background: #e5e7eb; }
+  .pwa-shell {
+    max-width: 480px;
+    margin-inline: auto;
+    min-height: 100dvh;
+    background: #fff;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.08);
+  }
+  .pwa-shell .fixed.inset-x-0 {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 480px;
+  }
+  .pwa-shell .fixed.right-4 {
+    right: calc(50% - 240px + 1rem) !important;
+  }
+}

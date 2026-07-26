@@ -17,9 +17,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const name = t?.name || "Pickup & Delivery"
   const logo = t?.logo ? resolveImageUrl(t.logo) : null
   return {
-    title: `${name} · Pickup & Delivery`,
+    title: `${name} Delivery App`,
     manifest: "/manifest.json?app=executive",
-    appleWebApp: { capable: true, statusBarStyle: "default", title: name },
+    appleWebApp: { capable: true, statusBarStyle: "default", title: `${name} Delivery App` },
     ...(logo ? { icons: { icon: logo, apple: logo, shortcut: logo } } : {}),
   }
 }
@@ -30,5 +30,7 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export default function ExecutiveLayout({ children }: { children: React.ReactNode }) {
-  return children
+  // .pwa-shell locks the app to a phone-width column on wide/desktop-mode
+  // viewports so the mobile layout never stretches (see globals.css).
+  return <div className="pwa-shell">{children}</div>
 }

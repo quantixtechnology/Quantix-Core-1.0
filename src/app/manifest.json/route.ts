@@ -101,7 +101,7 @@ export async function GET(request: Request) {
   const manifest = isStore
     ? {
         id:               isStoreHost ? '/' : '/laundry/store',
-        name:             `${name} Store Admin`,
+        name:             `${name} Admin App`,
         short_name:       shortName(name),
         description:      'Store operations — orders, audit, payment, dispatch',
         start_url:        storeStart,
@@ -123,7 +123,7 @@ export async function GET(request: Request) {
     : isExecutive
     ? {
         id:               isDeliveryHost ? '/' : '/laundry/executive',
-        name:             `${name} Pickup & Delivery`,
+        name:             `${name} Delivery App`,
         short_name:       shortName(name),
         description:      'Pickup & delivery field operations',
         start_url:        execStart,
@@ -145,7 +145,7 @@ export async function GET(request: Request) {
     : isDelivery
     ? {
         id:               '/delivery',
-        name:             `${name} Delivery`,
+        name:             `${name} Delivery App`,
         short_name:       'Delivery',
         description:      'Delivery workforce application',
         start_url:        '/delivery?source=pwa',

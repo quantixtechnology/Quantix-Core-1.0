@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { PwaInstallButton } from "@/components/laundry/pwa-install-button"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 const TOKEN_KEY = "qx_store_token"
@@ -117,6 +118,7 @@ export default function StoreAdminApp() {
             <input type="password" autoComplete="current-password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px] bg-white" />
             {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
             <button onClick={login} disabled={loggingIn || !email || !password} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{loggingIn ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}</button>
+            <PwaInstallButton />
             <p className="text-[11px] text-slate-400 text-center pt-2">Store staff only. Accounts are created by your admin.</p>
           </div>
         </div>
