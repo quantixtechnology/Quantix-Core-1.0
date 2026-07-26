@@ -381,35 +381,47 @@ export function LaundryStoreAudit() {
 function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { orderId: string; orderNumber: string; businessId: string | null; onSaved: () => void; onCancel: () => void }) {
   const { toast } = useToast()
   const [garments, setGarments] = useState<{ id: string; name: string }[]>([])
-  const [services, setServices] = useState<{ serviceId: string | null; serviceName: string }[]>([])
+  const [services, setServices] = useState<{ serviceId: string; serviceName: string }[]>([])
   const [rows, setRows] = useState<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!businessId) return
     fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()).then((j) => setGarments(j.success ? (j.data || []).map((g: { id: string; name: string }) => ({ id: g.id, name: g.name })) : [])).catch(() => {})
-    fetch(`/api/laundry/bags?businessId=${businessId}&search=${encodeURIComponent(orderNumber)}`).then((r) => r.json()).then((j) => {
-      const bags = (j.data || []).filter((b: { currentOrderId: string | null }) => b.currentOrderId === orderId)
-      const map = new Map<string, { serviceId: string | null; serviceName: string }>()
-      for (const b of bags) { const key = b.currentServiceId || b.currentServiceName || "svc"; map.set(key, { serviceId: b.currentServiceId || null, serviceName: b.currentServiceName || "Laundry" }) }
-      const svcs = map.size ? [...map.values()] : [{ serviceId: null, serviceName: "Laundry" }]
+    // The CONFIGURED services (each with a real id) are the source of truth — a
+    // garment must map to one so the Pricing Engine can price it. The bag's booked
+    // service (if any) only pre-selects the default; it is never the option list,
+    // because a bag may carry only a service NAME (null id) which would save an
+    // unpriceable ₹0 "Service" line.
+    Promise.all([
+      fetch(`/api/laundry/services?businessId=${businessId}`).then((r) => r.json()).catch(() => ({})),
+      fetch(`/api/laundry/bags?businessId=${businessId}&search=${encodeURIComponent(orderNumber)}`).then((r) => r.json()).catch(() => ({})),
+    ]).then(([sj, bj]) => {
+      const svcs = ((sj.data || sj.services || []) as { id: string; name: string }[]).map((s) => ({ serviceId: s.id, serviceName: s.name }))
       setServices(svcs)
-      setRows(svcs.map((s) => ({ serviceKey: s.serviceId || s.serviceName, garmentId: "", quantity: "1", weightKg: "" })))
-    }).catch(() => {})
+      const bagSvcId = ((bj.data || []) as { currentOrderId: string | null; currentServiceId: string | null }[]).find((b) => b.currentOrderId === orderId && b.currentServiceId)?.currentServiceId || null
+      const defaultKey = bagSvcId && svcs.some((s) => s.serviceId === bagSvcId) ? bagSvcId : svcs[0]?.serviceId || ""
+      setRows([{ serviceKey: defaultKey, garmentId: "", quantity: "1", weightKg: "" }])
+    })
   }, [businessId, orderId, orderNumber])
 
-  const keyOf = (s: { serviceId: string | null; serviceName: string }) => s.serviceId || s.serviceName
-  const svcByKey = (k: string) => services.find((s) => keyOf(s) === k) || services[0]
-  const addRow = () => setRows((r) => [...r, { serviceKey: services[0] ? keyOf(services[0]) : "Laundry", garmentId: "", quantity: "1", weightKg: "" }])
+  const svcByKey = (k: string) => services.find((s) => s.serviceId === k) || null
+  const addRow = () => setRows((r) => [...r, { serviceKey: services[0]?.serviceId || "", garmentId: "", quantity: "1", weightKg: "" }])
   const upd = (i: number, patch: Partial<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const del = (i: number) => setRows((r) => r.filter((_, j) => j !== i))
 
   const save = async () => {
-    const items = rows.filter((r) => r.garmentId && ((Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0)).map((r) => {
-      const s = svcByKey(r.serviceKey)
-      return { serviceId: s?.serviceId || null, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }
+    const usable = rows.filter((r) => r.garmentId && ((Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0))
+    if (!usable.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
+    // Every garment MUST have a real service selected — otherwise it can't be
+    // priced and would save as a ₹0 "Service" line.
+    if (usable.some((r) => !svcByKey(r.serviceKey))) {
+      toast({ title: "Select a service", description: "Choose a service for every garment before saving.", variant: "destructive" }); return
+    }
+    const items = usable.map((r) => {
+      const s = svcByKey(r.serviceKey)!
+      return { serviceId: s.serviceId, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }
     })
-    if (!items.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
     setSaving(true)
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.json())
@@ -426,7 +438,8 @@ function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { 
         {rows.map((r, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_64px_72px_32px] gap-1.5 items-center">
             <select value={r.serviceKey} onChange={(e) => upd(i, { serviceKey: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
-              {services.map((s) => <option key={keyOf(s)} value={keyOf(s)}>{s.serviceName}</option>)}
+              <option value="">Select service…</option>
+              {services.map((s) => <option key={s.serviceId} value={s.serviceId}>{s.serviceName}</option>)}
             </select>
             <select value={r.garmentId} onChange={(e) => upd(i, { garmentId: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
               <option value="">Garment…</option>

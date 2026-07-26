@@ -24,6 +24,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const items: IntakeItem[] = Array.isArray(body.items) ? body.items : []
     const clean = items.filter((it) => (Number(it.quantity) || 0) > 0 || (Number(it.weightKg) || 0) > 0)
     if (clean.length === 0) return NextResponse.json({ success: false, error: "Add at least one garment." }, { status: 400 })
+    // Every garment MUST carry a service — the Pricing Engine prices by service +
+    // garment. A null service can't be priced and would persist a ₹0 "Service"
+    // line (a billing hole). Reject it here so no UI path can create one.
+    if (clean.some((it) => !it.serviceId)) return NextResponse.json({ success: false, error: "Select a service for every garment before saving." }, { status: 400 })
 
     const order = await prisma.laundryOrder.findUnique({
       where: { id },

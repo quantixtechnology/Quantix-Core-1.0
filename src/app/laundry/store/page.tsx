@@ -465,7 +465,10 @@ function AuditScreen({ order, staff, api, onClose, onDone }: { order: any; staff
 
   const addGarment = async () => {
     const s = services.find((x) => x.id === svc), g = garments.find((x) => x.id === gar)
-    if (!s || !g) return
+    // A garment can't be priced without a service — alert instead of silently ignoring.
+    if (!s) { setErr("Select a service for this garment."); return }
+    if (!g) { setErr("Select a garment."); return }
+    setErr(null)
     setAdding(true)
     try {
       const j = await api(`/api/laundry/orders/${order.id}/items`, { method: "POST", body: JSON.stringify({ items: [{ serviceId: s.id, garmentId: g.id, quantity: Math.max(1, Number(qty) || 1), weightKg: 0 }] }) })
