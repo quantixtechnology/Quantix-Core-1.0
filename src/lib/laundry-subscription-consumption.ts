@@ -22,6 +22,11 @@
 
 export type AllowanceMode = "PER_KG" | "PER_PIECE"
 
+// A rule declares only ELIGIBILITY — which service (optionally narrowed to a
+// garment) a subscription may cover. The UNIT consumed (KG vs pieces) is the
+// PLAN's allowance unit (`SubForCoverage.coverageUnit`), NOT the garment's
+// pricing mode: a cloth plan (e.g. "70 garments/cycle") covers an eligible
+// garment for 1 piece even when that garment is priced per-KG for walk-ins.
 export interface CoverageRule { serviceId: string; garmentId: string | null; mode: AllowanceMode }
 
 export interface SubForCoverage {
@@ -29,6 +34,10 @@ export interface SubForCoverage {
   remainingKg: number
   remainingPieces: number
   rules: CoverageRule[]
+  // How this subscription's allowance is measured/consumed. Derived from the
+  // plan (CLOTH_ALLOWANCE → PER_PIECE, KG_ALLOWANCE → PER_KG); defaults by
+  // whichever allowance the subscription actually carries.
+  coverageUnit: AllowanceMode
 }
 
 export interface CoverLine {
@@ -93,7 +102,11 @@ export function computeCoverage(subsInput: SubForCoverage[], lines: CoverLine[])
       const rule = matchRule(sub, line.serviceId, line.garmentId)
       if (!rule) continue
 
-      if (rule.mode === "PER_PIECE") {
+      // The consumption unit is the PLAN's allowance unit, not the garment's
+      // pricing mode. A cloth (piece) plan draws down pieces for any eligible
+      // garment — including per-KG-priced ones — and the per-KG charge only
+      // applies once the piece allowance is exhausted.
+      if (sub.coverageUnit === "PER_PIECE") {
         const need = line.quantity > 0 ? line.quantity : 1
         if (sub.remainingPieces >= need) {
           sub.remainingPieces -= need
@@ -102,12 +115,12 @@ export function computeCoverage(subsInput: SubForCoverage[], lines: CoverLine[])
           break // one subscription per garment
         }
         // not enough pieces in THIS sub → do not spill to another (Part 13);
-        // the whole line stays regular unless a later rule/mode covers it.
+        // the whole line stays regular (billed at its per-KG / per-piece price).
         continue
       }
 
       // PER_KG
-      if (rule.mode === "PER_KG") {
+      if (sub.coverageUnit === "PER_KG") {
         const w = line.weightKg > 0 ? line.weightKg : 0
         if (w <= 0 || sub.remainingKg <= 0) continue
         const coveredKg = Math.min(sub.remainingKg, w)

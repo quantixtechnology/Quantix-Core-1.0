@@ -9,6 +9,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { computeCoverage, type SubForCoverage, type CoverLine, type AllowanceMode } from "@/lib/laundry-subscription-consumption"
+import { coverageUnitOf } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
   const lines: CoverLine[] = priced.map((l, i) => ({ itemId: `q-${i}`, serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity || 1, weightKg: l.weightKg || 0, unitPrice: l.unitPrice || 0, lineAmount: l.lineAmount || 0 }))
   let coveredAmount = 0
   if (subs.length) {
-    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: s.plan.coverageRules.map((r) => ({ serviceId: r.serviceId, garmentId: r.garmentId, mode: (r.allowanceMode === "PER_KG" ? "PER_KG" : "PER_PIECE") as AllowanceMode })) }))
+    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, coverageUnit: coverageUnitOf(s), rules: s.plan.coverageRules.map((r) => ({ serviceId: r.serviceId, garmentId: r.garmentId, mode: (r.allowanceMode === "PER_KG" ? "PER_KG" : "PER_PIECE") as AllowanceMode })) }))
     coveredAmount = computeCoverage(subInputs, lines).coveredAmount
   }
   return NextResponse.json({ success: true, data: { grandTotal, coveredAmount: r2(coveredAmount), extraAmount: r2(grandTotal - coveredAmount), lineCount: priced.length } })

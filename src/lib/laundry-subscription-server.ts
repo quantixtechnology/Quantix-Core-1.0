@@ -15,6 +15,14 @@ import { computeCoverage, type SubForCoverage, type CoverLine, type AllowanceMod
 const r2 = (n: number) => Math.round(n * 100) / 100
 type Tx = Prisma.TransactionClient
 
+// The unit a subscription consumes when covering an order. A cloth plan grants
+// pieces (allowancePieces), a KG plan grants kg — that GRANT (not the current
+// balance) is what fixes the unit, so an exhausted piece plan still bills its
+// overflow at the per-KG price rather than silently switching to KG coverage.
+export function coverageUnitOf(s: { allowancePieces: number; allowanceKg: number }): AllowanceMode {
+  return (s.allowancePieces || 0) > 0 ? "PER_PIECE" : "PER_KG"
+}
+
 export type LedgerType = "OPENING" | "CONSUMPTION" | "ADJUSTMENT" | "RENEWAL" | "EXPIRY" | "MANUAL_ADJUSTMENT" | "CLOSING"
 
 export async function writeLedger(tx: Tx, e: {
@@ -114,6 +122,9 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
   const matrixRules = await subscriptionCoverageRules(order.businessId)
   const subInputs: SubForCoverage[] = subs.map((s) => ({
     id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: matrixRules,
+    // Consumption unit follows the plan's allowance: a cloth plan (pieces)
+    // covers eligible garments by count even when they are priced per-KG.
+    coverageUnit: coverageUnitOf(s),
   }))
   const lines: CoverLine[] = order.items.map((i) => ({
     itemId: i.id, serviceId: i.serviceId, garmentId: i.garmentId, quantity: i.quantity || 1,

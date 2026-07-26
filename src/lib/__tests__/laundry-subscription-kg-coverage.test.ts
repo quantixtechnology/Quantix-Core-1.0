@@ -45,7 +45,7 @@ describe('computeCoverage — KG allowance consumes the weighed order', () => {
   const svcRule = { serviceId: 'svc-wash', garmentId: null as string | null, mode: 'PER_KG' as const }
 
   it('fully covers a subscribed KG order → ₹0 billable, allowance drawn down', () => {
-    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 5, remainingPieces: 0, rules: [svcRule] }]
+    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 5, remainingPieces: 0, coverageUnit: 'PER_KG', rules: [svcRule] }]
     const res = computeCoverage(subs, toCoverLines())
     expect(res.coveredAmount).toBeCloseTo(80, 5) // whole bill covered
     expect(res.extraAmount).toBeCloseTo(0, 5)    // nothing owed
@@ -54,7 +54,7 @@ describe('computeCoverage — KG allowance consumes the weighed order', () => {
 
   it('splits the bill when the allowance runs out mid-order', () => {
     // 0.50kg left: covers two full lines (0.40) + half of a third (0.10) = ₹50.
-    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 0.5, remainingPieces: 0, rules: [svcRule] }]
+    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 0.5, remainingPieces: 0, coverageUnit: 'PER_KG', rules: [svcRule] }]
     const res = computeCoverage(subs, toCoverLines())
     expect(res.coveredAmount).toBeCloseTo(50, 5)
     expect(res.extraAmount).toBeCloseTo(30, 5)
@@ -62,9 +62,36 @@ describe('computeCoverage — KG allowance consumes the weighed order', () => {
   })
 
   it('covers nothing when no garment/service is eligible (bills in full)', () => {
-    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 5, remainingPieces: 0, rules: [{ serviceId: 'svc-other', garmentId: null, mode: 'PER_KG' }] }]
+    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 5, remainingPieces: 0, coverageUnit: 'PER_KG', rules: [{ serviceId: 'svc-other', garmentId: null, mode: 'PER_KG' }] }]
     const res = computeCoverage(subs, toCoverLines())
     expect(res.coveredAmount).toBeCloseTo(0, 5)
     expect(res.extraAmount).toBeCloseTo(80, 5)
+  })
+})
+
+describe('computeCoverage — CLOTH (piece) plan covers per-KG-priced garments by count', () => {
+  // The real-world case: a "70 cloths / cycle" plan whose eligible garments are
+  // priced PER_KG. Each garment must consume ONE piece and bill ₹0; only once
+  // the piece allowance is exhausted does the per-KG price apply. The pricing
+  // matrix mode (PER_KG) is eligibility only — the plan's unit (pieces) drives
+  // consumption.
+  const svcRule = { serviceId: 'svc-wash', garmentId: null as string | null, mode: 'PER_KG' as const }
+
+  it('covers every eligible per-KG garment for 1 piece each → ₹0 billable', () => {
+    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 0, remainingPieces: 70, coverageUnit: 'PER_PIECE', rules: [svcRule] }]
+    const res = computeCoverage(subs, toCoverLines()) // 4 garments, per-KG @ ₹80 total
+    expect(res.coveredAmount).toBeCloseTo(80, 5)
+    expect(res.extraAmount).toBeCloseTo(0, 5)
+    expect(res.perSub['sub-1'].consumedPieces).toBe(4)
+    expect(res.perSub['sub-1'].consumedKg).toBe(0) // KG untouched — it's a cloth plan
+  })
+
+  it('once the cloth allowance runs out, the overflow bills at the per-KG price', () => {
+    // Only 3 pieces left: 3 garments free (₹60), the 4th bills its per-KG line (₹20).
+    const subs: SubForCoverage[] = [{ id: 'sub-1', remainingKg: 0, remainingPieces: 3, coverageUnit: 'PER_PIECE', rules: [svcRule] }]
+    const res = computeCoverage(subs, toCoverLines())
+    expect(res.coveredAmount).toBeCloseTo(60, 5)
+    expect(res.extraAmount).toBeCloseTo(20, 5)
+    expect(res.perSub['sub-1'].consumedPieces).toBe(3)
   })
 })

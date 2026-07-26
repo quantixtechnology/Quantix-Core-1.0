@@ -11,7 +11,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType } from "@/lib/laundry-billing-server"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { computeCoverage, type SubForCoverage, type CoverLine } from "@/lib/laundry-subscription-consumption"
-import { subscriptionCoverageRules } from "@/lib/laundry-subscription-server"
+import { subscriptionCoverageRules, coverageUnitOf } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
     // Eligibility from the Pricing Matrix (single source), same as apply.
     const matrixRules = await subscriptionCoverageRules(biz.id)
-    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, rules: matrixRules }))
+    const subInputs: SubForCoverage[] = subs.map((s) => ({ id: s.id, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, coverageUnit: coverageUnitOf(s), rules: matrixRules }))
     const result = computeCoverage(subInputs, lineInputs)
 
     const lines = result.lines.map((lc, i) => ({
