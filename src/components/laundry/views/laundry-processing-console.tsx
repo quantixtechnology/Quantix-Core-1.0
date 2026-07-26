@@ -54,6 +54,45 @@ function printReturnLabel(packetNumber: string, orderNumber: string, storeName: 
   }).catch(() => {})
 }
 
+// Packet history for a console section: past packets in the given statuses, with a
+// search and a Reprint QR (same packet QR) — for when a label was missed at dispatch.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HistPacket = { id: string; packetNumber: string; status: string; itemCount: number; dispatchedAt: string | null; receivedAt: string | null; returnDispatchedAt: string | null; order: { orderNumber: string; store?: { storeName?: string | null } | null }; customer: { name?: string | null } | null }
+function PacketHistory({ businessId, statusIn, timeField, timeLabel }: { businessId: string | null; statusIn: string; timeField: "receivedAt" | "returnDispatchedAt" | "dispatchedAt"; timeLabel: string }) {
+  const [rows, setRows] = useState<HistPacket[]>([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState("")
+  const load = useCallback(() => {
+    if (!businessId) return
+    setLoading(true)
+    const params = new URLSearchParams({ businessId, statusIn })
+    if (q.trim()) params.set("search", q.trim())
+    fetch(`/api/laundry/packets?${params}`).then((r) => r.json()).then((j) => setRows(j.success ? j.data : [])).catch(() => setRows([])).finally(() => setLoading(false))
+  }, [businessId, statusIn, q])
+  useEffect(() => { const t = setTimeout(load, q ? 250 : 0); return () => clearTimeout(t) }, [load, q])
+  const f = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
+  return (
+    <div className="p-4 space-y-2">
+      <div className="relative max-w-xs"><ScanLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search order / packet…" className="pl-8 h-9 text-sm font-mono" /></div>
+      {loading ? <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : rows.length === 0 ? <p className="py-6 text-center text-sm text-slate-400">{q ? "No packet matches that." : "No history yet."}</p> : (
+        <Table>
+          <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Packet</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>{timeLabel}</TableHead><TableHead className="text-right">QR</TableHead></TableRow></TableHeader>
+          <TableBody>{rows.map((p) => (
+            <TableRow key={p.id}>
+              <TableCell className="font-mono text-xs">{p.order.orderNumber}</TableCell>
+              <TableCell className="font-mono text-xs">{p.packetNumber}</TableCell>
+              <TableCell className="text-sm">{p.customer?.name || "—"}</TableCell>
+              <TableCell className="text-center">{p.itemCount}</TableCell>
+              <TableCell className="text-xs text-slate-500">{f((p as unknown as Record<string, string | null>)[timeField])}</TableCell>
+              <TableCell className="text-right"><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => printReturnLabel(p.packetNumber, p.order.orderNumber, p.order.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Reprint QR</Button></TableCell>
+            </TableRow>
+          ))}</TableBody>
+        </Table>
+      )}
+    </div>
+  )
+}
+
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
 
 export function LaundryProcessingConsole() {
@@ -66,6 +105,7 @@ export function LaundryProcessingConsole() {
   const [stageCounts, setStageCounts] = useState<Record<string, number>>({})
   const [dispatchRow, setDispatchRow] = useState<ReturnRow | null>(null)
   const [dispatchBag, setDispatchBag] = useState("")
+  const [hist, setHist] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [code, setCode] = useState("")
@@ -132,6 +172,14 @@ export function LaundryProcessingConsole() {
     } catch { toast({ title: "Return dispatch failed", variant: "destructive" }) } finally { setActing(false) }
   }
 
+  // Active ⇄ History toggle shown in each section header.
+  const histToggle = (key: string) => (
+    <div className="ml-auto flex rounded-lg border border-slate-200 overflow-hidden text-[11px] font-medium">
+      <button onClick={() => setHist((h) => ({ ...h, [key]: false }))} className={`px-2.5 py-1 ${!hist[key] ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>Active</button>
+      <button onClick={() => setHist((h) => ({ ...h, [key]: true }))} className={`px-2.5 py-1 ${hist[key] ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>History</button>
+    </div>
+  )
+
   return (
     <div className="px-4 lg:px-6 py-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -165,9 +213,9 @@ export function LaundryProcessingConsole() {
 
       {/* Receive dispatched packets */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Truck className="h-[18px] w-[18px] text-blue-600" /> In Transit — Receive Packets <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{incoming.length}</Badge></CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Truck className="h-[18px] w-[18px] text-blue-600" /> In Transit — Receive Packets <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{incoming.length}</Badge>{histToggle("receive")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : incoming.length === 0 ? (
+          {hist.receive ? <PacketHistory businessId={currentBusinessId} statusIn="AT_PROCESSING_CENTER,RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="receivedAt" timeLabel="Received" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : incoming.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No packets in transit. Only dispatched packets appear here.</p>
           ) : (
             <Table>
@@ -190,9 +238,9 @@ export function LaundryProcessingConsole() {
 
       {/* Awaiting Barcode Generation → dedicated page */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Awaiting Barcode Generation <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingBarcode.length}</Badge></CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Awaiting Barcode Generation <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingBarcode.length}</Badge>{histToggle("barcode")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : awaitingBarcode.length === 0 ? (
+          {hist.barcode ? <PacketHistory businessId={currentBusinessId} statusIn="AT_PROCESSING_CENTER,RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="receivedAt" timeLabel="Received" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : awaitingBarcode.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No packets awaiting audit.</p>
           ) : (
             <Table>
@@ -213,9 +261,9 @@ export function LaundryProcessingConsole() {
 
       {/* Ready to return to store */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Undo2 className="h-[18px] w-[18px] text-emerald-600" /> Completed — Dispatch to Store <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{readyToReturn.length}</Badge></CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Undo2 className="h-[18px] w-[18px] text-emerald-600" /> Completed — Dispatch to Store <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{readyToReturn.length}</Badge>{histToggle("dispatch")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : readyToReturn.length === 0 ? (
+          {hist.dispatch ? <PacketHistory businessId={currentBusinessId} statusIn="RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="returnDispatchedAt" timeLabel="Dispatched" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : readyToReturn.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No completed orders waiting. Orders appear when every garment has passed QC.</p>
           ) : (
             <Table>

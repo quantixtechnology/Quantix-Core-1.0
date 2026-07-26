@@ -16,15 +16,23 @@ export async function GET(request: Request) {
 
     const code = (sp.get("code") || "").trim()
     const status = sp.get("status")
+    const statusIn = (sp.get("statusIn") || "").split(",").map((s) => s.trim()).filter(Boolean)
+    const searchQ = (sp.get("search") || "").trim()
 
     const where: Record<string, unknown> = { businessId: biz.id }
     if (status) where.status = status
+    else if (statusIn.length) where.status = { in: statusIn }
     if (code) {
       where.OR = [
         { packetNumber: code }, { qrValue: code },
         { order: { orderNumber: code } },
         // QR scanners sometimes deliver the code inside a URL / with whitespace
         { packetNumber: { contains: code } },
+      ]
+    } else if (searchQ) {
+      where.OR = [
+        { packetNumber: { contains: searchQ } },
+        { order: { orderNumber: { contains: searchQ } } },
       ]
     }
 
@@ -40,7 +48,7 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { updatedAt: "desc" },
-      take: code ? 5 : 50,
+      take: code ? 5 : statusIn.length ? 100 : 50,
     })
 
     const custIds = [...new Set(packets.map((p) => p.order.customerId).filter(Boolean) as string[])]

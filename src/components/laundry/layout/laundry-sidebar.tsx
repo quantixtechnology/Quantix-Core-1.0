@@ -184,9 +184,9 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Outbound",
     items: [
       { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3, perm: "processing.quality_check.view" },
-      // Garment-level packing completion. Packet/order-level transit back to the
-      // store is a separate action in Processing Center → Dispatch to Store.
-      { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 3, perm: "processing.packing.view" },
+      // NOTE: no per-garment "Packing" workstation — the flow terminates QC → PACKED
+      // and a QC pass moves the garment straight to PACKED/DONE. Order-level packet
+      // dispatch back to the store lives in Processing Center → Dispatch to Store.
     ],
   },
 ]
@@ -210,7 +210,6 @@ const PROCESSING_GROUPS: NavGroup[] = [
   ] },
   { label: "Outbound", items: [
     { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 1 },
-    { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 1 },
   ] },
 ]
 
