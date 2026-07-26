@@ -38,6 +38,11 @@ export interface StrategyLineResult {
   gstAmount: number
   total: number
   weightRequired?: boolean // PER_KG with no measured order weight yet
+  // PER_KG: this line's share of the single total order weight, allocated the
+  // SAME way as lineAmount (proportional to quantity, last line absorbs the
+  // rounding). It exists so subscription KG allowance can be consumed per line;
+  // it is a derived split of one order weight, not a real per-garment weight.
+  weightKg?: number
 }
 
 export interface BillingStrategy {
@@ -72,12 +77,15 @@ export const perKgStrategy: BillingStrategy = {
     const grand = r2(weight * rate)
     const totalQty = lines.reduce((s, l) => s + (l.quantity || 0), 0) || 1
     let rest = grand
+    let wRest = r2(weight)
     return lines.map((l, i) => {
       const last = i === lines.length - 1
       const amt = last ? rest : r2((grand * (l.quantity || 0)) / totalQty)
+      const w = last ? wRest : r2((weight * (l.quantity || 0)) / totalQty)
       rest = r2(rest - amt)
+      wRest = r2(wRest - w)
       const gst = r2((amt * (l.gstPercent || 0)) / 100)
-      return { lineAmount: amt, gstAmount: gst, total: r2(amt + gst), weightRequired: noWeight }
+      return { lineAmount: amt, gstAmount: gst, total: r2(amt + gst), weightRequired: noWeight, weightKg: w }
     })
   },
 }

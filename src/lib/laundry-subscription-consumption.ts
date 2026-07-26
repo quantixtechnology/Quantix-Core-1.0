@@ -113,7 +113,9 @@ export function computeCoverage(subsInput: SubForCoverage[], lines: CoverLine[])
         const coveredKg = Math.min(sub.remainingKg, w)
         sub.remainingKg = r2(sub.remainingKg - coveredKg)
         perSub[sub.id].consumedKg = r2(perSub[sub.id].consumedKg + coveredKg)
-        const coveredAmount = r2(coveredKg * line.unitPrice)
+        // Full coverage settles the line EXACTLY (no paisa residual from
+        // re-multiplying an allocated weight × rate); partial is proportional.
+        const coveredAmount = coveredKg >= w ? r2(line.lineAmount) : r2(coveredKg * line.unitPrice)
         cov = {
           itemId: line.itemId, subscriptionId: sub.id, mode: "PER_KG",
           coveredKg: r2(coveredKg), coveredPieces: 0,

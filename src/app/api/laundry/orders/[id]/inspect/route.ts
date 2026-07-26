@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { perKgStrategy } from "@/lib/laundry-billing-strategies"
+import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round((n || 0) * 100) / 100
@@ -57,7 +58,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       )
       kgItems.forEach((item, j) => {
         const p = priced[j]
-        writes.push(prisma.laundryOrderItem.update({ where: { id: item.id }, data: { lineAmount: p.lineAmount, gstAmount: p.gstAmount, total: p.total } }))
+        // Persist each line's share of the weighed KG total (see perKgStrategy):
+        // subscription KG allowance is consumed per line, so the weight must land
+        // on the item, not only the order.
+        writes.push(prisma.laundryOrderItem.update({ where: { id: item.id }, data: { lineAmount: p.lineAmount, gstAmount: p.gstAmount, total: p.total, weightKg: p.weightKg ?? 0 } }))
         item.lineAmount = p.lineAmount; item.gstAmount = p.gstAmount; item.total = p.total
       })
     }
@@ -95,7 +99,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }))
 
     await prisma.$transaction(writes)
-    return NextResponse.json({ success: true, data: { repriced, subtotal, gstTotal, grandTotal } })
+
+    // Now that the KG lines carry their weight + price, consume any subscription
+    // allowance the customer holds. Subscribed garments must NOT be billed — the
+    // eligible portion is settled from the allowance and only the uncovered extra
+    // stays as balance due. `force` re-derives coverage: booking-time apply ran
+    // before the order was weighed (so KG coverage was 0). No-ops for walk-ins
+    // (no customer) and for customers without an eligible active subscription.
+    let coverage: { coveredAmount: number; extraAmount: number } | undefined
+    if (repriced) {
+      try {
+        const applied = await applySubscriptionToOrder(order.id, { force: true, actorName: b.auditedBy || null })
+        if (applied.ok) coverage = { coveredAmount: applied.coveredAmount, extraAmount: applied.extraAmount }
+      } catch (e) { console.error("[laundry-order-inspect] subscription apply", e) }
+    }
+    return NextResponse.json({ success: true, data: { repriced, subtotal, gstTotal, grandTotal, coverage } })
   } catch (e) {
     console.error("[laundry-order-inspect] PUT", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
