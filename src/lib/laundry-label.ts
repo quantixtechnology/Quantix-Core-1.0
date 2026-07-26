@@ -149,16 +149,44 @@ function escapeHtml(s: string) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&a
 // without blocking on the print dialog.
 export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = true): Promise<void> {
   return new Promise((resolve) => {
-    if (labels.length === 0) { resolve(); return }
+    if (typeof window === "undefined" || labels.length === 0) { resolve(); return }
     const html = buildHTML(labels, cfg)
-    const win = window.open("", "_blank", "width=420,height=640")
-    if (!win) { resolve(); return }
-    win.document.open(); win.document.write(html); win.document.close()
-    if (autoPrint) {
-      win.onload = () => { win.focus(); win.print() }
-      setTimeout(() => { try { win.focus(); win.print() } catch {}; resolve() }, 400)
-    } else {
-      resolve()
+
+    // PREVIEW: open in a tab so staff can eyeball the labels (explicit user intent).
+    if (!autoPrint) {
+      const win = window.open("", "_blank", "width=420,height=640")
+      if (win) { win.document.open(); win.document.write(html); win.document.close() }
+      resolve(); return
     }
+
+    // PRINT: render into a hidden, same-page iframe and print THAT — never a popup.
+    // A popup window is unreliable here: it can be blocked, it can leave a stuck
+    // blank window, and window.print() on it froze the app for some users. The
+    // iframe prints only the labels (its own document + @page size) and is removed
+    // afterwards. Barcodes are inline data-URIs, so no external load to wait on.
+    const iframe = document.createElement("iframe")
+    iframe.setAttribute("aria-hidden", "true")
+    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;"
+    document.body.appendChild(iframe)
+
+    let cleaned = false
+    const cleanup = () => { if (cleaned) return; cleaned = true; setTimeout(() => { try { iframe.remove() } catch { /* noop */ } }, 1000) }
+
+    const doc = iframe.contentWindow?.document
+    if (!doc || !iframe.contentWindow) { try { iframe.remove() } catch { /* noop */ }; resolve(); return }
+    doc.open(); doc.write(html); doc.close()
+
+    let printed = false
+    const printNow = () => {
+      if (printed) return
+      printed = true
+      try { iframe.contentWindow?.focus(); iframe.contentWindow?.print() } catch { /* noop */ }
+      resolve()
+      cleanup()
+    }
+    // onload usually fires for a written doc; a short timeout is the safety net.
+    iframe.contentWindow.onafterprint = cleanup
+    iframe.onload = printNow
+    setTimeout(printNow, 300)
   })
 }
