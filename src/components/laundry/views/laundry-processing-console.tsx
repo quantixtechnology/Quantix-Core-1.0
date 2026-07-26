@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2 } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 // Department tiles MUST cover every WORKSTATIONS stage — DRY (Drying) is a
 // first-class stage produced by default service routes (e.g. WASH→DRY→QC→PACKED).
@@ -71,9 +72,10 @@ export function LaundryProcessingConsole() {
     } catch { toast({ title: "Receive failed", variant: "destructive" }) } finally { setActing(false) }
   }
 
-  // QR / manual code entry — packet number, QR payload or order number.
-  const lookupAndReceive = async () => {
-    const q = code.trim()
+  // QR / manual code entry — packet number, QR payload or order number. Accepts
+  // an explicit value (from the camera scanner) or falls back to the typed field.
+  const lookupAndReceive = async (raw?: string) => {
+    const q = (raw ?? code).trim()
     if (!q || !currentBusinessId) return
     setLooking(true)
     try {
@@ -117,7 +119,10 @@ export function LaundryProcessingConsole() {
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm"><CardContent className="p-4">
         <div className="flex items-center gap-3 max-w-2xl">
           <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupAndReceive()} placeholder="Scan packet QR or enter packet / order code (PKT-… / ORD-…)" className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
-          <Button onClick={lookupAndReceive} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
+          {/* Camera scan: scanning a packet QR looks it up and receives it in one step
+              (single-shot — the scanner closes after each successful scan). */}
+          <BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
+          <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
         </div>
       </CardContent></Card>
 
