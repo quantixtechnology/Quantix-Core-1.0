@@ -111,7 +111,15 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
 
   const [pickupDate, setPickupDate] = useState("")
   const [pickupSlot, setPickupSlot] = useState("")
+  const [pickupSlots, setPickupSlots] = useState<string[]>(PICKUP_SLOTS)
   const [pickupInstructions, setPickupInstructions] = useState("")
+  // Same slots the store configured in Settings → Time Slots (public endpoint).
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
+      .then((j) => { if (j.success && j.data.pickupSlots?.length) setPickupSlots(j.data.pickupSlots) })
+      .catch(() => { /* keep fallback */ })
+  }, [currentBusinessId])
   const [paymentMethod, setPaymentMethod] = useState("COD")
   const [placing, setPlacing] = useState(false)
   const [orderError, setOrderError] = useState("")
@@ -902,7 +910,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                   <label className={labelCls}>Time Slot</label>
                   <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls}>
                     <option value="">Select slot</option>
-                    {PICKUP_SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {pickupSlots.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
