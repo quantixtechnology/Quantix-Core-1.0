@@ -47,9 +47,14 @@ async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; a
     return { ok: false, error: `"${garmentName}" belongs to ${dept}` }
   }
 
+  // A SCAN only ever STARTS a garment (puts it In Progress). It must NEVER
+  // advance a garment to the next service — moving on is a deliberate action via
+  // the Complete / Pass button (or the load's bulk action). This prevents a
+  // second scan from silently pushing a garment into a stage it isn't ready for.
   let action: string
   if (item.processingStatus === "WAITING") action = "START"
-  else if (item.processingStatus === "IN_PROGRESS") action = opts.stage === "QC" ? "QC_PASS" : "COMPLETE"
+  else if (item.processingStatus === "IN_PROGRESS")
+    return { ok: false, error: `"${garmentName}" is already In Progress — use ${opts.stage === "QC" ? "Pass" : "Complete"} (or the load's bulk action) to move it to the next stage.` }
   else return { ok: false, error: `"${garmentName}" is ${(item.processingStatus || "unknown").replace(/_/g, " ")}` }
 
   const actorName = opts.user?.name || "operator"
@@ -82,6 +87,9 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [qcReason, setQcReason] = useState("")
   const [qcStage, setQcStage] = useState("")
   const [manual, setManual] = useState<{ itemId: string; garment: string; action: string; label: string } | null>(null)
+  // Bulk-advance selection: ids of IN_PROGRESS garments ticked to move together
+  // (e.g. a whole wash load finishing at once). Cleared after each bulk action.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
@@ -221,13 +229,64 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
 
   const waiting = items.filter((i) => i.processingStatus === "WAITING")
   const active = items.filter((i) => i.processingStatus === "IN_PROGRESS" || i.processingStatus === "PAUSED")
+  const inProgress = active.filter((i) => i.processingStatus === "IN_PROGRESS")
 
-  const ItemCard = ({ it, isCompleted = false }: { it: Item; isCompleted?: boolean }) => (
-    <div className={`rounded-lg border p-3 bg-white transition-all duration-300 ${flashId === it.id ? "border-emerald-400 bg-emerald-50 shadow-md scale-[1.02]" : "border-slate-200"}`}>
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-800">{it.garmentName}</p>
-          <p className="text-[11px] text-slate-400">{it.customer || "—"} · <span className="font-mono">{it.orderNumber}</span></p>
+  // Keep the selection in sync with what's actually still in progress (a garment
+  // completed on its own card, or moved here/away by the poll, drops out).
+  useEffect(() => {
+    setSelected((prev) => {
+      const live = new Set(inProgress.map((i) => i.id))
+      let changed = false
+      const next = new Set<string>()
+      prev.forEach((id) => { if (live.has(id)) next.add(id); else changed = true })
+      return changed ? next : prev
+    })
+  }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleSelect = (id: string) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const allSelected = inProgress.length > 0 && inProgress.every((i) => selected.has(i.id))
+  const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(inProgress.map((i) => i.id)))
+
+  // Bulk advance: complete (or QC-pass) every selected in-progress garment. Each
+  // goes through the same server-guarded single-item endpoint, so partial
+  // failures are reported without blocking the rest.
+  const bulkAdvance = async () => {
+    const ids = inProgress.filter((i) => selected.has(i.id)).map((i) => i.id)
+    if (ids.length === 0) return
+    setBusy(true); setOffline(false)
+    let ok = 0; let fail = 0
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/laundry/items/${id}/process`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: isQC ? "QC_PASS" : "COMPLETE", actorName: user?.name || "operator", expectedStage: stage }),
+        })
+        const j = await res.json()
+        if (res.ok && j.success) ok++; else fail++
+      } catch { fail++ }
+    }
+    setBusy(false); setSelected(new Set())
+    playScanOk(soundEnabled)
+    toast({
+      title: `${ok} garment${ok === 1 ? "" : "s"} moved to the next stage`,
+      description: fail ? `${fail} could not be moved — check the queue and retry.` : `${stageLabel(stage)} → next process`,
+      variant: fail ? "destructive" : undefined,
+      duration: 2500,
+    })
+    load()
+  }
+
+  const ItemCard = ({ it, isCompleted = false, select }: { it: Item; isCompleted?: boolean; select?: { checked: boolean; onToggle: () => void } }) => (
+    <div className={`rounded-lg border p-3 bg-white transition-all duration-300 ${select?.checked ? "border-emerald-400 bg-emerald-50/50" : flashId === it.id ? "border-emerald-400 bg-emerald-50 shadow-md scale-[1.02]" : "border-slate-200"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {select && (
+            <input type="checkbox" aria-label={`Select ${it.garmentName}`} checked={select.checked} onChange={select.onToggle} className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{it.garmentName}</p>
+            <p className="text-[11px] text-slate-400">{it.customer || "—"} · <span className="font-mono">{it.orderNumber}</span></p>
+          </div>
         </div>
         {it.processingStatus === "PAUSED" && <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 text-[10px]">Paused</Badge>}
       </div>
@@ -324,8 +383,23 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
           </Card>
           <Card className="rounded-xl border-slate-200 shadow-sm">
             <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Play className="h-[18px] w-[18px] text-blue-600" /> In Progress <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{active.length}</Badge></CardTitle></CardHeader>
+            {/* Bulk-advance bar: when a whole load finishes, tick the garments and
+                move them all to the next stage in one action (no per-card clicks). */}
+            {inProgress.length > 0 && (
+              <div className="px-4 pb-2 flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="h-4 w-4 accent-emerald-600 cursor-pointer" />
+                  {selected.size > 0 ? `${selected.size} selected` : "Select all"}
+                </label>
+                <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40" disabled={busy || selected.size === 0} onClick={bulkAdvance}>
+                  <Check className="h-3.5 w-3.5" /> {isQC ? "Pass" : "Complete"} {selected.size || ""} → Next
+                </Button>
+              </div>
+            )}
             <CardContent className="space-y-2 max-h-[65vh] overflow-y-auto">
-              {active.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">Nothing in progress.</p> : active.map((it) => <ItemCard key={it.id} it={it} />)}
+              {active.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">Nothing in progress.</p> : active.map((it) => (
+                <ItemCard key={it.id} it={it} select={it.processingStatus === "IN_PROGRESS" ? { checked: selected.has(it.id), onToggle: () => toggleSelect(it.id) } : undefined} />
+              ))}
             </CardContent>
           </Card>
           <Card className="rounded-xl border-slate-200 shadow-sm">
