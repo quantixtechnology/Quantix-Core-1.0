@@ -13,6 +13,7 @@ import {
   CheckCircle2, PlusCircle, Search, ScanLine, LayoutGrid, ChevronLeft, User, Phone, RefreshCw, X, MapPin,
 } from "lucide-react"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 const TOKEN_KEY = "qx_store_token"
 
@@ -723,8 +724,12 @@ function ScanScreen({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (o
       </div>
       <p className="text-[12px] text-slate-400 -mt-2">{bulk ? "Scan several pickup bags, then receive them all in one go." : "Scan the pickup bag QR (or enter the bag number) to confirm it arrived — or scan a garment to open its order."}</p>
       <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-        <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder={bulk ? "Scan pickup bag" : "Scan bag or garment code"} className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
-        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-blue-600 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> {bulk ? "Add to List" : "Look Up"}</>}</button>
+        {/* Primary: open the device camera to scan the bag QR (mobile). The scanner
+            also offers USB/Bluetooth modes via its settings gear for desktop guns. */}
+        <BagScanButton label="Scan with Camera" onScan={lookup} disabled={busy} closeOnScan={!bulk} className="w-full h-14 rounded-xl text-[16px] justify-center" />
+        <div className="flex items-center gap-2 text-[11px] text-slate-400"><div className="h-px flex-1 bg-slate-100" />or enter the bag number<div className="h-px flex-1 bg-slate-100" /></div>
+        <input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(code)} placeholder={bulk ? "Scan pickup bag" : "Scan bag or garment code"} className="w-full h-14 rounded-xl border-2 border-blue-200 px-4 text-center text-[16px] font-mono" />
+        <button onClick={() => lookup(code)} disabled={busy || !code.trim()} className="w-full h-14 rounded-xl bg-slate-700 text-white font-semibold text-[16px] flex items-center justify-center gap-2 disabled:opacity-50">{busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <><ScanLine className="h-6 w-6" /> {bulk ? "Add to List" : "Look Up"}</>}</button>
       </div>
       {msg && <div className={`rounded-xl px-4 py-3 text-[14px] ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>{msg.text}</div>}
       {bulk && queue.length > 0 && (

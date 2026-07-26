@@ -37,9 +37,12 @@ const getBarcodeDetector = (): DetectorCtor | null =>
   (typeof window !== "undefined" ? (window as unknown as { BarcodeDetector?: DetectorCtor }).BarcodeDetector : undefined) || null
 
 // ── The Scan Bag button ──────────────────────────────────────────────────────
-export function BagScanButton({ onScan, label = "Scan Bag", disabled, size = "default", className }: {
+export function BagScanButton({ onScan, label = "Scan Bag", disabled, size = "default", className, closeOnScan = false }: {
   onScan: (code: string) => void | Promise<void>
   label?: string; disabled?: boolean; size?: "default" | "sm"; className?: string
+  // Auto-close the scanner after a single successful scan (single-item flows).
+  // Default keeps the scanner open for rapid repeat scanning (bulk flows).
+  closeOnScan?: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -47,12 +50,12 @@ export function BagScanButton({ onScan, label = "Scan Bag", disabled, size = "de
       <Button size={size} disabled={disabled} onClick={() => setOpen(true)} className={`gap-1.5 bg-blue-600 hover:bg-blue-700 text-white ${className || ""}`}>
         <ScanLine className="h-4 w-4" /> {label}
       </Button>
-      {open && <ScannerModal onClose={() => setOpen(false)} onScan={onScan} />}
+      {open && <ScannerModal onClose={() => setOpen(false)} onScan={onScan} closeOnScan={closeOnScan} />}
     </>
   )
 }
 
-function ScannerModal({ onClose, onScan }: { onClose: () => void; onScan: (code: string) => void | Promise<void> }) {
+function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () => void; onScan: (code: string) => void | Promise<void>; closeOnScan?: boolean }) {
   const [mode, setMode] = useState<ScannerMode>(getScannerMode())
   const [showSettings, setShowSettings] = useState(false)
   const useCamera = mode === "auto" ? isMobileDevice() && !!getBarcodeDetector() : mode === "camera"
@@ -65,11 +68,12 @@ function ScannerModal({ onClose, onScan }: { onClose: () => void; onScan: (code:
     if (!c || handling) return
     setHandling(true)
     try { await onScan(c) } finally {
+      if (closeOnScan) { onClose(); return }
       // Allow immediate rescanning — clear + refocus rather than closing.
       setManual(""); setHandling(false)
       setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [onScan, handling])
+  }, [onScan, handling, closeOnScan, onClose])
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
