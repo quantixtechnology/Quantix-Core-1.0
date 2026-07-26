@@ -7,6 +7,7 @@ import { Truck, Scan, Thermometer, Home, Shield } from "lucide-react"
 import { LaundryStorageWidget } from "./laundry-storage-widget"
 import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
+import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
 
 interface WorkspaceSettingsProps {
   businessId: string
@@ -64,6 +65,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryFinancialSettingsForm businessId={businessId} />
 
       <LaundrySlotSettingsForm businessId={businessId} />
+
+      <LaundryPaymentSettingsForm businessId={businessId} />
 
       <div className="grid gap-4">
         {sections

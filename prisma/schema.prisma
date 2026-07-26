@@ -4283,6 +4283,9 @@ model LaundryOperationalConfig {
   deliverySlotStart       String         @default("14:00")
   deliverySlotEnd         String         @default("23:00")
   deliverySlotDurationMin Int            @default(60)
+  // Payments: COD is always an option unless the owner switches it off here.
+  // Online-gateway selection/config lives with the platform gateway system.
+  codEnabled              Boolean        @default(true)
   updatedAt              DateTime        @updatedAt
   createdAt              DateTime        @default(now())
 
