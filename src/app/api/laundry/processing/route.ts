@@ -123,6 +123,11 @@ export async function GET(request: Request) {
             garmentName: it?.garmentName || "Garment", serviceName: it?.serviceName || null,
             orderNumber: it?.order.orderNumber || null,
             action: e.action, actorName: e.actorName || null, completedAt: e.createdAt,
+            // Where the garment moved to after finishing this stage — so staff can
+            // see where it went, not just "it's gone". PACKED = processing finished
+            // (no per-garment packing queue; the ORDER is packed in Packing & QR).
+            toStage: e.toStage || null,
+            toStageLabel: e.toStage === "PACKED" ? "Processing complete" : e.toStage ? stageLabel(e.toStage) : null,
           }
         })
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))

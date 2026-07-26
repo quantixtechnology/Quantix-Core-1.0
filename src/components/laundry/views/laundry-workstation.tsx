@@ -34,7 +34,7 @@ interface EngineOpts {
   stage: string; user: { name?: string | null } | null; currentBusinessId: string | null
   soundEnabled: boolean
 }
-async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; action: string; garmentName: string; orderNumber: string } | { ok: false; error: string }> {
+async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; action: string; garmentName: string; orderNumber: string; nextStage: string | null } | { ok: false; error: string }> {
   const j = await fetch(`/api/laundry/scan?barcode=${encodeURIComponent(code)}`).then((r) => r.json())
   if (!j.success) return { ok: false, error: j.error || "Garment not found" }
 
@@ -60,7 +60,7 @@ async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; a
   const rj = await res.json()
   if (!res.ok || !rj.success) return { ok: false, error: rj.error || "Action failed" }
 
-  return { ok: true, action, garmentName, orderNumber: d.order?.orderNumber || "" }
+  return { ok: true, action, garmentName, orderNumber: d.order?.orderNumber || "", nextStage: rj.data?.processingStage ?? null }
 }
 
 export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
@@ -69,7 +69,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [completed, setCompleted] = useState<{ id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string }[]>([])
+  const [completed, setCompleted] = useState<{ id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null }[]>([])
   const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
@@ -84,6 +84,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [manual, setManual] = useState<{ itemId: string; garment: string; action: string; label: string } | null>(null)
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
 
   const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
@@ -156,6 +157,20 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     if (successTimer.current) clearTimeout(successTimer.current)
     setOffline(false)
 
+    // Same-garment guard: a rapid repeat scan of the SAME code (accidental
+    // double-trigger, or the operator scanning twice) must NOT cascade
+    // START → COMPLETE and push the garment to the next stage. One scan does one
+    // step; to complete, scan again after a moment (or use the on-card buttons).
+    const norm = code.trim().toUpperCase()
+    const now = Date.now()
+    if (norm && norm === lastScan.current.code && now - lastScan.current.at < 3500) {
+      playScanError(soundEnabled)
+      setScanErr("Same garment scanned again — ignored so it isn't pushed to the next stage. Wait a moment, then scan again to complete.")
+      scanErrTimer.current = setTimeout(() => setScanErr(null), 3000)
+      return
+    }
+    lastScan.current = { code: norm, at: now }
+
     try {
       const result = await engineScan(code, { stage, user, currentBusinessId, soundEnabled })
       if (!result.ok) {
@@ -166,12 +181,23 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       }
 
       playScanOk(soundEnabled)
-      const actionLabel = result.action === "START" ? "Started" : result.action === "COMPLETE" || result.action === "QC_PASS" ? "Completed" : result.action
+      const isStart = result.action === "START"
+      const actionLabel = isStart ? "Started" : result.action === "COMPLETE" || result.action === "QC_PASS" ? "Completed" : result.action
+      // Name the destination so a garment that LEAVES this stage is never "lost".
+      // PACKED means processing is finished (there is no per-garment packing queue —
+      // the ORDER is packed later in Packing & QR), so say so plainly.
+      const moved = isStart
+        ? "In Progress"
+        : result.nextStage === "PACKED"
+          ? "Processing complete — ready for Packing & QR"
+          : result.nextStage && result.nextStage !== stage
+            ? `Moved to ${stageLabel(result.nextStage)}`
+            : "Done"
 
       toast({
         title: `${actionLabel} ${result.garmentName}`,
-        description: `${stageLabel(stage)} → ${result.action === "START" ? "In Progress" : "Next stage"}`,
-        duration: 800,
+        description: `${stageLabel(stage)} → ${moved}`,
+        duration: 2000,
       })
       load() // refresh queue + persisted Completed history
     } catch {
@@ -313,6 +339,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
                   </div>
                   <p className="text-[11px] text-slate-500 font-mono mt-1">{c.garmentScanCode || c.barcode || c.itemNumber || "—"}</p>
                   <p className="text-[11px] text-slate-400 font-mono">{c.orderNumber}</p>
+                  {c.toStageLabel && <p className="text-[11px] text-blue-600 mt-0.5 font-medium">→ Moved to {c.toStageLabel}</p>}
                   <p className="text-[10px] text-slate-400 mt-0.5">{new Date(c.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{c.actorName ? ` · ${c.actorName}` : ""}</p>
                 </div>
               ))}
