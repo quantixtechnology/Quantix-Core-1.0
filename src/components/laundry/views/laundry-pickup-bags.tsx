@@ -14,7 +14,11 @@ import { useAuthStore } from "@/stores/auth-store"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 interface Bag { id: string; bagNumber: string; status: string; currentOrderId: string | null; currentServiceId: string | null; currentServiceName: string | null; currentCustomerName: string | null; currentOrderNumber: string | null }
-interface OrderRow { id: string; orderNumber: string; customer?: { name?: string | null } | null; customerName?: string | null; createdAt: string; services?: { serviceId: string | null; serviceName: string }[] }
+interface OrderRow { id: string; orderNumber: string; status?: string; customer?: { name?: string | null } | null; customerName?: string | null; createdAt: string; services?: { serviceId: string | null; serviceName: string }[] }
+
+// Bagging happens BEFORE processing. Once an order is past this point its bags are
+// already set (or it's finished), so it's not a "needs bagging" candidate.
+const PAST_BAGGING = new Set(["PROCESSING", "IN_TRANSIT_TO_PROCESSING", "PACKED", "QC_PENDING", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY", "DELIVERED", "CANCELLED"])
 
 export function LaundryPickupBags() {
   const { currentBusinessId } = useAuthStore()
@@ -71,14 +75,27 @@ function AssignTab({ businessId }: { businessId: string | null }) {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not found.") }
   }
 
+  // A "needs bagging" worklist: only orders still in a pre-processing stage AND
+  // with at least one service that has no bag yet. Fully-bagged orders and orders
+  // past the bagging window drop off automatically. Bags load async per order, so
+  // an order shows until its bags confirm it's complete (bags === undefined → show).
+  const needsBag = (o: OrderRow) => {
+    if (o.status && PAST_BAGGING.has(o.status)) return false
+    const services = o.services?.length ? o.services : [{ serviceId: null, serviceName: "Laundry" }]
+    const bags = bagsByOrder[o.id]
+    if (bags === undefined) return true
+    return services.some((s) => !bags.some((b) => (s.serviceId ? b.currentServiceId === s.serviceId : b.currentServiceName === s.serviceName)))
+  }
+  const visible = orders.filter(needsBag)
+
   return (
     <>
       <div className="relative w-full max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order no, customer, mobile…" className="pl-9 h-10" /></div>
-      {loading ? <div className="py-12 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : orders.length === 0 ? (
-        <p className="py-12 text-center text-sm text-slate-400">No orders found.</p>
+      {loading ? <div className="py-12 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : visible.length === 0 ? (
+        <p className="py-12 text-center text-sm text-slate-400">{search.trim() ? "No orders found." : "No orders need bagging right now."}</p>
       ) : (
         <div className="space-y-3">
-          {orders.map((o) => {
+          {visible.map((o) => {
             const bags = bagsByOrder[o.id] || []
             const services = o.services?.length ? o.services : [{ serviceId: null, serviceName: "Laundry" }]
             return (
