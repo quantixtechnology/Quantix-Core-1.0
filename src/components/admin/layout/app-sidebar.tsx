@@ -320,7 +320,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
             </div>
           </SheetHeader>
 
-          <ScrollArea className="flex-1 px-1 py-3">
+          <ScrollArea className="flex-1 min-h-0 px-1 py-3">
             {sections.map((s) => (
               <CollapsibleSection
                 key={s.title}

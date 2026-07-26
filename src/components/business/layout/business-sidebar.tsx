@@ -288,7 +288,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             )}
           </SheetHeader>
 
-          <ScrollArea className="flex-1 px-1 py-3">
+          <ScrollArea className="flex-1 min-h-0 px-1 py-3">
             <NavSection title="Overview" items={[{ key: "dashboard", label: "Dashboard", icon: LayoutDashboard }]} activePage={businessPage} onNavigate={handleNavigate} compact />
             <NavSection
               title="Operations"

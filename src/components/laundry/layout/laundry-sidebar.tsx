@@ -418,7 +418,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
             <SheetDescription className="sr-only">Navigation</SheetDescription>
             <div className="flex items-center h-16 px-4">{Brand}</div>
           </SheetHeader>
-          <ScrollArea className="flex-1 py-3" style={WHITE_THEME}>{renderNav(false)}</ScrollArea>
+          <ScrollArea className="flex-1 min-h-0 py-3" style={WHITE_THEME}>{renderNav(false)}</ScrollArea>
           <div className="p-3 shrink-0 border-t border-slate-200">{Footer}</div>
         </SheetContent>
       </Sheet>
