@@ -111,9 +111,18 @@ export async function GET(request: Request) {
     // receipt), and only LEAVES when the store receives it (status → PENDING_STORE_AUDIT).
     // Previously `pickupCompletedAt: null` dropped completed/in-transit pickups, so they
     // vanished from Dispatch even though the order was mid-workflow.
+    // Active queue + TODAY's completed jobs (so the "Completed" bucket reflects the
+    // day's finished pickups/deliveries — matching the executive app's Completed tab
+    // — instead of always showing 0 once work is done).
     const where = type === "delivery"
-      ? { businessId: lbId, ...storeScope, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
-      : { businessId: lbId, ...storeScope, pickupRequired: true, status: { in: PICKUP_QUEUE_STATUSES } }
+      ? { businessId: lbId, ...storeScope, deliveryRequired: true, OR: [
+          { deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY },
+          { deliveryCompletedAt: { gte: start, lt: end } },
+        ] }
+      : { businessId: lbId, ...storeScope, pickupRequired: true, OR: [
+          { status: { in: PICKUP_QUEUE_STATUSES } },
+          { pickupCompletedAt: { gte: start, lt: end } },
+        ] }
 
     if (debug) console.log(`[DISPATCH_DEBUG] type=${type} where=${JSON.stringify(where)}`)
 

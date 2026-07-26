@@ -42,11 +42,15 @@ export function dispatchBucketOf(o: DispatchOrderView, type: "pickup" | "deliver
     if (o.deliveryExecutiveId) return o.deliveryAcceptedAt ? "accepted" : "assigned"
     return "awaiting"
   }
-  // Chain of custody: once picked up, the order is in the store's incoming queue
-  // until the STORE scans it in. IN_TRANSIT_TO_STORE is the canonical signal; a
-  // legacy "completed pickup still at AWAITING" is also surfaced as pending
-  // receipt so it can never silently vanish from Dispatch.
-  if (o.status === "IN_TRANSIT_TO_STORE" || o.pickupCompletedAt) return "pending_receipt"
-  if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
-  return "awaiting"
+  // Pickup lifecycle:
+  //  • IN_TRANSIT_TO_STORE  → picked up, awaiting store receipt (pending_receipt)
+  //  • AWAITING (in queue)  → awaiting / assigned / accepted (or legacy pending_receipt)
+  //  • past the queue (received at store, processing, …) → the pickup itself is done
+  if (o.status === "IN_TRANSIT_TO_STORE") return "pending_receipt"
+  if (o.status === "AWAITING_PICKUP_ASSIGNMENT") {
+    if (o.pickupCompletedAt) return "pending_receipt" // legacy: completed but not advanced
+    if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
+    return "awaiting"
+  }
+  return "completed"
 }

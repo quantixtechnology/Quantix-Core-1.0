@@ -158,6 +158,10 @@ describe('dispatchBucketOf — pickup classification (status-driven)', () => {
   it('classifies awaiting pickup', () => {
     expect(dispatchBucketOf(baseOrder(), 'pickup')).toBe('awaiting')
   })
+  it('classifies a RECEIVED pickup (past the queue) as completed — so the Completed bucket works', () => {
+    expect(dispatchBucketOf(baseOrder({ status: 'PENDING_STORE_AUDIT', pickupCompletedAt: new Date() }), 'pickup')).toBe('completed')
+    expect(dispatchBucketOf(baseOrder({ status: 'PROCESSING', pickupCompletedAt: new Date() }), 'pickup')).toBe('completed')
+  })
 })
 
 describe('dispatchBucketOf — delivery classification', () => {
