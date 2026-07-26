@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2 } from "lucide-react"
+import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2, Search, X } from "lucide-react"
 import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
@@ -69,7 +69,8 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [completed, setCompleted] = useState<{ id: string; garmentName: string; orderNumber: string; action: string; completedAt: number }[]>([])
+  const [completed, setCompleted] = useState<{ id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string }[]>([])
+  const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
@@ -88,11 +89,20 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     if (!currentBusinessId) return
     if (!silent) setLoading(true)
     try {
-      const j = await fetch(`/api/laundry/processing?businessId=${currentBusinessId}&stage=${stage}`).then((r) => r.json())
+      const p = new URLSearchParams({ businessId: currentBusinessId, stage })
+      if (search.trim()) p.set("search", search.trim())
+      const j = await fetch(`/api/laundry/processing?${p}`).then((r) => r.json())
       setItems(j.items || [])
+      setCompleted(j.completed || [])
     } catch { /* noop */ } finally { if (!silent) setLoading(false) }
-  }, [currentBusinessId, stage])
-  useEffect(() => { load() }, [load])
+  }, [currentBusinessId, stage, search])
+  // Debounced so typing in the item-code search doesn't fire a request per keystroke.
+  // First load shows the spinner; search/refreshes update silently (no grid blank).
+  const firstLoad = useRef(true)
+  useEffect(() => {
+    const t = setTimeout(() => { load(!firstLoad.current); firstLoad.current = false }, search ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [load, search])
   // Keep the department queue live: refresh on tab focus + a light poll so a
   // garment moved here from an earlier stage appears without a manual refresh.
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
@@ -163,8 +173,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
         description: `${stageLabel(stage)} → ${result.action === "START" ? "In Progress" : "Next stage"}`,
         duration: 800,
       })
-      setCompleted((prev) => [{ id: result.garmentName + Date.now(), garmentName: result.garmentName, orderNumber: result.orderNumber, action: actionLabel, completedAt: Date.now() }, ...prev].slice(0, 20))
-      load()
+      load() // refresh queue + persisted Completed history
     } catch {
       playScanError(soundEnabled)
       setOffline(true)
@@ -265,6 +274,18 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
         </CardContent>
       </Card>
 
+      {/* Find a garment anywhere in this stage's queue or completed history by its code. */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by item code (GAR / ITM / barcode) or garment…"
+          className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+        />
+        {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+      </div>
+
       {loading ? (
         <div className="py-12 text-center text-slate-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>
       ) : (
@@ -284,14 +305,15 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
           <Card className="rounded-xl border-slate-200 shadow-sm">
             <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Check className="h-[18px] w-[18px] text-emerald-500" /> Completed <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{completed.length}</Badge></CardTitle></CardHeader>
             <CardContent className="space-y-2 max-h-[65vh] overflow-y-auto">
-              {completed.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">No items completed this session.</p> : completed.map((c) => (
-                <div key={`${c.id}-${c.completedAt}`} className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-800">{c.garmentName}</p>
-                    <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px]">{c.action}</Badge>
+              {completed.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">{search ? "No completed garment matches that code." : "No garments completed at this stage yet."}</p> : completed.map((c) => (
+                <div key={c.id} className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-800">{c.garmentName}{c.serviceName ? <span className="text-slate-400 font-normal"> · {c.serviceName}</span> : ""}</p>
+                    <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] shrink-0">{c.action}</Badge>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-mono mt-1">{c.orderNumber}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{new Date(c.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>
+                  <p className="text-[11px] text-slate-500 font-mono mt-1">{c.garmentScanCode || c.barcode || c.itemNumber || "—"}</p>
+                  <p className="text-[11px] text-slate-400 font-mono">{c.orderNumber}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{new Date(c.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{c.actorName ? ` · ${c.actorName}` : ""}</p>
                 </div>
               ))}
             </CardContent>

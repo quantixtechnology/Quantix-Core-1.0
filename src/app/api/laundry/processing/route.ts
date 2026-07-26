@@ -70,11 +70,23 @@ export async function GET(request: Request) {
     for (const w of WORKSTATIONS) stageCounts[w] = 0
     grouped.forEach((g) => { if (g.processingStage) stageCounts[g.processingStage] = g._count })
 
-    // Garments in the requested workstation queue.
+    // Optional search by item code (barcode / GAR / ITM) or garment name.
+    const search = (sp.get("search") || "").trim()
+    const codeOr = search
+      ? { OR: [
+          { barcode: { contains: search } },
+          { itemNumber: { contains: search } },
+          { garmentScanCode: { contains: search } },
+          { garmentName: { contains: search } },
+        ] }
+      : {}
+
+    // Garments in the requested workstation queue + this stage's COMPLETED history.
     let items: unknown[] = []
+    let completed: unknown[] = []
     if (stage) {
       const rows = await prisma.laundryOrderItem.findMany({
-        where: { order: { businessId: biz.id }, processingStage: stage },
+        where: { order: { businessId: biz.id }, processingStage: stage, ...codeOr },
         include: { order: { select: { orderNumber: true, customerId: true } } },
         orderBy: { receivedAt: "asc" }, take: 100,
       })
@@ -82,15 +94,41 @@ export async function GET(request: Request) {
       const cs = cid.length ? await prisma.customer.findMany({ where: { id: { in: cid } }, select: { id: true, name: true } }) : []
       const cm = new Map(cs.map((c) => [c.id, c.name]))
       items = rows.map((r) => ({
-        id: r.id, itemNumber: r.itemNumber, barcode: r.barcode, garmentName: r.garmentName,
+        id: r.id, itemNumber: r.itemNumber, barcode: r.barcode, garmentScanCode: r.garmentScanCode, garmentName: r.garmentName,
         serviceName: r.serviceName, quantity: r.quantity, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
         processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
         stageLabel: stageLabel(r.processingStage), department: departmentFor(r.processingStage),
       }))
+
+      // Persisted completed history: every garment finished AT this stage (COMPLETE,
+      // or QC_PASS at the QC stage), newest first — survives refresh, unlike the
+      // per-session list the UI used to show.
+      const events = await prisma.laundryItemEvent.findMany({
+        where: { businessId: biz.id, stage, action: { in: ["COMPLETE", "QC_PASS"] } },
+        orderBy: { createdAt: "desc" }, take: 100,
+      })
+      const evIds = [...new Set(events.map((e) => e.itemId))]
+      const evItems = evIds.length
+        ? await prisma.laundryOrderItem.findMany({ where: { id: { in: evIds } }, select: { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceName: true, order: { select: { orderNumber: true } } } })
+        : []
+      const em = new Map(evItems.map((i) => [i.id, i]))
+      const q = search.toLowerCase()
+      completed = events
+        .map((e) => {
+          const it = em.get(e.itemId)
+          return {
+            id: e.id, itemId: e.itemId,
+            itemNumber: it?.itemNumber || null, barcode: it?.barcode || null, garmentScanCode: it?.garmentScanCode || null,
+            garmentName: it?.garmentName || "Garment", serviceName: it?.serviceName || null,
+            orderNumber: it?.order.orderNumber || null,
+            action: e.action, actorName: e.actorName || null, completedAt: e.createdAt,
+          }
+        })
+        .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, soundEnabled: bizSettings?.workstationScanSound ?? true })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, soundEnabled: bizSettings?.workstationScanSound ?? true })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
