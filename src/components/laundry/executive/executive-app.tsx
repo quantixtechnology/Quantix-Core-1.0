@@ -60,6 +60,7 @@ interface Job {
   address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
   deliveryBagNumber: string | null
+  balanceDue: number; paymentStatus: string | null
 }
 
 const RANK: Record<string, number> = { ASSIGNED: 0, STARTED: 1, NAVIGATING: 2, REACHED: 3, PICKUP_STARTED: 4, PICKUP_COMPLETED: 5, OUT_FOR_DELIVERY: 6, DELIVERED: 7 }
@@ -347,6 +348,36 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
   // Delivery may only start once its bag is scanned/assigned.
   const deliveryReady = !isDelivery || !!job.deliveryBagNumber
 
+  // Delivery-door payment: cash collect, or a UPI QR the customer scans (polled).
+  const [qr, setQr] = useState<{ imageUrl: string; qrCodeId: string; amount: number } | null>(null)
+  const [collecting, setCollecting] = useState(false)
+  const balanceDue = job.balanceDue || 0
+  const collectCash = async () => {
+    setCollecting(true)
+    try {
+      const j = await execFetch(`/api/laundry/executive/jobs/${job.id}/collect-payment`, token, { method: "POST", body: JSON.stringify({ method: "CASH", executiveName: exec.name }) }).then((r) => r.json())
+      if (!j.success) throw new Error(j.error || "Failed")
+      toast.success("Payment collected"); onChanged()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setCollecting(false) }
+  }
+  const showQr = async () => {
+    setCollecting(true)
+    try {
+      const j = await execFetch(`/api/laundry/executive/jobs/${job.id}/payment-qr`, token, { method: "POST", body: JSON.stringify({}) }).then((r) => r.json())
+      if (!j.success) throw new Error(j.error || "Could not create QR")
+      setQr(j.data)
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not create QR") } finally { setCollecting(false) }
+  }
+  // While a QR is shown, poll for payment (also picks up a "pay on their app").
+  useEffect(() => {
+    if (!isDelivery || balanceDue <= 0) return
+    const id = setInterval(async () => {
+      const j = await execFetch(`/api/laundry/executive/jobs/${job.id}/payment-status${qr ? `?qrCodeId=${encodeURIComponent(qr.qrCodeId)}` : ""}`, token).then((r) => r.json()).catch(() => null)
+      if (j?.success && j.data.paid) { toast.success("Payment received"); setQr(null); onChanged() }
+    }, 5000)
+    return () => clearInterval(id)
+  }, [isDelivery, balanceDue, qr, job.id, token, onChanged, exec.name])
+
   return (
     <div className="min-h-screen bg-slate-50 pb-28">
       <header className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-10 flex items-center gap-2">
@@ -416,6 +447,33 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
                   <button onClick={() => scanDeliveryBag(delBag)} disabled={busy || !delBag.trim()} className="h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-medium disabled:opacity-50">Set</button>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Delivery payment — collect the balance before handover */}
+        {isDelivery && job.acceptance === "ACCEPTED" && !delivered && balanceDue > 0 && (
+          <div className="bg-white rounded-2xl border border-rose-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-700">Collect Payment</p>
+              <span className="text-lg font-bold text-rose-600">₹{balanceDue.toFixed(2)}</span>
+            </div>
+            {qr ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-slate-200 p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qr.imageUrl} alt="Payment QR" className="w-48 h-48 object-contain" />
+                <p className="text-sm text-slate-600">Customer scans with any UPI app to pay <b>₹{qr.amount.toFixed(2)}</b></p>
+                <p className="text-[11px] text-slate-400 flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Waiting for payment…</p>
+                <button onClick={() => setQr(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel QR</button>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={collectCash} disabled={collecting} className="h-11 rounded-xl bg-emerald-600 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">{collecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "₹"} Collect Cash</button>
+                  <button onClick={showQr} disabled={collecting} className="h-11 rounded-xl border border-slate-300 text-slate-700 font-medium disabled:opacity-50 flex items-center justify-center gap-2"><Package className="h-4 w-4" /> Payment QR</button>
+                </div>
+                <p className="text-[11px] text-slate-400 text-center">Or ask the customer to pay on their app — it updates here automatically.</p>
+              </>
             )}
           </div>
         )}

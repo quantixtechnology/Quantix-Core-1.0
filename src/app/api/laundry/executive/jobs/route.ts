@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         id: true, orderNumber: true, status: true, fieldStatus: true, isExpress: true, customerId: true,
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true, pickupMapsLink: true, pickupLat: true, pickupLng: true,
         expectedDeliveryDate: true, deliveryDate: true, deliveryTimeSlot: true, deliveredAt: true, pickupAcceptance: true, deliveryAcceptance: true,
-        deliveryBagNumber: true,
+        deliveryBagNumber: true, grandTotal: true, amountPaid: true, balanceDue: true, paymentStatus: true,
         services: { select: { serviceId: true, serviceName: true } },
         _count: { select: { items: true } },
       },
@@ -77,6 +77,7 @@ export async function GET(request: Request) {
         timeSlot: type === "delivery" ? [o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : null, o.deliveryTimeSlot].filter(Boolean).join(" · ") || null : o.pickupTimeSlot,
         address: o.pickupAddress, landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
         deliveryBagNumber: o.deliveryBagNumber ?? null,
+        balanceDue: o.balanceDue ?? Math.max(0, (o.grandTotal || 0) - (o.amountPaid || 0)), paymentStatus: o.paymentStatus,
         services, bagCount: services.length, assignedBags: services.filter((s) => s.bagNumber).length, itemCount: o._count.items,
       }
     })
