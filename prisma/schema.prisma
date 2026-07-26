@@ -4292,6 +4292,29 @@ model LaundryOperationalConfig {
   @@index([businessId])
 }
 
+// Business-level online payment gateway config for a laundry business. The
+// gateway system's per-core-Store StorePaymentGateway doesn't fit laundry
+// (LaundryStore ≠ core Store), so laundry stores its OWN encrypted keys here,
+// keyed by LaundryBusiness. `gateway` matches PlatformPaymentPlugin.gateway
+// (which the platform enables globally + whose configSchema names the fields).
+model LaundryPaymentGateway {
+  id               String   @id @default(cuid())
+  businessId       String // LaundryBusiness.id
+  gateway          String // e.g. "razorpay" | "paytm" — matches PlatformPaymentPlugin.gateway
+  environment      String   @default("SANDBOX") // SANDBOX | LIVE
+  isActive         Boolean  @default(false)
+  merchantId       String?
+  apiKeyEnc        String? // encrypted (src/lib/encrypt)
+  secretKeyEnc     String? // encrypted
+  webhookSecretEnc String? // encrypted
+  extraConfig      String   @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([businessId, gateway])
+  @@index([businessId])
+}
+
 // ── 4. Workflow & Quality Controls ────────────────────────────────────────
 model LaundryWorkflowQualityConfig {
   id          String          @id @default(cuid())

@@ -8,6 +8,7 @@ import { LaundryStorageWidget } from "./laundry-storage-widget"
 import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
 import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
+import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
 
 interface WorkspaceSettingsProps {
   businessId: string
@@ -67,6 +68,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundrySlotSettingsForm businessId={businessId} />
 
       <LaundryPaymentSettingsForm businessId={businessId} />
+
+      <LaundryPaymentProvidersForm businessId={businessId} />
 
       <div className="grid gap-4">
         {sections
