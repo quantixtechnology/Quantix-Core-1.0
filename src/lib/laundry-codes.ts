@@ -170,10 +170,42 @@ export async function nextGarScanCode(): Promise<string> {
   return `GAR${String(n).padStart(12, "0")}`
 }
 
+// Self-heal the GAR counter so it can NEVER re-issue an existing code.
+//
+// garmentScanCode is globally @unique. If the singleton counter ever drifts
+// BEHIND the highest code already persisted (e.g. a DB restore reset the counter
+// while the LaundryOrderItem rows survived), nextGarScanCode() starts handing
+// back codes that already exist → every insert dies with P2002 and garments
+// can't be saved. This jumps the counter forward to (maxUsed + 1) when — and
+// only when — it is behind. Idempotent, forward-only (never lowers a healthy
+// counter), and cheap (one indexed lookup). Call before generating GAR codes.
+export async function healGarSequenceCounter(): Promise<void> {
+  const { prisma } = await import("@/lib/prisma")
+  // Highest GAR code in use. Codes are zero-padded to 12 digits, so below the
+  // 12-digit ceiling lexical order == numeric order (matches the padding above).
+  const top = await prisma.laundryOrderItem.findFirst({
+    where: { garmentScanCode: { not: null } },
+    orderBy: { garmentScanCode: "desc" },
+    select: { garmentScanCode: true },
+  })
+  const maxN = top?.garmentScanCode ? parseInt(top.garmentScanCode.replace(/^GAR/, ""), 10) : 0
+  if (!Number.isFinite(maxN) || maxN <= 0) return
+  // nextGarScanCode() (update branch) issues the counter's CURRENT value, so to
+  // issue maxN + 1 next, counter.next must equal maxN + 1.
+  const target = maxN + 1
+  const counter = await prisma.laundryGarSequenceCounter.findUnique({ where: { id: "singleton" } })
+  if (!counter) {
+    await prisma.laundryGarSequenceCounter.create({ data: { id: "singleton", next: target } })
+  } else if (counter.next < target) {
+    await prisma.laundryGarSequenceCounter.update({ where: { id: "singleton" }, data: { next: target } })
+  }
+}
+
 // Backfill GAR codes for every LaundryOrderItem that doesn't have one.
 // Idempotent — safe to re-run. Must be called after db push.
 export async function backfillGarScanCodes(chunkSize = 50): Promise<number> {
   const { prisma } = await import("@/lib/prisma")
+  await healGarSequenceCounter() // never re-issue an existing code
   let filled = 0
   // eslint-disable-next-line no-constant-condition
   while (true) {

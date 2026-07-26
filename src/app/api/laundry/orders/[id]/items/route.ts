@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { explodePieces } from "@/lib/laundry-order-items"
-import { nextGarScanCode } from "@/lib/laundry-codes"
+import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -67,7 +67,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const exploded = explodePieces(priced)
 
     // Pre-generate GAR codes sequentially (must not be parallel — atomic counter
-    // needs serial access to guarantee items get ordered GAR numbers).
+    // needs serial access to guarantee items get ordered GAR numbers). Heal first
+    // so a drifted counter can never re-issue an existing code (would P2002 and
+    // block the whole intake save).
+    await healGarSequenceCounter()
     const garCodes: string[] = []
     for (let i = 0; i < exploded.length; i++) garCodes.push(await nextGarScanCode())
     const updated = await prisma.$transaction(async (tx) => {
