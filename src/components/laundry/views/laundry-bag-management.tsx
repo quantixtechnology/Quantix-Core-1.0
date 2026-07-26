@@ -128,6 +128,17 @@ export function LaundryBagManagement() {
   const handleReturnScan = async (code: string) => {
     setBusy(true)
     try {
+      // Delivery chain of custody FIRST: if this bag is out for a completed
+      // delivery, close it (deliveryBagReturnedAt) and release it to Available.
+      const drRes = await fetch("/api/laundry/bags/delivery-return", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, code }),
+      })
+      const dr = await drRes.json().catch(() => ({}))
+      if (dr.success) { toast.success(`Delivery bag ${dr.data.bagNumber} received — ${dr.data.orderNumber}${dr.data.released ? " · Available" : ""}`); load(); return }
+      // Already returned → stop (don't fall through to a generic re-release).
+      if (drRes.status === 409) { toast.error(dr.error || "Already returned"); load(); return }
+      // Not a delivery bag out (404) → generic reusable-bag return.
       const res = await fetch("/api/laundry/bags/return", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -179,7 +190,7 @@ export function LaundryBagManagement() {
           <p className="text-sm text-slate-500">Reusable bags with a permanent QR. Generate the pool once, then assign bags to orders at pickup.</p>
         </div>
         <div className="flex items-center gap-2">
-          <BagScanButton onScan={handleReturnScan} label="Return Bag Scan" size="sm" disabled={busy} />
+          <BagScanButton onScan={handleReturnScan} label="Receive Returned Bag" size="sm" disabled={busy} />
           <Button onClick={() => setGenOpen(true)} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> Generate Bags</Button>
         </div>
       </div>

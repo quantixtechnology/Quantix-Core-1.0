@@ -28,10 +28,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (order.deliveryCompletedAt) return NextResponse.json({ error: "Delivery already completed" }, { status: 409 })
 
     // Normalise to a reusable bag number when the code matches one.
-    const bag = await prisma.laundryBag.findFirst({ where: { businessId: session.businessId, OR: [{ bagNumber: code }, { qrValue: code }] }, select: { bagNumber: true } })
+    const bag = await prisma.laundryBag.findFirst({ where: { businessId: session.businessId, OR: [{ bagNumber: code }, { qrValue: code }] }, select: { id: true, bagNumber: true, status: true } })
     const bagNumber = bag?.bagNumber || code
 
     await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryBagNumber: bagNumber, deliveryBagAssignedAt: new Date() } })
+    // Reserve the reusable bag so it isn't double-used while out for delivery. No
+    // currentOrderId link → it's untouched by the delivered/store-receive auto-
+    // release; only the store's return scan frees it back to AVAILABLE.
+    if (bag && bag.status === "AVAILABLE") {
+      await prisma.laundryBag.update({ where: { id: bag.id }, data: { status: "OUT_FOR_DELIVERY", lastUsedAt: new Date() } }).catch(() => null)
+    }
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: "DELIVERY_BAG_ASSIGNED", note: `Delivery bag ${bagNumber}`, actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
 
     return NextResponse.json({ success: true, bagNumber })
