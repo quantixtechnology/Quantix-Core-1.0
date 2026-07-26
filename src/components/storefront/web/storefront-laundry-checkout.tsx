@@ -121,6 +121,14 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       .catch(() => { /* keep fallback */ })
   }, [currentBusinessId])
   const [paymentMethod, setPaymentMethod] = useState("COD")
+  const [payMethods, setPayMethods] = useState<{ cod: boolean; online: { gateway: string; keyId: string; environment: string } | null }>({ cod: true, online: null })
+  // Which payment options this business offers (COD switch + active online gateway).
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/storefront/laundry-payment-methods?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
+      .then((j) => { if (j.success) { setPayMethods(j.data); setPaymentMethod(j.data.online ? "ONLINE" : "COD") } })
+      .catch(() => { /* keep COD default */ })
+  }, [currentBusinessId])
   const [placing, setPlacing] = useState(false)
   const [orderError, setOrderError] = useState("")
   const [orderResult, setOrderResult] = useState<{ orderNumber: string; orderId: string } | null>(null)
@@ -438,6 +446,48 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     }).catch(() => {})
   }
 
+  // Load Razorpay checkout.js once, on demand.
+  const loadRazorpay = () => new Promise<boolean>((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).Razorpay) return resolve(true)
+    const s = document.createElement("script")
+    s.src = "https://checkout.razorpay.com/v1/checkout.js"
+    s.onload = () => resolve(true); s.onerror = () => resolve(false)
+    document.body.appendChild(s)
+  })
+
+  // Online payment for a just-placed laundry order. Resolves true only when the
+  // payment is completed AND verified server-side (which books it on the order).
+  const payOnline = (orderId: string, orderNumber: string) => new Promise<boolean>((resolve) => {
+    ;(async () => {
+      try {
+        const co = await fetch("/api/core/storefront/laundry-pay/create-order", {
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ businessId: currentBusinessId, laundryOrderId: orderId }),
+        }).then((r) => r.json())
+        if (!co.success) { setOrderError(co.error || "Could not start payment"); return resolve(false) }
+        if (!(await loadRazorpay())) { setOrderError("Could not load the payment window"); return resolve(false) }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rzp = new (window as any).Razorpay({
+          key: co.data.keyId, order_id: co.data.razorpayOrderId, amount: Math.round(co.data.amount * 100), currency: "INR",
+          name: currentStore?.name || "Laundry", description: `Order ${orderNumber}`,
+          prefill: { name: customerResolved?.name || undefined, contact: customerResolved?.phone || undefined, email: customerResolved?.email || undefined },
+          theme: { color: brandColor },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          handler: async (resp: any) => {
+            const v = await fetch("/api/core/storefront/laundry-pay/verify", {
+              method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ businessId: currentBusinessId, laundryOrderId: orderId, razorpay_payment_id: resp.razorpay_payment_id, razorpay_order_id: resp.razorpay_order_id, razorpay_signature: resp.razorpay_signature }),
+            }).then((r) => r.json())
+            if (v.success) resolve(true); else { setOrderError("Payment could not be verified — please contact the store."); resolve(false) }
+          },
+          modal: { ondismiss: () => resolve(false) },
+        })
+        rzp.open()
+      } catch { setOrderError("Payment failed"); resolve(false) }
+    })()
+  })
+
   const handlePlaceOrder = async () => {
     if (!currentBusinessId || !token || !customerResolved || !selectedAddressId) {
       setOrderError("Missing required information"); return
@@ -477,9 +527,15 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       })
       const data = await res.json()
       if (data.success) {
+        const orderId = data.data.orderId, orderNumber = data.data.orderNumber
+        // Online: attempt payment now. The order is already placed; if the customer
+        // cancels, it stays placed but unpaid (they can pay at delivery).
+        if (paymentMethod === "ONLINE" && payMethods.online) {
+          await payOnline(orderId, orderNumber)
+        }
         clearCart()
         recordCoupon(data.data.id || null)
-        setOrderResult({ orderNumber: data.data.orderNumber, orderId: data.data.orderId })
+        setOrderResult({ orderNumber, orderId })
         setStep("success")
       } else {
         setOrderError(data.error || "Failed to place order")
@@ -951,11 +1007,20 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                 <CreditCard className="w-4 h-4" style={{ color: brandColor }} />
                 Payment Method
               </h3>
-              <div className="flex items-center gap-3 p-3 rounded-xl border" style={{ borderColor: brandColor, backgroundColor: `${brandColor}08` }}>
-                <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={{ borderColor: brandColor }}>
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />
-                </div>
-                <span className="text-sm font-semibold text-gray-900">Cash on Delivery</span>
+              <div className="space-y-2">
+                {payMethods.online && (
+                  <button type="button" onClick={() => setPaymentMethod("ONLINE")} className="w-full flex items-center gap-3 p-3 rounded-xl border text-left" style={paymentMethod === "ONLINE" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : { borderColor: "#e5e7eb" }}>
+                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={{ borderColor: paymentMethod === "ONLINE" ? brandColor : "#cbd5e1" }}>{paymentMethod === "ONLINE" && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}</div>
+                    <div className="flex-1"><span className="text-sm font-semibold text-gray-900">Pay Online</span><p className="text-[11px] text-gray-400">UPI · Cards · Wallets{payMethods.online.environment === "SANDBOX" ? " · Test mode" : ""}</p></div>
+                  </button>
+                )}
+                {payMethods.cod && (
+                  <button type="button" onClick={() => setPaymentMethod("COD")} className="w-full flex items-center gap-3 p-3 rounded-xl border text-left" style={paymentMethod === "COD" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : { borderColor: "#e5e7eb" }}>
+                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={{ borderColor: paymentMethod === "COD" ? brandColor : "#cbd5e1" }}>{paymentMethod === "COD" && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}</div>
+                    <span className="text-sm font-semibold text-gray-900">Cash on Delivery</span>
+                  </button>
+                )}
+                {!payMethods.online && !payMethods.cod && <p className="text-xs text-amber-600">No payment method is available right now. Please contact the store.</p>}
               </div>
             </div>
           </div>
