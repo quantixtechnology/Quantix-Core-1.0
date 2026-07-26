@@ -94,6 +94,11 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     // Advancing out of payment requires the payment endpoint (records money or
     // an explicit pay-later decision per business payment policy).
     { to: "READY_FOR_PROCESSING", action: "COLLECT_PAYMENT", label: "Collect Payment", primary: true, internal: true },
+    // Corrective back-step: a garment was missed and the order was already pushed
+    // to Payment. Reopen it into Store Audit to add + inspect the garment and
+    // re-approve. Only valid BEFORE payment is collected (PAYMENT_PENDING), so no
+    // money is ever out of sync with the order total.
+    { to: "PENDING_STORE_AUDIT", action: "REOPEN_AUDIT", label: "Edit / Reopen Audit" },
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   READY_FOR_PROCESSING: [

@@ -231,6 +231,30 @@ describe('pickup → store chain of custody — workflow synchronization', () =>
   })
 })
 
+// ── Corrective edit: reopen a Payment-stage order back into Store Audit. ─────
+describe('edit order — reopen from Payment back to Store Audit', () => {
+  it('allows PAYMENT_PENDING → PENDING_STORE_AUDIT via REOPEN_AUDIT (non-internal, non-primary)', () => {
+    expect(isTransitionAllowed('PAYMENT_PENDING', 'PENDING_STORE_AUDIT')).toBe(true)
+    const t = getTransition('PAYMENT_PENDING', 'PENDING_STORE_AUDIT')
+    expect(t?.action).toBe('REOPEN_AUDIT')
+    // Reopen is an explicit staff action from the payment/order screen — not an
+    // internal side-effect transition, and never the primary (forward) action.
+    expect(t?.internal ?? false).toBe(false)
+    expect(t?.primary ?? false).toBe(false)
+  })
+
+  it('does NOT let the reopen edge bypass or replace the forward payment flow', () => {
+    // Collecting payment is still the primary, internal-only forward move.
+    const pay = getTransition('PAYMENT_PENDING', 'READY_FOR_PROCESSING')
+    expect(pay?.action).toBe('COLLECT_PAYMENT')
+    expect(pay?.primary).toBe(true)
+    expect(pay?.internal).toBe(true)
+    // Reopening lands back in the SAME audit stage the order left, so the existing
+    // audit gate (all garments inspected) re-applies before it can advance again.
+    expect(isTransitionAllowed('PENDING_STORE_AUDIT', 'PAYMENT_PENDING')).toBe(true)
+  })
+})
+
 // ── The exact production desync, encoded as an explicit regression test. ─────
 describe('regression — the four-module desync must be impossible', () => {
   it('a picked-up order can NEVER be AWAITING in Orders while invisible in Dispatch', () => {

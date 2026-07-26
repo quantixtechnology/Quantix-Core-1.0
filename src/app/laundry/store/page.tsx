@@ -342,6 +342,21 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
     } finally { setBusy(false) }
   }
 
+  // Corrective edit: a garment was missed and the order is already at Payment.
+  // Reopen it back into Store Audit, then jump straight into the audit editor to
+  // add + inspect the garment and re-approve. Only offered at PAYMENT_PENDING.
+  const reopenAudit = async () => {
+    if (!order || busy) return
+    if (!confirm("Reopen this order for editing? It goes back to Store Audit so you can add and inspect the missed garment, then re-approve.")) return
+    setBusy(true)
+    try {
+      const j = await api(`/api/laundry/orders/${id}/transition`, { method: "POST", body: JSON.stringify({ toStatus: "PENDING_STORE_AUDIT", actorName: staff.name, note: "Reopened to edit garments (missed garment)" }) })
+      if (!j.success) { alert(j.error || "Could not reopen the order"); return }
+      await load()
+      setAudit(true)
+    } finally { setBusy(false) }
+  }
+
   if (loading || !order) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -400,10 +415,15 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
         )}
       </div>
       {primary && (
-        <div className="fixed bottom-0 inset-x-0 p-3 bg-white border-t border-slate-200">
+        <div className="fixed bottom-0 inset-x-0 p-3 bg-white border-t border-slate-200 space-y-2">
           <button onClick={advance} disabled={busy} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
             {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : primaryLabel}
           </button>
+          {order.status === "PAYMENT_PENDING" && (
+            <button onClick={reopenAudit} disabled={busy} className="w-full h-10 rounded-xl border border-slate-300 text-slate-600 font-medium text-[13px] flex items-center justify-center gap-1.5 disabled:opacity-50">
+              <ClipboardCheck className="h-4 w-4" /> Edit / Reopen Audit
+            </button>
+          )}
         </div>
       )}
       {!primary && awaitingScanReceive && (
@@ -469,8 +489,12 @@ function AuditScreen({ order, staff, api, onClose, onDone }: { order: any; staff
     setErr(null); setBusy(true)
     try {
       // Persist audit data (weight/notes/photos) via the SAME inspect API desktop uses.
+      // Stamp EVERY garment as inspected — the store audit gate (checkAuditComplete)
+      // requires an inspectedAt on each item before the order can leave audit, and
+      // the PWA audits at the whole-order level (no per-garment condition screen).
       await api(`/api/laundry/orders/${order.id}/inspect`, { method: "PUT", body: JSON.stringify({
         businessId: staff.businessId, auditedBy: staff.name, auditNotes: notes || null, auditPhotos: photos,
+        items: (items || []).map((it: { id: string }) => ({ itemId: it.id })),
         ...(weight ? { totalWeightKg: Number(weight) } : {}),
       }) })
       // Then move the order through the state machine (approve → payment, reject → cancel).

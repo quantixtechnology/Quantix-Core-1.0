@@ -292,6 +292,17 @@ export function LaundryStoreAudit() {
                     </div>
                   )
                 })}
+                {/* Add a MISSED garment even after the order already has some — the new
+                    garment is priced + normalised like intake, then inspected below. */}
+                {detail.items.length > 0 && (
+                  intakeOpen ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                      <IntakeAudit orderId={detail.id} orderNumber={detail.orderNumber} businessId={currentBusinessId} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                    </div>
+                  ) : (
+                    <button onClick={() => setIntakeOpen(true)} className="text-sm font-semibold text-blue-600 hover:text-blue-700">+ Add missed garment</button>
+                  )
+                )}
               </CardContent>
             </Card>
 

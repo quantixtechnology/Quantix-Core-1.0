@@ -151,6 +151,7 @@ const PAY_METHODS = ["CASH", "UPI", "CARD", "WALLET"]
 
 export function LaundryPaymentCollection() {
   const { currentBusinessId, user } = useAuthStore()
+  const { setLaundryPage } = useAdminStore()
   const queue = useQueue("PAYMENT_PENDING")
   const [selected, setSelected] = useState<OrderRow | null>(null)
   const [dues, setDues] = useState<{ laundryDue: number; totalCustomerDue: number; subscription?: { planName: string | null; due: number } | null } | null>(null)
@@ -199,6 +200,25 @@ export function LaundryPaymentCollection() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not proceed") } finally { setBusy(false) }
   }
 
+  // Corrective edit: a garment was missed and the order was already pushed to
+  // Payment. Reopen it into Store Audit to add + inspect the garment and re-approve
+  // (only valid before payment is collected, so the total can't diverge from money).
+  const reopenAudit = async () => {
+    if (!selected || !currentBusinessId) return
+    if (!window.confirm("Reopen this order for editing? It returns to Store Audit so you can add and inspect the missed garment, then re-approve.")) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/laundry/orders/${selected.id}/transition`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStatus: "PENDING_STORE_AUDIT", actorName: user?.name, note: "Reopened to edit garments (missed garment)" }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Could not reopen")
+      toast.success("Order reopened — opening Store Audit to add the garment")
+      setSelected(null); queue.load(); setLaundryPage("audit-queue")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not reopen") } finally { setBusy(false) }
+  }
+
   return (
     <QueueShell status="PAYMENT_PENDING" title="Payment Collection" subtitle="Record payment against the audited order total"
       icon={CreditCard} selected={selected} onSelect={openOrder} queue={queue}>
@@ -238,6 +258,10 @@ export function LaundryPaymentCollection() {
             </Button>
             <Button onClick={payLater} disabled={busy} variant="outline" className="gap-1">Pay at Delivery</Button>
           </div>
+          {/* Missed a garment? Reopen the order into Store Audit before taking money. */}
+          <button onClick={reopenAudit} disabled={busy} className="w-full flex items-center justify-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-blue-700 disabled:opacity-50">
+            <ClipboardCheck className="h-4 w-4" /> Missed a garment? Edit / Reopen Audit
+          </button>
         </CardContent></Card>
       )}
     </QueueShell>
