@@ -201,7 +201,7 @@ export function LaundryPaymentCollection() {
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Could not proceed")
-      toast.success("Order moved to Packing — balance collected at delivery")
+      toast.success(nothingDue ? "Order moved to Processing — nothing to collect" : "Order moved to Packing — balance collected at delivery")
       setSelected(null); queue.load()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not proceed") } finally { setBusy(false) }
   }
@@ -225,6 +225,10 @@ export function LaundryPaymentCollection() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not reopen") } finally { setBusy(false) }
   }
 
+  // Subscription-covered or otherwise prepaid → nothing to collect. Show a
+  // "covered" state and a single Continue action instead of a ₹0 payment form.
+  const nothingDue = !!dues && dues.totalCustomerDue <= 0
+
   return (
     <QueueShell status="PAYMENT_PENDING" title="Payment Collection" subtitle="Record payment against the audited order total"
       icon={CreditCard} selected={selected} onSelect={openOrder} queue={queue}>
@@ -234,13 +238,26 @@ export function LaundryPaymentCollection() {
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Order Total</p><p className="text-lg font-bold">{inr(selected.grandTotal)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Paid</p><p className="text-lg font-bold text-emerald-600">{inr(selected.amountPaid)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Due Now</p><p className="text-lg font-bold text-rose-600">{dues ? inr(dues.totalCustomerDue) : "…"}</p></div>
+            <div className={`rounded-lg border p-3 ${nothingDue ? "border-emerald-200 bg-emerald-50" : ""}`}><p className="text-[10px] uppercase text-slate-400">Due Now</p><p className={`text-lg font-bold ${nothingDue ? "text-emerald-600" : "text-rose-600"}`}>{dues ? inr(dues.totalCustomerDue) : "…"}</p></div>
           </div>
           {dues?.subscription && (
             <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               Includes subscription purchase &quot;{dues.subscription.planName}&quot; — {inr(dues.subscription.due)} due (activates when fully paid).
             </p>
           )}
+          {nothingDue ? (
+            <div className="space-y-3">
+              <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
+                {selected.paymentStatus === "SUBSCRIPTION" || selected.amountPaid > 0
+                  ? "Fully covered by subscription — nothing to collect."
+                  : "No balance due — nothing to collect."}
+              </p>
+              <Button onClick={payLater} disabled={busy} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <HandCoins className="h-4 w-4" />} Complete — Move to Processing
+              </Button>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Payment Method</Label>
@@ -264,6 +281,8 @@ export function LaundryPaymentCollection() {
             </Button>
             <Button onClick={payLater} disabled={busy} variant="outline" className="gap-1">Pay at Delivery</Button>
           </div>
+          </>
+          )}
           {/* Missed a garment? Reopen the order into Store Audit before taking money. */}
           <button onClick={reopenAudit} disabled={busy} className="w-full flex items-center justify-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-blue-700 disabled:opacity-50">
             <ClipboardCheck className="h-4 w-4" /> Missed a garment? Edit / Reopen Audit
