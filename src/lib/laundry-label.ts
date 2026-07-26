@@ -144,6 +144,18 @@ function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
 
 function escapeHtml(s: string) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)) }
 
+// The print/PDF filename: a single garment → its Item ID (falls back to the GAR
+// code); multiple → the order number. Sanitised for use as a file name.
+function printJobName(labels: LabelData[]): string {
+  const clean = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim() || "labels"
+  if (labels.length === 1) {
+    const l = labels[0]
+    return clean(l.itemNumber || l.garScanCode || l.orderNumber || "label")
+  }
+  const order = labels.find((l) => l.orderNumber)?.orderNumber
+  return clean(order ? `${order}-labels` : "labels")
+}
+
 // PURE side-effect: opens print window, no state mutation, no API calls.
 // The returned Promise resolves when the window opens so callers can continue
 // without blocking on the print dialog.
@@ -169,17 +181,30 @@ export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = t
     iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;"
     document.body.appendChild(iframe)
 
+    // The browser derives the "Save as PDF" filename from the TOP document's title
+    // (not the iframe's), so set it to the garment/order id while printing and
+    // restore it after — otherwise the file is named after the app's <title>.
+    const jobName = printJobName(labels)
+    const prevTitle = document.title
+
     let cleaned = false
-    const cleanup = () => { if (cleaned) return; cleaned = true; setTimeout(() => { try { iframe.remove() } catch { /* noop */ } }, 1000) }
+    const cleanup = () => {
+      if (cleaned) return
+      cleaned = true
+      document.title = prevTitle
+      setTimeout(() => { try { iframe.remove() } catch { /* noop */ } }, 1000)
+    }
 
     const doc = iframe.contentWindow?.document
     if (!doc || !iframe.contentWindow) { try { iframe.remove() } catch { /* noop */ }; resolve(); return }
     doc.open(); doc.write(html); doc.close()
+    try { doc.title = jobName } catch { /* noop */ }
 
     let printed = false
     const printNow = () => {
       if (printed) return
       printed = true
+      document.title = jobName
       try { iframe.contentWindow?.focus(); iframe.contentWindow?.print() } catch { /* noop */ }
       resolve()
       cleanup()
