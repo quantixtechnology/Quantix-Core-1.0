@@ -15,6 +15,7 @@ import { Loader2, Search, Package, Plus, Printer, History, Wrench, XCircle, Rota
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { printHtmlDocument } from "@/lib/print-utils"
 
 interface Bag { id: string; bagNumber: string; qrValue: string; status: string; currentOrderNumber: string | null; currentServiceName: string | null; currentCustomerName: string | null; lastUsedAt: string | null; totalUsageCount: number; lastAssignmentId?: string | null }
 interface Assignment { id: string; orderNumber: string | null; serviceName: string | null; customerName: string | null; assignedAt: string; returnedAt: string | null; status: string }
@@ -43,16 +44,16 @@ const FILTERS = ["ALL", "AVAILABLE", "COLLECTED", "RECEIVED_AT_STORE", "PROCESSI
 
 async function printBagLabels(bags: Bag[]) {
   const labels = await Promise.all(bags.map(async (b) => ({ b, url: await QRCode.toDataURL(b.qrValue, { width: 240, margin: 1 }) })))
-  const w = window.open("", "_blank", "width=460,height=640")
-  if (!w) { toast.error("Allow pop-ups to print labels"); return }
   const body = labels.map(({ b, url }) => `
     <div style="page-break-after:always;text-align:center;padding:20px;border-bottom:1px dashed #ccc">
       <img src="${url}" width="220" height="220" />
       <div style="font-family:monospace;font-size:20px;font-weight:bold;margin-top:8px">${b.bagNumber}</div>
       <div style="font-size:11px;color:#888">Reusable laundry bag · permanent QR</div>
     </div>`).join("")
-  w.document.write(`<html><head><title>Bag Labels</title></head><body style="font-family:sans-serif;margin:0">${body}</body></html>`)
-  w.document.close(); w.focus(); setTimeout(() => w.print(), 300)
+  // Print via a hidden iframe (never a popup — see printHtmlDocument). QR codes
+  // are inline data-URIs, so there is nothing external to wait on.
+  const jobTitle = bags.length === 1 ? bags[0].bagNumber : "Bag Labels"
+  printHtmlDocument(`<html><head><title>${jobTitle}</title></head><body style="font-family:sans-serif;margin:0">${body}</body></html>`, jobTitle)
 }
 
 export function LaundryBagManagement() {
