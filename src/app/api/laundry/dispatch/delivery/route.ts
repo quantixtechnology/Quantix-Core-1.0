@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, orderId, executiveId, notes } = body
+    const { businessId, orderId, executiveId, notes, deliveryDate, deliveryTimeSlot } = body
     if (!businessId || !orderId)
       return NextResponse.json({ error: "businessId and orderId required" }, { status: 400 })
 
@@ -40,12 +40,19 @@ export async function POST(request: Request) {
       execName = ex.name
     }
 
+    // Persist the scheduled date + slot (previously only stuffed into `notes`, so
+    // the order and the Dispatch Center showed "—" and the job had no schedule).
+    const parsedDate = deliveryDate ? new Date(deliveryDate) : null
     await prisma.laundryOrder.update({
       where: { id: order.id },
       data: {
         deliveryRequired: true,
         deliveryExecutiveId: execId,
         deliveryAssignedAt: execId ? new Date() : null,
+        // Track the executive's response so "Awaiting response" is real state.
+        deliveryAcceptance: execId ? "PENDING" : null,
+        ...(parsedDate && !isNaN(parsedDate.getTime()) ? { deliveryDate: parsedDate } : {}),
+        ...(deliveryTimeSlot ? { deliveryTimeSlot: String(deliveryTimeSlot) } : {}),
         notes: notes || null,
       },
     })

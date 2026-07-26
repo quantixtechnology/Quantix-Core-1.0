@@ -719,6 +719,8 @@ export function LaundryReadyForDelivery() {
                           body: JSON.stringify({
                             businessId: currentBusinessId, orderId: selected.id,
                             executiveId: delForm.assignNow && delForm.executiveId ? delForm.executiveId : null,
+                            deliveryDate: delForm.date || null,
+                            deliveryTimeSlot: delForm.timeSlot || null,
                             notes: `Delivery scheduled${delForm.timeSlot ? ` at ${delForm.timeSlot}` : ""}${delForm.address ? ` to ${delForm.address}` : ""}`,
                           }),
                         })

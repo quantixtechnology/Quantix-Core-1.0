@@ -155,6 +155,8 @@ function Shell({ token, exec, brand, onLogout }: { token: string; exec: Exec; br
   const [openJob, setOpenJob] = useState<Job | null>(null)
   const [showProfile, setShowProfile] = useState(false)
 
+  const [counts, setCounts] = useState<{ pickup: number; delivery: number }>({ pickup: 0, delivery: 0 })
+
   const load = useCallback(async (t = tab) => {
     setLoading(true)
     try {
@@ -163,6 +165,26 @@ function Shell({ token, exec, brand, onLogout }: { token: string; exec: Exec; br
     } catch { /* noop */ } finally { setLoading(false) }
   }, [tab, token])
   useEffect(() => { load(tab) }, [load, tab])
+
+  // Pending pickup/delivery counts → tab badges. Polled so a newly ASSIGNED job
+  // (e.g. a delivery just scheduled from the store) shows up as a notification
+  // without the executive refreshing.
+  const loadCounts = useCallback(async () => {
+    try {
+      const [pj, dj] = await Promise.all([
+        execFetch(`/api/laundry/executive/jobs?type=pickup`, token).then((r) => r.json()).catch(() => ({})),
+        execFetch(`/api/laundry/executive/jobs?type=delivery`, token).then((r) => r.json()).catch(() => ({})),
+      ])
+      setCounts({ pickup: pj.success ? pj.data.length : 0, delivery: dj.success ? dj.data.length : 0 })
+    } catch { /* noop */ }
+  }, [token])
+  useEffect(() => {
+    loadCounts()
+    const fire = () => { if (typeof document === "undefined" || document.visibilityState !== "hidden") loadCounts() }
+    const id = setInterval(fire, 20000)
+    window.addEventListener("focus", fire)
+    return () => { clearInterval(id); window.removeEventListener("focus", fire) }
+  }, [loadCounts, jobs.length])
 
   if (showProfile) return <Profile exec={exec} brand={brand} onBack={() => setShowProfile(false)} onLogout={onLogout} />
   if (openJob) return <JobDetail token={token} exec={exec} brand={brand} kind={tab === "delivery" ? "delivery" : "pickup"} job={openJob} onBack={() => { setOpenJob(null); load() }} onChanged={load} />
@@ -183,9 +205,15 @@ function Shell({ token, exec, brand, onLogout }: { token: string; exec: Exec; br
           </button>
         </div>
         <div className="mt-3 flex gap-1 bg-white/10 rounded-xl p-1">
-          {TABS.map((t) => (
-            <button key={t.k} onClick={() => setTab(t.k)} className="flex-1 h-8 rounded-lg text-xs font-medium" style={tab === t.k ? { backgroundColor: "#fff", color: brand.color } : { color: "rgba(255,255,255,0.85)" }}>{t.l}</button>
-          ))}
+          {TABS.map((t) => {
+            const n = t.k === "pickup" ? counts.pickup : t.k === "delivery" ? counts.delivery : 0
+            return (
+              <button key={t.k} onClick={() => setTab(t.k)} className="relative flex-1 h-8 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1" style={tab === t.k ? { backgroundColor: "#fff", color: brand.color } : { color: "rgba(255,255,255,0.85)" }}>
+                {t.l}
+                {n > 0 && <span className={`min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center ${tab === t.k ? "bg-red-500 text-white" : "bg-red-500 text-white"}`}>{n}</span>}
+              </button>
+            )
+          })}
         </div>
       </header>
 
