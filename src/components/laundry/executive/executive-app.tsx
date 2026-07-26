@@ -59,6 +59,7 @@ interface Job {
   customerName: string; customerPhone: string | null; timeSlot: string | null
   address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
+  deliveryBagNumber: string | null
 }
 
 const RANK: Record<string, number> = { ASSIGNED: 0, STARTED: 1, NAVIGATING: 2, REACHED: 3, PICKUP_STARTED: 4, PICKUP_COMPLETED: 5, OUT_FOR_DELIVERY: 6, DELIVERED: 7 }
@@ -318,7 +319,22 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted") }
   }
 
+  const [delBag, setDelBag] = useState("")
+  const scanDeliveryBag = async (code: string) => {
+    const c = String(code || "").trim(); if (!c) return
+    setBusy(true)
+    try {
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/delivery-bag`, token, { method: "POST", body: JSON.stringify({ code: c, executiveName: exec.name }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Bag not accepted")
+      toast.success(`Delivery bag ${j.bagNumber}`)
+      setDelBag(""); onChanged()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted") } finally { setBusy(false) }
+  }
+
   const navigate = () => {
+    // Chain of custody: no delivery leaves the store until its bag is scanned.
+    if (isDelivery && !job.deliveryBagNumber) { toast.error("Scan the delivery bag first"); return }
     const url = job.mapsLink || (job.lat && job.lng ? `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}` : job.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}` : null)
     if (!url) { toast.error("No location for this order"); return }
     if (isDelivery) { if (job.acceptance === "ACCEPTED" && st < RANK.OUT_FOR_DELIVERY) deliver("out_for_delivery") }
@@ -328,6 +344,8 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 
   const allBagsDone = job.services.every((s) => s.bagNumber)
   const delivered = job.status === "DELIVERED"
+  // Delivery may only start once its bag is scanned/assigned.
+  const deliveryReady = !isDelivery || !!job.deliveryBagNumber
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28">
@@ -350,7 +368,9 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
             {job.customerPhone
               ? <a href={`tel:${job.customerPhone}`} className="h-11 rounded-xl border border-slate-200 text-slate-700 font-medium flex items-center justify-center gap-2"><Phone className="h-4 w-4" /> Call</a>
               : <div className="h-11 rounded-xl border border-slate-100 text-slate-300 flex items-center justify-center gap-2 text-sm"><Phone className="h-4 w-4" /> No phone</div>}
-            <button onClick={navigate} className="h-11 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
+            {deliveryReady
+              ? <button onClick={navigate} className="h-11 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
+              : <button disabled className="h-11 rounded-xl bg-slate-100 text-slate-400 font-medium flex items-center justify-center gap-2 text-xs px-2"><Package className="h-4 w-4" /> Scan bag to start</button>}
           </div>
         </div>
 
@@ -373,6 +393,30 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
               <button disabled={busy} onClick={() => respond("reject")} className="flex-1 h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-60">Reject</button>
               <button disabled={busy} onClick={() => respond("accept")} className="flex-1 h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: brand.color }}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Accept</button>
             </div>
+          </div>
+        )}
+
+        {/* Delivery bag — must be scanned before heading out (chain of custody) */}
+        {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Delivery Bag</p>
+              <p className="text-xs text-slate-500">Scan or enter the bag you're taking this order out in. Navigation unlocks once it's set; the store scans it back after delivery.</p>
+            </div>
+            {job.deliveryBagNumber ? (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                <p className="text-sm font-medium text-slate-700">Bag <span className="font-mono text-emerald-700">{job.deliveryBagNumber}</span> assigned</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <BagScanButton label="Scan with Camera" onScan={scanDeliveryBag} closeOnScan className="w-full h-11 justify-center" />
+                <div className="flex items-center gap-2">
+                  <input value={delBag} onChange={(e) => setDelBag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && scanDeliveryBag(delBag)} placeholder="or enter bag no." className="flex-1 h-10 rounded-xl border border-slate-200 px-3 text-sm font-mono" />
+                  <button onClick={() => scanDeliveryBag(delBag)} disabled={busy || !delBag.trim()} className="h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-medium disabled:opacity-50">Set</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -419,8 +463,8 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       )}
       {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
         <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
-          <button disabled={busy} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Mark as Delivered
+          <button disabled={busy || !deliveryReady} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} {deliveryReady ? "Mark as Delivered" : "Scan delivery bag first"}
           </button>
         </div>
       )}

@@ -4593,6 +4593,11 @@ model LaundryOrder {
   pickupAcceptance    String? // PENDING | ACCEPTED | REJECTED
   pickupAcceptedAt    DateTime?
   deliveryAcceptance  String? // PENDING | ACCEPTED | REJECTED
+  // Delivery bag chain of custody: the executive must scan/assign the bag the
+  // order goes out in BEFORE navigating; after delivery the store scans it back.
+  deliveryBagNumber     String?
+  deliveryBagAssignedAt DateTime?
+  deliveryBagReturnedAt DateTime?
   deliveryAcceptedAt  DateTime?
   // Denormalised live status for the Live Operations dashboard / PWA lists, e.g.
   // ASSIGNED, STARTED, NAVIGATING, REACHED, PICKUP_STARTED, PICKUP_COMPLETED,

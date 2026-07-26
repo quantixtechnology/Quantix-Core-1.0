@@ -39,7 +39,8 @@ export async function GET(request: Request) {
       select: {
         id: true, orderNumber: true, status: true, fieldStatus: true, isExpress: true, customerId: true,
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true, pickupMapsLink: true, pickupLat: true, pickupLng: true,
-        expectedDeliveryDate: true, deliveredAt: true, pickupAcceptance: true, deliveryAcceptance: true,
+        expectedDeliveryDate: true, deliveryDate: true, deliveryTimeSlot: true, deliveredAt: true, pickupAcceptance: true, deliveryAcceptance: true,
+        deliveryBagNumber: true,
         services: { select: { serviceId: true, serviceName: true } },
         _count: { select: { items: true } },
       },
@@ -73,8 +74,9 @@ export async function GET(request: Request) {
         acceptance: type === "delivery" ? o.deliveryAcceptance : o.pickupAcceptance,
         priority: o.isExpress ? "EXPRESS" : "NORMAL",
         customerName: cust?.name ?? "—", customerPhone: cust?.phone ?? null,
-        timeSlot: type === "delivery" ? (o.expectedDeliveryDate ? new Date(o.expectedDeliveryDate).toLocaleString() : null) : o.pickupTimeSlot,
+        timeSlot: type === "delivery" ? [o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : null, o.deliveryTimeSlot].filter(Boolean).join(" · ") || null : o.pickupTimeSlot,
         address: o.pickupAddress, landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
+        deliveryBagNumber: o.deliveryBagNumber ?? null,
         services, bagCount: services.length, assignedBags: services.filter((s) => s.bagNumber).length, itemCount: o._count.items,
       }
     })
