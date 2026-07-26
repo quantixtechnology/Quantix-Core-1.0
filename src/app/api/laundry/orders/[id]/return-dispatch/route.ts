@@ -9,6 +9,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { assignBagToOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -52,6 +53,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: { status: "RETURN_IN_TRANSIT", returnDispatchedBy: b.actorName || null, returnDispatchedAt: now },
       })
     }
+
+    // Optional return bag: the packet is placed in ANY available bag for the trip
+    // back (never locked to a specific bag). Assigning it links the bag to the
+    // order (serviceId null → no one-bag-per-service block) so the store can scan
+    // EITHER the packet QR or this bag to receive. Best-effort: a bad/unavailable
+    // bag is reported but never unwinds the dispatch (the packet QR still works).
+    let bagWarning: string | null = null
+    let bagAssigned: string | null = null
+    const bagCode = String(b.bagCode || "").trim()
+    if (bagCode) {
+      const r = await assignBagToOrder({ lbId: biz.id, code: bagCode, orderId: order.id, serviceId: null, serviceName: "Return" })
+      if (r.ok) bagAssigned = r.bag.bagNumber
+      else bagWarning = r.error
+    }
+
     await prisma.laundryOrderEvent.create({
       data: {
         orderId: order.id, businessId: biz.id,
@@ -61,7 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
     }).catch(() => null)
 
-    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, items: order.items.length } })
+    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, items: order.items.length, packetNumber: order.packet?.packetNumber || null, bagAssigned }, bagWarning })
   } catch (e) {
     console.error("[laundry-order-return-dispatch] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

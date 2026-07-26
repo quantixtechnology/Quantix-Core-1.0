@@ -27,6 +27,7 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
@@ -503,25 +504,61 @@ export function LaundryStoreReceive() {
   const [selected, setSelected] = useState<OrderRow | null>(null)
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState("")
 
-  const receive = async () => {
-    if (!selected || !currentBusinessId) return
+  const receiveOrder = async (orderId: string, noteOverride?: string): Promise<boolean> => {
+    if (!currentBusinessId) return false
     setBusy(true)
     try {
-      const res = await fetch(`/api/laundry/orders/${selected.id}/store-receive`, {
+      const res = await fetch(`/api/laundry/orders/${orderId}/store-receive`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, note: note || undefined }),
+        body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, note: noteOverride ?? (note || undefined) }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Receive failed")
       toast.success(`${j.data.orderNumber} received — Ready for Delivery`)
-      setSelected(null); setNote(""); queue.load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Receive failed") } finally { setBusy(false) }
+      setSelected(null); setNote(""); setCode(""); queue.load()
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Receive failed"); return false } finally { setBusy(false) }
+  }
+  const receive = () => { if (selected) receiveOrder(selected.id) }
+
+  // Scan-first receive: a returning package carries the SAME packet QR (PKT-…) it
+  // went out with, and any bag it came back in is still linked to the order — so a
+  // scan of EITHER resolves the order, and the server confirms it's in return transit.
+  const resolveAndReceive = async (raw?: string) => {
+    const q = (raw ?? code).trim()
+    if (!q || !currentBusinessId || busy) return
+    let orderId: string | null = null
+    try {
+      const pj = await fetch(`/api/laundry/packets?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
+      const p = (pj.data || [])[0]
+      if (p?.order?.id) orderId = p.order.id
+      if (!orderId) {
+        const bj = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bag = (bj.data || []).find((b: any) => (b.bagNumber || "").toUpperCase() === q.toUpperCase() || (b.qrValue || "") === q) || (bj.data || [])[0]
+        if (bag?.currentOrderId) orderId = bag.currentOrderId
+      }
+    } catch { /* fall through */ }
+    if (!orderId) { toast.error(`No returning order matches "${q}"`); setCode(""); return }
+    await receiveOrder(orderId)
   }
 
   return (
     <QueueShell status="RETURN_IN_TRANSIT" title="Store Receive" subtitle="Confirm processed orders returned from the Processing Center"
       icon={PackageCheck} selected={selected} onSelect={setSelected} queue={queue}>
+      {/* Scan-to-receive: packet QR or any bag QR → confirms the returned order. */}
+      <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
+        <CardContent className="p-4 space-y-2">
+          <div className="flex items-center gap-3 max-w-2xl">
+            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resolveAndReceive()} placeholder="Scan packet QR or bag — or enter packet / order code…" className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
+            <BagScanButton label="Camera" onScan={(c) => resolveAndReceive(c)} disabled={busy} closeOnScan className="h-11" />
+            <Button onClick={() => resolveAndReceive()} disabled={busy || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
+          </div>
+          <p className="text-[11px] text-slate-400">Scan the packet QR (same one it was sent with) or any bag it returned in. Or pick an order below to confirm manually.</p>
+        </CardContent>
+      </Card>
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
           <OrderHeader o={selected} />
