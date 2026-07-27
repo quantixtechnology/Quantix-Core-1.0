@@ -87,7 +87,7 @@ export async function assignBagToOrder(opts: {
 // itself is identical. History is NEVER lost — it lives in LaundryBagAssignment
 // (closed as RETURNED) and LaundryBagRelease (append-only audit). No manual
 // reset.
-const RELEASABLE = ["ASSIGNED", "COLLECTED", "RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING"] as const
+const RELEASABLE = ["ASSIGNED", "COLLECTED", "RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "OUT_FOR_DELIVERY"] as const
 
 export type BagReleaseStage = "STORE_RECEIVE" | "AFTER_DELIVERY"
 

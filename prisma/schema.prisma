@@ -5937,7 +5937,7 @@ model LaundryBag {
   bagNumber           String // BAG-NNNNNN (permanent, per business)
   qrValue             String // permanent QR payload = bagNumber
   businessId          String
-  status              String    @default("AVAILABLE") // AVAILABLE|ASSIGNED|COLLECTED|RECEIVED_AT_STORE|UNDER_AUDIT|PROCESSING|READY_FOR_DELIVERY|DELIVERED|RETURNED|CLEANING|DAMAGED|LOST
+  status              String    @default("AVAILABLE") // AVAILABLE|ASSIGNED|COLLECTED|RECEIVED_AT_STORE|UNDER_AUDIT|PROCESSING|READY_FOR_DELIVERY|OUT_FOR_DELIVERY|DELIVERED|RETURNED|CLEANING|DAMAGED|LOST
   currentOrderId      String?
   currentOrderNumber  String?
   currentServiceId    String?

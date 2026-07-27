@@ -329,7 +329,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Bag not accepted")
       toast.success(`Delivery bag ${j.bagNumber}`)
-      setDelBag(""); onChanged()
+      setDelBag(""); await refresh()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted") } finally { setBusy(false) }
   }
 
