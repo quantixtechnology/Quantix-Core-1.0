@@ -41,7 +41,7 @@ function validateRoutes() {
     "ws-wash", "ws-dry", "ws-dryclean", "ws-iron", "ws-fold", "ws-qc", "ws-pack",
     "inbox", "new-order", "audit-queue", "payment-queue", "packing-queue",
     "dispatch-queue", "store-receive-queue", "pickup-bags", "bag-management",
-    "dispatch-center", "delivery-executives", "mobile-apps",
+      "dispatch-center", "pickup-scheduler", "delivery-assignments", "delivery-executives", "mobile-apps",
     "ready-delivery-queue", "customers", "stores", "settings",
     "categories", "garments", "services", "pricing", "subscription-plans",
     "charges-rules", "pricing-simulator", "subscriptions", "roles", "staff",
@@ -118,89 +118,27 @@ function deriveDashboardType(screenLevels: Record<string, number>): "processing"
 export function LaundryPageRouter() {
   const { laundryPage } = useAdminStore()
   const { currentBusinessId } = useAuthStore()
-  const { screenLevels, isLoaded } = useRuntimeAuth()
+  const { screenLevels } = useRuntimeAuth()
 
   const wsBusinessId = currentBusinessId || ""
   const dashboardType = deriveDashboardType(screenLevels)
 
-  // Show the store-side pages for both profiles — they are the same
-  // component regardless of dashboard type.
+  // Single unified switch. dashboardType affects ONLY the "dashboard" route
+  // and the default fallback. Every other page is shared regardless of type.
   switch (laundryPage) {
-    // Shared pages (available to all dashboard types)
+    // ── Dashboard (type-aware) ─────────────────────────────────────────────
+    case "dashboard":
+      return dashboardType === "processing" ? <ProcessingDashboard /> : <LaundryDashboard />
+
+    // ── Shared pages — same component for both dashboard types ────────────
     case "orders": return <LaundryOrdersView />
     case "garment-lookup": return <LaundryGarmentLookup />
     case "reports": return <LaundryReportsView />
     case "order-detail": return <LaundryOrderDetail />
-  }
-
-  // CRM and Marketing are cross-cutting — available in either profile
-  switch (laundryPage) {
-    case "crm-dashboard": return <CrmGate><CrmDashboard businessId={wsBusinessId} /></CrmGate>
-    case "crm-leads": return <CrmGate><CrmLeads businessId={wsBusinessId} /></CrmGate>
-    case "crm-opportunities": return <CrmGate><CrmOpportunities businessId={wsBusinessId} /></CrmGate>
-    case "crm-activities": return <CrmGate><CrmActivities businessId={wsBusinessId} /></CrmGate>
-    case "crm-tasks": return <CrmGate><CrmTasks businessId={wsBusinessId} /></CrmGate>
-    case "crm-reports": return <CrmGate><CrmReports businessId={wsBusinessId} /></CrmGate>
-    case "crm-settings": return <CrmGate><CrmSettings businessId={wsBusinessId} /></CrmGate>
-    case "marketing-dashboard": return <MarketingGate><MarketingDashboard businessId={wsBusinessId} /></MarketingGate>
-    case "marketing-discounts": return <MarketingGate><MarketingDiscounts /></MarketingGate>
-    case "marketing-coupons": return <MarketingGate><MarketingCoupons businessId={wsBusinessId} /></MarketingGate>
-    case "marketing-reports": return <MarketingGate><MarketingReports businessId={wsBusinessId} /></MarketingGate>
-    case "marketing-loyalty": return <MarketingGate><MarketingPlaceholder title="Loyalty Program" phase="Phase 2" /></MarketingGate>
-    case "marketing-membership": return <MarketingGate><MarketingPlaceholder title="Membership Levels" phase="Phase 2" /></MarketingGate>
-    case "marketing-credits": return <MarketingGate><MarketingPlaceholder title="Promotional Credits" phase="Phase 2" /></MarketingGate>
-    case "marketing-giftcards": return <MarketingGate><MarketingPlaceholder title="Gift Cards" phase="Phase 3" /></MarketingGate>
-    case "marketing-referral": return <MarketingGate><MarketingPlaceholder title="Referral Program" phase="Phase 3" /></MarketingGate>
-    case "marketing-campaigns": return <MarketingGate><MarketingPlaceholder title="Campaigns" phase="Phase 3" /></MarketingGate>
-    case "marketing-cart-recovery": return <MarketingGate><MarketingPlaceholder title="Cart Recovery" phase="Phase 4" /></MarketingGate>
-  }
-
-  // Dashboard type determines which dashboard/processing components render
-  if (dashboardType === "processing") {
-    switch (laundryPage) {
-      case "dashboard": return <ProcessingDashboard />
-      case "processing-centers": return <LaundryProcessingConsole />
-      case "audit-barcode": return <LaundryAuditBarcodePage />
-      case "ws-wash": return <LaundryWorkstation stage="WASH" />
-      case "ws-dry": return <LaundryWorkstation stage="DRY" />
-      case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-      case "ws-iron": return <LaundryWorkstation stage="IRON" />
-      case "ws-fold": return <LaundryWorkstation stage="FOLD" />
-      case "ws-qc": return <LaundryWorkstation stage="QC" />
-      case "ws-pack": return <LaundryWorkstation stage="PACKED" />
-      default: return <ProcessingDashboard />
-    }
-  }
-
-  // Store dashboard
-  switch (laundryPage) {
-    case "dashboard": return <LaundryDashboard />
     case "inbox": return <LaundryInboxView />
     case "new-order": return <LaundryNewOrder />
-    case "audit-queue": return <LaundryStoreAudit />
-    case "payment-queue": return <LaundryPaymentCollection />
-    case "packing-queue": return <LaundryPacking />
-    case "dispatch-queue": return <LaundryDispatch />
-    case "store-receive-queue": return <LaundryStoreReceive />
-    case "pickup-bags": return <LaundryPickupBags />
-    case "bag-management": return <LaundryBagManagement />
-    case "dispatch-center": return <LaundryDispatchCenter />
-    case "pickup-scheduler": return <LaundryDispatchCenter />
-    case "delivery-assignments": return <LaundryDispatchCenter />
-    case "delivery-executives": return <LaundryDeliveryExecutives />
-    case "mobile-apps": return <LaundryMobileApps />
-    case "ready-delivery-queue": return <LaundryReadyForDelivery />
     case "customers": return <LaundryCustomersView />
     case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
-    case "processing-centers": return <LaundryProcessingConsole />
-    case "audit-barcode": return <LaundryAuditBarcodePage />
-    case "ws-wash": return <LaundryWorkstation stage="WASH" />
-    case "ws-dry": return <LaundryWorkstation stage="DRY" />
-    case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-    case "ws-iron": return <LaundryWorkstation stage="IRON" />
-    case "ws-fold": return <LaundryWorkstation stage="FOLD" />
-    case "ws-qc": return <LaundryWorkstation stage="QC" />
-    case "ws-pack": return <LaundryWorkstation stage="PACKED" />
     case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
     case "categories": return <LaundryCategoriesMaster />
     case "garments": return <LaundryGarmentsMaster />
@@ -212,6 +150,57 @@ export function LaundryPageRouter() {
     case "subscriptions": return <LaundrySubscriptionsView />
     case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
     case "staff": return <LaundryStaff businessId={wsBusinessId} />
-    default: return <LaundryDashboard />
+
+    // ── CRM (cross-cutting) ───────────────────────────────────────────────
+    case "crm-dashboard": return <CrmGate><CrmDashboard businessId={wsBusinessId} /></CrmGate>
+    case "crm-leads": return <CrmGate><CrmLeads businessId={wsBusinessId} /></CrmGate>
+    case "crm-opportunities": return <CrmGate><CrmOpportunities businessId={wsBusinessId} /></CrmGate>
+    case "crm-activities": return <CrmGate><CrmActivities businessId={wsBusinessId} /></CrmGate>
+    case "crm-tasks": return <CrmGate><CrmTasks businessId={wsBusinessId} /></CrmGate>
+    case "crm-reports": return <CrmGate><CrmReports businessId={wsBusinessId} /></CrmGate>
+    case "crm-settings": return <CrmGate><CrmSettings businessId={wsBusinessId} /></CrmGate>
+
+    // ── Marketing (cross-cutting) ─────────────────────────────────────────
+    case "marketing-dashboard": return <MarketingGate><MarketingDashboard businessId={wsBusinessId} /></MarketingGate>
+    case "marketing-discounts": return <MarketingGate><MarketingDiscounts /></MarketingGate>
+    case "marketing-coupons": return <MarketingGate><MarketingCoupons businessId={wsBusinessId} /></MarketingGate>
+    case "marketing-reports": return <MarketingGate><MarketingReports businessId={wsBusinessId} /></MarketingGate>
+    case "marketing-loyalty": return <MarketingGate><MarketingPlaceholder title="Loyalty Program" phase="Phase 2" /></MarketingGate>
+    case "marketing-membership": return <MarketingGate><MarketingPlaceholder title="Membership Levels" phase="Phase 2" /></MarketingGate>
+    case "marketing-credits": return <MarketingGate><MarketingPlaceholder title="Promotional Credits" phase="Phase 2" /></MarketingGate>
+    case "marketing-giftcards": return <MarketingGate><MarketingPlaceholder title="Gift Cards" phase="Phase 3" /></MarketingGate>
+    case "marketing-referral": return <MarketingGate><MarketingPlaceholder title="Referral Program" phase="Phase 3" /></MarketingGate>
+    case "marketing-campaigns": return <MarketingGate><MarketingPlaceholder title="Campaigns" phase="Phase 3" /></MarketingGate>
+    case "marketing-cart-recovery": return <MarketingGate><MarketingPlaceholder title="Cart Recovery" phase="Phase 4" /></MarketingGate>
+
+    // ── Store operations (available to any user with permission) ──────────
+    case "audit-queue": return <LaundryStoreAudit />
+    case "payment-queue": return <LaundryPaymentCollection />
+    case "packing-queue": return <LaundryPacking />
+    case "dispatch-queue": return <LaundryDispatch />
+    case "store-receive-queue": return <LaundryStoreReceive />
+    case "ready-delivery-queue": return <LaundryReadyForDelivery />
+    case "pickup-bags": return <LaundryPickupBags />
+    case "bag-management": return <LaundryBagManagement />
+    case "dispatch-center":
+    case "pickup-scheduler":
+    case "delivery-assignments": return <LaundryDispatchCenter />
+    case "delivery-executives": return <LaundryDeliveryExecutives />
+    case "mobile-apps": return <LaundryMobileApps />
+
+    // ── Processing (available to any user with permission) ────────────────
+    case "processing-centers": return <LaundryProcessingConsole />
+    case "audit-barcode": return <LaundryAuditBarcodePage />
+    case "ws-wash": return <LaundryWorkstation stage="WASH" />
+    case "ws-dry": return <LaundryWorkstation stage="DRY" />
+    case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
+    case "ws-iron": return <LaundryWorkstation stage="IRON" />
+    case "ws-fold": return <LaundryWorkstation stage="FOLD" />
+    case "ws-qc": return <LaundryWorkstation stage="QC" />
+    case "ws-pack": return <LaundryWorkstation stage="PACKED" />
+
+    // ── Fallback ──────────────────────────────────────────────────────────
+    default:
+      return dashboardType === "processing" ? <ProcessingDashboard /> : <LaundryDashboard />
   }
 }
