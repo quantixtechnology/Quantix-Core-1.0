@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
+import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -20,168 +21,148 @@ import {
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
   WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone, Search,
+  type LucideIcon,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
 
-const VIEW_LEVEL = 1 // Level.VIEW constant to avoid import
+const VIEW_LEVEL = 1
 
 type NavCfg = {
   key: string
   label: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: LucideIcon
   page?: LaundryBusinessPage
   comingSoon?: boolean
-  minRank: number
-  perm?: string // screen key, e.g. "laundry.orders"
+  perm?: string
 }
 
 type NavGroup = { label: string | null; sectionHeader?: string; items: NavCfg[] }
 
-const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
-const ADMIN_ROLES = new Set(["LAUNDRY_OWNER", "QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
-const MANAGER_ROLES = new Set(["LAUNDRY_STORE_MANAGER"])
-const OPERATOR_ROLES = new Set(["STORE_EXECUTIVE", "AUDIT_EXECUTIVE"])
-
-function rankOf(role: string | null): number {
-  if (!role) return 3
-  if (ADMIN_ROLES.has(role)) return 3
-  if (MANAGER_ROLES.has(role)) return 2
-  if (OPERATOR_ROLES.has(role)) return 1
-  return 3
+// ── Screen key → Icon mapping (client concern, not registry metadata) ─────
+const SCREEN_ICONS: Record<string, LucideIcon> = {
+  "laundry.dashboard": LayoutDashboard,
+  "laundry.orders": ShoppingBag,
+  "laundry.customers": Users,
+  "laundry.subscriptions": Repeat,
+  "laundry.pricing": IndianRupee,
+  "laundry.stores": Store,
+  "laundry.staff": UsersRound,
+  "laundry.bags": Package,
+  "laundry.reports": BarChart3,
+  "laundry.settings": Settings,
+  "crm.dashboard": Gauge,
+  "crm.leads": UsersRound,
+  "crm.opportunity": Target,
+  "crm.activities": ClipboardList,
+  "crm.pipeline": CheckSquare,
+  "crm.templates": SlidersHorizontal,
+  "crm.reports": PieChart,
+  "crm.settings": SlidersHorizontal,
+  "processing.console_receive": Factory,
+  "processing.audit_barcode": Barcode,
+  "processing.washing": Droplets,
+  "processing.drying": Wind,
+  "processing.dry_cleaning": Sparkles,
+  "processing.ironing": Shirt,
+  "processing.folding": Layers,
+  "processing.quality_check": ShieldCheck,
+  "processing.packing": Package,
+  "store_ops.store_audit": ClipboardCheck,
+  "store_ops.payment_collection": CreditCard,
+  "store_ops.packing_qr": Barcode,
+  "store_ops.transit": Truck,
+  "store_ops.store_receive": PackageCheck,
+  "store_ops.ready_for_delivery": CheckCheck,
+  "customer_app.customers": Users,
+  "customer_app.invitation": UserPlus,
+  "customer_app.subscription": Repeat,
+  "customer_app.orders": ShoppingBag,
 }
 
-const CRM_GROUP: { label: string | null; items: NavCfg[] } = {
-  label: "CRM",
-  items: [
-    { key: "crm-dashboard", label: "Dashboard", icon: Gauge, page: "crm-dashboard", minRank: 2, perm: "crm.dashboard" },
-    { key: "crm-leads", label: "Leads", icon: UsersRound, page: "crm-leads", minRank: 2, perm: "crm.leads" },
-    { key: "crm-opportunities", label: "Opportunities", icon: Target, page: "crm-opportunities", minRank: 2, perm: "crm.opportunity" },
-    { key: "crm-activities", label: "Activities", icon: ClipboardList, page: "crm-activities", minRank: 2, perm: "crm.activities" },
-    { key: "crm-tasks", label: "Tasks", icon: CheckSquare, page: "crm-tasks", minRank: 2, perm: "crm.activities" },
-    { key: "crm-reports", label: "CRM Reports", icon: PieChart, page: "crm-reports", minRank: 3, perm: "crm.reports" },
-    { key: "crm-settings", label: "CRM Settings", icon: SlidersHorizontal, page: "crm-settings", minRank: 3, perm: "crm.settings" },
-  ],
+// ── Screen key → LaundryBusinessPage mapping ──────────────────────────────
+const SCREEN_PAGES: Record<string, LaundryBusinessPage | undefined> = {
+  "laundry.dashboard": "dashboard",
+  "laundry.orders": "orders",
+  "laundry.customers": "customers",
+  "laundry.subscriptions": "subscriptions",
+  "laundry.pricing": "pricing",
+  "laundry.stores": "stores",
+  "laundry.staff": "staff",
+  "laundry.bags": "bag-management",
+  "laundry.reports": "reports",
+  "laundry.settings": "settings",
+  "crm.dashboard": "crm-dashboard",
+  "crm.leads": "crm-leads",
+  "crm.opportunity": "crm-opportunities",
+  "crm.activities": "crm-activities",
+  "crm.pipeline": "crm-tasks",
+  "crm.templates": "crm-settings",
+  "crm.reports": "crm-reports",
+  "crm.settings": "crm-settings",
+  "processing.console_receive": "processing-centers",
+  "processing.audit_barcode": "audit-barcode",
+  "processing.washing": "ws-wash",
+  "processing.drying": "ws-dry",
+  "processing.dry_cleaning": "ws-dryclean",
+  "processing.ironing": "ws-iron",
+  "processing.folding": "ws-fold",
+  "processing.quality_check": "ws-qc",
+  "processing.packing": "ws-pack",
+  "store_ops.store_audit": "audit-queue",
+  "store_ops.payment_collection": "payment-queue",
+  "store_ops.packing_qr": "packing-queue",
+  "store_ops.transit": "dispatch-queue",
+  "store_ops.store_receive": "store-receive-queue",
+  "store_ops.ready_for_delivery": "ready-delivery-queue",
 }
 
-const MARKETING_GROUP: { label: string | null; items: NavCfg[] } = {
-  label: "Marketing",
-  items: [
-    { key: "marketing-dashboard", label: "Dashboard", icon: Megaphone, page: "marketing-dashboard", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-discounts", label: "Discounts", icon: BadgePercent, page: "marketing-discounts", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-coupons", label: "Coupons / Vouchers", icon: Ticket, page: "marketing-coupons", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-loyalty", label: "Loyalty Program", icon: Sparkles, page: "marketing-loyalty", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-membership", label: "Membership Levels", icon: Crown, page: "marketing-membership", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-giftcards", label: "Gift Cards", icon: Gift, page: "marketing-giftcards", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-referral", label: "Referral Program", icon: UserPlus, page: "marketing-referral", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-credits", label: "Promotional Credits", icon: Coins, page: "marketing-credits", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-cart-recovery", label: "Cart Recovery", icon: ShoppingCart, page: "marketing-cart-recovery", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-campaigns", label: "Campaigns", icon: Target, page: "marketing-campaigns", minRank: 3, perm: "laundry.settings" },
-    { key: "marketing-reports", label: "Reports", icon: BarChart3, page: "marketing-reports", minRank: 3, perm: "laundry.settings" },
-  ],
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "Laundry OS",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1, perm: "laundry.dashboard" },
-      { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1, perm: "laundry.orders" },
-    ],
-  },
-  {
-    label: "Store Operations",
-    items: [
-      { key: "dispatch-center", label: "Dispatch Center", icon: Truck, page: "dispatch-center", minRank: 2, perm: "laundry.orders" },
-      { key: "pickup-bags", label: "Assign Bags", icon: Package, page: "pickup-bags", minRank: 1, perm: "store_ops.store_audit" },
-      { key: "bag-management", label: "Bag Management", icon: Package, page: "bag-management", minRank: 2, perm: "store_ops.store_audit" },
-      { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1, perm: "store_ops.store_audit" },
-      { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2, perm: "store_ops.payment_collection" },
-      { key: "packing-queue", label: "Packing & QR", icon: Barcode, page: "packing-queue", minRank: 1, perm: "store_ops.packing_qr" },
-      { key: "dispatch-queue", label: "Transit to Processing", icon: Truck, page: "dispatch-queue", minRank: 2, perm: "store_ops.transit" },
-      { key: "store-receive-queue", label: "Store Receive", icon: PackageCheck, page: "store-receive-queue", minRank: 2, perm: "store_ops.store_receive" },
-      { key: "ready-delivery-queue", label: "Ready for Delivery", icon: CheckCheck, page: "ready-delivery-queue", minRank: 2, perm: "store_ops.ready_for_delivery" },
-    ],
-  },
-  {
-    label: "Orders & Customers",
-    items: [
-      { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2, perm: "laundry.orders" },
-      { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2, perm: "laundry.customers" },
-      { key: "garment-lookup", label: "Garment Lookup", icon: Search, page: "garment-lookup", minRank: 1, perm: "laundry.orders" },
-    ],
-  },
-  {
-    label: "Services & Pricing",
-    items: [
-      { key: "services", label: "Services", icon: WashingMachine, page: "services", minRank: 3, perm: "laundry.pricing" },
-      { key: "categories", label: "Categories", icon: Tags, page: "categories", minRank: 3, perm: "laundry.pricing" },
-      { key: "garments", label: "Garments", icon: Shirt, page: "garments", minRank: 3, perm: "laundry.pricing" },
-      { key: "pricing", label: "Pricing Matrix", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing" },
-      { key: "subscription-plans", label: "Subscription Plans", icon: Repeat, page: "subscription-plans", minRank: 3, perm: "laundry.pricing" },
-      { key: "charges-rules", label: "Charges & Rules", icon: SlidersHorizontal, page: "charges-rules", minRank: 3, perm: "laundry.pricing" },
-      { key: "pricing-simulator", label: "Pricing Simulator", icon: Calculator, page: "pricing-simulator", minRank: 3, perm: "laundry.pricing" },
-    ],
-  },
-  {
-    label: "Business Management",
-    items: [
-      { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3, perm: "laundry.stores" },
-      { key: "staff", label: "Staff", icon: UsersRound, page: "staff", minRank: 3, perm: "laundry.staff" },
-      { key: "delivery-executives", label: "Delivery Executives", icon: Bike, page: "delivery-executives", minRank: 3, perm: "laundry.staff" },
-      { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone, page: "mobile-apps", minRank: 3, perm: "laundry.staff" },
-      { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", minRank: 3, perm: "laundry.staff" },
-      { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions" },
-      { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3, perm: "laundry.reports" },
-      { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },
-      { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3, perm: "laundry.settings" },
-    ],
-  },
-  {
-    sectionHeader: "Processing Center",
-    label: "Inbound",
-    items: [
-      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3, perm: "processing.console_receive" },
-      { key: "audit-barcode", label: "Barcode Generation", icon: Barcode, page: "audit-barcode", minRank: 3, perm: "processing.audit_barcode" },
-    ],
-  },
-  {
-    label: "Processing",
-    items: [
-      { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 3, perm: "processing.washing" },
-      { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 3, perm: "processing.drying" },
-      { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 3, perm: "processing.dry_cleaning" },
-      { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 3, perm: "processing.ironing" },
-      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3, perm: "processing.folding" },
-    ],
-  },
-  {
-    label: "Outbound",
-    items: [
-      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3, perm: "processing.quality_check" },
-    ],
-  },
+// ── Extra nav items that share a parent screen's permission ────────────────
+const EXTRA_ITEMS: NavCfg[] = [
+  { key: "new-order", label: "New Order", icon: Plus, page: "new-order", perm: "laundry.orders" },
+  { key: "garment-lookup", label: "Garment Lookup", icon: Search, page: "garment-lookup", perm: "laundry.orders" },
+  { key: "dispatch-center", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
+  { key: "pickup-scheduler", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
+  { key: "delivery-assignments", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
+  { key: "pickup-bags", label: "Assign Bags", icon: Package, page: "pickup-bags", perm: "store_ops.store_audit" },
+  { key: "bag-management", label: "Bag Management", icon: Package, page: "bag-management", perm: "store_ops.store_audit" },
+  { key: "delivery-executives", label: "Delivery Executives", icon: Bike, page: "delivery-executives", perm: "laundry.staff" },
+  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone, page: "mobile-apps", perm: "laundry.staff" },
+  { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", perm: "laundry.staff" },
+  { key: "payments", label: "Payments", icon: Wallet, comingSoon: true },
 ]
 
-const PROCESSING_GROUPS: NavGroup[] = [
-  { label: null, items: [
-    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
-  ] },
-  { sectionHeader: "Processing Center", label: "Inbound", items: [
-    { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 1 },
-    { key: "audit-barcode", label: "Barcode Generation", icon: Barcode, page: "audit-barcode", minRank: 1 },
-  ] },
-  { label: "Processing", items: [
-    { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 1 },
-    { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 1 },
-    { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 1 },
-    { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 1 },
-    { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 1 },
-  ] },
-  { label: "Outbound", items: [
-    { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 1 },
-  ] },
-]
+// ── Catalog type matching the registry ────────────────────────────────────
+interface CatalogScreen {
+  key: string
+  label: string
+}
+interface CatalogModule {
+  key: string
+  label: string
+  screens: CatalogScreen[]
+}
+
+type CatalogSnapshot = CatalogModule[]
+
+const catalogCache: { data: CatalogSnapshot | null; promise: Promise<CatalogSnapshot> | null } = {
+  data: null,
+  promise: null,
+}
+
+function fetchCatalog(): Promise<CatalogSnapshot> {
+  if (catalogCache.data) return Promise.resolve(catalogCache.data)
+  if (catalogCache.promise) return catalogCache.promise
+  const p = fetch("/api/laundry/rbac/catalog")
+    .then((r) => r.json())
+    .then((j) => {
+      const modules = (j.data?.modules || []) as CatalogSnapshot
+      catalogCache.data = modules
+      return modules
+    })
+  catalogCache.promise = p
+  return p
+}
 
 const WHITE_THEME = {
   "--sidebar": "#FFFFFF",
@@ -212,8 +193,9 @@ const groupKey = (g: { sectionHeader?: string; label: string | null }) => `${g.s
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
-  const { user, currentRole, currentBusinessId } = useAuthStore()
+  const { user } = useAuthStore()
   const { isMobile } = useResponsive()
+  const { screenLevels, isOwner, isLoaded } = useRuntimeAuth()
 
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
   const toggleGroup = (key: string) => setCollapsed((s) => {
@@ -230,53 +212,80 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     if (saved > 0) el.scrollTop = saved
   }, [])
 
-  const [rbac, setRbac] = useState<{ isOwner: boolean; levels: Record<string, number> } | null>(null)
+  const [catalog, setCatalog] = useState<CatalogSnapshot | null>(catalogCache.data)
   useEffect(() => {
-    if (!currentBusinessId) return
-    let cancel = false
-    fetch(`/api/laundry/rbac/me?businessId=${currentBusinessId}`).then((r) => r.json())
-      .then((j) => { if (!cancel && j.success) setRbac({ isOwner: !!j.data.isOwner, levels: j.data.levels || {} }) })
-      .catch(() => {})
-    return () => { cancel = true }
-  }, [currentBusinessId])
-  const permAllows = (i: NavCfg) => rbac === null || rbac.isOwner || !i.perm || (rbac.levels[i.perm] ?? 0) >= VIEW_LEVEL
+    if (catalogCache.data) { setCatalog(catalogCache.data); return }
+    fetchCatalog().then(setCatalog)
+  }, [])
 
-  const isProcessing = currentRole ? PROCESSING_ROLES.has(currentRole) : false
-  const rank = rankOf(currentRole)
-  const brand = user?.businessName || "Laundry OS"
-  const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+  const permAllows = (i: NavCfg) => !isLoaded || isOwner || !i.perm || (screenLevels[i.perm] ?? 0) >= VIEW_LEVEL
+
   const crmState = useCrmEnabled()
   const crmEnabled = crmState === true
   const marketingEnabled = useMarketingEnabled() === true
 
-  const baseGroups: NavGroup[] = isProcessing
-    ? PROCESSING_GROUPS
-    : [
-        ...(crmEnabled ? [CRM_GROUP] : []),
-        ...(marketingEnabled ? [MARKETING_GROUP] : []),
-        ...NAV_GROUPS,
-      ]
+  // ── Build nav groups from catalog + extra items ────────────────────────────
+  const groups: NavGroup[] = []
 
-  const groups = baseGroups
-    .map((g) => ({ label: g.label, sectionHeader: g.sectionHeader, items: g.items.filter((i) => rank >= i.minRank && permAllows(i)) }))
+  if (catalog) {
+    for (const mod of catalog) {
+      // Skip CRM/Marketing modules — handled separately as feature gates
+      if (mod.key === "crm" && !crmEnabled) continue
+      if (mod.key === "customer_app") continue
+
+      const items: NavCfg[] = []
+      for (const screen of mod.screens) {
+        const screenKey = `${mod.key}.${screen.key}`
+        const icon = SCREEN_ICONS[screenKey]
+        const page = SCREEN_PAGES[screenKey]
+        if (!icon) continue // skip screens without frontend nav
+        items.push({
+          key: screenKey,
+          label: screen.label,
+          icon,
+          page,
+          perm: screenKey,
+        })
+      }
+
+      // Append extra items whose perm matches this module
+      for (const extra of EXTRA_ITEMS) {
+        const extraPermModule = extra.perm?.split(".")[0]
+        if (extraPermModule === mod.key) {
+          items.push(extra)
+        }
+      }
+
+      if (items.length > 0) {
+        groups.push({ label: mod.label, items })
+      }
+    }
+  }
+
+  // Filter by permissions
+  const filteredGroups = groups
+    .map((g) => ({ ...g, items: g.items.filter(permAllows) }))
     .filter((g) => g.items.length > 0)
 
   const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode", "garment-lookup"])
   const validPages = new Set([
-    ...groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
+    ...filteredGroups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
     ...PROGRAMMATIC_PAGES,
   ])
 
   useEffect(() => {
     if (crmState === null) return
     if (!validPages.has(laundryPage)) setLaundryPage("dashboard")
-  }, [laundryPage, currentRole, crmState])
+  }, [laundryPage, crmState])
 
   const navigate = (page?: LaundryBusinessPage) => {
     if (!page) return
     setLaundryPage(page)
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
+
+  const brand = user?.businessName || "Laundry OS"
+  const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
   const Brand = (
     <div className="flex items-center gap-2.5 px-2">
@@ -292,7 +301,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   const renderNav = (collapsedTooltips = true) => (
     <>
-      {groups.map((section, gi) => {
+      {filteredGroups.map((section, gi) => {
         const gk = groupKey(section)
         const canCollapse = !!section.label
         const isCollapsed = canCollapse && collapsed.has(gk)

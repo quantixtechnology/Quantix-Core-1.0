@@ -668,95 +668,10 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     }
   }
 
-  const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
-  const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
-
-  const renderLaundryPage = () => {
-    if (isProcessingRole) {
-      switch (laundryPage) {
-        case "dashboard": return <ProcessingDashboard />
-        case "processing-centers": return <LaundryProcessingConsole />
-        case "audit-barcode": return <LaundryAuditBarcodePage />
-        case "ws-wash": return <LaundryWorkstation stage="WASH" />
-        case "ws-dry": return <LaundryWorkstation stage="DRY" />
-        case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-        case "ws-iron": return <LaundryWorkstation stage="IRON" />
-        case "ws-fold": return <LaundryWorkstation stage="FOLD" />
-        case "ws-qc": return <LaundryWorkstation stage="QC" />
-        case "ws-pack": return <LaundryWorkstation stage="PACKED" />
-        case "orders": return <LaundryOrdersView />
-        case "reports": return <LaundryReportsView />
-        case "garment-lookup": return <LaundryGarmentLookup />
-        default: return <ProcessingDashboard />
-      }
-    }
-    switch (laundryPage) {
-      // Optional CRM module — separate screens from Laundry OS operations
-      case "crm-dashboard": return <CrmGate><CrmDashboard businessId={wsBusinessId} /></CrmGate>
-      case "crm-leads": return <CrmGate><CrmLeads businessId={wsBusinessId} /></CrmGate>
-      case "crm-opportunities": return <CrmGate><CrmOpportunities businessId={wsBusinessId} /></CrmGate>
-      case "crm-activities": return <CrmGate><CrmActivities businessId={wsBusinessId} /></CrmGate>
-      case "crm-tasks": return <CrmGate><CrmTasks businessId={wsBusinessId} /></CrmGate>
-      case "crm-reports": return <CrmGate><CrmReports businessId={wsBusinessId} /></CrmGate>
-      case "crm-settings": return <CrmGate><CrmSettings businessId={wsBusinessId} /></CrmGate>
-      // Marketing module (Phase 1: live screens; later-phase modules = placeholder)
-      case "marketing-dashboard": return <MarketingGate><MarketingDashboard businessId={wsBusinessId} /></MarketingGate>
-      case "marketing-discounts": return <MarketingGate><MarketingDiscounts /></MarketingGate>
-      case "marketing-coupons": return <MarketingGate><MarketingCoupons businessId={wsBusinessId} /></MarketingGate>
-      case "marketing-reports": return <MarketingGate><MarketingReports businessId={wsBusinessId} /></MarketingGate>
-      case "marketing-loyalty": return <MarketingGate><MarketingPlaceholder title="Loyalty Program" phase="Phase 2" /></MarketingGate>
-      case "marketing-membership": return <MarketingGate><MarketingPlaceholder title="Membership Levels" phase="Phase 2" /></MarketingGate>
-      case "marketing-credits": return <MarketingGate><MarketingPlaceholder title="Promotional Credits" phase="Phase 2" /></MarketingGate>
-      case "marketing-giftcards": return <MarketingGate><MarketingPlaceholder title="Gift Cards" phase="Phase 3" /></MarketingGate>
-      case "marketing-referral": return <MarketingGate><MarketingPlaceholder title="Referral Program" phase="Phase 3" /></MarketingGate>
-      case "marketing-campaigns": return <MarketingGate><MarketingPlaceholder title="Campaigns" phase="Phase 3" /></MarketingGate>
-      case "marketing-cart-recovery": return <MarketingGate><MarketingPlaceholder title="Cart Recovery" phase="Phase 4" /></MarketingGate>
-      case "dashboard": return <LaundryDashboard />
-      case "inbox": return <LaundryInboxView />
-      case "orders": return <LaundryOrdersView />
-      case "new-order": return <LaundryNewOrder />
-      case "audit-queue": return <LaundryStoreAudit />
-      case "payment-queue": return <LaundryPaymentCollection />
-      case "packing-queue": return <LaundryPacking />
-      case "dispatch-queue": return <LaundryDispatch />
-      case "store-receive-queue": return <LaundryStoreReceive />
-      case "pickup-bags": return <LaundryPickupBags />
-      case "bag-management": return <LaundryBagManagement />
-      case "dispatch-center": return <LaundryDispatchCenter />
-      // Legacy deep links now land on the unified Dispatch Center.
-      case "pickup-scheduler": return <LaundryDispatchCenter />
-      case "delivery-assignments": return <LaundryDispatchCenter />
-      case "delivery-executives": return <LaundryDeliveryExecutives />
-      case "mobile-apps": return <LaundryMobileApps />
-      case "ready-delivery-queue": return <LaundryReadyForDelivery />
-      case "order-detail": return <LaundryOrderDetail />
-      case "customers": return <LaundryCustomersView />
-      case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
-      case "processing-centers": return <LaundryProcessingConsole />
-      case "audit-barcode": return <LaundryAuditBarcodePage />
-      case "ws-wash": return <LaundryWorkstation stage="WASH" />
-      case "ws-dry": return <LaundryWorkstation stage="DRY" />
-      case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-      case "ws-iron": return <LaundryWorkstation stage="IRON" />
-      case "ws-fold": return <LaundryWorkstation stage="FOLD" />
-      case "ws-qc": return <LaundryWorkstation stage="QC" />
-      case "ws-pack": return <LaundryWorkstation stage="PACKED" />
-      case "reports": return <LaundryReportsView />
-      case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
-      case "categories": return <LaundryCategoriesMaster />
-      case "garments": return <LaundryGarmentsMaster />
-      case "services": return <LaundryServicesMaster />
-      case "pricing": return <LaundryPricingMatrix />
-      case "subscription-plans": return <LaundrySubscriptionPlansPage />
-      case "charges-rules": return <LaundryChargesRulesPage />
-      case "pricing-simulator": return <LaundryPricingSimulatorPage />
-      case "subscriptions": return <LaundrySubscriptionsView />
-      case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
-      case "staff": return <LaundryStaff businessId={wsBusinessId} />
-      case "garment-lookup": return <LaundryGarmentLookup />
-      default: return <LaundryDashboard />
-    }
-  }
+  const LaundryPageRouter = dynamic(
+    () => import("@/components/laundry/laundry-page-router").then((m) => ({ default: m.LaundryPageRouter })),
+    { loading: () => <PageLoader /> },
+  )
 
   const renderBusinessPage = () => {
     switch (businessPage) {
@@ -943,7 +858,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     if (currentBusinessType === "LAUNDRY" || productWorkspaceCode === "LAUNDRY") {
       return (
         <LaundryLayout>
-          {renderLaundryPage()}
+          <LaundryPageRouter />
         </LaundryLayout>
       )
     }

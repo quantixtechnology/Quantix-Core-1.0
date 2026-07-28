@@ -19,7 +19,10 @@ async function fetchPerms(businessId: string): Promise<Snapshot | null> {
     try {
       const r = await fetch(`/api/laundry/rbac/me?businessId=${businessId}`).then((x) => x.json())
       if (!r.success) return null
-      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms: new Set<string>(r.data.permissions) }
+      // API returns `levels` (Record<string, number>) — convert to Set of screen keys with VIEW+ level
+      const levels: Record<string, number> = r.data.levels || {}
+      const perms = new Set(Object.keys(levels).filter((k) => (levels[k] ?? 0) >= 1))
+      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms }
       cache.set(businessId, snap)
       listeners.forEach((l) => l())
       return snap

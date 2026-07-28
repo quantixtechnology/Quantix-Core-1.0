@@ -112,6 +112,8 @@ interface RoleBadgeProps {
   showIcon?: boolean;
   /** Size variant */
   size?: "sm" | "md";
+  /** Override the display label (e.g. from RuntimeAuth context) */
+  displayName?: string;
 }
 
 export function RoleBadge({
@@ -119,9 +121,10 @@ export function RoleBadge({
   className = "",
   showIcon = true,
   size = "sm",
+  displayName,
 }: RoleBadgeProps) {
   const Icon = roleIcons[role];
-  const label = ROLES[role]?.label || role;
+  const label = displayName || ROLES[role]?.label || role;
   const colorClasses = roleColors[role];
 
   const sizeClasses = size === "sm" ? "text-xs" : "text-sm";

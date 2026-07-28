@@ -17,17 +17,21 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
-import { ROLE_LABELS } from "@/lib/permissions"
+import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import { ROLES } from "@/lib/constants"
 
 export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) {
   const { supportMode, clearSupportMode } = useAdminStore()
   const { user, currentRole, logout } = useAuthStore()
+  const { assignedRbacRole, isLoaded } = useRuntimeAuth()
   const { setLaundryPage } = useAdminStore()
   const [search, setSearch] = useState("")
 
   const name = user?.name ?? "Laundry User"
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
-  const roleLabel = (currentRole && ROLE_LABELS[currentRole]) || "Team Member"
+  const roleLabel = isLoaded
+    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole || "Team Member")
+    : ((currentRole && ROLES[currentRole as keyof typeof ROLES]?.label) || "Team Member")
 
   // Detect GAR codes in search bar and redirect to Garment Lookup
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
