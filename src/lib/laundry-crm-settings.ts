@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness, ensureCrmDefaults, CrmAccessError } from "@/lib/laundry-crm"
-import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { requireLaundryLevel, Level } from "@/lib/laundry-rbac"
 
 export function crmError(e: unknown) {
   if (e instanceof CrmAccessError) return NextResponse.json({ error: e.message }, { status: e.status })
@@ -22,7 +22,7 @@ export function makeSimpleConfigCollection(model: SimpleModel, hasColor = false)
     async GET(request: Request) {
       try {
         const sp = new URL(request.url).searchParams
-        const guard = await requireLaundryPermission(request, sp.get("businessId"), "crm.settings.view")
+        const guard = await requireLaundryLevel(request, sp.get("businessId"), "crm.settings", Level.VIEW)
         if (!guard.ok) return guard.res
         const biz = await requireCrmBusiness(sp.get("businessId"))
         await ensureCrmDefaults(biz.id)
@@ -35,7 +35,7 @@ export function makeSimpleConfigCollection(model: SimpleModel, hasColor = false)
     async POST(request: Request) {
       try {
         const body = await request.json()
-        const guard = await requireLaundryPermission(request, body.businessId, "crm.settings.edit")
+        const guard = await requireLaundryLevel(request, body.businessId, "crm.settings", Level.EDIT)
         if (!guard.ok) return guard.res
         const biz = await requireCrmBusiness(body.businessId)
         const name = String(body.name || "").trim()
@@ -56,7 +56,7 @@ export function makeSimpleConfigItem(model: SimpleModel, hasColor = false) {
       try {
         const { id } = await params
         const body = await request.json()
-        const guard = await requireLaundryPermission(request, body.businessId, "crm.settings.edit")
+        const guard = await requireLaundryLevel(request, body.businessId, "crm.settings", Level.EDIT)
         if (!guard.ok) return guard.res
         const biz = await requireCrmBusiness(body.businessId)
         const row = await table(model).findFirst({ where: { id, businessId: biz.id } })

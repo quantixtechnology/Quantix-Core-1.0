@@ -1,40 +1,21 @@
-// ============================================================================
-// Laundry OS — RBAC resolution + enforcement.
-//
-// Resolves the effective permission set for a user and enforces it on APIs.
-// The Business Owner always has full, unremovable access. Non-owners get the
-// permissions of their assigned role (ALLOW minus DENY). Users with no explicit
-// assignment fall back to a default system role mapped from their legacy
-// BusinessUser role, so the platform keeps working during rollout.
-//
-// This module never touches the frozen engines or the platform auth — it only
-// reads/enforces the Laundry RBAC matrix.
-// ============================================================================
 import { NextResponse } from "next/server"
 import { randomBytes } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { isPlatformRole } from "@/lib/permissions"
-import { allPermissionKeys, SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
+import { allScreenKeys, isValidScreenKey, permKeyToScreenLevel, actionToLevel, screenLabel, Level } from "@/lib/laundry-rbac-registry"
+import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
 
-// Internal trusted-call bypass. In-process callers that have ALREADY performed
-// their own authorization — the customer-app order delegation, server tasks and
-// the test harness — set this header so they skip the staff-session RBAC check
-// (they are not staff sessions). The token is process-only (random per boot,
-// never sent to any client), so an external HTTP client cannot forge it.
+export { Level }
+
 export const INTERNAL_HEADER = "x-laundry-internal"
 export const INTERNAL_TOKEN = process.env.LAUNDRY_INTERNAL_TOKEN || randomBytes(24).toString("hex")
 export function isInternalCall(request: Request): boolean {
-  // Trusted in-process caller (customer-app delegation, server tasks) — OR the
-  // test harness, but ONLY outside production (NODE_ENV=production can never
-  // trigger the test bypass, so deployed prod always enforces).
   if (request.headers.get(INTERNAL_HEADER) === INTERNAL_TOKEN) return true
   return process.env.NODE_ENV !== "production" && process.env.LAUNDRY_RBAC_TEST_BYPASS === "1"
 }
 
-// Legacy BusinessUser.role → default system role code (used when a user has no
-// explicit Laundry RBAC assignment yet).
 const LEGACY_ROLE_MAP: Record<string, string> = {
   LAUNDRY_OWNER: "BUSINESS_OWNER",
   LAUNDRY_STORE_MANAGER: "STORE_MANAGER",
@@ -51,86 +32,101 @@ export function isOwnerRole(businessRole: string | null | undefined): boolean {
   return businessRole === "LAUNDRY_OWNER" || (!!businessRole && isPlatformRole(businessRole))
 }
 
-export interface ResolvedPermissions { isOwner: boolean; permissions: Set<string>; roleCode: string; roleName: string; source: "owner" | "assigned" | "legacy" }
+export interface ResolvedPermissions { isOwner: boolean; permissions: Set<string>; levels: Map<string, number>; roleCode: string; roleName: string; source: "owner" | "assigned" | "legacy" }
 
-// The user's effective permission set for a tenant. platformBusinessId scopes
-// the RBAC data; businessRole is the legacy BusinessUser role.
+function allScreensAtLevel(level: Level): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const sk of allScreenKeys()) m.set(sk, level)
+  return m
+}
+
 export async function resolveUserPermissions(platformBusinessId: string, userId: string, businessRole: string | null): Promise<ResolvedPermissions> {
   if (isOwnerRole(businessRole)) {
-    return { isOwner: true, permissions: new Set(allPermissionKeys()), roleCode: "BUSINESS_OWNER", roleName: "Business Owner", source: "owner" }
+    return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: "BUSINESS_OWNER", roleName: "Business Owner", source: "owner" }
   }
   const assign = await prisma.laundryAccessAssignment.findFirst({
     where: { businessId: platformBusinessId, userId, active: true },
     include: { role: { include: { permissions: true } } },
   })
   if (assign && assign.role.isActive) {
-    if (assign.role.isOwner) return { isOwner: true, permissions: new Set(allPermissionKeys()), roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
-    const allow = new Set<string>()
-    const deny = new Set<string>()
-    for (const p of assign.role.permissions) (p.effect === "DENY" ? deny : allow).add(p.permKey)
-    for (const d of deny) allow.delete(d)
-    return { isOwner: false, permissions: allow, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
+    if (assign.role.isOwner) return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
+    const levels = new Map<string, number>()
+    for (const p of assign.role.permissions) {
+      if (p.effect === "DENY") continue
+      const mapped = permKeyToScreenLevel(p.permKey)
+      const screenKey = mapped?.screenKey || p.permKey
+      const lvl = mapped ? mapped.level : (p.level || 1)
+      const existing = levels.get(screenKey) || 0
+      if (lvl > existing) levels.set(screenKey, lvl)
+    }
+    return { isOwner: false, permissions: new Set(levels.keys()), levels, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
   }
-  // Legacy fallback (no explicit assignment).
   const code = LEGACY_ROLE_MAP[businessRole || ""] || "VIEWER"
   const def = SYSTEM_ROLES.find((r) => r.code === code)
-  return { isOwner: !!def?.isOwner, permissions: new Set(def ? def.perms() : []), roleCode: code, roleName: def?.name || "Viewer", source: "legacy" }
+  const levels = new Map<string, number>()
+  if (def) for (const sl of def.screens()) levels.set(sl.screenKey, sl.level)
+  return { isOwner: !!def?.isOwner, permissions: new Set(levels.keys()), levels, roleCode: code, roleName: def?.name || "Viewer", source: "legacy" }
 }
 
 export function hasPerm(perms: Set<string>, key: string): boolean { return perms.has(key) }
 
-// API guard. Resolves the caller, then enforces `key`. On failure returns a
-// ready-to-send Response (401/403/404); on success returns the context.
+export function screenLevel(levels: Map<string, number>, screenKey: string): number {
+  return levels.get(screenKey) ?? 0
+}
+
 type Ctx = NonNullable<Awaited<ReturnType<typeof getLaundryAuthContext>>>
 export interface GuardOk { ok: true; internal?: boolean; ctx: Ctx; resolved: ResolvedPermissions; platformBusinessId: string }
 export interface GuardFail { ok: false; res: NextResponse }
 
-// Enforce `key` for the caller. Returns a ready-to-send 400/401/403/404 on
-// failure, or the resolved context on success. Trusted internal calls (see
-// isInternalCall) bypass the staff-session check with full access.
-export async function requireLaundryPermission(request: Request, businessIdInput: string | null | undefined, key: string): Promise<GuardOk | GuardFail> {
+export async function requireLaundryLevel(request: Request, businessIdInput: string | null | undefined, screenKey: string, requiredLevel: Level): Promise<GuardOk | GuardFail> {
   if (!businessIdInput) return { ok: false, res: NextResponse.json({ error: "Missing businessId" }, { status: 400 }) }
   const biz = await resolveLaundryBusiness(businessIdInput)
   if (!biz?.platformBusinessId) return { ok: false, res: NextResponse.json({ error: "Laundry business not found" }, { status: 404 }) }
   if (isInternalCall(request)) {
     const ctx = { userId: "system", userName: "system", userEmail: "", laundryBusinessId: biz.id, platformBusinessId: biz.platformBusinessId, role: "LAUNDRY_OWNER", isSupportMode: false } as Ctx
-    return { ok: true, internal: true, ctx, resolved: { isOwner: true, permissions: new Set(allPermissionKeys()), roleCode: "INTERNAL", roleName: "Internal", source: "owner" }, platformBusinessId: biz.platformBusinessId }
+    return { ok: true, internal: true, ctx, resolved: { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: "INTERNAL", roleName: "Internal", source: "owner" }, platformBusinessId: biz.platformBusinessId }
   }
   const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return { ok: false, res: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) }
   const resolved = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)
-  if (!resolved.isOwner && !resolved.permissions.has(key)) {
-    return { ok: false, res: NextResponse.json({ error: "Permission denied", code: "FORBIDDEN", required: key }, { status: 403 }) }
+  if (!resolved.isOwner && (resolved.levels.get(screenKey) ?? 0) < requiredLevel) {
+    return { ok: false, res: NextResponse.json({ error: "Permission denied", code: "FORBIDDEN", required: screenKey, level: requiredLevel }, { status: 403 }) }
   }
   return { ok: true, ctx, resolved, platformBusinessId: biz.platformBusinessId }
 }
 
-// Append-only RBAC audit entry.
+/** @deprecated Use requireLaundryLevel(screenKey, Level.*) instead. Only exists for backward compatibility during refactor — remove after all callers migrate. */
+export async function requireLaundryPermission(
+  request: Request, businessIdInput: string | null | undefined, key: string): Promise<GuardOk | GuardFail> {
+  const mapped = permKeyToScreenLevel(key)
+  if (mapped) return requireLaundryLevel(request, businessIdInput, mapped.screenKey, mapped.level)
+  const parts = key.split(".")
+  if (parts.length >= 2) {
+    const screenKey = parts.length >= 3 ? parts.slice(0, -1).join(".") : parts.join(".")
+    const action = parts[parts.length - 1]
+    return requireLaundryLevel(request, businessIdInput, screenKey, actionToLevel(action))
+  }
+  return requireLaundryLevel(request, businessIdInput, key, Level.VIEW)
+}
+
 export async function rbacAudit(businessId: string, action: string, opts: { roleId?: string | null; targetUserId?: string | null; actorName?: string | null; detail?: unknown } = {}) {
   await prisma.laundryAccessAudit.create({ data: { businessId, action, roleId: opts.roleId ?? null, targetUserId: opts.targetUserId ?? null, actorName: opts.actorName ?? null, detail: opts.detail ? JSON.stringify(opts.detail) : "{}" } }).catch(() => {})
 }
 
-// Ensure every Laundry business has its 10 default system roles without any
-// manual step. Cheap count-gate so the common (already-seeded) path is a single
-// query; seeds only when the tenant has none yet. Safe to call on every load.
 export async function ensureSystemRolesSeeded(platformBusinessId: string): Promise<void> {
   const count = await prisma.laundryAccessRole.count({ where: { businessId: platformBusinessId } })
   if (count === 0) await seedSystemRoles(platformBusinessId)
 }
 
-// Idempotently create the 10 default system roles (+ their permissions) for a
-// tenant. Safe to call repeatedly — existing roles are left untouched.
 export async function seedSystemRoles(platformBusinessId: string) {
   const created: string[] = []
   for (const def of SYSTEM_ROLES) {
     const existing = await prisma.laundryAccessRole.findFirst({ where: { businessId: platformBusinessId, code: def.code }, select: { id: true } })
     if (existing) continue
     const role = await prisma.laundryAccessRole.create({ data: { businessId: platformBusinessId, code: def.code, name: def.name, description: def.description, isSystem: true, isOwner: !!def.isOwner, isActive: true } })
-    // The owner role's full access is implicit (isOwner) — no rows needed; other
-    // roles get their catalog-derived ALLOW rows.
     if (!def.isOwner) {
-      const perms = [...new Set(def.perms())]
-      if (perms.length) await prisma.laundryAccessPermission.createMany({ data: perms.map((permKey) => ({ roleId: role.id, permKey, effect: "ALLOW" })) })
+      const screenLevelPairs = [...new Map(def.screens().map((sl) => [sl.screenKey, sl.level]))]
+      if (screenLevelPairs.length) await prisma.laundryAccessPermission.createMany({ data: screenLevelPairs.map(([screenKey, level]) => ({ roleId: role.id, permKey: screenKey, level, effect: "ALLOW" })) })
     }
     created.push(def.code)
   }

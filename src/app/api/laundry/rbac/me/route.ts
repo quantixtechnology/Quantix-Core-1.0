@@ -1,5 +1,3 @@
-// GET /api/laundry/rbac/me?businessId= — the signed-in user's effective role +
-// permission keys. Drives the left-menu security and per-screen gating.
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
@@ -14,8 +12,9 @@ export async function GET(request: Request) {
   if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
   const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-  // Every Laundry business gets its 10 default roles automatically on first load.
   await ensureSystemRolesSeeded(biz.platformBusinessId)
   const r = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)
-  return NextResponse.json({ success: true, data: { roleCode: r.roleCode, roleName: r.roleName, isOwner: r.isOwner, source: r.source, permissions: [...r.permissions] } })
+  const levelsObj: Record<string, number> = {}
+  for (const [k, v] of r.levels) levelsObj[k] = v
+  return NextResponse.json({ success: true, data: { roleCode: r.roleCode, roleName: r.roleName, isOwner: r.isOwner, source: r.source, levels: levelsObj } })
 }

@@ -1,9 +1,5 @@
 "use client"
 
-// Roles & Permissions (Business Management → Roles & Permissions). The Business
-// Owner manages roles and a module→screen→action permission matrix. Owner role
-// is full-access and protected. All data comes from /api/laundry/rbac/*.
-
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
@@ -12,31 +8,43 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Loader2, Shield, Plus, Copy, Trash2, ChevronDown, ChevronRight, Search, Save, Lock, Users } from "lucide-react"
 
-interface ScreenDef { key: string; label: string; actions: string[] }
-interface ModuleDef { key: string; label: string; screens: ScreenDef[] }
+interface ScreenEntry { key: string; label: string }
+interface ModuleEntry { key: string; label: string; screens: ScreenEntry[] }
 interface Role { id: string; code: string; name: string; description: string | null; isSystem: boolean; isOwner: boolean; isActive: boolean; _count?: { permissions: number; assignments: number } }
 
-const actionLabel = (a: string) => a.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+const LEVELS = [
+  { value: 0, label: "Hide" },
+  { value: 1, label: "View" },
+  { value: 2, label: "Create" },
+  { value: 3, label: "Edit" },
+]
+
+const levelLabel = (l: number) => LEVELS.find((x) => x.value === l)?.label || "Hide"
 
 export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: string }) {
   const { currentBusinessId } = useAuthStore()
   const businessId = bizProp || currentBusinessId
   const { toast } = useToast()
-  const [catalog, setCatalog] = useState<ModuleDef[]>([])
+  const [moduleData, setModuleData] = useState<ModuleEntry[]>([])
+  const [levelDefs] = useState<Record<number, string>>({
+    1: "View — Read-only (search, filter, print, export, lookup, scan)",
+    2: "Create — Create records + workflow progression (process, pack, dispatch, receive, deliver)",
+    3: "Edit — Destructive/exceptional actions (delete, cancel, reject, override, reverse workflow)",
+  })
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [perms, setPerms] = useState<Set<string>>(new Set())
+  const [levels, setLevels] = useState<Record<string, number>>({})
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState("")
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
-  // Proper application dialogs (never browser prompt/confirm).
   const [newOpen, setNewOpen] = useState(false)
   const [newName, setNewName] = useState("")
   const [newDesc, setNewDesc] = useState("")
@@ -45,7 +53,8 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   const [deleting, setDeleting] = useState(false)
 
   const selected = roles.find((r) => r.id === selectedId) || null
-  const allKeys = useMemo(() => catalog.flatMap((m) => m.screens.flatMap((s) => s.actions.map((a) => `${m.key}.${s.key}.${a}`))), [catalog])
+
+  const allScreenKeys = useMemo(() => moduleData.flatMap((m) => m.screens.map((s) => `${m.key}.${s.key}`)), [moduleData])
 
   const load = useCallback(async () => {
     if (!businessId) return
@@ -55,7 +64,11 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
         fetch(`/api/laundry/rbac/catalog`).then((x) => x.json()),
         fetch(`/api/laundry/rbac/roles?businessId=${businessId}`).then((x) => x.json()),
       ])
-      if (c.success) { setCatalog(c.data); setExpanded(new Set(c.data.map((m: ModuleDef) => m.key))) }
+      if (c.success) {
+        const modules = c.data.modules || c.data
+        setModuleData(modules)
+        setExpanded(new Set(modules.map((m: ModuleEntry) => m.key)))
+      }
       if (r.success) setRoles(r.data)
     } catch { /* noop */ } finally { setLoading(false) }
   }, [businessId])
@@ -63,33 +76,49 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
 
   const selectRole = async (r: Role) => {
     setSelectedId(r.id); setName(r.name); setDescription(r.description || ""); setDirty(false)
-    if (r.isOwner) { setPerms(new Set(allKeys)); return }
+    if (r.isOwner) {
+      const full: Record<string, number> = {}
+      for (const sk of allScreenKeys) full[sk] = 3
+      setLevels(full)
+      return
+    }
     const j = await fetch(`/api/laundry/rbac/roles/${r.id}/permissions?businessId=${businessId}`).then((x) => x.json())
-    setPerms(new Set(j.success ? j.data.permissions : []))
+    if (j.success) setLevels(j.data.levels || {})
   }
-  const mutate = (fn: (s: Set<string>) => void) => { if (selected?.isOwner) return; setPerms((prev) => { const n = new Set(prev); fn(n); return n }); setDirty(true) }
-  const togglePerm = (k: string) => mutate((s) => (s.has(k) ? s.delete(k) : s.add(k)))
-  const screenKeys = (m: ModuleDef, s: ScreenDef) => s.actions.map((a) => `${m.key}.${s.key}.${a}`)
-  const moduleKeysOf = (m: ModuleDef) => m.screens.flatMap((s) => screenKeys(m, s))
-  const setMany = (keys: string[], on: boolean) => mutate((s) => keys.forEach((k) => (on ? s.add(k) : s.delete(k))))
+
+  const setLevel = (screenKey: string, newLevel: number) => {
+    if (selected?.isOwner) return
+    setLevels((prev) => ({ ...prev, [screenKey]: newLevel }))
+    setDirty(true)
+  }
+
+  const countSelected = () => Object.values(levels).filter((v) => v >= 1).length
+  const setAllLevel = (lvl: number) => {
+    if (selected?.isOwner) return
+    const next: Record<string, number> = {}
+    for (const sk of allScreenKeys) next[sk] = lvl
+    setLevels(next)
+    setDirty(true)
+  }
 
   const save = async () => {
     if (!selected || selected.isOwner) return
     setSaving(true)
     try {
       await fetch(`/api/laundry/rbac/roles/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name, description }) })
-      const res = await fetch(`/api/laundry/rbac/roles/${selected.id}/permissions`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, permissions: [...perms] }) })
+      const res = await fetch(`/api/laundry/rbac/roles/${selected.id}/permissions`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, screens: levels }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
-      toast({ title: "Role saved", description: `${name} · ${perms.size} permissions` }); setDirty(false); load()
+      toast({ title: "Role saved", description: `${name} · ${countSelected()} screens with access` }); setDirty(false); load()
     } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
   }
+
   const openNewRole = () => { setNewName(""); setNewDesc(""); setNewOpen(true) }
   const createRole = async () => {
     const nm = newName.trim(); if (!nm) { toast({ title: "Role name is required", variant: "destructive" }); return }
     setCreating(true)
     try {
-      const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, description: newDesc.trim() || null, permissions: [] }) }).then((x) => x.json())
+      const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, description: newDesc.trim() || null, screens: {} }) }).then((x) => x.json())
       if (j.success) { setNewOpen(false); await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
     } finally { setCreating(false) }
   }
@@ -98,8 +127,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
     if (j.success) { toast({ title: "Role cloned", description: j.data.name }); await load(); selectRole(j.data) } else toast({ title: "Clone failed", description: j.error, variant: "destructive" })
   }
   const confirmDelete = async () => {
-    const r = deleteTarget
-    if (!r || r.isOwner) return
+    const r = deleteTarget; if (!r || r.isOwner) return
     setDeleting(true)
     try {
       const res = await fetch(`/api/laundry/rbac/roles/${r.id}?businessId=${businessId}`, { method: "DELETE" })
@@ -114,14 +142,14 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   }
 
   const q = search.trim().toLowerCase()
-  const matchScreen = (m: ModuleDef, s: ScreenDef) => !q || m.label.toLowerCase().includes(q) || s.label.toLowerCase().includes(q) || s.actions.some((a) => a.includes(q))
+  const matchScreen = (m: ModuleEntry, s: ScreenEntry) => !q || m.label.toLowerCase().includes(q) || s.label.toLowerCase().includes(q)
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Loading…</div>
 
   return (
     <div className="px-4 lg:px-6 py-6">
       <div className="flex items-center justify-between mb-4">
-        <div><h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Shield className="h-5 w-5 text-blue-600" /> Roles &amp; Permissions</h1><p className="text-sm text-slate-500">Control what every employee can see and do, per module, screen and action.</p></div>
+        <div><h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Shield className="h-5 w-5 text-blue-600" /> Roles &amp; Permissions</h1><p className="text-sm text-slate-500">Control what every employee can see and do. Each screen has a access level: View, Create, or Edit.</p></div>
         <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNewRole}><Plus className="h-4 w-4" /> New Role</Button>
       </div>
 
@@ -129,12 +157,11 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
         <Card><CardContent className="text-center py-16">
           <Shield className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
           <p className="text-sm font-medium">No roles yet</p>
-          <p className="text-xs text-muted-foreground mt-1 mb-3">Create the 10 default system roles to get started.</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-3">Create the default system roles to get started.</p>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={seed}>Create Default Roles</Button>
         </CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-start">
-          {/* Role list */}
           <Card><CardContent className="p-2 space-y-1">
             {roles.map((r) => (
               <button key={r.id} onClick={() => selectRole(r)} className={`w-full text-left rounded-lg px-3 py-2 border ${selectedId === r.id ? "border-blue-300 bg-blue-50" : "border-transparent hover:bg-slate-50"} ${r.isActive ? "" : "opacity-50"}`}>
@@ -142,12 +169,11 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
                   <span className="text-sm font-medium text-slate-800 flex items-center gap-1.5">{r.isOwner && <Lock className="h-3 w-3 text-amber-500" />}{r.name}</span>
                   <Badge variant="outline" className={`text-[9px] ${r.isSystem ? "border-slate-300 text-slate-500" : "border-blue-200 text-blue-600"}`}>{r.isOwner ? "Owner" : r.isSystem ? "System" : "Custom"}</Badge>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-0.5">{r.isOwner ? "Full access" : `${r._count?.permissions ?? 0} permissions`} · {r._count?.assignments ?? 0} staff</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{r.isOwner ? "Full access" : `${r._count?.permissions ?? 0} screens`} · {r._count?.assignments ?? 0} staff</p>
               </button>
             ))}
           </CardContent></Card>
 
-          {/* Role editor + matrix */}
           {selected ? (
             <Card><CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -167,16 +193,23 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
               ) : (
                 <>
                   <div className="flex items-center gap-2">
-                    <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search permissions…" className="pl-8 h-8 text-sm" /></div>
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(allKeys, true)}>Select All</Button>
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(allKeys, false)}>Clear All</Button>
-                    <span className="text-xs text-slate-400">{perms.size} selected</span>
+                    <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search screens…" className="pl-8 h-8 text-sm" /></div>
+                    <Select onValueChange={(v) => setAllLevel(Number(v))}>
+                      <SelectTrigger className="w-[140px] h-8 text-xs">
+                        <SelectValue placeholder="Set all to…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Hide all</SelectItem>
+                        <SelectItem value="1">View all</SelectItem>
+                        <SelectItem value="2">Create all</SelectItem>
+                        <SelectItem value="3">Edit all</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-slate-400">{countSelected()} screens with access</span>
                   </div>
 
                   <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                    {catalog.map((m) => {
-                      const mKeys = moduleKeysOf(m)
-                      const mAll = mKeys.every((k) => perms.has(k))
+                    {moduleData.map((m) => {
                       const open = expanded.has(m.key)
                       const visScreens = m.screens.filter((s) => matchScreen(m, s))
                       if (q && visScreens.length === 0) return null
@@ -186,21 +219,26 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
                             <button className="flex items-center gap-1.5 text-sm font-semibold text-slate-700" onClick={() => setExpanded((e) => { const n = new Set(e); n.has(m.key) ? n.delete(m.key) : n.add(m.key); return n })}>
                               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />} {m.label}
                             </button>
-                            <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer"><input type="checkbox" checked={mAll} onChange={(e) => setMany(mKeys, e.target.checked)} /> Module</label>
                           </div>
                           {open && (
                             <div className="p-2 space-y-1.5">
                               {visScreens.map((s) => {
-                                const sKeys = screenKeys(m, s)
-                                const sAll = sKeys.every((k) => perms.has(k))
+                                const sk = `${m.key}.${s.key}`
+                                const currentLevel = levels[sk] ?? 0
                                 return (
-                                  <div key={s.key} className="grid grid-cols-[140px_1fr] gap-2 items-start px-1.5 py-1 border-b border-slate-50 last:border-0">
-                                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer pt-0.5"><input type="checkbox" checked={sAll} onChange={(e) => setMany(sKeys, e.target.checked)} /> {s.label}</label>
-                                    <div className="flex flex-wrap gap-1">
-                                      {s.actions.map((a) => { const k = `${m.key}.${s.key}.${a}`; const on = perms.has(k); return (
-                                        <button key={a} onClick={() => togglePerm(k)} className={`rounded px-2 h-6 text-[11px] border ${on ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-400 hover:bg-slate-50"}`}>{actionLabel(a)}</button>
-                                      ) })}
-                                    </div>
+                                  <div key={s.key} className="grid grid-cols-[1fr_140px] gap-2 items-center px-1.5 py-1 border-b border-slate-50 last:border-0">
+                                    <span className="text-xs font-medium text-slate-600">{s.label}</span>
+                                    <Select value={String(currentLevel)} onValueChange={(v) => setLevel(sk, Number(v))}>
+                                      <SelectTrigger className={`h-7 text-xs ${currentLevel === 0 ? "text-slate-400" : currentLevel === 1 ? "text-blue-600" : currentLevel === 2 ? "text-amber-600" : "text-rose-600"}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="0">Hide</SelectItem>
+                                        <SelectItem value="1">View</SelectItem>
+                                        <SelectItem value="2">Create</SelectItem>
+                                        <SelectItem value="3">Edit</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                 )
                               })}
@@ -219,7 +257,6 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
         </div>
       )}
 
-      {/* New Role — proper application dialog (no browser prompt) */}
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -243,7 +280,6 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
         </DialogContent>
       </Dialog>
 
-      {/* Delete Role confirmation — proper application dialog (no browser confirm) */}
       <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

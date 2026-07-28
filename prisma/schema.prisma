@@ -2051,12 +2051,14 @@ model LaundryAccessRole {
   @@index([businessId])
 }
 
-// Normalized permission matrix: one row per (role, permission key). effect
-// ALLOW | DENY (DENY overrides ALLOW during resolution). Absent = no access.
+// Normalized permission matrix: one row per (role, screen key). permKey stores
+// the screen key (e.g. "laundry.orders"), level stores the access level
+// (1=VIEW, 2=CREATE, 3=EDIT). effect is kept for backward compat (always ALLOW).
 model LaundryAccessPermission {
   id      String            @id @default(cuid())
   roleId  String
-  permKey String
+  permKey String            // screen key, e.g. "laundry.orders"
+  level   Int               @default(1) // 1=VIEW, 2=CREATE, 3=EDIT
   effect  String            @default("ALLOW") // ALLOW | DENY
   role    LaundryAccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
