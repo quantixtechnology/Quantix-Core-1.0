@@ -8,6 +8,56 @@ import { PageLoader } from "@/components/ui/page-loader"
 // Dynamic imports for page components
 import dynamic from "next/dynamic"
 
+// ── Development-time route validation ─────────────────────────────────────────
+function validateRoutes() {
+  if (typeof window === "undefined" || process.env.NODE_ENV !== "development") return
+  // Extra items page values that the sidebar uses (copied from sidebar.tsx for cross-check)
+  const SIDEBAR_PAGES = new Set([
+    "new-order", "garment-lookup", "dispatch-center", "pickup-bags",
+    "bag-management", "delivery-executives", "mobile-apps", "roles",
+  ])
+  // SCREEN_PAGES values that the sidebar uses (copied from sidebar.tsx)
+  const SCREEN_PAGES_VALUES = new Set([
+    "dashboard", "orders", "customers", "subscriptions", "pricing", "stores",
+    "staff", "bag-management", "reports", "settings",
+    "crm-dashboard", "crm-leads", "crm-opportunities", "crm-activities",
+    "crm-tasks", "crm-settings", "crm-reports",
+    "processing-centers", "audit-barcode", "ws-wash", "ws-dry", "ws-dryclean",
+    "ws-iron", "ws-fold", "ws-qc", "ws-pack",
+    "audit-queue", "payment-queue", "packing-queue", "dispatch-queue",
+    "store-receive-queue", "ready-delivery-queue",
+  ])
+  const ALL_SIDEBAR = new Set([...SIDEBAR_PAGES, ...SCREEN_PAGES_VALUES])
+  // Routes in page-router.tsx (harvested manually from the switch statements below)
+  const ROUTE_PAGES = new Set([
+    "orders", "garment-lookup", "reports", "order-detail",
+    "crm-dashboard", "crm-leads", "crm-opportunities", "crm-activities",
+    "crm-tasks", "crm-reports", "crm-settings",
+    "marketing-dashboard", "marketing-discounts", "marketing-coupons",
+    "marketing-reports", "marketing-loyalty", "marketing-membership",
+    "marketing-credits", "marketing-giftcards", "marketing-referral",
+    "marketing-campaigns", "marketing-cart-recovery",
+    "dashboard", "processing-centers", "audit-barcode",
+    "ws-wash", "ws-dry", "ws-dryclean", "ws-iron", "ws-fold", "ws-qc", "ws-pack",
+    "inbox", "new-order", "audit-queue", "payment-queue", "packing-queue",
+    "dispatch-queue", "store-receive-queue", "pickup-bags", "bag-management",
+    "dispatch-center", "delivery-executives", "mobile-apps",
+    "ready-delivery-queue", "customers", "stores", "settings",
+    "categories", "garments", "services", "pricing", "subscription-plans",
+    "charges-rules", "pricing-simulator", "subscriptions", "roles", "staff",
+  ])
+  // Check sidebar pages that don't exist as routes
+  for (const p of ALL_SIDEBAR) {
+    if (!ROUTE_PAGES.has(p)) console.warn(`[Nav] Sidebar page "${p}" has no matching route in page-router.tsx`)
+  }
+  // Check route-only pages not in sidebar (expected for sub-pages)
+  // Count duplicates in route set
+  const seen = new Set<string>(); const dups = new Set<string>()
+  for (const p of ROUTE_PAGES) { if (seen.has(p)) dups.add(p); seen.add(p) }
+  if (dups.size) console.error(`[Nav] Duplicate routes in page-router.tsx: ${[...dups].join(", ")}`)
+}
+if (typeof window !== "undefined") validateRoutes()
+
 const LaundryDashboard = dynamic(() => import("@/components/laundry/views/laundry-dashboard").then(m => ({ default: m.LaundryDashboard })), { loading: () => <PageLoader /> })
 const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/processing-dashboard").then(m => ({ default: m.ProcessingDashboard })), { loading: () => <PageLoader /> })
 const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundry-inbox-view").then(m => ({ default: m.LaundryInboxView })), { loading: () => <PageLoader /> })

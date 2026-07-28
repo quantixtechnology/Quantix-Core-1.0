@@ -26,14 +26,13 @@ import { LogOut, Shield, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth";
 import { ROLES } from "@/lib/constants";
 import { getAuthHeaders } from "@/lib/admin-fetch";
-import type { Role } from "@/lib/types";
 
 // ============================================================================
 // USER MENU COMPONENT
 // ============================================================================
 
 export function UserMenu() {
-  const { user, logout, currentRole } = useAuthStore();
+  const { user, logout } = useAuthStore();
 
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -48,12 +47,10 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  const { assignedRbacRole, isLoaded: rbacLoaded } = useRuntimeAuth();
-  const roleLabel = rbacLoaded && assignedRbacRole
-    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole)
-    : currentRole
-      ? ROLES[currentRole]?.label || currentRole
-      : ROLES[user.role as Role]?.label || user.role;
+  const { assignedRbacRole, isLoaded: rbacLoaded, businessRole } = useRuntimeAuth();
+  const roleLabel = rbacLoaded
+    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole || businessRole || "Team Member")
+    : "Loading...";
 
   const initials = user.name
     .split(" ")

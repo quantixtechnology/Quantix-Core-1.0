@@ -22,16 +22,16 @@ import { ROLES } from "@/lib/constants"
 
 export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) {
   const { supportMode, clearSupportMode } = useAdminStore()
-  const { user, currentRole, logout } = useAuthStore()
-  const { assignedRbacRole, isLoaded } = useRuntimeAuth()
+  const { user, logout } = useAuthStore()
+  const { assignedRbacRole, isLoaded, businessRole } = useRuntimeAuth()
   const { setLaundryPage } = useAdminStore()
   const [search, setSearch] = useState("")
 
   const name = user?.name ?? "Laundry User"
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
   const roleLabel = isLoaded
-    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole || "Team Member")
-    : ((currentRole && ROLES[currentRole as keyof typeof ROLES]?.label) || "Team Member")
+    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole || businessRole || "Team Member")
+    : "Loading..."
 
   // Detect GAR codes in search bar and redirect to Garment Lookup
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {

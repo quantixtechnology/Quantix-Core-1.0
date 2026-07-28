@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { useLaundryPermissions, refreshLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -93,7 +94,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         const res = await fetch(`/api/laundry/staff/${editing.userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), phone: fPhone.trim() || null, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Update failed")
-        toast({ title: "Employee updated" }); setFormOpen(false); refreshLaundryPermissions(businessId); load()
+        toast({ title: "Employee updated" }); setFormOpen(false); refreshLaundryPermissions(businessId); if (businessId) clearRuntimeAuthCache(businessId); load()
       } else {
         const res = await fetch(`/api/laundry/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), email: fEmail.trim(), phone: fPhone.trim() || null, password: fPassword.trim() || undefined, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
         const j = await res.json()

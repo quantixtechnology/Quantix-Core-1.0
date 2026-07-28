@@ -1,11 +1,18 @@
 "use client"
 
-import { createContext, useEffect, useState, useRef, type ReactNode } from "react"
+import { createContext, useEffect, useState, useRef, useCallback, type ReactNode } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import type { RuntimeAuth } from "@/lib/runtime-auth"
 import { UNAUTHORIZED } from "@/lib/runtime-auth"
 
 export const RuntimeAuthContext = createContext<RuntimeAuth>(UNAUTHORIZED)
+
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+interface CacheEntry {
+  data: RuntimeAuth
+  ts: number
+}
 
 async function fetchRbac(businessId: string): Promise<RuntimeAuth | null> {
   try {
@@ -31,15 +38,21 @@ async function fetchRbac(businessId: string): Promise<RuntimeAuth | null> {
   }
 }
 
-const cache = new Map<string, RuntimeAuth>()
+const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<RuntimeAuth | null>>()
 
+function isCacheValid(businessId: string): boolean {
+  const entry = cache.get(businessId)
+  if (!entry) return false
+  return Date.now() - entry.ts < CACHE_TTL
+}
+
 export function getRuntimeAuth(businessId: string): Promise<RuntimeAuth | null> {
-  if (cache.has(businessId)) return Promise.resolve(cache.get(businessId)!)
+  if (isCacheValid(businessId)) return Promise.resolve(cache.get(businessId)!.data)
   if (inflight.has(businessId)) return inflight.get(businessId)!
   const p = fetchRbac(businessId).then((r) => {
-    if (r) cache.set(businessId, r)
     inflight.delete(businessId)
+    if (r) cache.set(businessId, { data: r, ts: Date.now() })
     return r
   })
   inflight.set(businessId, p)
@@ -54,33 +67,59 @@ export function clearRuntimeAuthCache(businessId?: string) {
 export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
   const { currentBusinessId, currentRole, user } = useAuthStore()
   const [auth, setAuth] = useState<RuntimeAuth>(() => {
-    if (currentBusinessId && cache.has(currentBusinessId)) return cache.get(currentBusinessId)!
+    if (currentBusinessId && isCacheValid(currentBusinessId)) {
+      const entry = cache.get(currentBusinessId)!
+      return { ...entry.data, businessRole: currentRole || user?.role || "" }
+    }
     return { ...UNAUTHORIZED, businessRole: currentRole || user?.role || "" }
   })
   const lastBizId = useRef(currentBusinessId)
   const lastRole = useRef<string | null>(currentRole)
+  const mounted = useRef(true)
+
+  const doFetch = useCallback((id: string, role: string) => {
+    fetchRbac(id).then((r) => {
+      if (!mounted.current) return
+      if (r) {
+        const merged: RuntimeAuth = { ...r, businessRole: role }
+        cache.set(id, { data: merged, ts: Date.now() })
+        setAuth(merged)
+      } else {
+        // On fetch failure, set loaded=true with empty role so components
+        // don't fall back to legacy BusinessUser.role
+        setAuth((prev) => ({
+          ...prev,
+          businessRole: role,
+          isLoaded: true,
+          assignedRbacRole: prev.assignedRbacRole || "",
+        }))
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   useEffect(() => {
     if (!currentBusinessId) return
     const id = currentBusinessId
     const role = currentRole || user?.role || ""
 
-    // Only refetch when businessId changes; role changes just update the cached value
-    if (id !== lastBizId.current) {
+    if (id !== lastBizId.current || !isCacheValid(id)) {
       lastBizId.current = id
-      if (cache.has(id)) {
-        const cached = cache.get(id)!
-        setAuth({ ...cached, businessRole: role })
-        return
+      if (isCacheValid(id)) {
+        const entry = cache.get(id)!
+        setAuth({ ...entry.data, businessRole: role })
+      } else {
+        doFetch(id, role)
       }
-      fetchRbac(id).then((r) => {
-        if (r) setAuth({ ...r, businessRole: role })
-      })
     } else if (role !== lastRole.current) {
       lastRole.current = role
       setAuth((prev) => ({ ...prev, businessRole: role }))
     }
-  }, [currentBusinessId, currentRole, user?.role])
+  }, [currentBusinessId, currentRole, user?.role, doFetch])
 
   return (
     <RuntimeAuthContext.Provider value={auth}>

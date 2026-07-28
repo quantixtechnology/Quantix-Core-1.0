@@ -37,6 +37,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   })
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [levels, setLevels] = useState<Record<string, number>>({})
   const [name, setName] = useState("")
@@ -59,6 +60,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   const load = useCallback(async () => {
     if (!businessId) return
     setLoading(true)
+    setLoadError(null)
     try {
       const [c, r] = await Promise.all([
         fetch(`/api/laundry/rbac/catalog`).then((x) => x.json()),
@@ -70,7 +72,8 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
         setExpanded(new Set(modules.map((m: ModuleEntry) => m.key)))
       }
       if (r.success) setRoles(r.data)
-    } catch { /* noop */ } finally { setLoading(false) }
+      else if (r.error) setLoadError(r.error === "FORBIDDEN" ? "You don't have permission to view roles." : r.error)
+    } catch { setLoadError("Failed to load roles. Check your connection.") } finally { setLoading(false) }
   }, [businessId])
   useEffect(() => { load() }, [load])
 
@@ -155,10 +158,10 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
 
       {roles.length === 0 ? (
         <Card><CardContent className="text-center py-16">
-          <Shield className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-          <p className="text-sm font-medium">No roles yet</p>
-          <p className="text-xs text-muted-foreground mt-1 mb-3">Create the default system roles to get started.</p>
-          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={seed}>Create Default Roles</Button>
+          <Shield className={`h-8 w-8 mx-auto mb-2 ${loadError ? "text-rose-300" : "text-muted-foreground/40"}`} />
+          <p className="text-sm font-medium">{loadError || "No roles yet"}</p>
+          {!loadError && <p className="text-xs text-muted-foreground mt-1 mb-3">Create the default system roles to get started.</p>}
+          {!loadError && <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={seed}>Create Default Roles</Button>}
         </CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-start">

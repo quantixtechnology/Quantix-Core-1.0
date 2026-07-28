@@ -28,6 +28,25 @@ import { useMarketingEnabled } from "@/components/laundry/views/marketing/market
 
 const VIEW_LEVEL = 1
 
+// ── Development-time nav validation ─────────────────────────────────────────
+function validateNavConfig(items: NavCfg[]) {
+  if (process.env.NODE_ENV === "development") {
+    const keys = new Set<string>()
+    const labels = new Map<string, string[]>()
+    for (const item of items) {
+      if (keys.has(item.key)) console.error(`[Nav] Duplicate screen key detected: "${item.key}"`)
+      keys.add(item.key)
+      if (!item.perm && !item.comingSoon) console.warn(`[Nav] Sidebar item "${item.key}" has no permission key`)
+      const existing = labels.get(item.label) || []
+      existing.push(item.key)
+      labels.set(item.label, existing)
+    }
+    for (const [label, k] of labels) {
+      if (k.length > 1) console.warn(`[Nav] Duplicate sidebar label "${label}" used by keys: ${k.join(", ")}`)
+    }
+  }
+}
+
 type NavCfg = {
   key: string
   label: string
@@ -122,8 +141,6 @@ const EXTRA_ITEMS: NavCfg[] = [
   { key: "new-order", label: "New Order", icon: Plus, page: "new-order", perm: "laundry.orders" },
   { key: "garment-lookup", label: "Garment Lookup", icon: Search, page: "garment-lookup", perm: "laundry.orders" },
   { key: "dispatch-center", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
-  { key: "pickup-scheduler", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
-  { key: "delivery-assignments", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
   { key: "pickup-bags", label: "Assign Bags", icon: Package, page: "pickup-bags", perm: "store_ops.store_audit" },
   { key: "bag-management", label: "Bag Management", icon: Package, page: "bag-management", perm: "store_ops.store_audit" },
   { key: "delivery-executives", label: "Delivery Executives", icon: Bike, page: "delivery-executives", perm: "laundry.staff" },
@@ -131,6 +148,7 @@ const EXTRA_ITEMS: NavCfg[] = [
   { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", perm: "laundry.staff" },
   { key: "payments", label: "Payments", icon: Wallet, comingSoon: true },
 ]
+validateNavConfig(EXTRA_ITEMS)
 
 // ── Catalog type matching the registry ────────────────────────────────────
 interface CatalogScreen {
@@ -226,6 +244,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   // ── Build nav groups from catalog + extra items ────────────────────────────
   const groups: NavGroup[] = []
+  const seenKeys = new Set<string>()
 
   if (catalog) {
     for (const mod of catalog) {
@@ -239,8 +258,11 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
         const icon = SCREEN_ICONS[screenKey]
         const page = SCREEN_PAGES[screenKey]
         if (!icon) continue // skip screens without frontend nav
+        const navKey = screenKey
+        if (seenKeys.has(navKey)) continue
+        seenKeys.add(navKey)
         items.push({
-          key: screenKey,
+          key: navKey,
           label: screen.label,
           icon,
           page,
@@ -252,6 +274,8 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       for (const extra of EXTRA_ITEMS) {
         const extraPermModule = extra.perm?.split(".")[0]
         if (extraPermModule === mod.key) {
+          if (seenKeys.has(extra.key)) continue
+          seenKeys.add(extra.key)
           items.push(extra)
         }
       }
