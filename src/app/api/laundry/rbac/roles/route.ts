@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit, ensureSystemRolesSeeded } from "@/lib/laundry-rbac"
+import { requireLaundryLevel, rbacAudit, ensureSystemRolesSeeded } from "@/lib/laundry-rbac"
 import { isValidScreenKey, Level } from "@/lib/laundry-rbac-registry"
 
 export const runtime = "nodejs"
@@ -8,7 +8,7 @@ const slug = (s: string) => s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "_").r
 
 export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryPermission(request, businessId, "laundry.staff", Level.VIEW)
+  const guard = await requireLaundryLevel(request, businessId, "laundry.staff", Level.VIEW)
   if (!guard.ok) return guard.res
   await ensureSystemRolesSeeded(guard.platformBusinessId)
   const roles = await prisma.laundryAccessRole.findMany({
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff", Level.EDIT)
+  const guard = await requireLaundryLevel(request, b.businessId, "laundry.staff", Level.EDIT)
   if (!guard.ok) return guard.res
   if (!b.name?.trim()) return NextResponse.json({ error: "Role name is required" }, { status: 400 })
   const businessId = guard.platformBusinessId

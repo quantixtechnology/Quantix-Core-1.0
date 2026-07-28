@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit, Level } from "@/lib/laundry-rbac"
+import { requireLaundryLevel, rbacAudit, Level } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 const slug = (s: string) => s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "ROLE"
@@ -8,7 +8,7 @@ const slug = (s: string) => s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "_").r
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff", Level.EDIT)
+  const guard = await requireLaundryLevel(request, b.businessId, "laundry.staff", Level.EDIT)
   if (!guard.ok) return guard.res
   const businessId = guard.platformBusinessId
   const src = await prisma.laundryAccessRole.findFirst({ where: { id, businessId }, include: { permissions: true } })

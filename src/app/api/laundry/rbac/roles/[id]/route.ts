@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit, Level } from "@/lib/laundry-rbac"
+import { requireLaundryLevel, rbacAudit, Level } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -11,7 +11,7 @@ async function scopedRole(platformBusinessId: string, id: string) {
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryPermission(request, businessId, "laundry.staff", Level.VIEW)
+  const guard = await requireLaundryLevel(request, businessId, "laundry.staff", Level.VIEW)
   if (!guard.ok) return guard.res
   const role = await scopedRole(guard.platformBusinessId, id)
   if (!role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff", Level.EDIT)
+  const guard = await requireLaundryLevel(request, b.businessId, "laundry.staff", Level.EDIT)
   if (!guard.ok) return guard.res
   const role = await scopedRole(guard.platformBusinessId, id)
   if (!role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
@@ -40,7 +40,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryPermission(request, businessId, "laundry.staff", Level.EDIT)
+  const guard = await requireLaundryLevel(request, businessId, "laundry.staff", Level.EDIT)
   if (!guard.ok) return guard.res
   const role = await scopedRole(guard.platformBusinessId, id)
   if (!role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
