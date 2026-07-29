@@ -42,6 +42,14 @@ function allScreensAtLevel(level: Level): Map<string, number> {
 }
 
 export async function resolveUserPermissions(platformBusinessId: string, userId: string, businessRole: string | null): Promise<ResolvedPermissions> {
+  // Platform identity always has highest priority — no LaundryAccessAssignment
+  // may reduce a Platform Super Admin's permissions.
+  if (isOwnerRole(businessRole)) {
+    const code = businessRole === "LAUNDRY_OWNER" ? "BUSINESS_OWNER" : (businessRole || "BUSINESS_OWNER")
+    const name = businessRole === "LAUNDRY_OWNER" ? "Business Owner" : (ROLES[businessRole as keyof typeof ROLES]?.label || businessRole || "Business Owner")
+    return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: code, roleName: name, source: "owner" }
+  }
+
   const assign = await prisma.laundryAccessAssignment.findFirst({
     where: { businessId: platformBusinessId, userId, active: true },
     include: { role: { include: { permissions: true } } },
@@ -58,11 +66,6 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
       if (lvl > existing) levels.set(screenKey, lvl)
     }
     return { isOwner: false, permissions: new Set(levels.keys()), levels, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
-  }
-  if (isOwnerRole(businessRole)) {
-    const code = businessRole === "LAUNDRY_OWNER" ? "BUSINESS_OWNER" : (businessRole || "BUSINESS_OWNER")
-    const name = businessRole === "LAUNDRY_OWNER" ? "Business Owner" : (ROLES[businessRole as keyof typeof ROLES]?.label || businessRole || "Business Owner")
-    return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: code, roleName: name, source: "owner" }
   }
   const code = LEGACY_ROLE_MAP[businessRole || ""] || "VIEWER"
   const def = SYSTEM_ROLES.find((r) => r.code === code)
