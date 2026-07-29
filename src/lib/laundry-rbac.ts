@@ -6,6 +6,7 @@ import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { isPlatformRole } from "@/lib/permissions"
 import { allScreenKeys, isValidScreenKey, permKeyToScreenLevel, actionToLevel, screenLabel, Level } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
+import { ROLES } from "@/lib/constants"
 
 export { Level }
 
@@ -59,7 +60,9 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
     return { isOwner: false, permissions: new Set(levels.keys()), levels, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
   }
   if (isOwnerRole(businessRole)) {
-    return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: "BUSINESS_OWNER", roleName: "Business Owner", source: "owner" }
+    const code = businessRole === "LAUNDRY_OWNER" ? "BUSINESS_OWNER" : (businessRole || "BUSINESS_OWNER")
+    const name = businessRole === "LAUNDRY_OWNER" ? "Business Owner" : (ROLES[businessRole as keyof typeof ROLES]?.label || businessRole || "Business Owner")
+    return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: code, roleName: name, source: "owner" }
   }
   const code = LEGACY_ROLE_MAP[businessRole || ""] || "VIEWER"
   const def = SYSTEM_ROLES.find((r) => r.code === code)

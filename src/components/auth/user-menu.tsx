@@ -47,9 +47,10 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  const { assignedRbacRole, isLoaded: rbacLoaded, businessRole } = useRuntimeAuth();
+  const { assignedRbacRole, isLoaded: rbacLoaded, businessRole, platformRole } = useRuntimeAuth();
+  const effectiveRole = platformRole || assignedRbacRole || businessRole;
   const roleLabel = rbacLoaded
-    ? (ROLES[assignedRbacRole as keyof typeof ROLES]?.label || assignedRbacRole || businessRole || "Team Member")
+    ? (ROLES[effectiveRole as keyof typeof ROLES]?.label || effectiveRole || "Team Member")
     : "Loading...";
 
   const initials = user.name

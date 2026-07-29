@@ -32,6 +32,7 @@ async function fetchRbac(businessId: string): Promise<RuntimeAuth | null> {
       screenLevels: levels || {},
       isOwner,
       isLoaded: true,
+      platformRole: "",
     }
   } catch {
     return null
@@ -67,11 +68,12 @@ export function clearRuntimeAuthCache(businessId?: string) {
 export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
   const { currentBusinessId, currentRole, user } = useAuthStore()
   const [auth, setAuth] = useState<RuntimeAuth>(() => {
+    const role = currentRole || user?.role || ""
     if (currentBusinessId && isCacheValid(currentBusinessId)) {
       const entry = cache.get(currentBusinessId)!
-      return { ...entry.data, businessRole: currentRole || user?.role || "" }
+      return { ...entry.data, businessRole: role, platformRole: role }
     }
-    return { ...UNAUTHORIZED, businessRole: currentRole || user?.role || "" }
+    return { ...UNAUTHORIZED, businessRole: role, platformRole: role }
   })
   const lastBizId = useRef(currentBusinessId)
   const lastRole = useRef<string | null>(currentRole)
@@ -81,7 +83,7 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
     fetchRbac(id).then((r) => {
       if (!mounted.current) return
       if (r) {
-        const merged: RuntimeAuth = { ...r, businessRole: role }
+        const merged: RuntimeAuth = { ...r, businessRole: role, platformRole: role }
         cache.set(id, { data: merged, ts: Date.now() })
         setAuth(merged)
       } else {
@@ -90,6 +92,7 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
         setAuth((prev) => ({
           ...prev,
           businessRole: role,
+          platformRole: role,
           isLoaded: true,
           assignedRbacRole: prev.assignedRbacRole || "",
         }))
@@ -111,13 +114,13 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
       lastBizId.current = id
       if (isCacheValid(id)) {
         const entry = cache.get(id)!
-        setAuth({ ...entry.data, businessRole: role })
+        setAuth({ ...entry.data, businessRole: role, platformRole: role })
       } else {
         doFetch(id, role)
       }
     } else if (role !== lastRole.current) {
       lastRole.current = role
-      setAuth((prev) => ({ ...prev, businessRole: role }))
+      setAuth((prev) => ({ ...prev, businessRole: role, platformRole: role }))
     }
   }, [currentBusinessId, currentRole, user?.role, doFetch])
 

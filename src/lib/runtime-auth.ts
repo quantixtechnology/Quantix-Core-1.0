@@ -4,6 +4,7 @@ export interface RuntimeAuth {
   screenLevels: Record<string, number>
   isOwner: boolean
   isLoaded: boolean
+  platformRole: string
 }
 
 export const UNAUTHORIZED: RuntimeAuth = {
@@ -12,4 +13,5 @@ export const UNAUTHORIZED: RuntimeAuth = {
   screenLevels: {},
   isOwner: false,
   isLoaded: false,
+  platformRole: "",
 }
