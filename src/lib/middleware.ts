@@ -14,6 +14,10 @@ import { resolveTenantFromHostname } from './tenant-resolver';
 // TYPES
 // ============================================================================
 
+export interface RouteContext {
+  params?: Promise<Record<string, string | string[]>> | undefined;
+}
+
 interface AuthenticatedRequest extends NextRequest {
   user?: {
     id: string;
@@ -28,12 +32,12 @@ interface AuthenticatedRequest extends NextRequest {
   businessContext?: BusinessContext;
 }
 
-type HandlerFunction = (
+export type HandlerFunction = (
   req: AuthenticatedRequest,
-  context?: { params?: Promise<Record<string, string | string[]>> }
+  context?: RouteContext
 ) => Promise<Response>;
 
-interface MiddlewareConfig {
+export interface MiddlewareConfig {
   requireAuth?: boolean;
   requireBusinessContext?: boolean;
   requirePlatformAdmin?: boolean;
