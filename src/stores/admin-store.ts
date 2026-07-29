@@ -140,6 +140,7 @@ export type LaundryBusinessPage =
   | "ws-pack"
   | "audit-barcode"
   | "garment-lookup"
+  | "navigation"
   // Marketing module (Phase 1: dashboard/discounts/coupons/reports live; rest placeholder)
   | "marketing-dashboard"
   | "marketing-discounts"

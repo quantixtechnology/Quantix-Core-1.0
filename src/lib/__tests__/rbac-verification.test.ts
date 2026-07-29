@@ -146,7 +146,7 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    expect(allScreens.length).toBe(37) // 10 laundry + 8 crm + 9 processing + 6 store_ops + 4 customer_app
+    expect(allScreens.length).toBe(38) // 10 laundry + 1 navigation + 8 crm + 9 processing + 6 store_ops + 4 customer_appssing + 6 store_ops + 4 customer_app
   })
 
   it("every screen key validates correctly", () => {
@@ -211,7 +211,7 @@ describe("Gate 3b: Sidebar entries audit", () => {
     // Business Management
     "laundry.stores", "laundry.staff", "laundry.staff", "laundry.staff",
     "laundry.staff", "laundry.subscriptions", "laundry.reports",
-    "laundry.settings",
+    "laundry.settings", "laundry.navigation",
     // Processing Center
     "processing.console_receive", "processing.audit_barcode",
     "processing.washing", "processing.drying", "processing.dry_cleaning",
@@ -601,6 +601,7 @@ describe("Gate 8: Sidebar-registry consistency", () => {
     "laundry.dashboard", "laundry.orders", "laundry.customers",
     "laundry.pricing", "laundry.stores", "laundry.staff",
     "laundry.subscriptions", "laundry.reports", "laundry.settings",
+    "laundry.navigation",
     "processing.console_receive", "processing.audit_barcode",
     "processing.washing", "processing.drying", "processing.dry_cleaning",
     "processing.ironing", "processing.folding", "processing.quality_check",

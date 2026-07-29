@@ -4187,6 +4187,7 @@ model LaundryBusiness {
   auditLogs            LaundryAuditLog[]
   orders               LaundryOrder[]
   deliveryExecutives   LaundryDeliveryExecutive[]
+  navigation           LaundryNavigation?
 
   @@index([businessCode])
   @@index([status])
@@ -6011,6 +6012,70 @@ model LaundryBagRelease {
   @@index([bagId])
   @@index([businessId])
   @@index([releasedAt])
+}
+
+// ── Navigation Manager — per-business sidebar configuration ──────────────────
+// Each business gets one navigation config controlling sidebar section and
+// screen presentation. RBAC still decides whether a user can see a screen;
+// Navigation Manager only controls layout, labels, ordering, icons, and badges.
+model LaundryNavigation {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sections LaundryNavSection[] @relation("NavSections")
+  items    LaundryNavItem[]    @relation("NavItems")
+
+  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model LaundryNavSection {
+  id           String   @id @default(cuid())
+  navigationId String
+  name         String
+  icon         String?
+  description  String?
+  order        Int      @default(0)
+  expanded     Boolean  @default(true)
+  collapsible  Boolean  @default(true)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  navigation LaundryNavigation @relation("NavSections", fields: [navigationId], references: [id], onDelete: Cascade)
+  items      LaundryNavItem[]  @relation("SectionItems")
+
+  @@index([navigationId])
+  @@index([order])
+}
+
+model LaundryNavItem {
+  id           String   @id @default(cuid())
+  navigationId String
+  sectionId    String
+  screenKey    String
+  displayName  String?
+  icon         String?
+  order        Int      @default(0)
+  active       Boolean  @default(true)
+  hidden       Boolean  @default(false)
+  badge        String?
+  comingSoon   Boolean  @default(false)
+  pinned       Boolean  @default(false)
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  section    LaundryNavSection @relation("SectionItems", fields: [sectionId], references: [id], onDelete: Cascade)
+  navigation LaundryNavigation @relation("NavItems", fields: [navigationId], references: [id], onDelete: Cascade)
+
+  @@index([navigationId])
+  @@index([sectionId])
+  @@index([screenKey])
+  @@index([order])
 }
 
 // ── Global Garment Number (GAR) atomic sequence counter ──────────────────────

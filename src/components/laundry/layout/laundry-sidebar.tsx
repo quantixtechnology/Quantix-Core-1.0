@@ -8,7 +8,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
@@ -21,31 +21,10 @@ import {
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
   WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone, Search,
-  type LucideIcon,
+  Menu, type LucideIcon,
 } from "lucide-react"
-import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
-import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
 
 const VIEW_LEVEL = 1
-
-// ── Development-time nav validation ─────────────────────────────────────────
-function validateNavConfig(items: NavCfg[]) {
-  if (process.env.NODE_ENV === "development") {
-    const keys = new Set<string>()
-    const labels = new Map<string, string[]>()
-    for (const item of items) {
-      if (keys.has(item.key)) console.error(`[Nav] Duplicate screen key detected: "${item.key}"`)
-      keys.add(item.key)
-      if (!item.perm && !item.comingSoon) console.warn(`[Nav] Sidebar item "${item.key}" has no permission key`)
-      const existing = labels.get(item.label) || []
-      existing.push(item.key)
-      labels.set(item.label, existing)
-    }
-    for (const [label, k] of labels) {
-      if (k.length > 1) console.warn(`[Nav] Duplicate sidebar label "${label}" used by keys: ${k.join(", ")}`)
-    }
-  }
-}
 
 type NavCfg = {
   key: string
@@ -54,53 +33,56 @@ type NavCfg = {
   page?: LaundryBusinessPage
   comingSoon?: boolean
   perm?: string
+  badge?: string
+  hidden?: boolean
 }
 
-type NavGroup = { label: string | null; sectionHeader?: string; items: NavCfg[] }
+type NavGroup = { label: string | null; sectionHeader?: string; items: NavCfg[]; expanded?: boolean; collapsible?: boolean }
 
-// ── Screen key → Icon mapping (client concern, not registry metadata) ─────
-const SCREEN_ICONS: Record<string, LucideIcon> = {
-  "laundry.dashboard": LayoutDashboard,
-  "laundry.orders": ShoppingBag,
-  "laundry.customers": Users,
-  "laundry.subscriptions": Repeat,
-  "laundry.pricing": IndianRupee,
-  "laundry.stores": Store,
-  "laundry.staff": UsersRound,
-  "laundry.bags": Package,
-  "laundry.reports": BarChart3,
-  "laundry.settings": Settings,
-  "crm.dashboard": Gauge,
-  "crm.leads": UsersRound,
-  "crm.opportunity": Target,
-  "crm.activities": ClipboardList,
-  "crm.pipeline": CheckSquare,
-  "crm.templates": SlidersHorizontal,
-  "crm.reports": PieChart,
-  "crm.settings": SlidersHorizontal,
-  "processing.console_receive": Factory,
-  "processing.audit_barcode": Barcode,
-  "processing.washing": Droplets,
-  "processing.drying": Wind,
-  "processing.dry_cleaning": Sparkles,
-  "processing.ironing": Shirt,
-  "processing.folding": Layers,
-  "processing.quality_check": ShieldCheck,
-  "processing.packing": Package,
-  "store_ops.store_audit": ClipboardCheck,
-  "store_ops.payment_collection": CreditCard,
-  "store_ops.packing_qr": Barcode,
-  "store_ops.transit": Truck,
-  "store_ops.store_receive": PackageCheck,
-  "store_ops.ready_for_delivery": CheckCheck,
-  "customer_app.customers": Users,
-  "customer_app.invitation": UserPlus,
-  "customer_app.subscription": Repeat,
-  "customer_app.orders": ShoppingBag,
+interface NavItemDto {
+  id?: string
+  screenKey: string
+  displayName: string
+  icon: string
+  order: number
+  active: boolean
+  hidden: boolean
+  badge?: string
+  comingSoon: boolean
 }
 
-// ── Screen key → LaundryBusinessPage mapping ──────────────────────────────
-const SCREEN_PAGES: Record<string, LaundryBusinessPage | undefined> = {
+interface NavSectionDto {
+  id?: string
+  name: string
+  icon: string
+  order: number
+  expanded: boolean
+  collapsible: boolean
+  active: boolean
+  description?: string
+  items: NavItemDto[]
+}
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  "LayoutDashboard": LayoutDashboard, "ShoppingBag": ShoppingBag,
+  "Users": Users, "Store": Store, "Factory": Factory, "BarChart3": BarChart3,
+  "Settings": Settings, "Plus": Plus, "ClipboardCheck": ClipboardCheck,
+  "CreditCard": CreditCard, "Truck": Truck, "IndianRupee": IndianRupee,
+  "Wallet": Wallet, "UsersRound": UsersRound, "Shirt": Shirt,
+  "Droplets": Droplets, "Wind": Wind, "Layers": Layers, "ShieldCheck": ShieldCheck,
+  "Barcode": Barcode, "Repeat": Repeat, "Target": Target, "CheckSquare": CheckSquare,
+  "ClipboardList": ClipboardList, "PieChart": PieChart, "SlidersHorizontal": SlidersHorizontal,
+  "Gauge": Gauge, "PackageCheck": PackageCheck, "CheckCheck": CheckCheck,
+  "Sparkles": Sparkles, "Package": Package, "Shield": Shield,
+  "Megaphone": Megaphone, "Ticket": Ticket, "BadgePercent": BadgePercent,
+  "Gift": Gift, "Crown": Crown, "UserPlus": UserPlus, "Coins": Coins,
+  "ShoppingCart": ShoppingCart, "WashingMachine": WashingMachine,
+  "Calculator": Calculator, "Tags": Tags, "ChevronDown": ChevronDown,
+  "Bike": Bike, "Smartphone": Smartphone, "Search": Search, "Menu": Menu,
+  "Circle": ShoppingBag,
+}
+
+const PAGE_MAP: Record<string, LaundryBusinessPage | undefined> = {
   "laundry.dashboard": "dashboard",
   "laundry.orders": "orders",
   "laundry.customers": "customers",
@@ -111,6 +93,7 @@ const SCREEN_PAGES: Record<string, LaundryBusinessPage | undefined> = {
   "laundry.bags": "bag-management",
   "laundry.reports": "reports",
   "laundry.settings": "settings",
+  "laundry.navigation": "navigation",
   "crm.dashboard": "crm-dashboard",
   "crm.leads": "crm-leads",
   "crm.opportunity": "crm-opportunities",
@@ -134,53 +117,77 @@ const SCREEN_PAGES: Record<string, LaundryBusinessPage | undefined> = {
   "store_ops.transit": "dispatch-queue",
   "store_ops.store_receive": "store-receive-queue",
   "store_ops.ready_for_delivery": "ready-delivery-queue",
+  "new-order": "new-order",
+  "garment-lookup": "garment-lookup",
+  "dispatch-center": "dispatch-center",
+  "pickup-scheduler": "pickup-scheduler",
+  "delivery-assignments": "delivery-assignments",
+  "pickup-bags": "pickup-bags",
+  "bag-management": "bag-management",
+  "delivery-executives": "delivery-executives",
+  "mobile-apps": "mobile-apps",
+  "roles": "roles",
+  "order-detail": "order-detail",
+  "audit-barcode": "audit-barcode",
+  "marketing-dashboard": "marketing-dashboard",
+  "marketing-discounts": "marketing-discounts",
+  "marketing-coupons": "marketing-coupons",
+  "marketing-reports": "marketing-reports",
+  "marketing-loyalty": "marketing-loyalty",
+  "marketing-membership": "marketing-membership",
+  "marketing-credits": "marketing-credits",
+  "marketing-giftcards": "marketing-giftcards",
+  "marketing-referral": "marketing-referral",
+  "marketing-campaigns": "marketing-campaigns",
+  "marketing-cart-recovery": "marketing-cart-recovery",
 }
 
-// ── Extra nav items that share a parent screen's permission ────────────────
-const EXTRA_ITEMS: NavCfg[] = [
-  { key: "new-order", label: "New Order", icon: Plus, page: "new-order", perm: "laundry.orders" },
-  { key: "garment-lookup", label: "Garment Lookup", icon: Search, page: "garment-lookup", perm: "laundry.orders" },
-  { key: "dispatch-center", label: "Dispatch Center", icon: Truck, page: "dispatch-center", perm: "laundry.orders" },
-  { key: "pickup-bags", label: "Assign Bags", icon: Package, page: "pickup-bags", perm: "store_ops.store_audit" },
-  { key: "bag-management", label: "Bag Management", icon: Package, page: "bag-management", perm: "store_ops.store_audit" },
-  { key: "delivery-executives", label: "Delivery Executives", icon: Bike, page: "delivery-executives", perm: "laundry.staff" },
-  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone, page: "mobile-apps", perm: "laundry.staff" },
-  { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", perm: "laundry.staff" },
-  { key: "payments", label: "Payments", icon: Wallet, comingSoon: true },
+const EXTRA_PERM_MAP: Record<string, string> = {
+  "new-order": "laundry.orders",
+  "garment-lookup": "laundry.orders",
+  "dispatch-center": "laundry.orders",
+  "pickup-scheduler": "laundry.orders",
+  "delivery-assignments": "laundry.orders",
+  "pickup-bags": "store_ops.store_audit",
+  "bag-management": "store_ops.store_audit",
+  "delivery-executives": "laundry.staff",
+  "mobile-apps": "laundry.staff",
+  "roles": "laundry.staff",
+  "payments": "laundry.orders",
+  "order-detail": "laundry.orders",
+  "audit-barcode": "processing.audit_barcode",
+  "marketing-dashboard": "laundry.settings",
+  "marketing-discounts": "laundry.settings",
+  "marketing-coupons": "laundry.settings",
+  "marketing-reports": "laundry.settings",
+  "marketing-loyalty": "laundry.settings",
+  "marketing-membership": "laundry.settings",
+  "marketing-credits": "laundry.settings",
+  "marketing-giftcards": "laundry.settings",
+  "marketing-referral": "laundry.settings",
+  "marketing-campaigns": "laundry.settings",
+  "marketing-cart-recovery": "laundry.settings",
+}
+
+const MODULE_PREFIXES = ["laundry.", "crm.", "processing.", "store_ops."]
+
+function permForScreenKey(screenKey: string): string | undefined {
+  return EXTRA_PERM_MAP[screenKey] ?? (MODULE_PREFIXES.some((p) => screenKey.startsWith(p)) ? screenKey : undefined)
+}
+
+const FALLBACK_ITEMS: NavCfg[] = [
+  { key: "laundry.dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", perm: "laundry.dashboard" },
+  { key: "laundry.orders", label: "Orders", icon: ShoppingBag, page: "orders", perm: "laundry.orders" },
+  { key: "laundry.staff", label: "Staff", icon: UsersRound, page: "staff", perm: "laundry.staff" },
+  { key: "laundry.settings", label: "Settings", icon: Settings, page: "settings", perm: "laundry.settings" },
 ]
-validateNavConfig(EXTRA_ITEMS)
 
-// ── Catalog type matching the registry ────────────────────────────────────
-interface CatalogScreen {
-  key: string
-  label: string
-}
-interface CatalogModule {
-  key: string
-  label: string
-  screens: CatalogScreen[]
+function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
+  const items = FALLBACK_ITEMS.filter((i) => permAllows(i))
+  return items.length > 0 ? [{ label: null, items }] : []
 }
 
-type CatalogSnapshot = CatalogModule[]
-
-const catalogCache: { data: CatalogSnapshot | null; promise: Promise<CatalogSnapshot> | null } = {
-  data: null,
-  promise: null,
-}
-
-function fetchCatalog(): Promise<CatalogSnapshot> {
-  if (catalogCache.data) return Promise.resolve(catalogCache.data)
-  if (catalogCache.promise) return catalogCache.promise
-  const p = fetch("/api/laundry/rbac/catalog")
-    .then((r) => r.json())
-    .then((j) => {
-      const modules = (j.data?.modules || []) as CatalogSnapshot
-      catalogCache.data = modules
-      return modules
-    })
-  catalogCache.promise = p
-  return p
-}
+const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode", "garment-lookup"])
 
 const WHITE_THEME = {
   "--sidebar": "#FFFFFF",
@@ -210,7 +217,7 @@ function persistCollapsed(s: Set<string>) {
 const groupKey = (g: { sectionHeader?: string; label: string | null }) => `${g.sectionHeader ?? ""}::${g.label ?? ""}`
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
-  const { laundryPage, setLaundryPage } = useAdminStore()
+  const { laundryPage, setLaundryPage, currentBusinessId } = useAdminStore()
   const { user } = useAuthStore()
   const { isMobile } = useResponsive()
   const { screenLevels, isOwner, isLoaded } = useRuntimeAuth()
@@ -230,77 +237,74 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     if (saved > 0) el.scrollTop = saved
   }, [])
 
-  const [catalog, setCatalog] = useState<CatalogSnapshot | null>(catalogCache.data)
+  const [navSections, setNavSections] = useState<NavSectionDto[]>([])
+  const [navLoaded, setNavLoaded] = useState(false)
+  const [navError, setNavError] = useState(false)
+
+  const businessId = currentBusinessId || ""
+
   useEffect(() => {
-    if (catalogCache.data) { setCatalog(catalogCache.data); return }
-    fetchCatalog().then(setCatalog)
-  }, [])
+    if (!businessId) return
+    setNavError(false)
+    fetch(`/api/laundry/navigation?businessId=${businessId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Navigation API error")
+        return r.json()
+      })
+      .then((json) => {
+        if (json.data?.sections) setNavSections(json.data.sections)
+        setNavLoaded(true)
+      })
+      .catch(() => {
+        setNavError(true)
+        setNavLoaded(true)
+      })
+  }, [businessId])
 
-  const permAllows = (i: NavCfg) => !isLoaded || isOwner || !i.perm || (screenLevels[i.perm] ?? 0) >= VIEW_LEVEL
+  const permAllows = useCallback((item: NavCfg) => {
+    if (!isLoaded || isOwner) return true
+    if (!item.perm) return true
+    return (screenLevels[item.perm] ?? 0) >= VIEW_LEVEL
+  }, [isLoaded, isOwner, screenLevels])
 
-  const crmState = useCrmEnabled()
-  const crmEnabled = crmState === true
-  const marketingEnabled = useMarketingEnabled() === true
-
-  // ── Build nav groups from catalog + extra items ────────────────────────────
-  const groups: NavGroup[] = []
-  const seenKeys = new Set<string>()
-
-  if (catalog) {
-    for (const mod of catalog) {
-      // Skip CRM/Marketing modules — handled separately as feature gates
-      if (mod.key === "crm" && !crmEnabled) continue
-      if (mod.key === "customer_app") continue
-
-      const items: NavCfg[] = []
-      for (const screen of mod.screens) {
-        const screenKey = `${mod.key}.${screen.key}`
-        const icon = SCREEN_ICONS[screenKey]
-        const page = SCREEN_PAGES[screenKey]
-        if (!icon) continue // skip screens without frontend nav
-        const navKey = screenKey
-        if (seenKeys.has(navKey)) continue
-        seenKeys.add(navKey)
-        items.push({
-          key: navKey,
-          label: screen.label,
-          icon,
-          page,
-          perm: screenKey,
-        })
-      }
-
-      // Append extra items whose perm matches this module
-      for (const extra of EXTRA_ITEMS) {
-        const extraPermModule = extra.perm?.split(".")[0]
-        if (extraPermModule === mod.key) {
-          if (seenKeys.has(extra.key)) continue
-          seenKeys.add(extra.key)
-          items.push(extra)
-        }
-      }
-
-      if (items.length > 0) {
-        groups.push({ label: mod.label, items })
-      }
+  const groups: NavGroup[] = useMemo(() => {
+    if (navError) {
+      return fallbackGroups(permAllows)
     }
-  }
+    return navSections
+      .filter((sec) => sec.active)
+      .map((sec) => ({
+        label: sec.name,
+        items: sec.items
+          .filter((item) => !item.hidden)
+          .map((item) => ({
+            key: item.id ?? item.screenKey,
+            label: item.displayName,
+            icon: ICON_MAP[item.icon] ?? ShoppingBag,
+            page: PAGE_MAP[item.screenKey],
+            comingSoon: item.comingSoon,
+            perm: permForScreenKey(item.screenKey),
+            badge: item.badge ?? undefined,
+          }))
+          .filter((navItem) => permAllows(navItem)),
+        expanded: sec.expanded,
+        collapsible: sec.collapsible,
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [navSections, navError, permAllows])
 
-  // Filter by permissions
-  const filteredGroups = groups
-    .map((g) => ({ ...g, items: g.items.filter(permAllows) }))
-    .filter((g) => g.items.length > 0)
-
-  const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode", "garment-lookup"])
-  const validPages = new Set([
-    ...filteredGroups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
-    ...PROGRAMMATIC_PAGES,
-  ])
+  const validPages = useMemo(() => {
+    const pages = new Set([
+      ...groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
+      ...PROGRAMMATIC_PAGES,
+    ])
+    return pages
+  }, [groups])
 
   useEffect(() => {
-    if (crmState === null) return
+    if (!navLoaded) return
     if (!validPages.has(laundryPage)) setLaundryPage("dashboard")
-  }, [laundryPage, crmState])
+  }, [laundryPage, navLoaded, validPages])
 
   const navigate = (page?: LaundryBusinessPage) => {
     if (!page) return
@@ -325,23 +329,18 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   const renderNav = (collapsedTooltips = true) => (
     <>
-      {filteredGroups.map((section, gi) => {
+      {groups.map((section, gi) => {
         const gk = groupKey(section)
-        const canCollapse = !!section.label
+        const canCollapse = section.collapsible !== false && !!section.label
         const isCollapsed = canCollapse && collapsed.has(gk)
         return (
         <div key={`${gk}-${gi}`}>
-          {section.sectionHeader && (
-            <div className="px-3 pt-2.5 pb-0.5 mt-2 border-t border-slate-100">
-              <p className="text-[10px] font-extrabold tracking-widest uppercase text-slate-500">{section.sectionHeader}</p>
-            </div>
-          )}
           <SidebarGroup className="px-2 py-0">
           {section.label && (
             <SidebarGroupLabel asChild className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 mt-2 h-auto py-1 text-slate-400">
-              <button type="button" onClick={() => toggleGroup(gk)} className="w-full flex items-center justify-between gap-2 hover:text-slate-600 transition-colors">
+              <button type="button" onClick={() => canCollapse && toggleGroup(gk)} className="w-full flex items-center justify-between gap-2 hover:text-slate-600 transition-colors">
                 <span>{section.label}</span>
-                <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                {canCollapse && <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />}
               </button>
             </SidebarGroupLabel>
           )}

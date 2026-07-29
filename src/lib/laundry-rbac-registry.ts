@@ -48,6 +48,7 @@ export const SCREEN_MODULES: ModuleEntry[] = [
       { key: "bags", label: "Reusable Bags" },
       { key: "reports", label: "Reports" },
       { key: "settings", label: "Settings" },
+      { key: "navigation", label: "Navigation Manager" },
     ],
   },
   {

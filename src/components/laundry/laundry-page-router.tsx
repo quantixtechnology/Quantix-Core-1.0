@@ -42,9 +42,10 @@ function validateRoutes() {
     "inbox", "new-order", "audit-queue", "payment-queue", "packing-queue",
     "dispatch-queue", "store-receive-queue", "pickup-bags", "bag-management",
       "dispatch-center", "pickup-scheduler", "delivery-assignments", "delivery-executives", "mobile-apps",
-    "ready-delivery-queue", "customers", "stores", "settings",
-    "categories", "garments", "services", "pricing", "subscription-plans",
-    "charges-rules", "pricing-simulator", "subscriptions", "roles", "staff",
+      "ready-delivery-queue", "customers", "stores", "settings",
+      "categories", "garments", "services", "pricing", "subscription-plans",
+      "charges-rules", "pricing-simulator", "subscriptions", "roles", "staff",
+      "navigation",
   ])
   // Check sidebar pages that don't exist as routes
   for (const p of ALL_SIDEBAR) {
@@ -93,6 +94,7 @@ const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/view
 const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
 const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
+const LaundryNavigationManager = dynamic(() => import("@/components/laundry/views/laundry-navigation-settings").then(m => ({ default: m.LaundryNavigationManager })), { loading: () => <PageLoader /> })
 const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
 const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
 const CrmLeads = dynamic(() => import("@/components/laundry/views/crm/crm-leads").then(m => ({ default: m.CrmLeads })), { loading: () => <PageLoader /> })
@@ -140,6 +142,7 @@ export function LaundryPageRouter() {
     case "customers": return <LaundryCustomersView />
     case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
     case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
+    case "navigation": return <LaundryNavigationManager businessId={wsBusinessId} />
     case "categories": return <LaundryCategoriesMaster />
     case "garments": return <LaundryGarmentsMaster />
     case "services": return <LaundryServicesMaster />
