@@ -573,6 +573,10 @@ interface AdminState {
   // ── Customer invoice navigation ─────────────────────────────────────────
   selectedInvoiceId: string | null
   setSelectedInvoiceId: (id: string | null) => void
+
+  // ── Navigation manager revision (triggers sidebar re-fetch) ──────────────
+  navRevision: number
+  bumpNavRevision: () => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -771,4 +775,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   // Customer invoice navigation
   selectedInvoiceId: null,
   setSelectedInvoiceId: (id) => set({ selectedInvoiceId: id }),
+
+  // Navigation manager revision
+  navRevision: 0,
+  bumpNavRevision: () => set((s) => ({ navRevision: s.navRevision + 1 })),
 }))

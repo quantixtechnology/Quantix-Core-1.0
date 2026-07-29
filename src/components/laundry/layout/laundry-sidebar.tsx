@@ -13,6 +13,7 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName } from "@/lib/laundry-nav-config"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -21,7 +22,7 @@ import {
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
   WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone, Search,
-  Menu, type LucideIcon,
+  Menu, Calendar, type LucideIcon,
 } from "lucide-react"
 
 const VIEW_LEVEL = 1
@@ -79,68 +80,10 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "ShoppingCart": ShoppingCart, "WashingMachine": WashingMachine,
   "Calculator": Calculator, "Tags": Tags, "ChevronDown": ChevronDown,
   "Bike": Bike, "Smartphone": Smartphone, "Search": Search, "Menu": Menu,
-  "Circle": ShoppingBag,
+  "Circle": ShoppingBag, "Calendar": Calendar,
 }
 
-const PAGE_MAP: Record<string, LaundryBusinessPage | undefined> = {
-  "laundry.dashboard": "dashboard",
-  "laundry.orders": "orders",
-  "laundry.customers": "customers",
-  "laundry.subscriptions": "subscriptions",
-  "laundry.pricing": "pricing",
-  "laundry.stores": "stores",
-  "laundry.staff": "staff",
-  "laundry.bags": "bag-management",
-  "laundry.reports": "reports",
-  "laundry.settings": "settings",
-  "laundry.navigation": "navigation",
-  "crm.dashboard": "crm-dashboard",
-  "crm.leads": "crm-leads",
-  "crm.opportunity": "crm-opportunities",
-  "crm.activities": "crm-activities",
-  "crm.pipeline": "crm-tasks",
-  "crm.templates": "crm-settings",
-  "crm.reports": "crm-reports",
-  "crm.settings": "crm-settings",
-  "processing.console_receive": "processing-centers",
-  "processing.audit_barcode": "audit-barcode",
-  "processing.washing": "ws-wash",
-  "processing.drying": "ws-dry",
-  "processing.dry_cleaning": "ws-dryclean",
-  "processing.ironing": "ws-iron",
-  "processing.folding": "ws-fold",
-  "processing.quality_check": "ws-qc",
-  "processing.packing": "ws-pack",
-  "store_ops.store_audit": "audit-queue",
-  "store_ops.payment_collection": "payment-queue",
-  "store_ops.packing_qr": "packing-queue",
-  "store_ops.transit": "dispatch-queue",
-  "store_ops.store_receive": "store-receive-queue",
-  "store_ops.ready_for_delivery": "ready-delivery-queue",
-  "new-order": "new-order",
-  "garment-lookup": "garment-lookup",
-  "dispatch-center": "dispatch-center",
-  "pickup-scheduler": "pickup-scheduler",
-  "delivery-assignments": "delivery-assignments",
-  "pickup-bags": "pickup-bags",
-  "bag-management": "bag-management",
-  "delivery-executives": "delivery-executives",
-  "mobile-apps": "mobile-apps",
-  "roles": "roles",
-  "order-detail": "order-detail",
-  "audit-barcode": "audit-barcode",
-  "marketing-dashboard": "marketing-dashboard",
-  "marketing-discounts": "marketing-discounts",
-  "marketing-coupons": "marketing-coupons",
-  "marketing-reports": "marketing-reports",
-  "marketing-loyalty": "marketing-loyalty",
-  "marketing-membership": "marketing-membership",
-  "marketing-credits": "marketing-credits",
-  "marketing-giftcards": "marketing-giftcards",
-  "marketing-referral": "marketing-referral",
-  "marketing-campaigns": "marketing-campaigns",
-  "marketing-cart-recovery": "marketing-cart-recovery",
-}
+// PAGE_MAP is now imported as SCREEN_PAGE_MAP from @/lib/laundry-nav-config
 
 const EXTRA_PERM_MAP: Record<string, string> = {
   "new-order": "laundry.orders",
@@ -175,16 +118,23 @@ function permForScreenKey(screenKey: string): string | undefined {
   return EXTRA_PERM_MAP[screenKey] ?? (MODULE_PREFIXES.some((p) => screenKey.startsWith(p)) ? screenKey : undefined)
 }
 
-const FALLBACK_ITEMS: NavCfg[] = [
-  { key: "laundry.dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", perm: "laundry.dashboard" },
-  { key: "laundry.orders", label: "Orders", icon: ShoppingBag, page: "orders", perm: "laundry.orders" },
-  { key: "laundry.staff", label: "Staff", icon: UsersRound, page: "staff", perm: "laundry.staff" },
-  { key: "laundry.settings", label: "Settings", icon: Settings, page: "settings", perm: "laundry.settings" },
-]
-
 function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
-  const items = FALLBACK_ITEMS.filter((i) => permAllows(i))
-  return items.length > 0 ? [{ label: null, items }] : []
+  const defaults = defaultNavigationConfig()
+  const groups: NavGroup[] = defaults
+    .filter((sec) => sec.active)
+    .map((sec) => ({
+      label: sec.name,
+      items: sec.items.map((item) => ({
+        key: item.screenKey,
+        label: item.displayName ?? screenDisplayName(item.screenKey),
+        icon: ICON_MAP[item.icon ?? "Circle"] ?? ShoppingBag,
+        page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
+        comingSoon: item.comingSoon,
+        perm: permForScreenKey(item.screenKey),
+      })).filter((navItem) => permAllows(navItem)),
+    }))
+    .filter((g) => g.items.length > 0)
+  return groups.length > 0 ? groups : [{ label: null, items: [] }]
 }
 
 const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode", "garment-lookup"])
@@ -217,7 +167,7 @@ function persistCollapsed(s: Set<string>) {
 const groupKey = (g: { sectionHeader?: string; label: string | null }) => `${g.sectionHeader ?? ""}::${g.label ?? ""}`
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
-  const { laundryPage, setLaundryPage, currentBusinessId } = useAdminStore()
+  const { laundryPage, setLaundryPage, currentBusinessId, navRevision } = useAdminStore()
   const { user } = useAuthStore()
   const { isMobile } = useResponsive()
   const { screenLevels, isOwner, isLoaded } = useRuntimeAuth()
@@ -259,7 +209,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
         setNavError(true)
         setNavLoaded(true)
       })
-  }, [businessId])
+  }, [businessId, navRevision])
 
   const permAllows = useCallback((item: NavCfg) => {
     if (!isLoaded || isOwner) return true
@@ -281,7 +231,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
             key: item.id ?? item.screenKey,
             label: item.displayName,
             icon: ICON_MAP[item.icon] ?? ShoppingBag,
-            page: PAGE_MAP[item.screenKey],
+            page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
             comingSoon: item.comingSoon,
             perm: permForScreenKey(item.screenKey),
             badge: item.badge ?? undefined,

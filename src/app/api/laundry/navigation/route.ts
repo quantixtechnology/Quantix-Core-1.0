@@ -16,6 +16,34 @@ export async function GET(request: Request) {
   const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
+  const action = searchParams.get("action")
+
+  if (action === "available-screens") {
+    const screens: { screenKey: string; displayName: string }[] = []
+    for (const m of SCREEN_MODULES) {
+      if (m.key === "customer_app") continue
+      for (const s of m.screens) {
+        screens.push({ screenKey: `${m.key}.${s.key}`, displayName: s.label })
+      }
+    }
+    const extras = [
+      { screenKey: "new-order", displayName: "New Order" },
+      { screenKey: "garment-lookup", displayName: "Garment Lookup" },
+      { screenKey: "dispatch-center", displayName: "Dispatch Center" },
+      { screenKey: "pickup-scheduler", displayName: "Pickup Scheduler" },
+      { screenKey: "delivery-assignments", displayName: "Delivery Assignments" },
+      { screenKey: "pickup-bags", displayName: "Assign Bags" },
+      { screenKey: "bag-management", displayName: "Bag Management" },
+      { screenKey: "delivery-executives", displayName: "Delivery Executives" },
+      { screenKey: "mobile-apps", displayName: "Mobile Apps" },
+      { screenKey: "roles", displayName: "Roles & Permissions" },
+      { screenKey: "order-detail", displayName: "Order Detail" },
+      { screenKey: "audit-barcode", displayName: "Barcode Generation" },
+    ]
+    screens.push(...extras)
+    return NextResponse.json({ data: screens })
+  }
+
   await ensureNavigationConfig(biz.id)
 
   const nav = await db.laundryNavigation.findUnique({
@@ -233,32 +261,6 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({ data: restored })
-  }
-
-  if (action === "available-screens") {
-    const screens: { screenKey: string; displayName: string }[] = []
-    for (const m of SCREEN_MODULES) {
-      if (m.key === "customer_app") continue
-      for (const s of m.screens) {
-        screens.push({ screenKey: `${m.key}.${s.key}`, displayName: s.label })
-      }
-    }
-    const extras = [
-      { screenKey: "new-order", displayName: "New Order" },
-      { screenKey: "garment-lookup", displayName: "Garment Lookup" },
-      { screenKey: "dispatch-center", displayName: "Dispatch Center" },
-      { screenKey: "pickup-scheduler", displayName: "Pickup Scheduler" },
-      { screenKey: "delivery-assignments", displayName: "Delivery Assignments" },
-      { screenKey: "pickup-bags", displayName: "Assign Bags" },
-      { screenKey: "bag-management", displayName: "Bag Management" },
-      { screenKey: "delivery-executives", displayName: "Delivery Executives" },
-      { screenKey: "mobile-apps", displayName: "Mobile Apps" },
-      { screenKey: "roles", displayName: "Roles & Permissions" },
-      { screenKey: "order-detail", displayName: "Order Detail" },
-      { screenKey: "audit-barcode", displayName: "Barcode Generation" },
-    ]
-    screens.push(...extras)
-    return NextResponse.json({ data: screens })
   }
 
   await ensureNavigationConfig(businessId)
