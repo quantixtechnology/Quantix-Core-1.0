@@ -3,19 +3,23 @@ import { db } from "@/lib/db"
 import { ensureNavigationConfig, defaultNavigationConfig, screenDisplayName, screenIcon } from "@/lib/laundry-nav-config"
 import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const businessId = searchParams.get("businessId")
-  if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
+  const rawId = searchParams.get("businessId")
+  if (!rawId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
 
-  const ctx = await getLaundryAuthContext(businessId, request)
+  const biz = await resolveLaundryBusiness(rawId)
+  if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
+
+  const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
-  await ensureNavigationConfig(businessId)
+  await ensureNavigationConfig(biz.id)
 
   const nav = await db.laundryNavigation.findUnique({
-    where: { businessId },
+    where: { businessId: biz.id },
     include: {
       sections: {
         orderBy: { order: "asc" },
@@ -35,9 +39,13 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   const body = await request.json()
-  const { businessId, sections } = body
-  if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
+  const { businessId: rawId, sections } = body
+  if (!rawId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
   if (!Array.isArray(sections)) return NextResponse.json({ error: "sections array required" }, { status: 400 })
+
+  const biz = await resolveLaundryBusiness(rawId)
+  if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
+  const businessId = biz.id
 
   const ctx = await getLaundryAuthContext(businessId, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
@@ -148,8 +156,12 @@ export async function PUT(request: Request) {
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url)
-  const businessId = searchParams.get("businessId")
-  if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
+  const rawId = searchParams.get("businessId")
+  if (!rawId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
+
+  const biz = await resolveLaundryBusiness(rawId)
+  if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
+  const businessId = biz.id
 
   const action = searchParams.get("action")
 
