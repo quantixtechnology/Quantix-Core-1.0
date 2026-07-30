@@ -1,21 +1,63 @@
 "use client"
 
+import { useCallback, useEffect, useState } from "react"
 import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Truck, Scan, Thermometer, Home, Shield } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Truck, Scan, Thermometer, Home, Shield, Loader2, Save } from "lucide-react"
 import { LaundryStorageWidget } from "./laundry-storage-widget"
 import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
 import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
 import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
+import { toast } from "sonner"
 
 interface WorkspaceSettingsProps {
   businessId: string
 }
 
+type TransportMode = "PACKET" | "BAG" | "BOTH"
+
 export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps) {
   const { isEnabled, loading } = useLaundryLicensing(businessId)
+  const [storeToProcessing, setStoreToProcessing] = useState<TransportMode>("PACKET")
+  const [processingToStore, setProcessingToStore] = useState<TransportMode>("PACKET")
+  const [configLoading, setConfigLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const loadConfig = useCallback(async () => {
+    setConfigLoading(true)
+    try {
+      const j = await fetch(`/api/laundry/transport-settings?businessId=${businessId}`).then((r) => r.json())
+      if (j.success) {
+        setStoreToProcessing(j.data.storeToProcessingTransportMode || "PACKET")
+        setProcessingToStore(j.data.processingToStoreTransportMode || "PACKET")
+      }
+    } catch { /* noop */ } finally { setConfigLoading(false) }
+  }, [businessId])
+
+  useEffect(() => { if (!loading) loadConfig() }, [loading, loadConfig])
+
+  const saveConfig = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/laundry/transport-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, storeToProcessingTransportMode: storeToProcessing, processingToStoreTransportMode: processingToStore }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
+      toast.success("Transport settings saved")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
+  }
+
+  const MODES: { value: TransportMode; label: string }[] = [
+    { value: "PACKET", label: "Packet QR Only" },
+    { value: "BAG", label: "Scan Bag Only" },
+    { value: "BOTH", label: "Both" },
+  ]
 
   if (loading) {
     return <div className="py-8 text-center text-gray-400">Loading settings...</div>
@@ -71,11 +113,23 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
 
       <LaundryPaymentProvidersForm businessId={businessId} />
 
+      <TransportModeCard
+        storeToProcessing={storeToProcessing}
+        processingToStore={processingToStore}
+        onStoreToProcessingChange={setStoreToProcessing}
+        onProcessingToStoreChange={setProcessingToStore}
+        loading={configLoading}
+        saving={saving}
+        onSave={saveConfig}
+        modes={MODES}
+      />
+
       <div className="grid gap-4">
         {sections
           .filter(s => s.visible)
           .map(s => {
             const Icon = s.icon
+            if (s.key === "transportEnabled") return null
             return (
               <Card key={s.key}>
                 <CardHeader className="pb-3">
@@ -127,5 +181,64 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
         )}
       </div>
     </div>
+  )
+}
+
+function RadioGroup({ value, onChange, modes }: { value: TransportMode; onChange: (v: TransportMode) => void; modes: { value: TransportMode; label: string }[] }) {
+  return (
+    <div className="flex gap-4">
+      {modes.map((m) => (
+        <label key={m.value} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer ${value === m.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+          <input type="radio" name="transport-mode" value={m.value} checked={value === m.value} onChange={() => onChange(m.value)} className="accent-blue-600" />
+          {m.label}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function TransportModeCard({
+  storeToProcessing, processingToStore, onStoreToProcessingChange, onProcessingToStoreChange,
+  loading, saving, onSave, modes,
+}: {
+  storeToProcessing: TransportMode; processingToStore: TransportMode
+  onStoreToProcessingChange: (v: TransportMode) => void; onProcessingToStoreChange: (v: TransportMode) => void
+  loading: boolean; saving: boolean; onSave: () => void
+  modes: { value: TransportMode; label: string }[]
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+            <Truck className="h-4 w-4" />
+          </div>
+          <div>
+            <CardTitle className="text-sm">Transport Setup</CardTitle>
+            <p className="text-xs text-muted-foreground">Configure how items are identified during transit between stores and processing centers.</p>
+          </div>
+          <Badge variant="outline" className="ml-auto text-[10px]">Active</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-400 py-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading configuration…</div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">Store → Processing Center Transport</p>
+              <RadioGroup value={storeToProcessing} onChange={onStoreToProcessingChange} modes={modes} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">Processing Center → Store Transport</p>
+              <RadioGroup value={processingToStore} onChange={onProcessingToStoreChange} modes={modes} />
+            </div>
+            <Button onClick={onSave} disabled={saving} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Transport Settings
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

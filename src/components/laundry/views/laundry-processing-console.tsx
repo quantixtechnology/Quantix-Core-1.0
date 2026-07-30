@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2, Printer, QrCode as QrIcon, X } from "lucide-react"
+import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2, Printer, QrCode, QrCode as QrIcon, X } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
@@ -110,6 +110,9 @@ export function LaundryProcessingConsole() {
   const [acting, setActing] = useState(false)
   const [code, setCode] = useState("")
   const [looking, setLooking] = useState(false)
+  const [bagCode, setBagCode] = useState("")
+  const [transportMode, setTransportMode] = useState<string>("PACKET")
+  const [returnTransportMode, setReturnTransportMode] = useState<string>("PACKET")
 
   const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
@@ -123,6 +126,11 @@ export function LaundryProcessingConsole() {
   // Live queues: refresh on tab focus + a light poll so received packets and
   // department counts update without a manual page refresh.
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/transport-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) { setTransportMode(j.data.storeToProcessingTransportMode); setReturnTransportMode(j.data.processingToStoreTransportMode) } }).catch(() => {})
+  }, [currentBusinessId])
 
   // Receive a dispatched packet → immediately open Barcode Generation.
   const receive = async (orderId: string) => {
@@ -152,6 +160,21 @@ export function LaundryProcessingConsole() {
       }
       setCode("")
       await receive(p.order.id)
+      load()
+    } catch { toast({ title: "Lookup failed", variant: "destructive" }) } finally { setLooking(false) }
+  }
+
+  const lookupByBagAndReceive = async (raw?: string) => {
+    const q = (raw ?? bagCode).trim()
+    if (!q || !currentBusinessId) return
+    setLooking(true)
+    try {
+      const bj = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
+      const bag = (bj.data || []).find((b: { bagNumber: string; qrValue: string; currentOrderId?: string }) => (b.bagNumber || "").toUpperCase() === q.toUpperCase() || (b.qrValue || "") === q) || (bj.data || [])[0]
+      if (!bag) { toast({ title: "Not found", description: `No bag matches "${q}"`, variant: "destructive" }); return }
+      if (!bag.currentOrderId) { toast({ title: "Bag not linked", description: `Bag ${bag.bagNumber} is not currently assigned to any order.`, variant: "destructive" }); return }
+      setBagCode("")
+      await receive(bag.currentOrderId)
       load()
     } catch { toast({ title: "Lookup failed", variant: "destructive" }) } finally { setLooking(false) }
   }
@@ -194,11 +217,18 @@ export function LaundryProcessingConsole() {
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm"><CardContent className="p-4">
         <div className="flex items-center gap-3 max-w-2xl">
           <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupAndReceive()} placeholder="Scan packet QR or enter packet / order code (PKT-… / ORD-…)" className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
-          {/* Camera scan: scanning a packet QR looks it up and receives it in one step
-              (single-shot — the scanner closes after each successful scan). */}
-          <BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
-          <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
+          {transportMode !== "BAG" && (
+            <><BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
+            <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button></>
+          )}
         </div>
+        {transportMode !== "PACKET" && (
+          <div className="flex items-center gap-3 max-w-2xl mt-2">
+            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-emerald-500" /><Input value={bagCode} onChange={(e) => setBagCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupByBagAndReceive()} placeholder="Scan bag QR to receive…" className="pl-10 h-11 bg-white border-emerald-200 font-mono" /></div>
+            <BagScanButton label="Scan Bag" onScan={(c) => lookupByBagAndReceive(c)} disabled={looking} closeOnScan className="h-11 bg-emerald-600 hover:bg-emerald-700 text-white" />
+            <Button onClick={() => lookupByBagAndReceive()} disabled={looking || !bagCode.trim()} className="h-11 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
+          </div>
+        )}
       </CardContent></Card>
 
       {/* Department summary */}
@@ -291,16 +321,16 @@ export function LaundryProcessingConsole() {
           {dispatchRow && (
             <div className="space-y-4">
               <div className="text-sm text-slate-600"><span className="font-mono font-semibold">{dispatchRow.orderNumber}</span> · {dispatchRow.items} garment(s){dispatchRow.toStore ? ` · ${dispatchRow.toStore}` : ""}</div>
-              {dispatchRow.packetNumber ? (
+              {returnTransportMode !== "BAG" && dispatchRow.packetNumber ? (
                 <div className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-3">
                   <ReturnQr value={dispatchRow.packetNumber} />
                   <p className="font-mono text-sm font-bold">{dispatchRow.packetNumber}</p>
                   <p className="text-[11px] text-slate-400">Same QR it was sent with — put it on the return package so the store can scan it.</p>
                   <Button variant="outline" size="sm" className="gap-1" onClick={() => printReturnLabel(dispatchRow.packetNumber!, dispatchRow.orderNumber, dispatchRow.toStore)}><Printer className="h-3.5 w-3.5" /> Print QR</Button>
                 </div>
-              ) : <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">No packet on this order — the store can still receive by order number.</p>}
+              ) : returnTransportMode !== "BAG" ? <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">No packet on this order — the store can still receive by order number.</p> : null}
               <div className="space-y-1.5">
-                <p className="text-[12px] font-semibold text-slate-600">Return bag <span className="font-normal text-slate-400">(optional — any available bag)</span></p>
+                <p className="text-[12px] font-semibold text-slate-600">Return bag <span className="font-normal text-slate-400">{returnTransportMode === "BAG" ? "(scan bag to dispatch)" : "(optional — any available bag)"}</span></p>
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1"><QrIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={dispatchBag} onChange={(e) => setDispatchBag(e.target.value)} placeholder="Scan / enter bag no." className="pl-8 h-10 font-mono text-sm" /></div>
                   <BagScanButton label="Scan" size="sm" onScan={(c) => setDispatchBag(c)} closeOnScan className="h-10" />
