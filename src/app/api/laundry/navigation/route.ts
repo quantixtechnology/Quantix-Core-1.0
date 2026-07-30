@@ -4,6 +4,7 @@ import { ensureNavigationConfig, defaultNavigationConfig, screenDisplayName, scr
 import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { isPlatformRole } from "@/lib/permissions"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -77,7 +78,7 @@ export async function PUT(request: Request) {
 
   const ctx = await getLaundryAuthContext(businessId, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-  const canEdit = ctx.role === "owner" || ctx.role === "super_admin"
+  const canEdit = ctx.role === "owner" || isPlatformRole(ctx.role)
   if (!canEdit) {
     return NextResponse.json({ error: "Only Business Owner or Super Admin can modify navigation" }, { status: 403 })
   }
@@ -197,7 +198,7 @@ export async function POST(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   if (action === "restore-default") {
-    if (ctx.role !== "owner" && ctx.role !== "super_admin") {
+    if (ctx.role !== "owner" && !isPlatformRole(ctx.role)) {
       return NextResponse.json({ error: "Only Business Owner or Super Admin can restore defaults" }, { status: 403 })
     }
 
