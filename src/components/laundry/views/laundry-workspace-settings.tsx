@@ -184,12 +184,12 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
   )
 }
 
-function RadioGroup({ value, onChange, modes }: { value: TransportMode; onChange: (v: TransportMode) => void; modes: { value: TransportMode; label: string }[] }) {
+function RadioGroup({ name, value, onChange, modes }: { name: string; value: TransportMode; onChange: (v: TransportMode) => void; modes: { value: TransportMode; label: string }[] }) {
   return (
     <div className="flex gap-4">
       {modes.map((m) => (
         <label key={m.value} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer ${value === m.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-          <input type="radio" name="transport-mode" value={m.value} checked={value === m.value} onChange={() => onChange(m.value)} className="accent-blue-600" />
+          <input type="radio" name={name} value={m.value} checked={value === m.value} onChange={() => onChange(m.value)} className="accent-blue-600" />
           {m.label}
         </label>
       ))}
@@ -227,11 +227,11 @@ function TransportModeCard({
           <div className="space-y-4">
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">Store → Processing Center Transport</p>
-              <RadioGroup value={storeToProcessing} onChange={onStoreToProcessingChange} modes={modes} />
+              <RadioGroup name="store-to-processing" value={storeToProcessing} onChange={onStoreToProcessingChange} modes={modes} />
             </div>
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">Processing Center → Store Transport</p>
-              <RadioGroup value={processingToStore} onChange={onProcessingToStoreChange} modes={modes} />
+              <RadioGroup name="processing-to-store" value={processingToStore} onChange={onProcessingToStoreChange} modes={modes} />
             </div>
             <Button onClick={onSave} disabled={saving} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Transport Settings
