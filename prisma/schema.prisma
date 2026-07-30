@@ -4443,6 +4443,7 @@ model LaundryDeliveryExecutive {
   name          String
   mobile        String
   storeId       String? // assigned store
+  canReject     Boolean  @default(true)
   vehicleType   String? // BIKE | SCOOTER | CAR | VAN | CYCLE | null
   vehicleNumber String? // registration plate (optional)
   photo         String? // profile photo URL (optional; future customer-facing)

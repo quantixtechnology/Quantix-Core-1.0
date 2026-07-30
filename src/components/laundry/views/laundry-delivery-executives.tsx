@@ -24,7 +24,7 @@ import { AppShareCard } from "@/components/laundry/apps/app-share-card"
 interface Store { id: string; storeName: string }
 interface Exec {
   id: string; employeeCode: string; name: string; mobile: string
-  storeId: string | null; storeName: string | null; vehicleType: string | null
+  storeId: string | null; storeName: string | null; canReject: boolean; vehicleType: string | null
   vehicleNumber: string | null; photo: string | null
   isActive: boolean; availability: string; currentStatus: string | null
   isLocked: boolean; lockedUntil: string | null; failedAttempts: number
@@ -32,7 +32,7 @@ interface Exec {
   todaysPickups: number; todaysDeliveries: number
 }
 const VEHICLES = ["BIKE", "SCOOTER", "CAR", "VAN", "CYCLE"]
-const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", vehicleNumber: "", photo: "", password: "", isActive: true }
+const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", vehicleNumber: "", photo: "", password: "", isActive: true, canReject: true }
 const fmtLogin = (s: string | null) => s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never"
 const waMessage = (business: string, code: string, mobile: string, appUrl: string, password?: string) =>
   `Welcome to ${business}.\n\nEmployee Code:\n${code}\n\nMobile:\n${mobile}\n${password ? `\nPassword:\n${password}\n` : ""}\nExecutive App\n${appUrl}`
@@ -74,7 +74,7 @@ export function LaundryDeliveryExecutives() {
   useEffect(() => { load() }, [load])
 
   const openNew = () => { setEditing(null); setForm({ ...EMPTY }); setOpen(true) }
-  const openEdit = (e: Exec) => { setEditing(e); setForm({ name: e.name, mobile: e.mobile, employeeCode: e.employeeCode, storeId: e.storeId || "", vehicleType: e.vehicleType || "", vehicleNumber: e.vehicleNumber || "", photo: e.photo || "", password: "", isActive: e.isActive }); setOpen(true) }
+  const openEdit = (e: Exec) => { setEditing(e); setForm({ name: e.name, mobile: e.mobile, employeeCode: e.employeeCode, storeId: e.storeId || "", vehicleType: e.vehicleType || "", vehicleNumber: e.vehicleNumber || "", photo: e.photo || "", password: "", isActive: e.isActive, canReject: e.canReject }); setOpen(true) }
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Name is required"); return }
@@ -83,8 +83,8 @@ export function LaundryDeliveryExecutives() {
     try {
       const url = editing ? `/api/laundry/delivery-executives/${editing.id}` : "/api/laundry/delivery-executives"
       const payload = editing
-        ? { businessId: currentBusinessId, name: form.name, mobile: form.mobile, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, isActive: form.isActive }
-        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, employeeCode: form.employeeCode || undefined, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, password: form.password || undefined, isActive: form.isActive }
+        ? { businessId: currentBusinessId, name: form.name, mobile: form.mobile, canReject: form.canReject, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, isActive: form.isActive }
+        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, canReject: form.canReject, employeeCode: form.employeeCode || undefined, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, password: form.password || undefined, isActive: form.isActive }
       const res = await fetch(url, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.success === false) throw new Error(j.error || "Save failed")
@@ -211,6 +211,7 @@ export function LaundryDeliveryExecutives() {
               {!editing && <div className="col-span-2"><Label>Login Password</Label><Input value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="Leave blank to auto-generate" /></div>}
             </div>
             <label className="flex items-center gap-2 text-sm"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} /> Active</label>
+            <div><Label className="text-xs">Can Reject?</Label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1.5 text-sm"><input type="radio" name="canReject" checked={form.canReject} onChange={() => set("canReject", true)} className="accent-blue-600" /> Yes</label><label className="flex items-center gap-1.5 text-sm"><input type="radio" name="canReject" checked={!form.canReject} onChange={() => set("canReject", false)} className="accent-blue-600" /> No</label></div></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id: orderId, businessId: biz.id },
-      select: { id: true, status: true, deliveryRequired: true, deliveryExecutiveId: true, deliveryCompletedAt: true },
+      select: { id: true, status: true, deliveryRequired: true, deliveryExecutiveId: true, deliveryCompletedAt: true, storeId: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.deliveryCompletedAt)
@@ -34,10 +34,11 @@ export async function POST(request: Request) {
     if (execId) {
       const ex = await prisma.laundryDeliveryExecutive.findFirst({
         where: { id: execId, businessId: biz.id, isActive: true },
-        select: { name: true },
+        select: { name: true, storeId: true },
       })
       if (!ex) return NextResponse.json({ error: "Executive not found or inactive" }, { status: 404 })
       execName = ex.name
+      if (ex.storeId && order.storeId !== ex.storeId) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to this order" }, { status: 403 })
     }
 
     // Persist the scheduled date + slot (previously only stuffed into `notes`, so

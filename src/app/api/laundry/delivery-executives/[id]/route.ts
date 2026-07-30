@@ -37,7 +37,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       success: true,
       data: {
-        id: exec.id, employeeCode: exec.employeeCode, name: exec.name, mobile: exec.mobile,
+        id: exec.id, employeeCode: exec.employeeCode, name: exec.name, mobile: exec.mobile, canReject: exec.canReject,
         isLocked: exec.isLocked, lockedUntil: exec.lockedUntil, failedAttempts: exec.failedAttempts,
         lastLoginIp: exec.lastLoginIp, lastLoginDevice: exec.lastLoginDevice, lastLoginAt: user?.lastLoginAt ?? null,
         mustChangePassword: user?.mustChangePassword ?? false,
@@ -62,6 +62,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const data: Record<string, unknown> = {}
     if (b.name !== undefined) data.name = String(b.name).trim()
     if (b.mobile !== undefined) data.mobile = String(b.mobile).trim()
+    if (b.canReject !== undefined) data.canReject = !!b.canReject
     if (b.storeId !== undefined) data.storeId = b.storeId || null
     if (b.vehicleType !== undefined) data.vehicleType = b.vehicleType || null
     if (b.vehicleNumber !== undefined) data.vehicleNumber = b.vehicleNumber ? String(b.vehicleNumber).trim() : null

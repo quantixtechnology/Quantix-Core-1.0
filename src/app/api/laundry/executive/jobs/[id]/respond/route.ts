@@ -26,6 +26,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const assignedTo = type === "delivery" ? order.deliveryExecutiveId : order.pickupExecutiveId
     if (assignedTo !== session.executiveId) return NextResponse.json({ error: "This job is not assigned to you" }, { status: 403 })
 
+    if (!accept) {
+      const exec = await prisma.laundryDeliveryExecutive.findUnique({ where: { id: session.executiveId }, select: { canReject: true } })
+      if (exec && !exec.canReject) return NextResponse.json({ error: "You are not allowed to reject assignments" }, { status: 403 })
+    }
+
     const actor = { id: session.executiveId, name: b.executiveName ?? "Executive" }
     const P = type === "delivery"
     if (accept) {

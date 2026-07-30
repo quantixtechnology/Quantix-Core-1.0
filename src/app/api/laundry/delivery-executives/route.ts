@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     const lastLogin = new Map(users.map((u) => [u.id, u.lastLoginAt]))
 
     const data = execs.map((e) => ({
-      id: e.id, employeeCode: e.employeeCode, name: e.name, mobile: e.mobile,
+      id: e.id, employeeCode: e.employeeCode, name: e.name, mobile: e.mobile, canReject: e.canReject,
       storeId: e.storeId, storeName: e.store?.storeName ?? null, vehicleType: e.vehicleType,
       vehicleNumber: e.vehicleNumber, photo: e.photo,
       isActive: e.isActive, availability: e.availability, currentStatus: e.currentStatus,
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     const exec = await prisma.laundryDeliveryExecutive.create({
       data: {
         businessId: lbId, userId: user.id, employeeCode, name, mobile,
-        storeId: b.storeId || null, vehicleType: b.vehicleType || null,
+        storeId: b.storeId || null, canReject: b.canReject !== undefined ? !!b.canReject : true, vehicleType: b.vehicleType || null,
         vehicleNumber: b.vehicleNumber ? String(b.vehicleNumber).trim() : null,
         photo: b.photo ? String(b.photo).trim() : null,
         isActive: b.isActive !== undefined ? !!b.isActive : true,

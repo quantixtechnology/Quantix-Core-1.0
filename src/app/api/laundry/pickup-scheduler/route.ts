@@ -377,18 +377,24 @@ export async function POST(request: Request) {
 
     const execId: string | null = b.executiveId || null
     let execName: string | null = null
+    let execStoreId: string | null = null
     if (execId) {
-      const ex = await prisma.laundryDeliveryExecutive.findFirst({ where: { id: execId, businessId: biz.id, isActive: true }, select: { name: true } })
+      const ex = await prisma.laundryDeliveryExecutive.findFirst({ where: { id: execId, businessId: biz.id, isActive: true }, select: { name: true, storeId: true } })
       if (!ex) return NextResponse.json({ error: "Executive not found or inactive" }, { status: 404 })
       execName = ex.name
+      execStoreId = ex.storeId
     }
     const actor = { id: guard.ctx?.userId ?? null, name: guard.ctx?.userName ?? "Supervisor" }
 
     // ── Bulk ──────────────────────────────────────────────────────────────
     const orderIds: string[] = b.orderIds
     if (orderIds && Array.isArray(orderIds) && orderIds.length > 0) {
-      const found = await prisma.laundryOrder.findMany({ where: { id: { in: orderIds }, businessId: biz.id }, select: { id: true } })
+      const found = await prisma.laundryOrder.findMany({ where: { id: { in: orderIds }, businessId: biz.id }, select: { id: true, storeId: true } })
       if (found.length !== orderIds.length) return NextResponse.json({ error: "Some orders not found" }, { status: 404 })
+      if (execId && execStoreId) {
+        const mismatched = found.filter((o) => o.storeId !== execStoreId)
+        if (mismatched.length > 0) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to orders from other stores" }, { status: 403 })
+      }
       if (!execId) {
         if (type === "delivery") {
           await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { deliveryExecutiveId: null, deliveryAssignedAt: null, deliveryAcceptance: null, deliveryAcceptedAt: null, fieldStatus: null } })
@@ -413,8 +419,9 @@ export async function POST(request: Request) {
 
     // ── Single ────────────────────────────────────────────────────────────
     if (!b.orderId) return NextResponse.json({ error: "orderId required" }, { status: 400 })
-    const order = await prisma.laundryOrder.findFirst({ where: { id: b.orderId, businessId: biz.id }, select: { id: true } })
+    const order = await prisma.laundryOrder.findFirst({ where: { id: b.orderId, businessId: biz.id }, select: { id: true, storeId: true } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    if (execId && execStoreId && order.storeId !== execStoreId) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to this order" }, { status: 403 })
 
     if (type === "delivery") {
       await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: execId ? new Date() : null, deliveryAcceptance: execId ? "PENDING" : null, deliveryAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
