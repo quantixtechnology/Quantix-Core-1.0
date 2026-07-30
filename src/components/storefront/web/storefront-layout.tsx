@@ -90,7 +90,7 @@ export function StorefrontLayout({
           {isSub ? (
             <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>{formatINR(item.price)}</p>
           ) : isBag ? (
-            <p className="text-[11px] font-medium text-blue-600 mt-1">Pickup bag · counted at audit</p>
+            <p className="text-[11px] font-medium text-blue-600 mt-1">Pickup bag · Cloth count would be post service</p>
           ) : isWeightService ? (
             <p className="text-[11px] font-medium text-gray-500 mt-1">~{item.weightKg || 0} kg (est.)</p>
           ) : item.billedAfterAudit ? null : (

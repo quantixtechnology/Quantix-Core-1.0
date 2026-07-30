@@ -57,7 +57,7 @@ export function makeBagLine(o: { serviceId: string; serviceName: string }): Cart
   return {
     kind: "laundry",
     productId: `bag:${o.serviceId}`, variantId: o.serviceId,
-    name: o.serviceName, variantName: "Pickup bag · counted at audit",
+    name: o.serviceName, variantName: "Pickup bag · Cloth count would be post service",
     serviceId: o.serviceId, serviceName: o.serviceName,
     price: 0, mrp: 0, image: "", isVeg: null,
     bagMode: true, billedAfterAudit: true,

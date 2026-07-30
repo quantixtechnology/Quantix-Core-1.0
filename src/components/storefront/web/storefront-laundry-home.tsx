@@ -973,7 +973,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                     {g.lines.map((l) => (
                       <div key={`${l.productId}-${l.variantId}`} className="flex justify-between text-sm pl-1">
                         <span className="text-gray-600">{l.bagMode ? "Pickup bag" : l.garmentId ? `${l.quantity} × ${l.name}` : `~${l.weightKg || "?"} kg (est.)`}</span>
-                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">{l.bagMode ? "Counted at audit" : "Billed after audit"}</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
+                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">Cloth count would be post service</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
                       </div>
                     ))}
                   </div>

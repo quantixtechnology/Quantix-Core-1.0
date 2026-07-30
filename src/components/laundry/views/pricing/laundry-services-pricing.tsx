@@ -175,7 +175,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
               <div className="space-y-2">
                 <Label className="text-sm text-slate-600">Order Mode</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {([["GARMENT", "Garment Based", "Customer counts garments at booking"], ["BAG", "Pickup First (Bag)", "Book service only · counted at audit"]] as const).map(([v, label, desc]) => (
+                  {([["GARMENT", "Garment Based", "Customer counts garments at booking"], ["BAG", "Pickup First (Bag)", "Book service only · Cloth count would be post service"]] as const).map(([v, label, desc]) => (
                     <button type="button" key={v} onClick={() => set("orderMode", v)} className={`rounded-xl border p-4 text-left transition-colors ${form.orderMode === v ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
                       <p className={`text-[15px] font-semibold ${form.orderMode === v ? "text-blue-700" : "text-slate-700"}`}>{label}</p>
                       <p className="text-[13px] text-slate-400 leading-snug mt-1">{desc}</p>
