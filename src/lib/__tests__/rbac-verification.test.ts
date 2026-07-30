@@ -73,6 +73,9 @@ describe("Gate 2: Legacy-to-new permission migration", () => {
     "laundry.orders": ["view", "create", "edit", "delete", "cancel", "print", "export", "refund"],
     "laundry.customers": ["view", "create", "edit", "delete", "merge", "invite"],
     "laundry.subscriptions": ["view", "create", "edit", "delete", "renew", "cancel", "adjust"],
+    "laundry.services": ["view", "create", "edit", "delete"],
+    "laundry.categories": ["view", "create", "edit", "delete"],
+    "laundry.garments": ["view", "create", "edit", "delete"],
     "laundry.pricing": ["view", "edit_pricing", "edit_billing_type", "delete_rules"],
     "laundry.stores": ["view", "create", "edit", "delete"],
     "laundry.staff": ["view", "create", "edit", "delete", "assign_role"],
@@ -85,7 +88,6 @@ describe("Gate 2: Legacy-to-new permission migration", () => {
     "crm.activities": ["view", "create", "edit", "delete"],
     "crm.pipeline": ["view", "edit"],
     "crm.settings": ["view", "edit"],
-    "crm.templates": ["view", "edit"],
     "crm.reports": ["view", "export"],
     "processing.console_receive": ["view", "operate", "override"],
     "processing.audit_barcode": ["view", "operate", "override"],
@@ -173,7 +175,7 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    expect(allScreens.length).toBe(38) // 10 laundry + 1 navigation + 8 crm + 9 processing + 6 store_ops + 4 customer_appssing + 6 store_ops + 4 customer_app
+    expect(allScreens.length).toBe(40) // 14 laundry + 7 crm + 9 processing + 6 store_ops + 4 customer_app
   })
 
   it("every screen key validates correctly", () => {
@@ -233,6 +235,9 @@ describe("Gate 3b: Sidebar entries audit", () => {
     // Orders & Customers
     "laundry.orders", "laundry.customers", "laundry.orders",
     // Services & Pricing
+    "laundry.services",
+    "laundry.categories",
+    "laundry.garments",
     "laundry.pricing", "laundry.pricing", "laundry.pricing", "laundry.pricing",
     "laundry.pricing", "laundry.pricing", "laundry.pricing",
     // Business Management
@@ -264,9 +269,8 @@ describe("Gate 3b: Sidebar entries audit", () => {
       // The following screens are accessed programmatically (not from sidebar):
       //   laundry.bags       — via bag-management, pickup-bags drill-downs
       //   crm.pipeline       — embedded within CRM pipeline view
-      //   crm.templates      — CRM settings sub-tab
       //   processing.packing — reached via processing flow, not standalone nav
-      if (["laundry.bags", "crm.pipeline", "crm.templates", "processing.packing"].includes(sk)) continue
+      if (["laundry.bags", "crm.pipeline", "processing.packing"].includes(sk)) continue
       if (!permSet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])
@@ -626,7 +630,7 @@ describe("Gate 8: Sidebar-registry consistency", () => {
     "crm.dashboard", "crm.leads", "crm.opportunity", "crm.activities",
     "crm.reports", "crm.settings",
     "laundry.dashboard", "laundry.orders", "laundry.customers",
-    "laundry.pricing", "laundry.stores", "laundry.staff",
+    "laundry.services", "laundry.categories", "laundry.garments", "laundry.pricing", "laundry.stores", "laundry.staff",
     "laundry.subscriptions", "laundry.reports", "laundry.settings",
     "laundry.navigation",
     "processing.console_receive", "processing.audit_barcode",
@@ -651,7 +655,7 @@ describe("Gate 8: Sidebar-registry consistency", () => {
     const missing: string[] = []
     for (const sk of allScreens) {
       if (sk.startsWith("customer_app.")) continue
-      if (["laundry.bags", "crm.pipeline", "crm.templates", "processing.packing"].includes(sk)) continue
+      if (["laundry.bags", "crm.pipeline", "processing.packing"].includes(sk)) continue
       if (!permSet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])
