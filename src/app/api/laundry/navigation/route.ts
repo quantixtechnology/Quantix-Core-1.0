@@ -77,7 +77,7 @@ export async function PUT(request: Request) {
 
   const ctx = await getLaundryAuthContext(businessId, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-  const canEdit = ctx.role === "owner" || (ctx.isSupportMode && ctx.role === "super_admin")
+  const canEdit = ctx.role === "owner" || ctx.role === "super_admin"
   if (!canEdit) {
     return NextResponse.json({ error: "Only Business Owner or Super Admin can modify navigation" }, { status: 403 })
   }
@@ -197,7 +197,7 @@ export async function POST(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   if (action === "restore-default") {
-    if (ctx.role !== "owner" && !(ctx.isSupportMode && ctx.role === "super_admin")) {
+    if (ctx.role !== "owner" && ctx.role !== "super_admin") {
       return NextResponse.json({ error: "Only Business Owner or Super Admin can restore defaults" }, { status: 403 })
     }
 
