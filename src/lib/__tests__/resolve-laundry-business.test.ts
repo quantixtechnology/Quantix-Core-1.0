@@ -55,28 +55,28 @@ describe('resolveLaundryBusiness', () => {
   })
 
   it('2. matches existing LaundryBusiness by its own id', async () => {
-    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-001' })
 
     const result = await resolveLaundryBusiness(LB_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-001' })
     expect(mockLaundryFindFirst).toHaveBeenCalledWith({
       where: { OR: [{ id: LB_ID }, { platformBusinessId: LB_ID }] },
-      select: { id: true, platformBusinessId: true },
+      select: { id: true, platformBusinessId: true, businessCode: true },
     })
     expect(mockBusinessFindUnique).not.toHaveBeenCalled()
     expect(mockLaundryCreate).not.toHaveBeenCalled()
   })
 
   it('3. matches existing LaundryBusiness by platformBusinessId (Open Workspace)', async () => {
-    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-001' })
     expect(mockLaundryFindFirst).toHaveBeenCalledWith({
       where: { OR: [{ id: PLATFORM_ID }, { platformBusinessId: PLATFORM_ID }] },
-      select: { id: true, platformBusinessId: true },
+      select: { id: true, platformBusinessId: true, businessCode: true },
     })
   })
 
@@ -101,7 +101,7 @@ describe('resolveLaundryBusiness', () => {
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: ORPHAN_LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: ORPHAN_LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'VSL' })
     // Orphan was found by businessName + null platformBusinessId
     expect(mockLaundryFindFirst).toHaveBeenNthCalledWith(2, {
       where: { businessName: 'VASTRASUDHA LAUNDRY', platformBusinessId: null },
@@ -131,11 +131,11 @@ describe('resolveLaundryBusiness', () => {
     // Orphan lookup → null (no orphan with this name)
     mockLaundryFindFirst.mockResolvedValueOnce(null)
     // Create → new record
-    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
     expect(mockLaundryUpdate).not.toHaveBeenCalled()
     expect(mockLaundryCreate).toHaveBeenCalledTimes(1)
   })
@@ -153,18 +153,18 @@ describe('resolveLaundryBusiness', () => {
       productCode: 'LAUNDRY',
     })
     mockLaundryFindFirst.mockResolvedValueOnce(null) // orphan lookup → null
-    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
     expect(mockLaundryCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         businessName: 'Test Laundry',
         platformBusinessId: PLATFORM_ID,
         status: 'ACTIVE',
       }),
-      select: { id: true, platformBusinessId: true },
+      select: { id: true, platformBusinessId: true, businessCode: true },
     })
   })
 
@@ -179,11 +179,11 @@ describe('resolveLaundryBusiness', () => {
       productCode: null,
     })
     mockLaundryFindFirst.mockResolvedValueOnce(null) // orphan lookup
-    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
     expect(mockLaundryCreate).toHaveBeenCalled()
   })
 
@@ -218,11 +218,11 @@ describe('resolveLaundryBusiness', () => {
     // Create throws (unique constraint — concurrent request)
     mockLaundryCreate.mockRejectedValueOnce(new Error('Unique constraint'))
     // Retry finds the concurrent record
-    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryFindFirst.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
     expect(mockLaundryCreate).toHaveBeenCalledTimes(1)
     // findFirst called: OR lookup, orphan lookup, retry = 3 times
     expect(mockLaundryFindFirst).toHaveBeenCalledTimes(3)
@@ -270,11 +270,11 @@ describe('resolveLaundryBusiness', () => {
       productCode: 'LAUNDRY',
     })
     // orphan lookup skipped because business.name is falsy
-    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    mockLaundryCreate.mockResolvedValueOnce({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
 
     const result = await resolveLaundryBusiness(PLATFORM_ID)
 
-    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID })
+    expect(result).toEqual({ id: LB_ID, platformBusinessId: PLATFORM_ID, businessCode: 'LND-202607-0001' })
     expect(mockLaundryFindFirst).toHaveBeenCalledTimes(1) // only OR lookup, no orphan lookup
     expect(mockLaundryCreate).toHaveBeenCalledTimes(1)
   })

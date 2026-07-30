@@ -180,7 +180,7 @@ export async function GET(
     pngBuffer = await generateFallback(initial, primaryColor, size)
   }
 
-  return new Response(pngBuffer, {
+  return new Response(new Uint8Array(pngBuffer), {
     status: 200,
     headers: {
       'Content-Type':          'image/png',

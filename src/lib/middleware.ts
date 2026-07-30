@@ -262,6 +262,9 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           if (typeof userOrError === 'string') {
             return createErrorResponse(userOrError, 401);
           }
+          if (!userOrError) {
+            return createErrorResponse('Authentication failed', 401);
+          }
           const user = userOrError;
           (req as AuthenticatedRequest).user = user;
 

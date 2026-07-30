@@ -6,7 +6,7 @@
 import crypto from 'crypto'
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL'
-export type LogCategory = 'AUTH' | 'PROVISIONING' | 'PAYMENT' | 'EMAIL' | 'WORKSPACE' | 'API' | 'DATABASE' | 'CONFIG'
+export type LogCategory = 'AUTH' | 'PROVISIONING' | 'PAYMENT' | 'EMAIL' | 'WORKSPACE' | 'API' | 'DATABASE' | 'CONFIG' | 'FILES'
 
 export interface LogEntry {
   timestamp: string

@@ -28,7 +28,7 @@ type BeforeInstallPromptEvent = Event & {
 // Typed window extension for the early-capture script in layout.tsx
 declare global {
   interface Window {
-    __bip:            BeforeInstallPromptEvent | null
+    __bip?:            BeforeInstallPromptEvent | null
     __bipCapturedAt:  number | null
   }
 }
