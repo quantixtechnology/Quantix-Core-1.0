@@ -973,13 +973,13 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                     {g.lines.map((l) => (
                       <div key={`${l.productId}-${l.variantId}`} className="flex justify-between text-sm pl-1">
                         <span className="text-gray-600">{l.bagMode ? "Pickup bag" : l.garmentId ? `${l.quantity} × ${l.name}` : `~${l.weightKg || "?"} kg (est.)`}</span>
-                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">Cloth count would be post service</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
+                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">—</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
                       </div>
                     ))}
                   </div>
                 ))}
                 {cartSubtotalPieces > 0 && <div className="flex justify-between text-sm pt-1 border-t border-gray-50"><span className="text-gray-500">Laundry Services</span><span className="font-medium">{inr(cartSubtotalPieces)}</span></div>}
-                {cartKgPortion && <p className="text-[11px] text-amber-700">Weight-based items are measured during Store Audit; those charges are invoiced after the audit.</p>}
+                {(cartKgPortion || cartGroups.some((g) => g.lines.some((l) => l.billedAfterAudit))) && <p className="text-[11px] text-amber-700">Final Cloth count would be done at the Store</p>}
                 {subscriptionInCart && (
                   <div className="flex justify-between text-sm items-start">
                     <span className="text-gray-500">Subscription · {subscriptionInCart.name}<br /><span className="text-[10px] text-gray-400">Pay now, applies from next order</span></span>
