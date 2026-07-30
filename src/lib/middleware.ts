@@ -15,7 +15,7 @@ import { resolveTenantFromHostname } from './tenant-resolver';
 // ============================================================================
 
 export interface RouteContext {
-  params?: Promise<Record<string, string | string[]>> | undefined;
+  params?: Promise<Record<string, string | string[]>>;
 }
 
 interface AuthenticatedRequest extends NextRequest {

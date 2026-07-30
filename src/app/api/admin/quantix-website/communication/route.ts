@@ -25,7 +25,6 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: "webs
           enableClickToCall: true,
           contactFormEnabled: true,
           socialLinks: "{}",
-          publishStatus: "DRAFT",
         },
       })
     }
@@ -77,7 +76,7 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: "we
 
     const comm = await db.websiteCommunication.upsert({
       where: { id: "singleton" },
-      create: { id: "singleton", ...data, publishStatus: "DRAFT" },
+      create: { id: "singleton", ...data },
       update: data,
     })
 

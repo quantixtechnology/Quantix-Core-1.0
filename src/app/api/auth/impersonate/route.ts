@@ -61,7 +61,7 @@ export async function GET(request: Request) {
     }
 
     let platformBusiness: { id: string; name: string; slug: string; businessType: string; status: string; primaryColor: string | null; logo: string | null } | null = null
-    let laundryBusiness: { id: string; businessName: string; status: string; plan: string } | null = null
+    let laundryBusiness: { id: string; businessName: string; status: string; plan: string; platformBusinessId: string | null } | null = null
 
     if (laundryBusinessId) {
       laundryBusiness = await prisma.laundryBusiness.findUnique({
@@ -110,7 +110,7 @@ export async function GET(request: Request) {
       }
       laundryBusiness = await prisma.laundryBusiness.findUnique({
         where: { platformBusinessId },
-        select: { id: true, businessName: true, status: true, plan: true },
+        select: { id: true, businessName: true, status: true, plan: true, platformBusinessId: true },
       })
       if (!laundryBusiness) {
         return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })

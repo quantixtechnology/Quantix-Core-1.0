@@ -7,7 +7,7 @@
 import { withMiddleware } from '@/lib/middleware'
 import { ProductRuntimeRegistry } from '@/lib/product-runtime-registry'
 
-export const GET = withMiddleware({ permission: 'products:view' })(
+export const GET = withMiddleware({ requiredPermission: 'products:view' })(
   async (req) => {
     try {
       const products = await ProductRuntimeRegistry.getAllProducts()

@@ -52,7 +52,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: "web
       data: {
         ...data,
         displayOrder: (maxOrder?.displayOrder ?? 0) + 1,
-        publishStatus: "DRAFT",
       },
     })
 

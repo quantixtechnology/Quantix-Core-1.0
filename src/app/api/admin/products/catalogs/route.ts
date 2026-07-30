@@ -8,7 +8,7 @@ import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import { getAllProductsWithCatalogs } from '@/lib/product-registry-init'
 
-export const GET = withMiddleware({ permission: 'products:view' })(
+export const GET = withMiddleware({ requiredPermission: 'products:view' })(
   async (req, ctx) => {
     try {
       const productsWithCatalogs = await getAllProductsWithCatalogs()

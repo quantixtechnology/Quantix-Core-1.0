@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       select: {
         id: true, orderNumber: true, pickupCompletedAt: true, pickupExecutiveId: true,
         pickupAssignedAt: true, pickupAcceptedAt: true, pickupAcceptance: true,
-        pickupExecutive: { select: { name: true } },
+
       },
       take: 1000,
     })
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
               orderId: o.id, businessId: biz.id,
               toStatus: "DELIVERED", action: "PICKUP_ASSIGNED",
               actorName: "System Migration",
-              note: o.pickupExecutive?.name ? `→ ${o.pickupExecutive.name}` : null,
+              note: o.pickupExecutiveId ? `→ ${o.pickupExecutiveId}` : null,
               createdAt: o.pickupAssignedAt || o.pickupCompletedAt!,
             },
           })
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
             data: {
               orderId: o.id, businessId: biz.id,
               toStatus: "DELIVERED", action: "PICKUP_ACCEPTED",
-              actorName: o.pickupExecutive?.name || null,
+              actorName: o.pickupExecutiveId || null,
               createdAt: o.pickupAcceptedAt || o.pickupCompletedAt!,
             },
           })
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         data: {
           orderId: o.id, businessId: biz.id,
           toStatus: "DELIVERED", action: "PICKUP_COMPLETED",
-          actorName: o.pickupExecutive?.name || "System Migration",
+          actorName: o.pickupExecutiveId || "System Migration",
           createdAt: o.pickupCompletedAt!,
         },
       })
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
         id: true, orderNumber: true, deliveredAt: true, deliveredBy: true, recipientName: true,
         deliveryExecutiveId: true, deliveryAssignedAt: true, deliveryAcceptedAt: true,
         deliveryAcceptance: true, deliveryCompletedAt: true,
-        deliveryExecutive: { select: { name: true } },
+
       },
       take: 1000,
     })
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
               orderId: o.id, businessId: biz.id,
               toStatus: "DELIVERED", action: "DELIVERY_ASSIGNED",
               actorName: "System Migration",
-              note: o.deliveryExecutive?.name ? `→ ${o.deliveryExecutive.name}` : null,
+              note: o.deliveryExecutiveId ? `→ ${o.deliveryExecutiveId}` : null,
               createdAt: o.deliveryAssignedAt || o.deliveredAt!,
             },
           })
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
           orderId: o.id, businessId: biz.id,
           fromStatus: "READY_FOR_DELIVERY", toStatus: "DELIVERED",
           action: "MARK_DELIVERED",
-          actorName: o.deliveredBy || o.deliveryExecutive?.name || "System Migration",
+          actorName: o.deliveredBy || o.deliveryExecutiveId || "System Migration",
           note: o.recipientName ? `Received by ${o.recipientName}` : null,
           createdAt: completedAt,
         },

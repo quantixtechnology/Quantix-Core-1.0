@@ -22,7 +22,6 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: "webs
           accentColor: "#2563EB",
           fontFamily: "Inter, sans-serif",
           buttonStyle: "rounded",
-          publishStatus: "DRAFT",
         },
       })
     }
@@ -61,7 +60,7 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: "we
 
     const theme = await db.websiteTheme.upsert({
       where: { id: "singleton" },
-      create: { id: "singleton", ...data, publishStatus: "DRAFT" },
+      create: { id: "singleton", ...data },
       update: data,
     })
 

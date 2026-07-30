@@ -8,14 +8,10 @@ import { withMiddleware } from '@/lib/middleware'
 import { getCompleteProductProfile } from '@/lib/product-management'
 import { getProductRolePermissions } from '@/lib/product-permissions'
 
-type Ctx = {
-  params?: Promise<Record<string, string | string[]>>
-}
-
-export const GET = withMiddleware({ permission: 'products:view' })(
-  async (req, ctx: Ctx) => {
+export const GET = withMiddleware({ requiredPermission: 'products:view' })(
+  async (req, ctx) => {
     try {
-      const params = await ctx.params
+      const params = await ctx?.params
       const productCode = params?.id as string
 
       if (!productCode) {

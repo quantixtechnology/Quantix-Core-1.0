@@ -183,22 +183,21 @@ export async function createBusiness(data: CreateBusinessRequest) {
     throw new Error(`Invalid planTier "${requestedPlanTier}". Allowed values: STANDARD, PRO`);
   }
 
-  let plan = null;
+  const plan = data.planId
+    ? await db.platformPlan.findUnique({ where: { id: data.planId } })
+    : await db.platformPlan.findUnique({ where: { tier: requestedPlanTier } });
+  if (!plan) {
+    const msg = data.planId
+      ? `Platform plan "${data.planId}" not found`
+      : `No ${requestedPlanTier} plan found. Please seed platform plans first.`;
+    throw new Error(msg);
+  }
   if (data.planId) {
-    plan = await db.platformPlan.findUnique({ where: { id: data.planId } });
-    if (!plan) {
-      throw new Error(`Platform plan "${data.planId}" not found`);
-    }
     if (!validPlanTiers.includes(plan.tier as typeof validPlanTiers[number])) {
       throw new Error(`Platform plan "${data.planId}" has invalid tier "${plan.tier}". Allowed values: STANDARD, PRO`);
     }
     if (data.planTier && data.planTier !== plan.tier) {
       throw new Error(`planTier "${data.planTier}" does not match plan tier "${plan.tier}" for planId "${data.planId}".`);
-    }
-  } else {
-    plan = await db.platformPlan.findUnique({ where: { tier: requestedPlanTier } });
-    if (!plan) {
-      throw new Error(`No ${requestedPlanTier} plan found. Please seed platform plans first.`);
     }
   }
 

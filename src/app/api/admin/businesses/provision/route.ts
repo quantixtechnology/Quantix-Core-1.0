@@ -7,7 +7,7 @@
 import { withMiddleware } from '@/lib/middleware'
 import { provisionBusiness, getProvisioningStatus } from '@/lib/business-provisioning'
 
-export const POST = withMiddleware({ permission: 'businesses:create' })(
+export const POST = withMiddleware({ requiredPermission: 'businesses:create' })(
   async (req) => {
     try {
       const body = await req.json()
@@ -74,7 +74,7 @@ export const POST = withMiddleware({ permission: 'businesses:create' })(
  * GET /api/admin/businesses/provision?businessId=...
  * Get provisioning status
  */
-export const GET = withMiddleware({ permission: 'businesses:view' })(
+export const GET = withMiddleware({ requiredPermission: 'businesses:view' })(
   async (req) => {
     try {
       const url = new URL(req.url)

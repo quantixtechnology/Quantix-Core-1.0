@@ -10,7 +10,7 @@ import {
   validateProductAssignment,
 } from '@/lib/business-product-assignment'
 
-export const POST = withMiddleware({ permission: 'businesses:create' })(
+export const POST = withMiddleware({ requiredPermission: 'businesses:create' })(
   async (req) => {
     try {
       const body = await req.json()
