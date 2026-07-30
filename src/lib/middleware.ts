@@ -14,6 +14,10 @@ import { resolveTenantFromHostname } from './tenant-resolver';
 // TYPES
 // ============================================================================
 
+export interface RouteContext {
+  params?: Promise<Record<string, string | string[]>>;
+}
+
 interface AuthenticatedRequest extends NextRequest {
   user?: {
     id: string;
@@ -28,12 +32,12 @@ interface AuthenticatedRequest extends NextRequest {
   businessContext?: BusinessContext;
 }
 
-type HandlerFunction = (
+export type HandlerFunction = (
   req: AuthenticatedRequest,
-  context?: { params?: Promise<Record<string, string | string[]>> }
+  context?: RouteContext
 ) => Promise<Response>;
 
-interface MiddlewareConfig {
+export interface MiddlewareConfig {
   requireAuth?: boolean;
   requireBusinessContext?: boolean;
   requirePlatformAdmin?: boolean;
@@ -257,6 +261,9 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           // String return = a specific auth error message → 401
           if (typeof userOrError === 'string') {
             return createErrorResponse(userOrError, 401);
+          }
+          if (!userOrError) {
+            return createErrorResponse('Authentication failed', 401);
           }
           const user = userOrError;
           (req as AuthenticatedRequest).user = user;

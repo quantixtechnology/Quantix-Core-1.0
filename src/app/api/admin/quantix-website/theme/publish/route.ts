@@ -12,11 +12,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: "web
   async (req: AuthenticatedRequest) => {
     const theme = await db.websiteTheme.update({
       where: { id: "singleton" },
-      data: {
-        publishStatus: "PUBLISHED",
-        publishedAt: new Date(),
-        publishedBy: req.user?.id,
-      },
+      data: {},
     })
 
     // Log audit

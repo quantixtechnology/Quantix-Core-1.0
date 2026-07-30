@@ -32,16 +32,16 @@ class LaundryProvisioner implements ProductProvisioner {
       // 1. Create default laundry store
       const laundryStore = await db.laundryStore.create({
         data: {
-          businessId,
+          laundryBusinessId: businessId,
           storeCode: `${business.slug}-laundry-1`,
           storeName: `${business.name} Laundry`,
           address: business.address || '',
           city: business.city || '',
           state: business.state || '',
           pincode: business.pincode || '',
-          status: 'ACTIVE',
-          contactPhone: business.contactPhone || '',
-          contactEmail: business.contactEmail || '',
+          isActive: true,
+          mobile: business.contactPhone || '',
+          email: business.contactEmail || '',
         },
       })
 
@@ -49,12 +49,10 @@ class LaundryProvisioner implements ProductProvisioner {
       const processingCenter = await db.laundryProcessingCenter.create({
         data: {
           businessId,
-          storeId: laundryStore.id,
           centerName: `${business.name} Processing Center`,
           centerCode: `${business.slug}-processing-1`,
-          status: 'ACTIVE',
           address: business.address || '',
-          capacity: 1000,
+          dailyCapacityKg: 1000,
         },
       })
 

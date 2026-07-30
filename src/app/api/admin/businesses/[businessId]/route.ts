@@ -7,19 +7,15 @@ import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-interface RouteContext {
-  params?: Promise<{ businessId: string }>
-}
-
 /**
  * GET /api/admin/businesses/[businessId]
  * Retrieve business details with full lifecycle info
  */
 export const GET = withMiddleware({ requireAuth: true })(
-  async (req, ctx: RouteContext) => {
+  async (req, ctx) => {
     try {
-      const params = await ctx.params
-      const businessId = params?.businessId
+      const params = await ctx?.params
+      const businessId = params?.businessId as string | undefined
 
       if (!businessId) {
         return NextResponse.json(
@@ -74,10 +70,10 @@ export const GET = withMiddleware({ requireAuth: true })(
  * Update business information
  */
 export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: 'businesses:update' })(
-  async (req, ctx: RouteContext) => {
+  async (req, ctx) => {
     try {
-      const params = await ctx.params
-      const businessId = params?.businessId
+      const params = await ctx?.params
+      const businessId = params?.businessId as string | undefined
 
       if (!businessId) {
         return NextResponse.json(

@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { ReceiptOrder } from "@/components/business/pos/thermal-receipt-v2"
 import {
   Dialog,
   DialogContent,
@@ -1129,7 +1130,7 @@ export function POSProduction() {
   };
 
   // ---- Thermal receipt data for print dialog ----
-  const receiptOrderData = useMemo(() => ({
+  const receiptOrderData: ReceiptOrder = useMemo(() => ({
     orderNumber: lastBillNumber || generateBillNumber(getDemoOrderPrefix(currentBusinessType)),
     date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
     time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }),
@@ -1153,8 +1154,8 @@ export function POSProduction() {
     paymentMethod: activePaymentMethod,
     amountInWords: numberToWords(Math.round(totalAmount)),
     taxBreakdown: cartSummary.taxBreakdown,
-    customerName: selectedCustomerData?.name,
-    customerPhone: selectedCustomerData?.phone,
+    customerName: selectedCustomerData?.name ?? undefined,
+    customerPhone: selectedCustomerData?.phone ?? undefined,
   }), [cart, cartSummary, discountAmount, totalAmount, activePaymentMethod, selectedCustomerData, lastBillNumber]);
 
   const storeInfo = useMemo(() => getDemoStoreInfo(currentBusinessType), [currentBusinessType]);

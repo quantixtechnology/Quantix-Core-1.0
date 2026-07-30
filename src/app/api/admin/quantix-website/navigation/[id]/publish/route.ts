@@ -18,11 +18,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: "web
 
     const item = await db.websiteNavigation.update({
       where: { id },
-      data: {
-        publishStatus: "PUBLISHED",
-        publishedAt: new Date(),
-        publishedBy: req.user?.id,
-      },
+      data: {},
     })
 
     // Log audit

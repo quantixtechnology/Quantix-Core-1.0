@@ -7,14 +7,10 @@
 import { withMiddleware } from '@/lib/middleware'
 import { getProductWithCatalog } from '@/lib/product-registry-init'
 
-type Ctx = {
-  params?: Promise<Record<string, string | string[]>>
-}
-
-export const GET = withMiddleware({ permission: 'products:view' })(
-  async (req, ctx: Ctx) => {
+export const GET = withMiddleware({ requiredPermission: 'products:view' })(
+  async (req, ctx) => {
     try {
-      const params = await ctx.params
+      const params = await ctx?.params
       const code = params?.code as string
 
       if (!code) {

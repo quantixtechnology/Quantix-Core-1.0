@@ -86,11 +86,11 @@ export async function customerTimeline(customerId: string, limit = 100): Promise
   const orders = await prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: limit })
   const orderIds = orders.map((o) => o.id)
   const [payments, subs, activities, events, packets] = await Promise.all([
-    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds } }, select: { amount: true, method: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([]),
+    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds } }, select: { amount: true, method: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { amount: number; method: string; createdAt: Date; orderId: string }[]),
     prisma.customerSubscription.findMany({ where: { customerId }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.customerActivity.findMany({ where: { customerId }, orderBy: { createdAt: "desc" }, take: limit }),
-    orderIds.length ? prisma.laundryOrderEvent.findMany({ where: { orderId: { in: orderIds } }, select: { action: true, actorName: true, note: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([]),
-    orderIds.length ? prisma.laundryPacket.findMany({ where: { orderId: { in: orderIds } }, select: { packetNumber: true, orderId: true, createdAt: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
+    orderIds.length ? prisma.laundryOrderEvent.findMany({ where: { orderId: { in: orderIds } }, select: { action: true, actorName: true, note: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { action: string; actorName: string | null; note: string | null; createdAt: Date; orderId: string }[]),
+    orderIds.length ? prisma.laundryPacket.findMany({ where: { orderId: { in: orderIds } }, select: { packetNumber: true, orderId: true, createdAt: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([] as { packetNumber: string; orderId: string; createdAt: Date }[]),
   ])
   const orderNo = new Map(orders.map((o) => [o.id, o.orderNumber]))
   const packetMap = new Map(packets.map((p) => [p.orderId, p.packetNumber]))

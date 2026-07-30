@@ -7,7 +7,7 @@
 import { withMiddleware } from '@/lib/middleware'
 import { getAvailableProductsForCreation } from '@/lib/business-product-assignment'
 
-export const GET = withMiddleware({ permission: 'businesses:create' })(
+export const GET = withMiddleware({ requiredPermission: 'businesses:create' })(
   async (req) => {
     try {
       const products = await getAvailableProductsForCreation()

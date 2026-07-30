@@ -74,8 +74,7 @@ async function handlePaymentSuccess(paymentId: string, amount: number, metadata:
     where: { id: subscriptionId },
     data: {
       status: 'ACTIVE',
-      lastPaymentAt: new Date(),
-      lastPaymentId: paymentId,
+      lastPaymentDate: new Date(),
     },
   })
 
@@ -112,8 +111,7 @@ async function handlePaymentFailure(paymentId: string, metadata: Record<string, 
   await db.businessSubscription.update({
     where: { id: subscriptionId },
     data: {
-      status: 'PAYMENT_FAILED',
-      lastPaymentAt: new Date(),
+      status: 'PAST_DUE',
     },
   })
 }

@@ -25,6 +25,7 @@ const DEBUG = process.env.DEBUG_LAUNDRY_RESOLUTION === "true"
 export interface ResolvedLaundryBusiness {
   id: string                    // LaundryBusiness.id — used for laundry FKs (stores, orders)
   platformBusinessId: string | null  // platform Business.id — used for shared Customer records
+  businessCode: string          // unique business code for the laundry
 }
 
 export async function resolveLaundryBusiness(input: string | null | undefined): Promise<ResolvedLaundryBusiness | null> {
@@ -38,7 +39,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
   // ── Step 2 — Lookup by platformBusinessId ────────────────────────────────────
   const existing = await prisma.laundryBusiness.findFirst({
     where: { OR: [{ id: input }, { platformBusinessId: input }] },
-    select: { id: true, platformBusinessId: true },
+    select: { id: true, platformBusinessId: true, businessCode: true },
   })
   if (existing) {
     if (DEBUG) {
@@ -81,7 +82,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
         data: { platformBusinessId: business.id },
       })
       if (DEBUG) console.log("[resolveLaundryBusiness] orphan repaired → returning id:", orphan.id)
-      return { id: orphan.id, platformBusinessId: business.id }
+      return { id: orphan.id, platformBusinessId: business.id, businessCode: business.businessCode || `LND-${orphan.id}` }
     }
     if (DEBUG) console.log("[resolveLaundryBusiness] no orphan matches name:", business.name)
   }
@@ -99,7 +100,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
         platformBusinessId: business.id,
         status: "ACTIVE",
       },
-      select: { id: true, platformBusinessId: true },
+      select: { id: true, platformBusinessId: true, businessCode: true },
     })
     if (DEBUG) console.log("[resolveLaundryBusiness] created →", created.id)
     return created
@@ -107,7 +108,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
     if (DEBUG) console.log("[resolveLaundryBusiness] create() threw — racing?")
     const raced = await prisma.laundryBusiness.findFirst({
       where: { platformBusinessId: business.id },
-      select: { id: true, platformBusinessId: true },
+      select: { id: true, platformBusinessId: true, businessCode: true },
     })
     if (raced) {
       if (DEBUG) console.log("[resolveLaundryBusiness] raced found →", raced.id)

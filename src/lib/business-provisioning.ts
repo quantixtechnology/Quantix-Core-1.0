@@ -592,7 +592,7 @@ async function generateWorkspaceConfigStep(businessId: string, workspaceId: stri
     roles: roles.map((r) => ({
       id: r.id,
       name: r.name,
-      code: r.code,
+      code: r.name,
       permissions: JSON.parse(r.permissions || '[]'),
     })),
     localization: {
