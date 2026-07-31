@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { advanceBagsForOrder } from "@/lib/laundry-bag-assign"
+import { ensureDeliveryVerification } from "@/lib/laundry-verification"
+import { notifyDeliveryOtpGenerated } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
 
@@ -54,6 +56,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     // Keep the reusable bags' lifecycle in step with the order (display accuracy).
     await advanceBagsForOrder(biz.id, order.id, "READY_FOR_DELIVERY")
+
+    // Delivery verification (Workflow Settings): the order is now READY_FOR_DELIVERY —
+    // snapshot the method and generate the Delivery OTP. Best-effort + non-fatal.
+    try {
+      const dv = await ensureDeliveryVerification(biz.id, order.id)
+      if (dv.method === "OTP" && dv.otp) {
+        await notifyDeliveryOtpGenerated(order.id, biz.id, dv.otp)
+      }
+    } catch (e) {
+      console.error("[laundry-order-store-receive] delivery verification init failed:", e)
+    }
 
     return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber } })
   } catch (e) {

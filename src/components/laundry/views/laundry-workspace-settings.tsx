@@ -11,6 +11,7 @@ import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
 import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
 import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
+import { LaundryVerificationSettingsForm } from "./laundry-verification-settings-form"
 import { toast } from "sonner"
 
 interface WorkspaceSettingsProps {
@@ -108,6 +109,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryFinancialSettingsForm businessId={businessId} />
 
       <LaundrySlotSettingsForm businessId={businessId} />
+
+      <LaundryVerificationSettingsForm businessId={businessId} />
 
       <LaundryPaymentSettingsForm businessId={businessId} />
 

@@ -46,6 +46,8 @@ interface OrderRow {
   grandTotal: number; amountPaid: number; balanceDue: number; paymentStatus: string
   expectedDeliveryDate: string | null; itemCount: number; customerId?: string | null
   auditComplete?: boolean
+  deliveryOtp?: string | null; deliveryVerificationMethod?: string | null
+  pickupOtp?: string | null; pickupVerificationMethod?: string | null
   store?: { storeName: string | null } | null
   customer?: { name: string; phone: string | null } | null
 }
@@ -693,6 +695,11 @@ export function LaundryReadyForDelivery() {
   const [delAddrLoading, setDelAddrLoading] = useState(false)
   const [deliverySlots, setDeliverySlots] = useState<string[]>(generateSlots(DEFAULT_DELIVERY_SLOT))
   const [deliveryFullSlots, setDeliveryFullSlots] = useState<string[]>([])
+  // Customer verification (Workflow Settings): the configured method for this
+  // order + the OTP the customer provides. Delivery cannot complete without it.
+  const [verifyMethod, setVerifyMethod] = useState<"OTP" | "NAME">("OTP")
+  const [otp, setOtp] = useState("")
+  const [regenBusy, setRegenBusy] = useState(false)
 
   // Config-driven delivery slots (Settings → Time Slots) — same source everywhere.
   useEffect(() => {
@@ -713,6 +720,7 @@ export function LaundryReadyForDelivery() {
 
   const openOrder = async (o: OrderRow | null) => {
     setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
+    setOtp(""); setVerifyMethod(o?.deliveryVerificationMethod === "NAME" ? "NAME" : "OTP")
     setDelForm({ address: "", date: new Date().toISOString().split("T")[0], timeSlot: "", assignNow: false, executiveId: "" })
     setDelAddresses([])
     if (o && currentBusinessId) {
@@ -756,13 +764,29 @@ export function LaundryReadyForDelivery() {
     try {
       const res = await fetch(`/api/laundry/orders/${selected.id}/deliver`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, recipientName: recipient || undefined, note: note || undefined }),
+        body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, recipientName: recipient || undefined, note: note || undefined, method: verifyMethod, otp: verifyMethod === "OTP" ? otp : undefined }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Delivery failed")
       toast.success(`${j.data.orderNumber} delivered (${j.data.deliveryType}) 🎉`)
       setSelected(null); queue.load()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Delivery failed") } finally { setBusy(false) }
+  }
+
+  // Business Admin recovery: regenerate the Delivery OTP (customer pinged in-app
+  // with the new code). Only valid for OTP-verification orders.
+  const regenerateOtp = async () => {
+    if (!selected || !currentBusinessId) return
+    setRegenBusy(true)
+    try {
+      const j = await fetch(`/api/laundry/orders/${selected.id}/otp`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, kind: "delivery", actorName: user?.name }),
+      }).then((r) => r.json())
+      if (!j.success) throw new Error(j.error || "Could not regenerate")
+      setSelected({ ...selected, deliveryOtp: j.data.otp })
+      toast.success(`New delivery OTP: ${j.data.otp} — the customer has been notified`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not regenerate") } finally { setRegenBusy(false) }
   }
 
   const pickupType = selected && (selected.orderType === "WALK_IN" || selected.orderType === "STORE_DROP")
@@ -876,11 +900,40 @@ export function LaundryReadyForDelivery() {
             </div>
           )}
 
+          {/* Customer verification — mandatory before handover/delivery. The
+              method comes from Workflow Settings (snapshot on the order). */}
+          <div className={`rounded-lg border p-3 space-y-3 ${verifyMethod === "OTP" ? "border-amber-200 bg-amber-50/60" : "border-blue-200 bg-blue-50/60"}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-slate-700 flex items-center gap-1.5"><ClipboardCheck className="h-4 w-4 text-slate-500" /> Verify Customer Before {pickupType ? "Handover" : "Delivery"}</p>
+              <Badge variant="outline" className="text-[10px]">{verifyMethod === "OTP" ? "OTP" : "Customer Name"}</Badge>
+            </div>
+            {verifyMethod === "OTP" ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2">
+                    <p className="text-[10px] uppercase text-slate-400">Delivery OTP (ask the customer)</p>
+                    <p className="font-mono text-lg font-bold tracking-[0.25em] text-slate-800">{selected.deliveryOtp || "—"}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-9 gap-1" onClick={regenerateOtp} disabled={regenBusy || busy}>
+                    {regenBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Regenerate
+                  </Button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Customer-provided OTP</Label>
+                  <Input className="h-9 font-mono tracking-widest" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="Enter the OTP the customer shares" inputMode="numeric" />
+                </div>
+                {!selected.deliveryOtp && <p className="text-[11px] text-amber-600">No OTP yet — regenerate one to hand to the customer, or the customer can read it in their app.</p>}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">Confirm the identity of <b className="text-slate-800">{selected.customer?.name || "the customer"}</b> in person before completing.</p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><Label className="text-xs">Received By (recipient)</Label><Input className="h-9" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Delivery Note (optional)</Label><Input className="h-9" value={note} onChange={(e) => setNote(e.target.value)} /></div>
           </div>
-          <Button onClick={deliver} disabled={busy || !covered} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:bg-slate-300">
+          <Button onClick={deliver} disabled={busy || !covered || (verifyMethod === "OTP" && !otp.trim())} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:bg-slate-300">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {pickupType ? "Hand Over to Customer" : "Complete Delivery"}
           </Button>
         </CardContent></Card>

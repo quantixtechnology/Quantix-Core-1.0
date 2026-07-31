@@ -60,6 +60,7 @@ interface Job {
   address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
   deliveryBagNumber: string | null
+  pickupVerificationMethod: string; deliveryVerificationMethod: string
   balanceDue: number; paymentStatus: string | null
 }
 
@@ -527,8 +528,8 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
         </div>
       )}
 
-      {verifyOpen && <VerifyDialog customerName={job.customerName} onClose={() => setVerifyOpen(false)} onConfirm={(method, value) => { setVerifyOpen(false); setStatus("REACHED", { verify: true, verifyMethod: method, verifyValue: value }) }} />}
-      {deliverOpen && <DeliverDialog customerName={job.customerName} color={brand.color} onClose={() => setDeliverOpen(false)} onConfirm={(recipientName, method, otp) => { setDeliverOpen(false); deliver("delivered", { recipientName, method, otp }) }} />}
+      {verifyOpen && <VerifyDialog customerName={job.customerName} defaultMethod={job.pickupVerificationMethod === "NAME" ? "NAME" : "OTP"} onClose={() => setVerifyOpen(false)} onConfirm={(method, value) => { setVerifyOpen(false); setStatus("REACHED", { verify: true, verifyMethod: method, verifyValue: value }) }} />}
+      {deliverOpen && <DeliverDialog customerName={job.customerName} color={brand.color} defaultMethod={job.deliveryVerificationMethod === "NAME" ? "NAME" : "OTP"} onClose={() => setDeliverOpen(false)} onConfirm={(recipientName, method, otp) => { setDeliverOpen(false); deliver("delivered", { recipientName, method, otp }) }} />}
     </div>
   )
 }
@@ -551,8 +552,8 @@ function StepList({ current }: { current: number }) {
   )
 }
 
-function VerifyDialog({ customerName, onClose, onConfirm }: { customerName: string; onClose: () => void; onConfirm: (method: string, value: string) => void }) {
-  const [method, setMethod] = useState<"NAME" | "OTP">("NAME")
+function VerifyDialog({ customerName, defaultMethod, onClose, onConfirm }: { customerName: string; defaultMethod: "NAME" | "OTP"; onClose: () => void; onConfirm: (method: string, value: string) => void }) {
+  const [method, setMethod] = useState<"NAME" | "OTP">(defaultMethod)
   const [value, setValue] = useState("")
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -571,8 +572,8 @@ function VerifyDialog({ customerName, onClose, onConfirm }: { customerName: stri
   )
 }
 
-function DeliverDialog({ customerName, color, onClose, onConfirm }: { customerName: string; color: string; onClose: () => void; onConfirm: (recipientName: string, method: string, otp: string) => void }) {
-  const [method, setMethod] = useState<"NAME" | "OTP">("NAME")
+function DeliverDialog({ customerName, color, defaultMethod, onClose, onConfirm }: { customerName: string; color: string; defaultMethod: "NAME" | "OTP"; onClose: () => void; onConfirm: (recipientName: string, method: string, otp: string) => void }) {
+  const [method, setMethod] = useState<"NAME" | "OTP">(defaultMethod)
   const [recipient, setRecipient] = useState(customerName)
   const [otp, setOtp] = useState("")
   return (

@@ -307,7 +307,7 @@ function OrdersView({ api, open }: { api: (p: string, o?: RequestInit) => Promis
 }
 
 function OrderDetailView({ api, id, back }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: unknown }>; id: string; back: () => void }) {
-  const [d, setD] = useState<{ order: { orderNumber: string; status: string }; items: { garmentName: string; serviceName: string; quantity: number }[]; tracking: { label: string; done: boolean; current: boolean }[]; cancelled: boolean; invoice: { total: number; subscriptionCovered: number; paid: number; balance: number; paymentStatus: string; payments: { method: string; amount: number }[] } } | null>(null)
+  const [d, setD] = useState<{ order: { orderNumber: string; status: string }; items: { garmentName: string; serviceName: string; quantity: number }[]; tracking: { label: string; done: boolean; current: boolean }[]; cancelled: boolean; verification?: { pickup: { method: string; otp: string | null; message: string }; delivery: { method: string; otp: string | null; message: string } }; invoice: { total: number; subscriptionCovered: number; paid: number; balance: number; paymentStatus: string; payments: { method: string; amount: number }[] } } | null>(null)
   const [loading, setLoading] = useState(true)
   useEffect(() => { api(`/orders/${id}`).then((j) => setD(j.data as never)).finally(() => setLoading(false)) }, [api, id])
   if (loading) return <Center><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></Center>
@@ -333,6 +333,20 @@ function OrderDetailView({ api, id, back }: { api: (p: string, o?: RequestInit) 
           </div>
         )}
       </div>
+      {/* Verification OTP — the single currently-relevant code. */}
+      {(() => {
+        const v = d.verification
+        if (!v) return null
+        const rel = v.delivery.otp ? { kind: "Delivery", otp: v.delivery.otp, message: v.delivery.message } : v.pickup.otp ? { kind: "Pickup", otp: v.pickup.otp, message: v.pickup.message } : null
+        if (!rel) return null
+        return (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-amber-600">{rel.kind} OTP</p>
+            <p className="mt-1 font-mono text-3xl font-bold tracking-[0.4em] text-slate-900">{rel.otp}</p>
+            <p className="mt-2 text-xs text-slate-600">{rel.message}</p>
+          </div>
+        )
+      })()}
       {/* Items */}
       <div className="rounded-xl bg-white border border-slate-100 p-3"><p className="text-sm font-medium text-slate-700 mb-2">Garments</p>{d.items.map((it, i) => <div key={i} className="flex justify-between text-sm text-slate-600 py-0.5"><span>{it.garmentName} · {it.serviceName}</span><span>×{it.quantity}</span></div>)}</div>
       {/* Invoice (Phase 7) */}

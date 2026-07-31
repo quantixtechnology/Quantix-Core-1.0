@@ -13,6 +13,8 @@ import { getTransition, statusLabel } from "@/lib/laundry-workflow"
 import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { checkAuditComplete } from "@/lib/laundry-audit"
+import { ensureDeliveryVerification } from "@/lib/laundry-verification"
+import { notifyDeliveryOtpGenerated } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
 
@@ -79,6 +81,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (toStatus === "CANCELLED") {
       try { await releaseSubscriptionFromOrder(id, { actorName: body.actorName ?? null, reason: "Order cancelled — allowance restored" }) }
       catch (e) { console.error("[laundry-order-transition] subscription release failed:", e) }
+    }
+
+    // Delivery verification (Workflow Settings): when the order becomes
+    // READY_FOR_DELIVERY, snapshot the method and generate the Delivery OTP.
+    // Best-effort — a failure must NEVER block the transition; the admin can
+    // regenerate from the order screen. The in-app ping is also non-fatal.
+    if (toStatus === "READY_FOR_DELIVERY") {
+      try {
+        const dv = await ensureDeliveryVerification(order.businessId, id)
+        if (dv.method === "OTP" && dv.otp) {
+          await notifyDeliveryOtpGenerated(id, order.businessId, dv.otp)
+        }
+      } catch (e) {
+        console.error("[laundry-order-transition] delivery verification init failed:", e)
+      }
     }
 
     // ... then record the audit event (best-effort: never block the workflow if

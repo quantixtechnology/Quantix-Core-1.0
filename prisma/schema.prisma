@@ -4332,6 +4332,12 @@ model LaundryWorkflowQualityConfig {
   business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
   photoAudit  Boolean         @default(true)
   auditModule Boolean         @default(true)
+  // Pickup/Delivery customer verification — how the team confirms the customer
+  // before a Pickup / Delivery can be completed. OTP = the customer shares the
+  // auto-generated 4-digit code; NAME = the executive confirms identity in
+  // person. Enforced server-side on every completion path (no bypass).
+  pickupVerificationMethod   String   @default("OTP") // OTP | NAME
+  deliveryVerificationMethod String   @default("OTP") // OTP | NAME
   updatedAt   DateTime        @updatedAt
   createdAt   DateTime        @default(now())
 
@@ -4623,6 +4629,21 @@ model LaundryOrder {
   // the order status.
   pickupRequired      Boolean   @default(false)
   deliveryRequired    Boolean   @default(false)
+
+  // ── Pickup/Delivery customer verification — SECURITY. ──
+  // Pickup OTP is generated once at order creation; Delivery OTP is generated
+  // fresh when the order reaches READY_FOR_DELIVERY. The verification method
+  // (OTP | NAME) is snapshotted from Workflow Settings at those moments so a
+  // mid-order settings change never applies retroactively. An OTP is cleared
+  // the moment it is successfully verified — never reused, and the pickup OTP
+  // can never complete a delivery (distinct fields, distinct checks).
+  pickupVerificationMethod   String?   // OTP | NAME (snapshot at creation)
+  deliveryVerificationMethod String?   // OTP | NAME (snapshot at READY_FOR_DELIVERY)
+  pickupOtp                  String?
+  deliveryOtp                String?
+  pickupVerifiedAt           DateTime?
+  pickupVerifiedBy           String?
+
   pickupExecutiveId   String?
   deliveryExecutiveId String?
   pickupAssignedAt    DateTime?

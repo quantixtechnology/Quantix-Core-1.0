@@ -31,6 +31,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
       id: true, orderNumber: true, status: true, orderType: true, createdAt: true, expectedDeliveryDate: true, deliveredAt: true,
       grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, paymentStatus: true,
       pickupAddress: true, specialInstructions: true,
+      pickupRequired: true, pickupCompletedAt: true,
+      pickupOtp: true, deliveryOtp: true, pickupVerificationMethod: true, deliveryVerificationMethod: true,
       items: { orderBy: { itemNumber: "asc" }, select: { itemNumber: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, processingStatus: true, total: true } },
     },
   })
@@ -45,8 +47,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   const cancelled = order.status === "CANCELLED"
   const tracking = TRACK.map((t, i) => ({ ...t, done: !cancelled && idx >= 0 && i <= idx, current: !cancelled && i === idx }))
 
+  // Pickup/Delivery verification — expose ONLY the currently relevant OTP.
+  const relevantDelivery = order.status === "READY_FOR_DELIVERY" && order.deliveryVerificationMethod !== "NAME" && !!order.deliveryOtp
+  const relevantPickup = !!order.pickupRequired && !order.pickupCompletedAt && order.pickupVerificationMethod !== "NAME" && !!order.pickupOtp
+  const verification = {
+    pickup: {
+      method: order.pickupVerificationMethod || "OTP",
+      otp: relevantPickup ? order.pickupOtp : null,
+      message: "Your Pickup OTP has been generated. Please share this OTP with our Pickup Executive when your order is collected.",
+    },
+    delivery: {
+      method: order.deliveryVerificationMethod || "OTP",
+      otp: relevantDelivery ? order.deliveryOtp : null,
+      message: "Your Delivery OTP has been generated. Please provide this OTP to the Delivery Executive before accepting your order.",
+    },
+  }
+
   return NextResponse.json({ success: true, data: {
     order: { id: order.id, orderNumber: order.orderNumber, status: order.status, orderType: order.orderType, createdAt: order.createdAt, expectedDeliveryDate: order.expectedDeliveryDate, deliveredAt: order.deliveredAt, pickupAddress: order.pickupAddress, specialInstructions: order.specialInstructions },
+    verification,
     items: order.items.map((i) => ({ ...i })),
     tracking, cancelled,
     timeline: events.map((e) => ({ at: e.createdAt, status: e.toStatus, action: e.action, note: e.note })),

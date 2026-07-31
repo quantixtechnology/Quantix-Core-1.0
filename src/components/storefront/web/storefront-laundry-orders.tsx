@@ -21,6 +21,10 @@ interface ListItem { id: string; orderNumber: string; status: string; statusLabe
 interface DetailItem { id: string; itemNumber: string | null; barcode: string | null; serviceName: string; garmentName: string; quantity: number; stage: string | null; stageLabel: string | null }
 interface Detail {
   order: { id: string; orderNumber: string; status: string; statusLabel: string; cancelled: boolean; paymentStatus: string; pickupDate: string | null; pickupTimeSlot: string | null; pickupAddress: string | null; expectedDeliveryDate: string | null; createdAt: string; recipientName: string | null }
+  verification?: {
+    pickup: { method: string; otp: string | null; message: string }
+    delivery: { method: string; otp: string | null; message: string }
+  }
   store: { name: string } | null
   totals: { subtotal: number; gstTotal: number; discount: number; grandTotal: number; amountPaid: number; balanceDue: number }
   items: DetailItem[]
@@ -150,6 +154,22 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
               {detail.order.pickupAddress && <Row k="Address" v={detail.order.pickupAddress} />}
               <Row k="Expected Delivery" v={fmtDate(detail.order.expectedDeliveryDate)} />
             </Section>
+
+            {/* Verification OTP — the single currently-relevant code. OTP-method
+                orders only; the code is cleared server-side once verified. */}
+            {(() => {
+              const v = detail.verification
+              if (!v) return null
+              const rel = v.delivery.otp ? { kind: "Delivery", otp: v.delivery.otp, message: v.delivery.message } : v.pickup.otp ? { kind: "Pickup", otp: v.pickup.otp, message: v.pickup.message } : null
+              if (!rel) return null
+              return (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-600">{rel.kind} OTP</p>
+                  <p className="mt-1 font-mono text-3xl font-bold tracking-[0.4em] text-slate-900">{rel.otp}</p>
+                  <p className="mt-2 text-sm text-slate-600">{rel.message}</p>
+                </div>
+              )
+            })()}
 
             {/* Payment history — reuses LaundryPayment */}
             <Section icon={CreditCard} title="Payment" brandColor={brandColor}>

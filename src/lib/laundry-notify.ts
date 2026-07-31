@@ -29,3 +29,22 @@ export async function notifyCustomerForOrder(
     // non-fatal
   }
 }
+
+// In-app ping when a Pickup OTP is generated (order created). In-app only —
+// SMS/WhatsApp delivery of the code is a later phase. Best-effort + non-fatal.
+export async function notifyPickupOtpGenerated(orderId: string, lbId: string, otp: string): Promise<void> {
+  await notifyCustomerForOrder(orderId, lbId, {
+    type: "ORDER_STATUS",
+    title: "Pickup OTP generated",
+    message: `Your Pickup OTP is ${otp}. Please share this OTP with our Pickup Executive when your order is collected.`,
+  })
+}
+
+// In-app ping when a Delivery OTP is generated (order becomes READY_FOR_DELIVERY).
+export async function notifyDeliveryOtpGenerated(orderId: string, lbId: string, otp: string): Promise<void> {
+  await notifyCustomerForOrder(orderId, lbId, {
+    type: "DELIVERY_UPDATE",
+    title: "Delivery OTP generated",
+    message: `Your Delivery OTP is ${otp}. Please provide this OTP to the Delivery Executive before accepting your order.`,
+  })
+}

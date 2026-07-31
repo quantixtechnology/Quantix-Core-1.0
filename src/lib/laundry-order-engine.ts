@@ -15,6 +15,8 @@
 // ============================================================================
 import { prisma } from "@/lib/prisma"
 import { explodePieces } from "@/lib/laundry-order-items"
+import { initPickupVerification } from "@/lib/laundry-verification"
+import { notifyPickupOtpGenerated } from "@/lib/laundry-notify"
 
 export interface OrderEngineLine {
   serviceId: string | null
@@ -207,6 +209,21 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
         data: { totalOrders: { increment: 1 }, totalSpent: { increment: grandTotal || 0 }, lastOrderAt: new Date() },
       })
       .catch((e) => console.error("[laundry-order-engine] customer history update failed:", e))
+  }
+
+  // Pickup verification (Workflow Settings): snapshot the method and generate the
+  // Pickup OTP for orders that have a pickup leg. Best-effort — a failure here
+  // must NEVER block order creation; the admin can regenerate from the order
+  // screen. The in-app ping to the customer is also best-effort + non-fatal.
+  if (pickupReq) {
+    try {
+      const init = await initPickupVerification(input.laundryBusinessId, order.id)
+      if (init?.method === "OTP" && init.otp) {
+        await notifyPickupOtpGenerated(order.id, input.laundryBusinessId, init.otp)
+      }
+    } catch (e) {
+      console.error("[laundry-order-engine] pickup verification init failed:", e)
+    }
   }
 
   return order

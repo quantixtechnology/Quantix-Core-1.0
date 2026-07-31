@@ -57,6 +57,25 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
       current: !cancelled && i === curIdx,
     }))
 
+    // Pickup/Delivery verification — expose ONLY the currently relevant OTP.
+    // The pickup OTP matters until the pickup is completed; the delivery OTP from
+    // the moment the order is READY_FOR_DELIVERY. NAME-verification orders have no
+    // code to share. Never leak the other (already-used / not-yet-active) OTP.
+    const relevantDelivery = order.status === "READY_FOR_DELIVERY" && order.deliveryVerificationMethod !== "NAME" && !!order.deliveryOtp
+    const relevantPickup = !!order.pickupRequired && !order.pickupCompletedAt && order.pickupVerificationMethod !== "NAME" && !!order.pickupOtp
+    const verification = {
+      pickup: {
+        method: order.pickupVerificationMethod || "OTP",
+        otp: relevantPickup ? order.pickupOtp : null,
+        message: "Your Pickup OTP has been generated. Please share this OTP with our Pickup Executive when your order is collected.",
+      },
+      delivery: {
+        method: order.deliveryVerificationMethod || "OTP",
+        otp: relevantDelivery ? order.deliveryOtp : null,
+        message: "Your Delivery OTP has been generated. Please provide this OTP to the Delivery Executive before accepting your order.",
+      },
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -67,6 +86,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
           expectedDeliveryDate: order.expectedDeliveryDate, createdAt: order.createdAt,
           recipientName: order.recipientName,
         },
+        verification,
         store: order.store ? { name: order.store.storeName } : null,
         totals: { subtotal: order.subtotal, gstTotal: order.gstTotal, discount: order.discount, grandTotal: order.grandTotal, amountPaid: order.amountPaid, balanceDue: order.balanceDue },
         items: order.items.map((it) => ({ id: it.id, itemNumber: it.itemNumber, barcode: it.barcode, serviceName: it.serviceName, garmentName: it.garmentName, quantity: it.quantity, stage: it.processingStage, stageLabel: it.processingStage ? statusLabel(it.processingStage) : null })),

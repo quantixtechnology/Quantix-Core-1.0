@@ -2,14 +2,17 @@
 // assigned executive.
 //   { action: "out_for_delivery" | "delivered", recipientName?, method?, otp? }
 // out_for_delivery → live field status + timeline + customer ping.
-// delivered → reuses the shared DELIVERED engine (balance gate + lifecycle),
-//   with OTP / name confirmation, then field status + customer notification.
+// delivered → SERVER-VERIFIED customer verification (OTP must match the stored
+//   Delivery OTP, or Name confirmation for the configured method) THEN the
+//   shared DELIVERED engine (balance gate + lifecycle), then field status +
+//   customer notification. Verification can never be bypassed.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { markOrderDelivered } from "@/lib/laundry-deliver"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
+import { verifyDelivery } from "@/lib/laundry-verification"
 
 export const runtime = "nodejs"
 
@@ -20,7 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const b = await request.json().catch(() => ({}))
 
-    const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, deliveryExecutiveId: true, deliveryAcceptance: true, status: true } })
+    const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, deliveryExecutiveId: true, deliveryAcceptance: true, status: true, deliveryOtp: true, deliveryVerificationMethod: true } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.deliveryExecutiveId !== session.executiveId) return NextResponse.json({ error: "This delivery is not assigned to you" }, { status: 403 })
     if (order.deliveryAcceptance !== "ACCEPTED") return NextResponse.json({ error: "Accept the delivery before starting" }, { status: 409 })
@@ -35,9 +38,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     if (b.action === "delivered") {
-      const method = b.method === "OTP" ? "OTP" : "NAME"
+      // Business rule: a delivery can never complete without successful customer
+      // verification (per the configured method — OTP or Name).
+      const method = String(b.method || "").toUpperCase()
+      const otp = String(b.otp || "").trim() || null
+      const v = await verifyDelivery(session.businessId, order, method, otp)
+      if (!v.ok) return NextResponse.json({ error: v.error }, { status: v.status })
       const recipientName = String(b.recipientName || "").trim() || null
-      const r = await markOrderDelivered({ lbId: session.businessId, orderId: order.id, deliveredBy: actor.name, recipientName, note: `Verified (${method}${b.otp ? `: ${b.otp}` : ""})`, actor })
+      const r = await markOrderDelivered({ lbId: session.businessId, orderId: order.id, deliveredBy: actor.name, recipientName, note: `Verified (${v.method}${otp ? `: ${otp}` : " — identity confirmed"})`, actor })
       if (!r.ok) return NextResponse.json({ error: r.error, ...(r.code ? { code: r.code, balanceDue: r.balanceDue } : {}) }, { status: r.status })
       await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.DELIVERED, deliveryCompletedAt: new Date() } })
       await notifyCustomerForOrder(order.id, session.businessId, { type: "DELIVERY_UPDATE", title: "Order delivered", message: `Your order ${r.orderNumber} has been delivered.` })
