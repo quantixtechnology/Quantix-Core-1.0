@@ -1,7 +1,11 @@
 // Reusable-bag assignment ENGINE (shared). Extracted so both the Admin route
 // (/api/laundry/bags/assign) and the Executive PWA use the exact same logic —
-// one bag = one service, only an AVAILABLE bag can be assigned, the physical
-// bag's permanent QR is reused (no per-order QR). No auth here; callers gate.
+// a service may span MULTIPLE bags (unlimited), only an AVAILABLE bag can be
+// assigned, the physical bag's permanent QR is reused (no per-order QR).
+// Validation is unchanged: unknown bags, non-AVAILABLE bags (already assigned
+// to another order), Damaged/Lost/Cleaning bags and concurrent assignments are
+// all rejected — a bag can never be assigned twice or to two orders. No auth
+// here; callers gate.
 import { prisma } from "@/lib/prisma"
 
 export type AssignResult =
@@ -48,34 +52,44 @@ export async function assignBagToOrder(opts: {
   const serviceId = opts.serviceId ? String(opts.serviceId) : null
   const serviceName = String(opts.serviceName || "Laundry")
 
-  const updated = await prisma.$transaction(async (tx) => {
-    // Atomic re-check: bag must still be AVAILABLE inside the transaction.
-    const current = await tx.laundryBag.findUnique({ where: { id: bag.id }, select: { status: true } })
-    if (!current || current.status !== "AVAILABLE") {
-      throw Object.assign(new Error("Bag was taken by another assignment."), { code: "CONCURRENT_ASSIGNMENT", status: 409 })
-    }
-    // One bag = one service: block a second bag for the same order+service.
-    if (serviceId) {
-      const dup = await tx.laundryBag.findFirst({ where: { businessId: opts.lbId, currentOrderId: orderId, currentServiceId: serviceId, status: { notIn: ["AVAILABLE", "RETURNED", "DELIVERED"] } } })
-      if (dup) throw Object.assign(new Error(`${serviceName} already has bag ${dup.bagNumber} assigned.`), { code: "DUPLICATE_ASSIGNMENT", status: 409 })
-    }
-    const bg = await tx.laundryBag.update({
-      where: { id: bag.id },
-      data: {
-        status: "COLLECTED",
-        currentOrderId: order.id, currentOrderNumber: order.orderNumber,
-        currentServiceId: serviceId, currentServiceName: serviceName,
-        currentCustomerId: order.customerId || null, currentCustomerName: customer?.name || null,
-        lastUsedAt: new Date(),
-      },
+  let updated: Awaited<ReturnType<typeof prisma.laundryBag.update>>
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      // Atomic re-check: bag must still be AVAILABLE inside the transaction.
+      const current = await tx.laundryBag.findUnique({ where: { id: bag.id }, select: { status: true } })
+      if (!current || current.status !== "AVAILABLE") {
+        throw Object.assign(new Error("Bag was taken by another assignment."), { code: "CONCURRENT_ASSIGNMENT", status: 409 })
+      }
+      // A service may span multiple bags — assign as many AVAILABLE bags as the
+      // job needs. The same bag can still never be assigned twice (status check
+      // above rejects it once it leaves AVAILABLE) nor to two orders at once.
+      const bg = await tx.laundryBag.update({
+        where: { id: bag.id },
+        data: {
+          status: "COLLECTED",
+          currentOrderId: order.id, currentOrderNumber: order.orderNumber,
+          currentServiceId: serviceId, currentServiceName: serviceName,
+          currentCustomerId: order.customerId || null, currentCustomerName: customer?.name || null,
+          lastUsedAt: new Date(),
+        },
+      })
+      const assign = await tx.laundryBagAssignment.create({
+        data: { bagId: bag.id, businessId: opts.lbId, orderId: order.id, orderNumber: order.orderNumber, serviceId, serviceName, customerId: order.customerId || null, customerName: customer?.name || null, status: "ASSIGNED" },
+      })
+      // Store the latest assignment ID on the bag for quick lookup on release.
+      await tx.laundryBag.update({ where: { id: bag.id }, data: { lastAssignmentId: assign.id } })
+      return bg
     })
-    const assign = await tx.laundryBagAssignment.create({
-      data: { bagId: bag.id, businessId: opts.lbId, orderId: order.id, orderNumber: order.orderNumber, serviceId, serviceName, customerId: order.customerId || null, customerName: customer?.name || null, status: "ASSIGNED" },
-    })
-    // Store the latest assignment ID on the bag for quick lookup on release.
-    await tx.laundryBag.update({ where: { id: bag.id }, data: { lastAssignmentId: assign.id } })
-    return bg
-  })
+  } catch (e) {
+    // A thrown transaction error is a business-rule rejection (e.g. concurrent
+    // assignment) when it carries a status — return it as a result instead of a
+    // 500. Anything else is a genuine failure and re-thrown.
+    const errStatus = (e as { status?: unknown })?.status
+    if (typeof errStatus === "number" && errStatus >= 400) {
+      return { ok: false, status: errStatus, error: e instanceof Error ? e.message : "Bag assignment failed" }
+    }
+    throw e
+  }
   return { ok: true, bag: updated }
 }
 

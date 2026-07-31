@@ -51,25 +51,36 @@ export async function GET(request: Request) {
 
     const orderIds = orders.map((o) => o.id)
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
-    const [custs, bags] = await Promise.all([
+    // Bags come from LaundryBagAssignment (append-only per-order history) so a
+    // completed/released order still shows the exact bags it carried, in scan
+    // order (Bag 1, Bag 2, …). A service may span multiple bags.
+    const [custs, assigns] = await Promise.all([
       prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true } }),
-      prisma.laundryBag.findMany({ where: { businessId: lbId, currentOrderId: { in: orderIds } }, select: { currentOrderId: true, currentServiceId: true, currentServiceName: true, bagNumber: true } }),
+      prisma.laundryBagAssignment.findMany({
+        where: { businessId: lbId, orderId: { in: orderIds } },
+        select: { orderId: true, serviceId: true, serviceName: true, bagId: true, assignedAt: true, bag: { select: { bagNumber: true } } },
+        orderBy: { assignedAt: "asc" },
+      }),
     ])
     const custMap = new Map(custs.map((c) => [c.id, c]))
-    // order → serviceKey → bagNumber
-    const bagByOrderSvc = new Map<string, string>()
-    for (const bg of bags) {
-      if (!bg.currentOrderId) continue
-      const key = `${bg.currentOrderId}::${bg.currentServiceId ?? bg.currentServiceName ?? ""}`
-      bagByOrderSvc.set(key, bg.bagNumber)
+    // orderId::serviceKey → bag numbers, deduped by physical bag (in case a bag
+    // was released and re-scanned mid-cycle) and kept in assignment order.
+    const bagsByOrderSvc = new Map<string, string[]>()
+    for (const a of assigns) {
+      const key = `${a.orderId}::${a.serviceId ?? a.serviceName ?? ""}`
+      const seen = bagsByOrderSvc.get(key) || []
+      if (!seen.some((b) => b === a.bag.bagNumber)) seen.push(a.bag.bagNumber)
+      bagsByOrderSvc.set(key, seen)
     }
 
     const data = orders.map((o) => {
       const cust = o.customerId ? custMap.get(o.customerId) : null
       const services = o.services.map((s) => ({
         serviceId: s.serviceId, serviceName: s.serviceName,
-        bagNumber: bagByOrderSvc.get(`${o.id}::${s.serviceId ?? s.serviceName ?? ""}`) ?? null,
+        bags: bagsByOrderSvc.get(`${o.id}::${s.serviceId ?? s.serviceName ?? ""}`) ?? [],
       }))
+      const bagCount = services.reduce((n, s) => n + s.bags.length, 0)
+      const assignedBags = services.filter((s) => s.bags.length > 0).length
       return {
         id: o.id, orderNumber: o.orderNumber, status: o.status, fieldStatus: o.fieldStatus,
         acceptance: type === "delivery" ? o.deliveryAcceptance : o.pickupAcceptance,
@@ -81,7 +92,7 @@ export async function GET(request: Request) {
         pickupVerificationMethod: o.pickupVerificationMethod || "OTP",
         deliveryVerificationMethod: o.deliveryVerificationMethod || "OTP",
         balanceDue: o.balanceDue ?? Math.max(0, (o.grandTotal || 0) - (o.amountPaid || 0)), paymentStatus: o.paymentStatus,
-        services, bagCount: services.length, assignedBags: services.filter((s) => s.bagNumber).length, itemCount: o._count.items,
+        services, serviceCount: services.length, bagCount, assignedBags, itemCount: o._count.items,
       }
     })
     return NextResponse.json({ success: true, data })

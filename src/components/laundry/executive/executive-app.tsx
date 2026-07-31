@@ -6,7 +6,7 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share } from "lucide-react"
+import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
 
@@ -53,12 +53,12 @@ function InstallCta({ color, variant = "light" }: { color: string; variant?: "li
 }
 
 interface Exec { id: string; name: string; employeeCode: string; mobile: string; storeName: string | null; vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string }
-interface Svc { serviceId: string | null; serviceName: string; bagNumber: string | null }
+interface Svc { serviceId: string | null; serviceName: string; bags: string[] }
 interface Job {
   id: string; orderNumber: string; status: string; fieldStatus: string | null; acceptance: string | null; priority: string
   customerName: string; customerPhone: string | null; timeSlot: string | null
   address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
-  services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
+  services: Svc[]; serviceCount: number; bagCount: number; assignedBags: number; itemCount: number
   deliveryBagNumber: string | null
   pickupVerificationMethod: string; deliveryVerificationMethod: string
   balanceDue: number; paymentStatus: string | null
@@ -252,7 +252,7 @@ function JobCard({ job, onOpen, tab }: { job: Job; onOpen: () => void; tab: stri
       <div className="mt-2 text-xs text-slate-500 space-y-1">
         {job.timeSlot && <p>🕑 {job.timeSlot}</p>}
         {job.address && <p className="flex items-start gap-1"><MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" /> {job.address}{job.landmark ? ` (${job.landmark})` : ""}</p>}
-        <p className="flex items-center gap-1"><Package className="h-3.5 w-3.5" /> {job.assignedBags}/{job.bagCount} bags · {job.services.map((s) => s.serviceName).join(", ")}</p>
+        <p className="flex items-center gap-1"><Package className="h-3.5 w-3.5" /> {job.bagCount} bag{job.bagCount === 1 ? "" : "s"} · {job.services.map((s) => s.serviceName).join(", ")}</p>
       </div>
     </button>
   )
@@ -311,14 +311,15 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
-  const scanBag = async (code: string, svc: Svc) => {
+  const scanBag = async (code: string, svc: Svc): Promise<boolean> => {
     try {
       const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, { method: "POST", body: JSON.stringify({ code, serviceId: svc.serviceId, serviceName: svc.serviceName, executiveName: exec.name }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Bag not accepted")
       toast.success(`${svc.serviceName}: ${j.bagNumber}`)
       await refresh()
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted") }
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted"); return false }
   }
 
   const [delBag, setDelBag] = useState("")
@@ -344,8 +345,10 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     window.open(url, "_blank")
   }
 
-  const allBagsDone = job.services.every((s) => s.bagNumber)
+  const allBagsDone = job.services.every((s) => s.bags.length > 0)
   const delivered = job.status === "DELIVERED"
+  // A pickup is done once PICKUP_COMPLETED; a cancelled order is never editable.
+  const pickupDone = st >= RANK.PICKUP_COMPLETED || delivered
   // Delivery may only start once its bag is scanned/assigned.
   const deliveryReady = !isDelivery || !!job.deliveryBagNumber
 
@@ -408,9 +411,9 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 
         {/* View Order */}
         <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
-          <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Order · {job.bagCount} service{job.bagCount === 1 ? "" : "s"}{job.itemCount ? ` · ${job.itemCount} items` : ""}</p>
+          <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Order · {job.serviceCount} service{job.serviceCount === 1 ? "" : "s"}{job.itemCount ? ` · ${job.itemCount} items` : ""}</p>
           <div className="flex flex-wrap gap-1.5">
-            {job.services.map((s, i) => <span key={i} className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600">{s.serviceName}{s.bagNumber ? <span className="text-emerald-600 font-mono"> · {s.bagNumber}</span> : null}</span>)}
+            {job.services.map((s, i) => <span key={i} className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600">{s.serviceName}{s.bags.length ? <span className="text-emerald-600"> · {s.bags.length} bag{s.bags.length === 1 ? "" : "s"}</span> : null}</span>)}
           </div>
         </div>
 
@@ -489,17 +492,28 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           </div>
         )}
 
-        {/* Bag assignment (after customer verified) */}
-        {!isDelivery && job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && (
+        {/* Bag assignment — editable from acceptance until pickup is completed.
+            Each service keeps its own bag list: Bag N + Scan, then + Add Bag for
+            the next one. No fixed limit — a service may span many bags. */}
+        {!isDelivery && job.acceptance === "ACCEPTED" && !pickupDone && job.status !== "CANCELLED" && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
-            <p className="text-sm font-semibold text-slate-700">Assign Bags — one bag per service</p>
+            <p className="text-sm font-semibold text-slate-700">Assign Bags · one or more bags per service</p>
             {job.services.map((s, i) => (
-              <div key={i} className="flex items-center justify-between gap-2 border border-slate-100 rounded-xl px-3 py-2.5">
-                <div><p className="text-sm font-medium text-slate-700">{s.serviceName}</p>{s.bagNumber && <p className="text-xs text-emerald-600 font-mono flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> {s.bagNumber}</p>}</div>
-                {s.bagNumber ? <span className="text-emerald-500"><CheckCircle2 className="h-5 w-5" /></span> : <BagScanButton label="Scan" size="sm" onScan={(code) => scanBag(code, s)} />}
-              </div>
+              <ServiceBags key={i} svc={s} onScan={scanBag} />
             ))}
           </div>
+        )}
+
+        {/* Pickup completed — read-only bag list, no actions. */}
+        {!isDelivery && pickupDone && (
+          <BagListReadOnly title={delivered ? "Bags Assigned" : "Pickup Completed"} services={job.services} total={job.bagCount} />
+        )}
+
+        {/* Delivery — per-service bags are always read-only (the only delivery
+            bag handling is the separate "Delivery Bag" scan above, which the
+            existing workflow requires). */}
+        {isDelivery && (
+          <BagListReadOnly title={delivered ? "Delivery Completed · Bags Assigned" : "Bags Assigned"} services={job.services} total={job.bagCount} />
         )}
 
         {/* Delivery workflow */}
@@ -516,7 +530,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       {!isDelivery && st >= RANK.PICKUP_STARTED && st < RANK.PICKUP_COMPLETED && (
         <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
           <button disabled={busy || !allBagsDone} onClick={() => setStatus("PICKUP_COMPLETED")} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Pickup {allBagsDone ? "" : `(${job.assignedBags}/${job.bagCount})`}
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Pickup {allBagsDone ? "" : `(${job.assignedBags}/${job.serviceCount} services)`}
           </button>
         </div>
       )}
@@ -530,6 +544,65 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 
       {verifyOpen && <VerifyDialog customerName={job.customerName} defaultMethod={job.pickupVerificationMethod === "NAME" ? "NAME" : "OTP"} onClose={() => setVerifyOpen(false)} onConfirm={(method, value) => { setVerifyOpen(false); setStatus("REACHED", { verify: true, verifyMethod: method, verifyValue: value }) }} />}
       {deliverOpen && <DeliverDialog customerName={job.customerName} color={brand.color} defaultMethod={job.deliveryVerificationMethod === "NAME" ? "NAME" : "OTP"} onClose={() => setDeliverOpen(false)} onConfirm={(recipientName, method, otp) => { setDeliverOpen(false); deliver("delivered", { recipientName, method, otp }) }} />}
+    </div>
+  )
+}
+
+// One service's bag list inside the editable assignment section. Each service
+// is independent: assigned bags show as "Bag N ✓ number", then a "+ Add Bag"
+// button reveals the next "Bag N · Scan" slot. No fixed limit.
+function ServiceBags({ svc, onScan }: { svc: Svc; onScan: (code: string, svc: Svc) => Promise<boolean> }) {
+  const [adding, setAdding] = useState(false)
+  const n = svc.bags.length
+  return (
+    <div className="border border-slate-100 rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-700">{svc.serviceName}</p>
+        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{n} bag{n === 1 ? "" : "s"}</span>
+      </div>
+      {n > 0 && (
+        <div className="space-y-1">
+          {svc.bags.map((bn, j) => (
+            <div key={bn} className="flex items-center gap-1.5 text-xs">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <span className="text-slate-500">Bag {j + 1}</span>
+              <span className="font-mono font-semibold text-emerald-700">{bn}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {n === 0 || adding ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-slate-500">Bag {n + 1}</span>
+          <BagScanButton label="Scan" size="sm" onScan={async (code) => { if (await onScan(code, svc)) setAdding(false) }} />
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="w-full h-9 rounded-xl border border-dashed border-blue-300 text-blue-600 text-sm font-medium flex items-center justify-center gap-1.5">
+          <Plus className="h-4 w-4" /> Add Bag
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Read-only bag list for completed pickups and all deliveries — no scan/add.
+function BagListReadOnly({ title, services, total }: { title: string; services: Svc[]; total: number }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> {title}</p>
+        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{total} bag{total === 1 ? "" : "s"}</span>
+      </div>
+      {services.map((s, i) => (
+        <div key={i} className="border border-slate-100 rounded-xl px-3 py-2 space-y-0.5">
+          <p className="text-sm font-medium text-slate-700">{s.serviceName}</p>
+          {s.bags.length === 0
+            ? <p className="text-xs text-slate-400">No bags</p>
+            : s.bags.map((bn, j) => (
+              <p key={bn} className="text-xs text-slate-600 flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> Bag {j + 1} · <span className="font-mono font-semibold text-emerald-700">{bn}</span></p>
+            ))}
+        </div>
+      ))}
     </div>
   )
 }

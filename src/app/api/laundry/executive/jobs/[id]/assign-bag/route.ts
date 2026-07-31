@@ -1,7 +1,10 @@
 // POST /api/laundry/executive/jobs/[id]/assign-bag — scan a reusable bag and
 // assign it to a service on this order. Reuses the SHARED bag-assignment engine
-// (assignBagToOrder) — the exact same logic the Admin uses. One bag = one
-// service. Also nudges the live field status to "pickup in progress" + logs it.
+// (assignBagToOrder) — the exact same logic the Admin uses. A service may span
+// MULTIPLE bags (unlimited); a bag can never be assigned twice or to two orders.
+// Also logs the scan to the timeline. The live field status is nudged to
+// "pickup in progress" ONLY from the REACHED step — bag scanning can happen
+// earlier, but it never skips the mandatory customer-verification step.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
@@ -26,7 +29,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const r = await assignBagToOrder({ lbId: session.businessId, code, orderId: order.id, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName })
     if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: r.status })
 
-    if (order.fieldStatus !== FIELD_STATUS.PICKUP_STARTED) {
+    // Safety: only promote REACHED → PICKUP_STARTED. Bags may be scanned before
+    // the executive reaches the customer, but the field status must NEVER jump
+    // past the verification step — PICKUP_COMPLETED still requires pickupVerifiedAt.
+    if (order.fieldStatus === "REACHED") {
       await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.PICKUP_STARTED } })
     }
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: "BAG_ASSIGNED", note: `${b.serviceName || "Service"}: ${r.bag.bagNumber}`, actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
