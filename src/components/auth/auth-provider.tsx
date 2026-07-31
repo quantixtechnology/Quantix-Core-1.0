@@ -77,6 +77,7 @@ export function AuthProvider({
     initialize,
     isAuthenticated,
     _isHydrated,
+    _isBootstrapped,
     refreshToken,
     refreshAuthToken,
     clearSession,
@@ -239,8 +240,12 @@ export function AuthProvider({
     };
   }, [isAuthenticated, clearSession, syncTokensFromStorage, initialize, onSessionExpired]);
 
-  // ─── Not yet hydrated — show loading ────────────────────────────────
-  if (!_isHydrated) {
+  // ─── Not yet hydrated OR token not yet validated — show loading only ──
+  // SECURITY: no protected UI may render while the cached session is being
+  // validated server-side. During bootstrap the store keeps `isAuthenticated`
+  // true from localStorage, so we gate on `_isBootstrapped` (set only after
+  // /api/core/auth/me has verified the access token — or cleared it).
+  if (!_isHydrated || !_isBootstrapped) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 via-white to-emerald-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
         <div className="flex flex-col items-center gap-3">

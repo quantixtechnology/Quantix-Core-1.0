@@ -4,6 +4,7 @@ import { useEffect, Suspense, useState } from "react"
 import dynamic from "next/dynamic"
 import { useSearchParams } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
+import { AuthGuard } from "@/components/auth/auth-guard"
 import { useAuthStore } from "@/stores/auth-store"
 import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
@@ -767,9 +768,11 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // after the delivery entry effect fires. Skip the storefront path entirely here.
     if (deliveryEntry) {
       return (
-        <DeliveryLayout>
-          {deliveryLoggedIn ? renderDeliveryPage() : <DeliveryLogin />}
-        </DeliveryLayout>
+        <AuthGuard requireAuth={false}>
+          <DeliveryLayout>
+            {deliveryLoggedIn ? renderDeliveryPage() : <DeliveryLogin />}
+          </DeliveryLayout>
+        </AuthGuard>
       )
     }
 
@@ -822,18 +825,22 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // the reset effect above flips viewMode back to super_admin.
     if (!storefrontSlug) return <SplashLoader />
     return (
-      <CustomerLayout>
-        {renderCustomerPage()}
-      </CustomerLayout>
+      <AuthGuard requireAuth={false}>
+        <CustomerLayout>
+          {renderCustomerPage()}
+        </CustomerLayout>
+      </AuthGuard>
     )
   }
 
   if (viewMode === "delivery_partner") {
     if (!storefrontSlug) return <SplashLoader />
     return (
-      <DeliveryLayout>
-        {renderDeliveryPage()}
-      </DeliveryLayout>
+      <AuthGuard requireAuth={false}>
+        <DeliveryLayout>
+          {renderDeliveryPage()}
+        </DeliveryLayout>
+      </AuthGuard>
     )
   }
 
@@ -857,21 +864,27 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // Laundry workspace even though their session has no business type).
     if (currentBusinessType === "LAUNDRY" || productWorkspaceCode === "LAUNDRY") {
       return (
-        <LaundryLayout>
-          <LaundryPageRouter />
-        </LaundryLayout>
+        <AuthGuard>
+          <LaundryLayout>
+            <LaundryPageRouter />
+          </LaundryLayout>
+        </AuthGuard>
       )
     }
     return (
-      <BusinessLayout>
-        {renderBusinessPage()}
-      </BusinessLayout>
+      <AuthGuard>
+        <BusinessLayout>
+          {renderBusinessPage()}
+        </BusinessLayout>
+      </AuthGuard>
     )
   }
 
   return (
-    <AdminLayout>
-      {renderSuperAdminPage()}
-    </AdminLayout>
+    <AuthGuard>
+      <AdminLayout>
+        {renderSuperAdminPage()}
+      </AdminLayout>
+    </AuthGuard>
   )
 }

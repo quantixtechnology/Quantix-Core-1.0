@@ -1,6 +1,21 @@
 // ============================================================================
 // Route: GET /api/core/auth/me
-// Get current user info with business associations and permissions
+// Authenticated session bootstrap — validates the Bearer access token
+// server-side and returns the current user with business associations and
+// permissions. Used by the AuthGuard to restore a session on refresh WITHOUT
+// ever trusting localStorage alone.
+//
+// AUTH: The `Authorization: Bearer <token>` header is REQUIRED. The token is
+// checked against the refreshToken table (same store as the login-issued
+// access token), including expiry and account-active checks. On success the
+// response is the canonical session: user + role + permissions + businesses.
+// On an invalid / expired token the route returns 401 so the client can clear
+// its local session and redirect to Login.
+//
+// The optional `?userId=` query param is ONLY accepted when the bearer token
+// resolves to that same user (it allows legacy callers to keep working without
+// weakening auth). No identity data is ever returned for an unauthenticated
+// request.
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -10,64 +25,70 @@ import { NextResponse } from 'next/server';
 
 const PLATFORM_ROLES = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
 
+const SESSION_EXPIRED = { success: false, error: 'SESSION_EXPIRED', message: 'Session expired. Please sign in again.' };
+
+function authRequired() {
+  return NextResponse.json({ success: false, error: 'Authentication required. Please sign in.' }, { status: 401 });
+}
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'userId query parameter is required' },
-        { status: 400 }
-      );
+    // ── Token validation (server-side, authoritative) ───────────────────
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return authRequired();
     }
+    const token = authHeader.slice(7).trim();
+    if (!token) return authRequired();
 
-    // Get user
-    const user = await db.user.findUnique({
-      where: { id: userId },
+    const session = await db.refreshToken.findUnique({
+      where: { token },
       include: {
-        businessUsers: {
-          where: { isActive: true },
+        user: {
           include: {
-            business: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                businessType: true,
-                status: true,
-                primaryColor: true,
-                logo: true,
+            businessUsers: {
+              where: { isActive: true },
+              include: {
+                business: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    businessType: true,
+                    status: true,
+                    primaryColor: true,
+                    logo: true,
+                  },
+                },
+                store: { select: { id: true, name: true } },
               },
             },
-            store: {
-              select: { id: true, name: true },
-            },
+            salesProfile: true,
           },
         },
-        salesProfile: true,
       },
     });
 
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
+    if (!session || session.expiresAt < new Date()) {
+      return NextResponse.json(SESSION_EXPIRED, { status: 401 });
+    }
+    if (!session.user.isActive) {
+      return NextResponse.json({ success: false, error: 'Account is deactivated. Please contact support.' }, { status: 403 });
     }
 
-    if (!user.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'User account is deactivated' },
-        { status: 403 }
-      );
+    const user = session.user;
+
+    // Legacy callers may pass ?userId= — only honoured if it matches the
+    // token holder. A mismatched userId is treated as an auth failure, never
+    // as an identity switch.
+    const { searchParams } = new URL(request.url);
+    const requestedUserId = searchParams.get('userId');
+    if (requestedUserId && requestedUserId !== user.id) {
+      return authRequired();
     }
 
-    // Determine primary role and resolve permissions (role + user-level overrides)
+    // ── Resolve role + permissions ──────────────────────────────────────
     let primaryRole = 'CUSTOMER';
-    // The single canonical platform owner is always resolved as Super Admin,
-    // even if its explicit platformRole is momentarily unset — keeps /me in
-    // agreement with the login route (no downgrade during syncPermissions).
     const isOwnerEmail = isPlatformOwnerEmail(user.email);
     const isPlatformUser = (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) || isOwnerEmail;
     if (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) {
@@ -82,7 +103,6 @@ export async function GET(request: Request) {
       isPlatformUser ? (user.platformPermissions ?? null) : null
     );
 
-    // Build enriched business list with DB-aware permissions
     const businesses = await Promise.all(user.businessUsers.map(async (bu) => ({
       businessId: bu.businessId,
       role: bu.role,

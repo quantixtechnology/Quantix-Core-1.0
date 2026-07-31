@@ -617,19 +617,19 @@ function HistoryView({ user, isAdmin, refreshKey }: { user: { id: string } | nul
 type TabId = "signup" | "renewal" | "history"
 
 export default function MobileCommissionPage() {
-  const { user, permissions, isAuthenticated } = useAuthStore()
+  const { user, permissions, isAuthenticated, _isHydrated, _isBootstrapped, initialize } = useAuthStore()
   const { prompt: installPrompt, install } = useInstallPrompt()
-  const [hydrated, setHydrated] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>("signup")
   const [historyKey, setHistoryKey] = useState(0)
 
-  useEffect(() => { setHydrated(true) }, [])
+  // Restore + server-validate the session before rendering any protected UI.
+  useEffect(() => { initialize() }, [initialize])
 
   const isAdmin = (permissions as string[]).includes("settings:edit")
   const safeUser = user ? { id: user.id, name: user.name ?? "Unknown" } : null
 
-  // Not hydrated yet — show nothing to avoid flash
-  if (!hydrated) return (
+  // Not hydrated or session not yet validated — loader only, no protected UI.
+  if (!_isHydrated || !_isBootstrapped) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
       <div className="h-8 w-8 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
     </div>

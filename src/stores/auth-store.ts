@@ -23,6 +23,7 @@ interface AuthState {
   error: string | null;
   _isHydrated: boolean; // Whether the store has been initialized from localStorage
   _isSynced:   boolean; // Whether syncPermissions() has completed at least once
+  _isBootstrapped: boolean; // Whether the access token has been validated server-side (/me)
 
   // Business context
   currentBusinessId: string | null;
@@ -51,6 +52,7 @@ interface AuthState {
   refreshAuthToken: () => Promise<void>;
   syncTokensFromStorage: () => void;
   syncPermissions: () => Promise<void>;
+  bootstrap: () => Promise<void>;
   switchBusiness: (businessId: string) => void;
   setActiveBusinessId: (businessId: string) => void;
   setToken: (token: string) => void;
@@ -180,6 +182,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
   _isHydrated: false,
   _isSynced:   false,
+  _isBootstrapped: false,
   currentBusinessId: null,
   currentBusinessName: null,
   currentRole: null,
@@ -188,6 +191,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   businesses: [],
 
   // ─── Initialize from localStorage (hydration) ───────────────────────
+  // Hydrates the cached session synchronously, then KICKS OFF server-side
+  // validation. The app must NOT render protected UI until bootstrap() has
+  // resolved (AuthGuard waits on `_isBootstrapped`).
   initialize: () => {
     // Import a cross-subdomain session handoff (Open Workspace → product host)
     // into this origin's localStorage BEFORE hydration. No-op when absent.
@@ -207,11 +213,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         businesses: stored.businesses || [],
         _isHydrated: true,
         _isSynced:   false,  // wait for fresh permissions before access checks
+        _isBootstrapped: false, // wait for server-side token validation
       });
-      // Sync fresh permissions; set _isSynced=true on completion regardless of outcome
-      get().syncPermissions()
-        .catch(() => null)
-        .finally(() => set({ _isSynced: true }));
 
       // Per-origin sessions: if this session arrived via a workspace handoff, it
       // currently holds the LAUNCHING origin's refresh token. Swap it for an
@@ -222,17 +225,114 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         exchangeHandoffSession()
           .then((res) => { if (res) set({ token: res.accessToken, refreshToken: res.refreshToken }); });
       }
+
+      // Validate the access token server-side and load fresh permissions/
+      // businesses BEFORE any protected component may render. bootstrap()
+      // always resolves (it sets _isBootstrapped in every outcome).
+      get().bootstrap().catch(() => { /* bootstrap handles its own failures */ });
     } else {
-      set({ _isHydrated: true, _isSynced: true });
+      set({ _isHydrated: true, _isSynced: true, _isBootstrapped: true });
+    }
+  },
+
+  // ─── Server-side session validation (AuthGuard gate) ────────────────
+  // The single source of truth for "is this session real?". Calls
+  // /api/core/auth/me with the Bearer access token; the server validates the
+  // token (existence + expiry + active account) and returns fresh
+  // role/permissions/businesses.
+  //   • 401 / failure → session is invalid → clearSession() + mark bootstrapped
+  //   • network error  → can't verify → keep the cached session optimistically
+  //     (a flaky network must never destroy a still-valid session), mark done
+  //   • success       → adopt fresh session data, mark done
+  bootstrap: async () => {
+    const { token, user } = get();
+    if (!token || !user?.id) {
+      set({ _isBootstrapped: true, _isSynced: true });
+      return;
+    }
+    try {
+      const res = await fetch('/api/core/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Invalid / expired token → drop the local session and fall to Login.
+      if (res.status === 401) {
+        get().clearSession();
+        set({ _isBootstrapped: true, _isSynced: true });
+        return;
+      }
+      if (!res.ok) {
+        // 403 (inactive) / 5xx (infra) — keep the cached session, just finish.
+        set({ _isBootstrapped: true, _isSynced: true });
+        return;
+      }
+      const data = await res.json();
+      if (!data.success || !data.data) {
+        get().clearSession();
+        set({ _isBootstrapped: true, _isSynced: true });
+        return;
+      }
+
+      const d = data.data;
+      const freshRole = (d.role || user.role) as Role;
+      const freshBusinesses = (d.businesses ?? []).map((bu: {
+        businessId: string;
+        role: Role;
+        permissions: Permission[];
+        business: { name: string; slug: string; businessType: BusinessType; primaryColor?: string; logo?: string };
+        storeId: string | null;
+        store?: { id: string; name: string } | null;
+      }) => ({
+        businessId: bu.businessId,
+        businessName: bu.business.name,
+        businessType: bu.business.businessType as BusinessType,
+        businessSlug: bu.business.slug,
+        role: bu.role as Role,
+        storeId: bu.storeId,
+        storeName: bu.store?.name ?? null,
+        permissions: bu.permissions,
+      }));
+      const primary = freshBusinesses.find((b: { businessId: string }) => b.businessId === get().currentBusinessId) ?? freshBusinesses[0];
+      const sessionUser: SessionUser = {
+        ...user,
+        role: freshRole,
+        businessId: primary?.businessId ?? (freshRole !== 'CUSTOMER' ? primary?.businessId : undefined),
+        businessName: primary?.businessName,
+        businessType: primary?.businessType,
+        businessSlug: primary?.businessSlug,
+        storeId: primary?.storeId || undefined,
+        permissions: (d.permissions ?? []) as Permission[],
+        isPlatformAdmin: freshRole === 'QUANTIX_SUPER_ADMIN' || freshRole === 'PLATFORM_ADMIN',
+      };
+
+      const updates: Partial<AuthState> = {
+        user: sessionUser,
+        currentRole: freshRole,
+        currentBusinessId: primary?.businessId ?? get().currentBusinessId ?? null,
+        currentBusinessName: primary?.businessName ?? get().currentBusinessName ?? null,
+        currentBusinessType: primary?.businessType ?? get().currentBusinessType ?? null,
+        permissions: (d.permissions ?? []) as Permission[],
+        businesses: freshBusinesses,
+        _isSynced: true,
+        _isBootstrapped: true,
+      };
+      saveToStorage(updates);
+      set(updates);
+    } catch {
+      // Network failure — cannot verify the session server-side. Keep the
+      // cached session (never log out on a transient error) but mark the
+      // bootstrap as complete so the app can render.
+      set({ _isBootstrapped: true, _isSynced: true });
     }
   },
 
   // ─── Sync permissions from DB via /me ───────────────────────────────
   syncPermissions: async () => {
-    const { user } = get();
+    const { user, token } = get();
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/core/auth/me?userId=${user.id}`);
+      const res = await fetch(`/api/core/auth/me?userId=${user.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (!res.ok) return;
       const data = await res.json();
       if (!data.success) return;
@@ -308,6 +408,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         permissions: permissions || [],
         businesses: businesses || [],
         _isSynced: true,
+        _isBootstrapped: true,
       };
 
       // Persist to localStorage
@@ -386,6 +487,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         permissions: permissions || [],
         businesses: businesses || [],
         _isSynced: true,
+        _isBootstrapped: true,
       };
 
       saveToStorage(newState);
