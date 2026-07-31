@@ -80,6 +80,8 @@ export interface CreateLaundryOrderInput {
   pickupTimeSlot?: string | null
   deliveryDate?: Date | null
   deliveryTimeSlot?: string | null
+  backupDeliveryDate?: Date | null
+  backupDeliveryTimeSlot?: string | null
   pickupAddress?: string | null
   pickupInstructions?: string | null
   specialInstructions?: string | null
@@ -172,6 +174,8 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       pickupTimeSlot: input.pickupTimeSlot ?? null,
       deliveryDate: input.deliveryDate ?? null,
       deliveryTimeSlot: input.deliveryTimeSlot ?? null,
+      backupDeliveryDate: input.backupDeliveryDate ?? null,
+      backupDeliveryTimeSlot: input.backupDeliveryTimeSlot ?? null,
       pickupAddress: input.pickupAddress ?? null,
       pickupInstructions: input.pickupInstructions ?? null,
       specialInstructions: input.specialInstructions ?? null,

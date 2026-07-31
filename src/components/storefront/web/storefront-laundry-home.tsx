@@ -350,10 +350,13 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     return q
   })
   const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
-  const [date, setDate] = useState(""); const [slot, setSlot] = useState("Morning (9AM–12PM)")
+  const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
+  const [pickupSlots, setPickupSlots] = useState<string[]>([]); const [deliverySlots, setDeliverySlots] = useState<string[]>([])
+  const [deliveryDate, setDeliveryDate] = useState(""); const [deliverySlot, setDeliverySlot] = useState("")
+  const [backupDate, setBackupDate] = useState(""); const [backupSlot, setBackupSlot] = useState("")
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<{ orderNumber: string; grandTotal: number; subtotal: number; gstTotal: number; pickup: { date: string | null; timeSlot: string | null }; subscription: { covered: number; extra: number; remaining: number; planAllowance: number; ordersUsed: number; maxOrders: number; extraCharge: number } | null } | null>(null)
+  const [result, setResult] = useState<{ orderNumber: string; grandTotal: number; subtotal: number; gstTotal: number; pickup: { date: string | null; timeSlot: string | null; deliveryDate?: string | null; deliveryTimeSlot?: string | null; backupDate?: string | null; backupTimeSlot?: string | null }; subscription: { covered: number; extra: number; remaining: number; planAllowance: number; ordersUsed: number; maxOrders: number; extraCharge: number } | null } | null>(null)
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
   const [coverage, setCoverage] = useState<Coverage | null>(null)
@@ -369,6 +372,27 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [weightKg, setWeightKg] = useState(() => { const kg = cartForService.find((l) => !l.garmentId)?.weightKg; return kg ? String(kg) : "" })
   const isPerKg = service.pricingMode === "PER_KG"
   const isBag = service.orderMode === "BAG" // Pickup-First: book the service only, no garments
+
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/core/storefront/laundry-slots?businessId=${businessId}`).then((r) => r.json()).then((j) => {
+      if (j.success) {
+        setPickupSlots(j.data.pickup.slots || [])
+        setDeliverySlots(j.data.delivery.slots || [])
+        if (!slot && j.data.pickup.slots?.[0]) setSlot(j.data.pickup.slots[0])
+        if (!deliverySlot && j.data.delivery.slots?.[0]) setDeliverySlot(j.data.delivery.slots[0])
+        if (!backupSlot && j.data.delivery.slots?.[0]) setBackupSlot(j.data.delivery.slots[0])
+      }
+    }).catch(() => {})
+  }, [businessId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (date) {
+      const d = new Date(date)
+      d.setDate(d.getDate() + 1)
+      setDeliveryDate(d.toISOString().split("T")[0])
+    }
+  }, [date])
 
   // ── Auth gate handlers ────────────────────────────────────────────────────────
   const ge = (e: string) => e.trim().toLowerCase()
@@ -650,6 +674,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     // mobile (identity) and a pickup address/date are needed to place an order.
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
+    if (!slot) { toast.error("Select a pickup time slot"); return }
+    if (!deliveryDate) { toast.error("Delivery date is required"); return }
+    if (!deliverySlot) { toast.error("Select a delivery time slot"); return }
+    if (!backupDate) { toast.error("Select a backup delivery date"); return }
+    if (backupDate < deliveryDate) { toast.error("Backup delivery must be after standard delivery"); return }
+    if (!backupSlot) { toast.error("Select a backup delivery time slot"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
     const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
     setSubmitting(true); setLimitNotice(null)
@@ -672,13 +702,15 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         }
       }
       const pickupPayload = { addressId: pickupAddressId, structured: (!pickupAddressId && addrForm.addressLine1.trim()) ? structured : undefined, date: date || null, timeSlot: slot }
+      const deliveryPayload = { date: deliveryDate || null, timeSlot: deliverySlot || null }
+      const backupDeliveryPayload = { date: backupDate || null, timeSlot: backupSlot || null }
       // Buying a subscription plan in this cart → combined checkout: garments make
       // a real order (normal prices), the plan becomes a pending customer due.
       // The new plan does NOT cover this order (first-order rule).
       if (subscriptionInCart) {
         const res = await fetch("/api/core/storefront/laundry-checkout", {
           method: "POST", headers: authHeaders,
-          body: JSON.stringify({ businessId, items: orderItems(), subscriptionPlanId: subscriptionInCart.id, customer: customerPayload, pickup: pickupPayload, paymentMethod: "COD" }),
+          body: JSON.stringify({ businessId, items: orderItems(), subscriptionPlanId: subscriptionInCart.id, customer: customerPayload, pickup: pickupPayload, delivery: deliveryPayload, backupDelivery: backupDeliveryPayload, paymentMethod: "COD" }),
         })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
@@ -694,6 +726,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           services: cartBagServices(cartItems), // Pickup-First (Bag) services — no items; counted at audit
           customer: customerPayload,
           pickup: pickupPayload,
+          delivery: deliveryPayload,
+          backupDelivery: backupDeliveryPayload,
           useSubscription: useSub, forceNormal: force || forceNormal,
         }),
       })
@@ -1060,10 +1094,30 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               <Field label="Pickup Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={slot} onChange={(e) => setSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {["Morning (9AM–12PM)", "Afternoon (12PM–4PM)", "Evening (4PM–8PM)"].map((s) => <option key={s}>{s}</option>)}
+                  {pickupSlots.length === 0 ? <option>Loading…</option> : pickupSlots.map((s) => <option key={s}>{s}</option>)}
                 </select>
               </Field>
             </div>
+            {deliveryDate && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Standard Delivery"><input type="date" value={deliveryDate} disabled className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-gray-50" /></Field>
+                <Field label="Time Slot">
+                  <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
+                    {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </Field>
+              </div>
+            )}
+            {deliveryDate && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Backup Delivery"><input type="date" value={backupDate} onChange={(e) => setBackupDate(e.target.value)} min={deliveryDate} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+                <Field label="Time Slot">
+                  <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
+                    {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </Field>
+              </div>
+            )}
             {!subscriptionInCart && (
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" checked={useSub} disabled={checkingSub} onChange={(e) => onToggleSub(e.target.checked)} />
@@ -1126,6 +1180,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             <div className="mt-4 rounded-xl border border-gray-100 p-4 text-left text-sm space-y-1.5">
               <Row k="Order ID" v={result.orderNumber} mono />
               <Row k="Pickup" v={`${result.pickup.date ? new Date(result.pickup.date).toLocaleDateString() : "—"} · ${result.pickup.timeSlot || "—"}`} />
+              {result.pickup.deliveryDate && <Row k="Delivery" v={`${new Date(result.pickup.deliveryDate).toLocaleDateString()} · ${result.pickup.deliveryTimeSlot || "—"}`} />}
+              {result.pickup.backupDate && <Row k="Backup Delivery" v={`${new Date(result.pickup.backupDate).toLocaleDateString()} · ${result.pickup.backupTimeSlot || "—"}`} />}
               {hasKgPortion ? (<>
                 <Row k="Estimated Total" v={inr(result.grandTotal)} />
                 <p className="text-[11px] text-amber-700">Final weight is measured during Store Audit; your invoice is generated after the audit.</p>

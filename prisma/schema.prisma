@@ -4554,6 +4554,8 @@ model LaundryOrder {
   pickupTimeSlot       String?
   deliveryDate         DateTime?
   deliveryTimeSlot     String?
+  backupDeliveryDate   DateTime?
+  backupDeliveryTimeSlot String?
   pickupAddress        String?
   pickupInstructions   String?
   specialInstructions  String?

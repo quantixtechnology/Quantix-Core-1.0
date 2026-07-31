@@ -38,10 +38,12 @@ interface Item { serviceId: string; garmentId: string; quantity: number }
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, items, subscriptionPlanId, customer, pickup, paymentMethod } = body as {
+    const { businessId, items, subscriptionPlanId, customer, pickup, delivery, backupDelivery, paymentMethod } = body as {
       businessId?: string; items?: Item[]; subscriptionPlanId?: string
       customer?: { name?: string; phone?: string; email?: string; id?: string }
       pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string }
+      delivery?: { date?: string; timeSlot?: string }
+      backupDelivery?: { date?: string; timeSlot?: string }
       paymentMethod?: "COD" | "ONLINE"
     }
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
@@ -117,6 +119,10 @@ export async function POST(request: Request) {
         paymentPreference: paymentMethod === "ONLINE" ? "FULL_ADVANCE" : "COD",
         pickupDate: pickup?.date ? new Date(pickup.date) : null,
         pickupTimeSlot: pickup?.timeSlot || null,
+        deliveryDate: delivery?.date ? new Date(delivery.date) : null,
+        deliveryTimeSlot: delivery?.timeSlot || null,
+        backupDeliveryDate: backupDelivery?.date ? new Date(backupDelivery.date) : null,
+        backupDeliveryTimeSlot: backupDelivery?.timeSlot || null,
         pickupAddress: pickupSnapshot,
       })
     }

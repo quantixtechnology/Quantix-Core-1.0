@@ -34,12 +34,14 @@ interface OrderItemInput { serviceId: string; garmentId: string; quantity: numbe
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, items, services, customer, pickup, useSubscription, forceNormal } = body as {
+    const { businessId, items, services, customer, pickup, delivery, backupDelivery, useSubscription, forceNormal } = body as {
       businessId?: string
       items?: OrderItemInput[]
       services?: { serviceId: string; serviceName?: string }[]
       customer?: { name?: string; phone?: string; email?: string; id?: string }
       pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string; instructions?: string }
+      delivery?: { date?: string; timeSlot?: string }
+      backupDelivery?: { date?: string; timeSlot?: string }
       useSubscription?: boolean
       forceNormal?: boolean
     }
@@ -172,6 +174,10 @@ export async function POST(request: Request) {
       paymentPreference: sub ? "SUBSCRIPTION_BILLING" : "COD",
       pickupDate: pickup?.date ? new Date(pickup.date) : null,
       pickupTimeSlot: pickup?.timeSlot || null,
+      deliveryDate: delivery?.date ? new Date(delivery.date) : null,
+      deliveryTimeSlot: delivery?.timeSlot || null,
+      backupDeliveryDate: backupDelivery?.date ? new Date(backupDelivery.date) : null,
+      backupDeliveryTimeSlot: backupDelivery?.timeSlot || null,
       pickupAddress: pickupSnapshot,
       pickupInstructions: pickup?.instructions || null,
       include: { items: true, store: { select: { storeName: true, storeCode: true } } },
@@ -193,7 +199,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: {
       orderId: order.id, orderNumber: order.orderNumber, status: order.status,
       subtotal, gstTotal, grandTotal,
-      pickup: { date: order.pickupDate, timeSlot: order.pickupTimeSlot, address: order.pickupAddress },
+      pickup: { date: order.pickupDate, timeSlot: order.pickupTimeSlot, address: order.pickupAddress, deliveryDate: order.deliveryDate, deliveryTimeSlot: order.deliveryTimeSlot, backupDate: order.backupDeliveryDate, backupTimeSlot: order.backupDeliveryTimeSlot },
       customer: { id: customerRow.id, name: customerRow.name },
       subscription: subscriptionResult,
     } }, { status: 201 })
