@@ -14,7 +14,10 @@ import { generateSlots, SLOT_DURATION_OPTIONS, DEFAULT_PICKUP_SLOT, DEFAULT_DELI
 
 const durationLabel = (m: number) => (m % 60 === 0 ? `${m / 60} hr${m > 60 ? "s" : ""}` : `${m} min`)
 
-function SlotBlock({ title, cfg, onChange }: { title: string; cfg: SlotConfig; onChange: (c: SlotConfig) => void }) {
+function SlotBlock({ title, cfg, onChange, capacity, onCapacityChange }: {
+  title: string; cfg: SlotConfig; onChange: (c: SlotConfig) => void
+  capacity?: number; onCapacityChange?: (n: number) => void
+}) {
   const slots = generateSlots(cfg)
   return (
     <div className="rounded-lg border border-slate-200 p-4 space-y-3">
@@ -36,6 +39,13 @@ function SlotBlock({ title, cfg, onChange }: { title: string; cfg: SlotConfig; o
           <div className="flex flex-wrap gap-1.5">{slots.map((s) => <span key={s} className="text-[11px] font-mono rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">{s}</span>)}</div>
         )}
       </div>
+      {capacity !== undefined && onCapacityChange && (
+        <div className="space-y-1">
+          <Label className="text-xs">Max deliveries per slot</Label>
+          <Input type="number" min={0} value={capacity} onChange={(e) => onCapacityChange(Number(e.target.value))} className="h-9" />
+          <p className="text-[11px] text-slate-400">One limit applies to every generated delivery slot. When a slot reaches this many scheduled deliveries (Standard + Alternate) on a date it is shown as FULL and can no longer be booked. 0 = unlimited.</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -43,6 +53,7 @@ function SlotBlock({ title, cfg, onChange }: { title: string; cfg: SlotConfig; o
 export function LaundrySlotSettingsForm({ businessId }: { businessId: string }) {
   const [pickup, setPickup] = useState<SlotConfig>(DEFAULT_PICKUP_SLOT)
   const [delivery, setDelivery] = useState<SlotConfig>(DEFAULT_DELIVERY_SLOT)
+  const [deliveryCapacity, setDeliveryCapacity] = useState(100)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -51,7 +62,10 @@ export function LaundrySlotSettingsForm({ businessId }: { businessId: string }) 
     setLoading(true)
     try {
       const j = await fetch(`/api/laundry/slot-config?businessId=${encodeURIComponent(businessId)}`).then((r) => r.json())
-      if (j.success) { setPickup(j.data.pickup); setDelivery(j.data.delivery) }
+      if (j.success) {
+        setPickup(j.data.pickup); setDelivery(j.data.delivery)
+        if (typeof j.data.deliveryMaxPerSlot === "number") setDeliveryCapacity(j.data.deliveryMaxPerSlot)
+      }
     } catch { /* keep defaults */ } finally { setLoading(false) }
   }, [businessId])
   useEffect(() => { load() }, [load])
@@ -59,9 +73,10 @@ export function LaundrySlotSettingsForm({ businessId }: { businessId: string }) 
   const save = async () => {
     setSaving(true)
     try {
-      const j = await fetch(`/api/laundry/slot-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, pickup, delivery }) }).then((r) => r.json())
+      const j = await fetch(`/api/laundry/slot-config`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, pickup, delivery: { ...delivery, maxPerSlot: deliveryCapacity } }) }).then((r) => r.json())
       if (!j.success) throw new Error(j.error || "Save failed")
       setPickup(j.data.pickup); setDelivery(j.data.delivery)
+      if (typeof j.data.deliveryMaxPerSlot === "number") setDeliveryCapacity(j.data.deliveryMaxPerSlot)
       toast.success("Time slots saved — applied to New Order, Ready for Delivery and the storefront.")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
   }
@@ -81,7 +96,7 @@ export function LaundrySlotSettingsForm({ businessId }: { businessId: string }) 
         {loading ? <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : (
           <>
             <SlotBlock title="Pickup window" cfg={pickup} onChange={setPickup} />
-            <SlotBlock title="Delivery window" cfg={delivery} onChange={setDelivery} />
+            <SlotBlock title="Delivery window" cfg={delivery} onChange={setDelivery} capacity={deliveryCapacity} onCapacityChange={setDeliveryCapacity} />
             <div className="flex justify-end">
               <Button onClick={save} disabled={saving} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Slots</Button>
             </div>

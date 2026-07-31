@@ -26,6 +26,7 @@ import { generateOrderNumber } from "@/lib/laundry-codes"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
+import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 
 export const runtime = "nodejs"
 
@@ -154,6 +155,14 @@ export async function POST(request: Request) {
 
     const derivedServiceLines = orderLines.filter((l) => l.serviceId).map((l) => ({ serviceId: l.serviceId as string, serviceName: l.serviceName, turnaroundHours: 24 }))
     const serviceLines = Array.from(new Map([...derivedServiceLines, ...bagServiceLines].map((s) => [s.serviceId, s])).values())
+
+    // ── Delivery slot capacity — reject bookings on full (date + time slot)
+    //    for BOTH the Standard and the Backup (Alternate) delivery schedule.
+    const slotChecks: ReturnType<typeof assertDeliverySlotAvailable>[] = []
+    if (delivery?.date && delivery?.timeSlot) slotChecks.push(assertDeliverySlotAvailable(lbId, delivery.date, delivery.timeSlot))
+    if (backupDelivery?.date && backupDelivery?.timeSlot) slotChecks.push(assertDeliverySlotAvailable(lbId, backupDelivery.date, backupDelivery.timeSlot))
+    const slotResults = await Promise.all(slotChecks)
+    for (const r of slotResults) if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: 409 })
 
     const order = await createLaundryOrder({
       laundryBusinessId: lbId,

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { logFieldEvent } from "@/lib/laundry-field-ops"
+import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 
 export const runtime = "nodejs"
 
@@ -39,6 +40,14 @@ export async function POST(request: Request) {
       if (!ex) return NextResponse.json({ error: "Executive not found or inactive" }, { status: 404 })
       execName = ex.name
       if (ex.storeId && order.storeId !== ex.storeId) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to this order" }, { status: 403 })
+    }
+
+    // Slot capacity guard — a full (date + time slot) cannot be assigned, even
+    // if the UI is bypassed. The order itself is excluded so rescheduling onto
+    // its own slot stays possible.
+    if (deliveryDate && deliveryTimeSlot) {
+      const check = await assertDeliverySlotAvailable(biz.id, String(deliveryDate), String(deliveryTimeSlot), { excludeOrderId: order.id })
+      if (!check.ok) return NextResponse.json({ error: check.error }, { status: 409 })
     }
 
     // Persist the scheduled date + slot (previously only stuffed into `notes`, so

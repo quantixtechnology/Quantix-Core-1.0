@@ -30,6 +30,7 @@ import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
+import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 
 export const runtime = "nodejs"
 
@@ -103,6 +104,13 @@ export async function POST(request: Request) {
       const gstTotal = lines.reduce((s, l) => s + l.gstAmount, 0)
       const grandTotal = Math.round((subtotal + gstTotal) * 100) / 100
       const orderNumber = await generateOrderNumber(store.storeCode || lb?.businessCode || `LND-${lbId}`)
+      // ── Delivery slot capacity — reject bookings on full (date + time slot)
+      //    for BOTH the Standard and the Backup (Alternate) delivery schedule.
+      const slotChecks: ReturnType<typeof assertDeliverySlotAvailable>[] = []
+      if (delivery?.date && delivery?.timeSlot) slotChecks.push(assertDeliverySlotAvailable(lbId, delivery.date, delivery.timeSlot))
+      if (backupDelivery?.date && backupDelivery?.timeSlot) slotChecks.push(assertDeliverySlotAvailable(lbId, backupDelivery.date, backupDelivery.timeSlot))
+      const slotResults = await Promise.all(slotChecks)
+      for (const r of slotResults) if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: 409 })
       const serviceLines = Array.from(new Map(lines.filter((l) => l.serviceId).map((l) => [l.serviceId, { serviceId: l.serviceId, serviceName: l.serviceName, turnaroundHours: 24 }])).values())
       order = await createLaundryOrder({
         laundryBusinessId: lbId,

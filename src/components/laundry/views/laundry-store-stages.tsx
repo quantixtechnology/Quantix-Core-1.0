@@ -692,6 +692,7 @@ export function LaundryReadyForDelivery() {
   const [delAddresses, setDelAddresses] = useState<{ id: string; addressLine1: string; area: string | null; city: string; label?: string | null; addressType?: string | null; isDeliveryDefault?: boolean }[]>([])
   const [delAddrLoading, setDelAddrLoading] = useState(false)
   const [deliverySlots, setDeliverySlots] = useState<string[]>(generateSlots(DEFAULT_DELIVERY_SLOT))
+  const [deliveryFullSlots, setDeliveryFullSlots] = useState<string[]>([])
 
   // Config-driven delivery slots (Settings → Time Slots) — same source everywhere.
   useEffect(() => {
@@ -700,6 +701,15 @@ export function LaundryReadyForDelivery() {
       .then((j) => { if (j.success && j.data.deliverySlots?.length) setDeliverySlots(j.data.deliverySlots) })
       .catch(() => { /* keep fallback */ })
   }, [currentBusinessId])
+
+  // Delivery slot capacity — grey out + disable slots that have reached their
+  // per-date maximum (counts Standard + Alternate deliveries still in play).
+  useEffect(() => {
+    if (!currentBusinessId || !delForm.date) return
+    fetch(`/api/laundry/slot-config?businessId=${encodeURIComponent(currentBusinessId)}&deliveryDate=${encodeURIComponent(delForm.date)}`).then((r) => r.json())
+      .then((j) => { if (j.success) setDeliveryFullSlots(j.data.deliveryFullSlots || []) })
+      .catch(() => setDeliveryFullSlots([]))
+  }, [currentBusinessId, delForm.date])
 
   const openOrder = async (o: OrderRow | null) => {
     setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
@@ -797,7 +807,12 @@ export function LaundryReadyForDelivery() {
                     <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label>
                       <select value={delForm.timeSlot} onChange={(e) => setDelForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white">
                         <option value="">Select slot…</option>
-                        {deliverySlots.map((s) => { const past = slotIsPast(s, delForm.date); return <option key={s} value={s} disabled={past}>{s}{past ? " (passed)" : ""}</option> })}
+                        {deliverySlots.map((s) => {
+                          const past = slotIsPast(s, delForm.date)
+                          const full = deliveryFullSlots.includes(s)
+                          const disabled = past || full
+                          return <option key={s} value={s} disabled={disabled} className={full ? "bg-gray-100 text-gray-400" : ""}>{s}{past ? " (passed)" : full ? " — FULL" : ""}</option>
+                        })}
                       </select>
                     </div>
                   </div>

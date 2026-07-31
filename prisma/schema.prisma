@@ -4288,6 +4288,11 @@ model LaundryOperationalConfig {
   deliverySlotStart       String         @default("14:00")
   deliverySlotEnd         String         @default("23:00")
   deliverySlotDurationMin Int            @default(60)
+  // Delivery slot capacity — ONE limit applies to every generated delivery slot
+  // (per date + time slot). A slot counts its Standard + Backup (Alternate)
+  // deliveries that are still scheduled/assigned/accepted (Delivered and
+  // Cancelled orders free up the slot). 0 = unlimited.
+  deliveryMaxPerSlot      Int            @default(100)
   // Payments: COD is always an option unless the owner switches it off here.
   // Online-gateway selection/config lives with the platform gateway system.
   codEnabled              Boolean        @default(true)

@@ -387,6 +387,41 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     }).catch(() => {})
   }, [businessId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Delivery slot capacity ───────────────────────────────────────────────────
+  // Full slots are per (date + time slot). Refetch whenever the Standard or
+  // Backup delivery date changes so FULL slots get greyed out and disabled.
+  const [fullSlotsByDate, setFullSlotsByDate] = useState<Record<string, string[]>>({})
+  const fetchedCapDates = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!businessId) return
+    const dates = [deliveryDate, backupDate].filter(Boolean) as string[]
+    const missing = dates.filter((d) => !fetchedCapDates.current.has(d))
+    if (missing.length === 0) return
+    for (const d of missing) {
+      fetchedCapDates.current.add(d)
+      fetch(`/api/core/storefront/laundry-slots?businessId=${businessId}&deliveryDate=${d}`).then((r) => r.json()).then((j) => {
+        if (j.success) setFullSlotsByDate((prev) => ({ ...prev, [d]: j.data.delivery.fullSlots || [] }))
+      }).catch(() => {})
+    }
+  }, [businessId, deliveryDate, backupDate])
+
+  // If the currently-selected Standard/Backup slot becomes FULL, move to the
+  // first remaining available slot instead of submitting a blocked slot.
+  useEffect(() => {
+    const full = fullSlotsByDate[deliveryDate] || []
+    if (deliverySlot && full.includes(deliverySlot)) {
+      setDeliverySlot(deliverySlots.find((s) => !full.includes(s)) || "")
+    }
+  }, [fullSlotsByDate, deliveryDate, deliverySlot, deliverySlots]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const full = fullSlotsByDate[backupDate] || []
+    if (backupSlot && full.includes(backupSlot)) {
+      setBackupSlot(deliverySlots.find((s) => !full.includes(s)) || "")
+    }
+  }, [fullSlotsByDate, backupDate, backupSlot, deliverySlots]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Scheduling: Standard Delivery defaults to Pickup + 24h; Backup Delivery
   // defaults to Standard Delivery + 24h. Standard date is editable (min = pickup
   // + 24h); Backup date is editable (min = standard) but never earlier than it.
@@ -1123,7 +1158,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={date ? addDays(date, 1) : undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
+                    const isFull = (fullSlotsByDate[deliveryDate] || []).includes(s)
+                    return <option key={s} value={s} disabled={isFull} className={isFull ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : ""}</option>
+                  })}
                 </select>
               </Field>
             </div>
@@ -1135,7 +1173,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate ? addDays(deliveryDate, 1) : undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
+                    const isFull = (fullSlotsByDate[backupDate] || []).includes(s)
+                    return <option key={s} value={s} disabled={isFull} className={isFull ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : ""}</option>
+                  })}
                 </select>
               </Field>
             </div>
