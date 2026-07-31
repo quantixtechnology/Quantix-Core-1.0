@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { INDIAN_STATES } from "@/lib/constants"
-import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard, Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, MapPin } from "lucide-react"
+import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard, Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, MapPin, Info } from "lucide-react"
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
@@ -354,6 +354,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [pickupSlots, setPickupSlots] = useState<string[]>([]); const [deliverySlots, setDeliverySlots] = useState<string[]>([])
   const [deliveryDate, setDeliveryDate] = useState(""); const [deliverySlot, setDeliverySlot] = useState("")
   const [backupDate, setBackupDate] = useState(""); const [backupSlot, setBackupSlot] = useState("")
+  const [backupTouched, setBackupTouched] = useState(false)
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ orderNumber: string; grandTotal: number; subtotal: number; gstTotal: number; pickup: { date: string | null; timeSlot: string | null; deliveryDate?: string | null; deliveryTimeSlot?: string | null; backupDate?: string | null; backupTimeSlot?: string | null }; subscription: { covered: number; extra: number; remaining: number; planAllowance: number; ordersUsed: number; maxOrders: number; extraCharge: number } | null } | null>(null)
@@ -386,13 +387,31 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     }).catch(() => {})
   }, [businessId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Scheduling: Standard Delivery defaults to Pickup + 24h; Backup Delivery
+  // defaults to Standard Delivery + 24h. Standard date is editable (min = pickup
+  // + 24h); Backup date is editable (min = standard) but never earlier than it.
+  const addDays = (iso: string, n: number) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    d.setDate(d.getDate() + n)
+    return d.toISOString().split("T")[0]
+  }
+
+  // Pickup date chosen → Standard Delivery = pickup + 24h (editable default).
   useEffect(() => {
-    if (date) {
-      const d = new Date(date)
-      d.setDate(d.getDate() + 1)
-      setDeliveryDate(d.toISOString().split("T")[0])
+    if (date) setDeliveryDate(addDays(date, 1))
+  }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Standard Delivery date chosen/edited → Backup Delivery defaults to +24h.
+  // A backup date the customer manually picked later than the new standard date
+  // is preserved; an untouched (or now-invalid) backup re-defaults to +24h.
+  useEffect(() => {
+    if (!deliveryDate) return
+    if (!backupTouched || !backupDate || backupDate < deliveryDate) {
+      setBackupDate(addDays(deliveryDate, 1))
+      setBackupTouched(false)
     }
-  }, [date])
+  }, [deliveryDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auth gate handlers ────────────────────────────────────────────────────────
   const ge = (e: string) => e.trim().toLowerCase()
@@ -675,10 +694,11 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
-    if (!deliveryDate) { toast.error("Delivery date is required"); return }
-    if (!deliverySlot) { toast.error("Select a delivery time slot"); return }
+    if (!deliveryDate) { toast.error("Select a standard delivery date"); return }
+    if (deliveryDate < addDays(date, 1)) { toast.error("Standard delivery must be at least 24 hours after the pickup date"); return }
+    if (!deliverySlot) { toast.error("Select a standard delivery time slot"); return }
     if (!backupDate) { toast.error("Select a backup delivery date"); return }
-    if (backupDate < deliveryDate) { toast.error("Backup delivery must be after standard delivery"); return }
+    if (backupDate < deliveryDate) { toast.error("Backup delivery cannot be earlier than standard delivery"); return }
     if (!backupSlot) { toast.error("Select a backup delivery time slot"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
     const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
@@ -1098,26 +1118,26 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 </select>
               </Field>
             </div>
-            {deliveryDate && (
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Standard Delivery"><input type="date" value={deliveryDate} disabled className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-gray-50" /></Field>
-                <Field label="Time Slot">
-                  <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                    {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </Field>
-              </div>
-            )}
-            {deliveryDate && (
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Backup Delivery"><input type="date" value={backupDate} onChange={(e) => setBackupDate(e.target.value)} min={deliveryDate} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
-                <Field label="Time Slot">
-                  <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                    {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </Field>
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={date ? addDays(date, 1) : undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+              <Field label="Time Slot">
+                <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
+                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="flex gap-2 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2.5 text-xs text-blue-800">
+              <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <span>In case we are unable to deliver your order on the Standard Delivery schedule, kindly provide your next available delivery date and time for the second delivery attempt.</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate || undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+              <Field label="Time Slot">
+                <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
+                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
             {!subscriptionInCart && (
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" checked={useSub} disabled={checkingSub} onChange={(e) => onToggleSub(e.target.checked)} />
