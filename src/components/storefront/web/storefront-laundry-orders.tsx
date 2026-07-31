@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store"
 import { useAdminStore } from "@/stores/admin-store"
-import { Loader2, ChevronLeft, Package, Truck, CreditCard, FileText, Eye, Printer, X, CheckCircle2, Clock } from "lucide-react"
+import { Loader2, ChevronLeft, Package, Truck, CreditCard, FileText, Eye, Printer, X, CheckCircle2, Clock, Star, Send } from "lucide-react"
 import { LaundryInvoiceDocument, type InvoiceView } from "@/components/laundry/invoice/laundry-invoice-document"
 import type { WebNav } from "./storefront-website"
 
@@ -30,6 +30,8 @@ interface Detail {
   items: DetailItem[]
   payments: { id: string; method: string; amount: number; reference: string | null; note: string | null; at: string }[]
   timeline: { status: string; label: string; done: boolean; current: boolean }[]
+  feedback?: { rating: number; comment: string | null; submittedAt: string } | null
+  canRate?: boolean
 }
 
 const payStyle = (s: string) => s === "PAID" || s === "SUBSCRIPTION" ? "text-emerald-600" : s === "PARTIAL" ? "text-amber-600" : "text-rose-600"
@@ -43,6 +45,10 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [invoice, setInvoice] = useState<InvoiceView | null>(null)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [rate, setRate] = useState(0)
+  const [comment, setComment] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitErr, setSubmitErr] = useState("")
   const accent = { color: brandColor }
 
   const headers = useMemo(() => {
@@ -75,6 +81,21 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
       const r = await fetch(`/api/core/storefront/orders/${id}/laundry-invoice`, { headers })
       const j = await r.json(); if (j.success) setInvoice(j.data)
     } catch { /* noop */ }
+  }
+
+  const submitFeedback = async () => {
+    if (!detail) return
+    if (!rate) { setSubmitErr("Please select a rating."); return }
+    setSubmitErr(""); setSubmitting(true)
+    try {
+      const r = await fetch(`/api/core/storefront/laundry-orders/${detail.order.id}/feedback`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ rating: rate, comment }),
+      })
+      const j = await r.json()
+      if (!r.ok || !j.success) { setSubmitErr(j.error || "Could not submit feedback."); return }
+      setDetail((p) => (p ? { ...p, feedback: j.data, canRate: false } : p))
+      setRate(0); setComment("")
+    } catch { setSubmitErr("Could not submit feedback.") } finally { setSubmitting(false) }
   }
   const printInvoice = () => {
     const node = document.getElementById("laundry-invoice-print")
@@ -170,6 +191,33 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
                 </div>
               )
             })()}
+
+            {/* Customer feedback — one rating per delivered order, comment optional. */}
+            {detail.feedback ? (
+              <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Your Feedback</p>
+                <div className="flex items-center gap-1 mb-1">
+                  {[1, 2, 3, 4, 5].map((i) => <Star key={i} className={`w-5 h-5 ${i <= detail.feedback!.rating ? "fill-amber-400 text-amber-400" : "text-gray-200"}`} />)}
+                  <span className="text-xs text-gray-400 ml-1">Submitted {fmtDate(detail.feedback!.submittedAt)}</span>
+                </div>
+                {detail.feedback.comment ? <p className="text-sm text-gray-600">“{detail.feedback.comment}”</p> : <p className="text-xs text-gray-400">No comment added.</p>}
+              </div>
+            ) : detail.canRate ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+                <p className="text-sm font-semibold text-gray-800">Rate your experience</p>
+                <p className="text-xs text-gray-500 mb-2">Your order has been delivered. We&apos;d love to hear about your experience.</p>
+                <div className="flex items-center gap-1 mb-2">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <button key={i} type="button" onClick={() => setRate(i)} aria-label={`${i} star`}><Star className={`w-8 h-8 transition-colors ${i <= rate ? "fill-amber-400 text-amber-400" : "text-gray-300"}`} /></button>
+                  ))}
+                </div>
+                <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment (optional)…" rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm resize-none" />
+                {submitErr && <p className="text-xs text-rose-600 mt-1">{submitErr}</p>}
+                <button onClick={submitFeedback} disabled={submitting} className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: brandColor }}>
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Submit Feedback
+                </button>
+              </div>
+            ) : null}
 
             {/* Payment history — reuses LaundryPayment */}
             <Section icon={CreditCard} title="Payment" brandColor={brandColor}>

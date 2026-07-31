@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getFeedbackSummary } from "@/lib/laundry-feedback"
 
 export const runtime = "nodejs"
 
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
 
-    const [grouped, todayCount, total] = await Promise.all([
+    const [grouped, todayCount, total, ratingSummary] = await Promise.all([
       prisma.laundryOrder.groupBy({
         by: ["status"],
         where: where as never,
@@ -42,12 +43,13 @@ export async function GET(request: Request) {
       }),
       prisma.laundryOrder.count({ where: { ...where, createdAt: { gte: startOfToday } } as never }),
       prisma.laundryOrder.count({ where: where as never }),
+      getFeedbackSummary(resolved.id, storeId),
     ])
 
     const byStatus: Record<string, number> = {}
     for (const g of grouped) byStatus[g.status as string] = g._count._all
 
-    return NextResponse.json({ success: true, data: { byStatus, today: todayCount, total } })
+    return NextResponse.json({ success: true, data: { byStatus, today: todayCount, total, rating: ratingSummary } })
   } catch (error) {
     console.error("[laundry-orders/stats] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

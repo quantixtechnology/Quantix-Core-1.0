@@ -33,6 +33,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
       pickupAddress: true, specialInstructions: true,
       pickupRequired: true, pickupCompletedAt: true,
       pickupOtp: true, deliveryOtp: true, pickupVerificationMethod: true, deliveryVerificationMethod: true,
+      feedback: { select: { rating: true, comment: true, submittedAt: true } },
       items: { orderBy: { itemNumber: "asc" }, select: { itemNumber: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, processingStatus: true, total: true } },
     },
   })
@@ -65,6 +66,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
 
   return NextResponse.json({ success: true, data: {
     order: { id: order.id, orderNumber: order.orderNumber, status: order.status, orderType: order.orderType, createdAt: order.createdAt, expectedDeliveryDate: order.expectedDeliveryDate, deliveredAt: order.deliveredAt, pickupAddress: order.pickupAddress, specialInstructions: order.specialInstructions },
+    feedback: order.feedback,
+    canRate: order.status === "DELIVERED" && !order.feedback,
     verification,
     items: order.items.map((i) => ({ ...i })),
     tracking, cancelled,

@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X } from "lucide-react"
+import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star } from "lucide-react"
 import { statusLabel } from "@/lib/laundry-workflow"
 
 interface OrderRow {
@@ -21,6 +21,7 @@ interface OrderRow {
   createdAt: string; expectedDeliveryDate: string | null; itemCount: number
   store?: { storeName: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
+  feedback?: { rating: number } | null
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -145,7 +146,7 @@ export function LaundryOrdersView() {
                 <TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead>Store</TableHead>
                 <TableHead className="text-center">Items</TableHead><TableHead className="text-right">Amount</TableHead>
                 <TableHead>Payment</TableHead><TableHead>Stage</TableHead><TableHead>Created</TableHead>
-                <TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-center">Rating</TableHead><TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {rows.map((o) => {
@@ -160,6 +161,13 @@ export function LaundryOrdersView() {
                       <TableCell><Badge variant="outline" className={PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}>{o.paymentStatus || "—"}</Badge></TableCell>
                       <TableCell><Badge variant="outline" className={STATUS_STYLE[o.status] || "border-slate-200"}>{statusLabel(o.status)}</Badge></TableCell>
                       <TableCell className="text-xs text-slate-500">{fmt(o.createdAt)}</TableCell>
+                      <TableCell className="text-center">
+                        {o.feedback?.rating ? (
+                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600" title={`Rated ${o.feedback.rating}/5`}><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{o.feedback.rating}.0</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs text-slate-500">{fmtDay(o.expectedDeliveryDate)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">

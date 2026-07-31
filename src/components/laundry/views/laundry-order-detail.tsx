@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Loader2, ChevronLeft, Clock, User, Phone, Shirt, ShoppingBag, Store as StoreIcon,
-  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation, Trash2, AlertTriangle,
+  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation, Trash2, AlertTriangle, Star, MessageSquareQuote,
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
@@ -46,7 +46,16 @@ interface Detail {
   deliveryAcceptance: string | null; deliveryAcceptedAt: string | null
   deliveryCompletedAt: string | null; deliveryStartedAt: string | null
   fieldStatus: string | null
+  feedback?: { rating: number; comment: string | null; submittedAt: string } | null
 }
+
+const Stars = ({ rating, size = "h-4 w-4" }: { rating: number; size?: string }) => (
+  <span className="inline-flex items-center gap-0.5" title={`${rating} / 5`}>
+    {[1, 2, 3, 4, 5].map((i) => (
+      <Star key={i} className={`${size} ${i <= rating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
+    ))}
+  </span>
+)
 
 interface Exec {
   id: string; name: string; mobile: string | null
@@ -342,11 +351,35 @@ export function LaundryOrderDetail() {
         </CardContent>
       </Card>
 
+      {/* Customer Feedback — submitted once per delivered order (never public). */}
+      <Card className="rounded-lg border-slate-200">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm flex items-center gap-2"><MessageSquareQuote className="h-4 w-4 text-amber-600" /> Customer Feedback</CardTitle>
+        </CardHeader>
+        <CardContent className="p-3">
+          {order.feedback ? (
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Stars rating={order.feedback.rating} />
+                <span className="text-slate-500">{order.feedback.rating}.0 / 5</span>
+                <span className="text-slate-400">· Submitted {fmt(order.feedback.submittedAt)}</span>
+              </div>
+              {order.feedback.comment ? (
+                <p className="text-sm text-slate-700 bg-amber-50 border border-amber-100 rounded-lg p-2.5">“{order.feedback.comment}”</p>
+              ) : (
+                <p className="text-xs text-slate-400">The customer did not add a written comment.</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">No customer feedback submitted yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm flex items-center gap-2"><Shirt className="h-4 w-4 text-blue-600" /> Garments ({order.items.length})</CardTitle>
-            <div className="relative">
+            <CardTitle className="text-sm flex items-center gap-2"><Shirt className="h-4 w-4 text-blue-600" /> Garments ({order.items.length})</CardTitle>            <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input value={scanCode} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && scan()} placeholder="Scan item barcode…" className="h-8 w-[180px] rounded-md border border-slate-200 pl-7 pr-2 text-xs font-mono" />
             </div>

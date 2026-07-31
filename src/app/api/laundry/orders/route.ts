@@ -241,6 +241,8 @@ export async function GET(request: Request) {
           items: { where: { inspectedAt: null }, select: { id: true } },
           // Stored packet (for the Packing History read-only view). Additive.
           packet: { select: { packetNumber: true, qrValue: true, status: true, itemCount: true, packedBy: true, packedAt: true } },
+          // Customer rating & feedback (submitted once per delivered order).
+          feedback: { select: { rating: true, comment: true } },
         },
         orderBy: { createdAt: "desc" },
         take: limit,

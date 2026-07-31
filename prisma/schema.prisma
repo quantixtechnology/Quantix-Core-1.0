@@ -4684,6 +4684,7 @@ model LaundryOrder {
   invoice    LaundryInvoice?
   timestamps LaundryStageTimestamp[]
   events     LaundryOrderEvent[]
+  feedback   LaundryOrderFeedback?
 
   @@index([businessId])
   @@index([storeId])
@@ -4694,6 +4695,27 @@ model LaundryOrder {
   @@index([paymentStatus])
   @@index([pickupExecutiveId])
   @@index([deliveryExecutiveId])
+}
+
+// ── Customer Rating & Feedback (post-delivery satisfaction tracking) ────────
+// One record per delivered order (enforced by @@unique([orderId])), owned by the
+// customer who placed it. Rating 1–5 is mandatory; the comment is optional with
+// no length requirement. Submitted once, never edited (for now) — business
+// owners only; never shown publicly / no review system.
+model LaundryOrderFeedback {
+  id          String    @id @default(cuid())
+  businessId  String
+  orderId     String    @unique
+  customerId  String?
+  rating      Int // 1–5
+  comment     String?
+  submittedAt DateTime  @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([rating])
+  @@index([submittedAt])
 }
 
 // Permanent record of a Super-Admin permanent order deletion. Serves TWO purposes,

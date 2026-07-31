@@ -5,6 +5,7 @@
 // event. No parallel delivery logic. No auth here; callers gate.
 import { prisma } from "@/lib/prisma"
 import { releaseBagsForOrder, getBagReleaseStage } from "@/lib/laundry-bag-assign"
+import { notifyDeliveryCompleted } from "@/lib/laundry-notify"
 
 export type DeliverResult =
   | { ok: true; orderNumber: string; deliveredAt: Date; deliveryType: string }
@@ -57,6 +58,10 @@ export async function markOrderDelivered(opts: {
   if ((await getBagReleaseStage(opts.lbId).catch(() => "STORE_RECEIVE")) === "AFTER_DELIVERY") {
     await releaseBagsForOrder(opts.lbId, order.id).catch(() => 0)
   }
+
+  // Customer satisfaction prompt — in-app ping, best-effort + non-fatal. Never
+  // blocks the delivery itself.
+  await notifyDeliveryCompleted(order.id, opts.lbId).catch(() => undefined)
 
   return { ok: true, orderNumber: order.orderNumber, deliveredAt: now, deliveryType }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import {
   ShoppingBag, ClipboardCheck, Package, Cog, Truck, CheckCircle,
-  CreditCard, RefreshCw, Plus,
+  CreditCard, RefreshCw, Plus, Star,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,7 +25,7 @@ const WORKLOAD: { key: string; label: string; icon: typeof ShoppingBag; color: s
   { key: "DELIVERED",           label: "Delivered",           icon: CheckCircle,    color: "text-green-600 bg-green-100", page: "orders" },
 ]
 
-interface OrderStats { byStatus: Record<string, number>; today: number; total: number }
+interface OrderStats { byStatus: Record<string, number>; today: number; total: number; rating?: { average: number; total: number; byRating: Record<string, number> } }
 
 function KpiSkeleton() {
   return (
@@ -112,6 +112,54 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
               </CardContent>
             </Card>
           ))}
+        </div>
+      </div>
+
+      {/* Customer Feedback — average rating + per-star distribution of submitted
+          reviews (delivered orders only). Never public, Laundry OS summary only. */}
+      <div>
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">Customer Feedback</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card><CardContent className="p-4">
+            {loading ? <KpiSkeleton /> : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-amber-600 bg-amber-100"><Star className="h-5 w-5" /></div>
+                <div><p className="text-xs text-muted-foreground">Average Rating</p><p className="text-2xl font-bold">{stats?.rating?.total ? stats.rating.average.toFixed(2) : "—"}</p></div>
+              </div>
+            )}
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            {loading ? <KpiSkeleton /> : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 bg-slate-100"><CheckCircle className="h-5 w-5" /></div>
+                <div><p className="text-xs text-muted-foreground">Reviews Submitted</p><p className="text-2xl font-bold">{stats?.rating?.total ?? 0}</p></div>
+              </div>
+            )}
+          </CardContent></Card>
+          <Card className="sm:col-span-2"><CardContent className="p-4">
+            {loading ? <KpiSkeleton /> : (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">Rating Distribution</p>
+                {stats?.rating?.total ? (
+                  <div className="space-y-1.5">
+                    {[5, 4, 3, 2, 1].map((s) => {
+                      const n = stats.rating?.byRating?.[s] ?? 0
+                      const pct = stats.rating!.total > 0 ? Math.round((n / stats.rating!.total) * 100) : 0
+                      return (
+                        <div key={s} className="flex items-center gap-2 text-xs">
+                          <span className="w-6 shrink-0 flex items-center gap-0.5 text-amber-600"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{s}</span>
+                          <div className="h-2 flex-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%` }} /></div>
+                          <span className="w-8 shrink-0 text-right tabular-nums text-slate-500">{n}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">No feedback yet — ratings appear after the first delivered order is reviewed.</p>
+                )}
+              </div>
+            )}
+          </CardContent></Card>
         </div>
       </div>
 

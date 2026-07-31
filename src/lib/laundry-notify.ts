@@ -48,3 +48,13 @@ export async function notifyDeliveryOtpGenerated(orderId: string, lbId: string, 
     message: `Your Delivery OTP is ${otp}. Please provide this OTP to the Delivery Executive before accepting your order.`,
   })
 }
+
+// In-app ping when an order is DELIVERED — invites the customer to rate the
+// completed service. Best-effort + non-fatal, same as the OTP pings.
+export async function notifyDeliveryCompleted(orderId: string, lbId: string): Promise<void> {
+  await notifyCustomerForOrder(orderId, lbId, {
+    type: "DELIVERY_UPDATE",
+    title: "Order delivered",
+    message: "Your order has been delivered. We'd love to hear about your experience. Please rate your order.",
+  })
+}

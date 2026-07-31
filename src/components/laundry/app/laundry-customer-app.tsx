@@ -6,7 +6,7 @@
 // business logic — every number comes from the frozen engines via the API.
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock } from "lucide-react"
+import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock, Star, Send } from "lucide-react"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
 
@@ -307,11 +307,26 @@ function OrdersView({ api, open }: { api: (p: string, o?: RequestInit) => Promis
 }
 
 function OrderDetailView({ api, id, back }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: unknown }>; id: string; back: () => void }) {
-  const [d, setD] = useState<{ order: { orderNumber: string; status: string }; items: { garmentName: string; serviceName: string; quantity: number }[]; tracking: { label: string; done: boolean; current: boolean }[]; cancelled: boolean; verification?: { pickup: { method: string; otp: string | null; message: string }; delivery: { method: string; otp: string | null; message: string } }; invoice: { total: number; subscriptionCovered: number; paid: number; balance: number; paymentStatus: string; payments: { method: string; amount: number }[] } } | null>(null)
+  const [d, setD] = useState<{ order: { orderNumber: string; status: string }; items: { garmentName: string; serviceName: string; quantity: number }[]; tracking: { label: string; done: boolean; current: boolean }[]; cancelled: boolean; verification?: { pickup: { method: string; otp: string | null; message: string }; delivery: { method: string; otp: string | null; message: string } }; feedback?: { rating: number; comment: string | null; submittedAt: string } | null; canRate?: boolean; invoice: { total: number; subscriptionCovered: number; paid: number; balance: number; paymentStatus: string; payments: { method: string; amount: number }[] } } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [rate, setRate] = useState(0)
+  const [comment, setComment] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitErr, setSubmitErr] = useState("")
   useEffect(() => { api(`/orders/${id}`).then((j) => setD(j.data as never)).finally(() => setLoading(false)) }, [api, id])
   if (loading) return <Center><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></Center>
   if (!d) return <div className="p-6 text-center text-slate-400">Order not found.</div>
+
+  const submitFeedback = async () => {
+    if (!rate) { setSubmitErr("Please select a rating."); return }
+    setSubmitErr(""); setSubmitting(true)
+    const j = await api(`/orders/${id}/feedback`, { method: "POST", body: JSON.stringify({ rating: rate, comment }) })
+    setSubmitting(false)
+    if (!j.success) { setSubmitErr((j as { error?: string }).error || "Could not submit feedback."); return }
+    setD((p) => (p ? { ...p, feedback: j.data as never, canRate: false } : p))
+    setRate(0); setComment("")
+  }
+
   return (
     <div className="p-4 space-y-4">
       <button onClick={back} className="text-sm text-blue-600">← Back to orders</button>
@@ -333,6 +348,30 @@ function OrderDetailView({ api, id, back }: { api: (p: string, o?: RequestInit) 
           </div>
         )}
       </div>
+      {/* Customer feedback — one rating per delivered order, comment optional. */}
+      {d.feedback ? (
+        <div className="rounded-xl bg-white border border-slate-100 p-3">
+          <p className="text-sm font-medium text-slate-700 mb-2">Your Feedback</p>
+          <div className="flex items-center gap-1 mb-1">
+            {[1, 2, 3, 4, 5].map((i) => <Star key={i} className={`h-5 w-5 ${i <= d.feedback!.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />)}
+            <span className="text-xs text-slate-400 ml-1">Submitted {new Date(d.feedback!.submittedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+          </div>
+          {d.feedback.comment ? <p className="text-sm text-slate-600">“{d.feedback.comment}”</p> : <p className="text-xs text-slate-400">No comment added.</p>}
+        </div>
+      ) : d.canRate ? (
+        <div className="rounded-xl bg-white border border-amber-200 p-3">
+          <p className="text-sm font-medium text-slate-700">Rate your experience</p>
+          <p className="text-[11px] text-slate-400 mb-2">Your order has been delivered. We&apos;d love to hear about your experience.</p>
+          <div className="flex items-center gap-1 mb-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <button key={i} type="button" onClick={() => setRate(i)} aria-label={`${i} star`}><Star className={`h-7 w-7 transition-colors ${i <= rate ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} /></button>
+            ))}
+          </div>
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment (optional)…" rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
+          {submitErr && <p className="text-[11px] text-rose-600 mt-1">{submitErr}</p>}
+          <button onClick={submitFeedback} disabled={submitting} className="mt-2 w-full h-10 rounded-lg bg-amber-500 text-white text-sm font-medium flex items-center justify-center gap-2">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Submit Feedback</button>
+        </div>
+      ) : null}
       {/* Verification OTP — the single currently-relevant code. */}
       {(() => {
         const v = d.verification

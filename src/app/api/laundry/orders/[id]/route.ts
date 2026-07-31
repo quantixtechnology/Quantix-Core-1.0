@@ -20,6 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           orderBy: { createdAt: "desc" },
         },
         events: { orderBy: { createdAt: "desc" } },
+        feedback: { select: { rating: true, comment: true, submittedAt: true, customerId: true } },
       },
     })
 
