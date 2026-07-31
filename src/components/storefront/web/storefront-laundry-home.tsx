@@ -402,13 +402,14 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (date) setDeliveryDate(addDays(date, 1))
   }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Standard Delivery date chosen/edited → Backup Delivery defaults to +24h.
-  // A backup date the customer manually picked later than the new standard date
-  // is preserved; an untouched (or now-invalid) backup re-defaults to +24h.
+  // Standard Delivery date chosen/edited → Backup Delivery minimum is
+  // Standard + 24h. A backup date the customer manually picked beyond that is
+  // preserved; an untouched (or now-invalid) backup re-defaults to +24h.
   useEffect(() => {
     if (!deliveryDate) return
-    if (!backupTouched || !backupDate || backupDate < deliveryDate) {
-      setBackupDate(addDays(deliveryDate, 1))
+    const minBackup = addDays(deliveryDate, 1)
+    if (!backupTouched || !backupDate || backupDate < minBackup) {
+      setBackupDate(minBackup)
       setBackupTouched(false)
     }
   }, [deliveryDate]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -698,7 +699,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (deliveryDate < addDays(date, 1)) { toast.error("Standard delivery must be at least 24 hours after the pickup date"); return }
     if (!deliverySlot) { toast.error("Select a standard delivery time slot"); return }
     if (!backupDate) { toast.error("Select a backup delivery date"); return }
-    if (backupDate < deliveryDate) { toast.error("Backup delivery cannot be earlier than standard delivery"); return }
+    if (backupDate < addDays(deliveryDate, 1)) { toast.error("Backup Delivery must be at least 24 hours after the Standard Delivery date."); return }
     if (!backupSlot) { toast.error("Select a backup delivery time slot"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
     const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
@@ -1131,7 +1132,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               <span>In case we are unable to deliver your order on the Standard Delivery schedule, kindly provide your next available delivery date and time for the second delivery attempt.</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate || undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+              <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate ? addDays(deliveryDate, 1) : undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
                   {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => <option key={s}>{s}</option>)}
