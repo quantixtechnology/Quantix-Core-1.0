@@ -11,41 +11,17 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { LaundryOrderStatus } from "@prisma/client"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
-import { PICKUP_QUEUE_STATUSES, dispatchBucketOf } from "@/lib/laundry-dispatch"
+import { dispatchBucketOf, buildDispatchQueueWhere, dispatchDateRangeForPreset } from "@/lib/laundry-dispatch"
 
 export const runtime = "nodejs"
 
-const dayRange = (d: Date) => {
-  const s = new Date(d); s.setHours(0, 0, 0, 0)
-  const e = new Date(s); e.setDate(e.getDate() + 1)
-  return { start: s, end: e }
-}
-
-const dateRangeForPreset = (preset: string, fromDate?: string, toDate?: string) => {
-  const now = new Date()
-  if (preset === "custom" && fromDate && toDate) {
-    const s = new Date(fromDate); s.setHours(0, 0, 0, 0)
-    const e = new Date(toDate); e.setHours(23, 59, 59, 999)
-    return { start: s, end: e }
-  }
-  if (preset === "yesterday") {
-    const d = new Date(now); d.setDate(d.getDate() - 1)
-    return dayRange(d)
-  }
-  if (preset === "last7d") {
-    const s = new Date(now); s.setDate(s.getDate() - 7); s.setHours(0, 0, 0, 0)
-    return { start: s, end: now }
-  }
-  if (preset === "thisMonth") {
-    const s = new Date(now.getFullYear(), now.getMonth(), 1)
-    return { start: s, end: now }
-  }
-  // default: today
-  return dayRange(now)
-}
+// ── Active-scope date range ───────────────────────────────────────────────
+// The live Dispatch board defaults to TODAY (legacy behavior preserved exactly)
+// but supports Yesterday / Last 7 Days / Upcoming / Custom via the shared
+// helper so supervisors can review previous + future field work. Completed jobs
+// match their completion time; pending jobs match their scheduled date.
 
 export async function GET(request: Request) {
   try {
@@ -99,8 +75,13 @@ export async function GET(request: Request) {
       return await handleHistory(sp, lbId, type, now)
     }
 
-    // ── Active (today's live queue) ─────────────────────────────────────────
-    const { start, end } = dayRange(now)
+    // ── Active (live board; date-ranged) ───────────────────────────────────
+    // Default preset = today → byte-identical legacy query (live jobs of any
+    // date + today's completions). Other presets filter by scheduled date for
+    // pending jobs and by completion time for completed jobs.
+    const datePreset = sp.get("datePreset") || "today"
+    const fromDate = sp.get("fromDate") || undefined
+    const toDate = sp.get("toDate") || undefined
 
     const debug = sp.get("_debug") === "1"
     // Optional store scope (Store Admin PWA passes its own storeId → isolation).
@@ -109,20 +90,18 @@ export async function GET(request: Request) {
     // by pickupCompletedAt. An order stays in Dispatch through AWAITING_PICKUP_ASSIGNMENT
     // (unassigned/assigned/accepted/picked-up) and IN_TRANSIT_TO_STORE (pending store
     // receipt), and only LEAVES when the store receives it (status → PENDING_STORE_AUDIT).
-    // Previously `pickupCompletedAt: null` dropped completed/in-transit pickups, so they
-    // vanished from Dispatch even though the order was mid-workflow.
     // Active queue + TODAY's completed jobs (so the "Completed" bucket reflects the
     // day's finished pickups/deliveries — matching the executive app's Completed tab
     // — instead of always showing 0 once work is done).
-    const where = type === "delivery"
-      ? { businessId: lbId, ...storeScope, deliveryRequired: true, OR: [
-          { deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY },
-          { deliveryCompletedAt: { gte: start, lt: end } },
-        ] }
-      : { businessId: lbId, ...storeScope, pickupRequired: true, OR: [
-          { status: { in: PICKUP_QUEUE_STATUSES } },
-          { pickupCompletedAt: { gte: start, lt: end } },
-        ] }
+    const where = buildDispatchQueueWhere({
+      businessId: lbId,
+      type,
+      preset: datePreset,
+      fromDate,
+      toDate,
+      now,
+      storeScope,
+    })
 
     if (debug) console.log(`[DISPATCH_DEBUG] type=${type} where=${JSON.stringify(where)}`)
 
@@ -240,7 +219,7 @@ async function handleHistory(sp: URLSearchParams, lbId: string, type: string, no
   const searchQ = sp.get("search")?.toLowerCase().trim() || ""
   const page = Math.max(0, parseInt(sp.get("page") || "0", 10))
   const limit = Math.min(200, Math.max(10, parseInt(sp.get("limit") || "50", 10)))
-  const { start, end } = dateRangeForPreset(preset, fromDate, toDate)
+  const { start, end } = dispatchDateRangeForPreset(preset, new Date(), fromDate, toDate)
 
   // Build WHERE for completed/historical dispatches within the date range
   const isPickup = type !== "delivery"
@@ -249,14 +228,15 @@ async function handleHistory(sp: URLSearchParams, lbId: string, type: string, no
   const acceptField = isPickup ? "pickupAcceptance" : "deliveryAcceptance"
 
   // Completed: within date range
+  const endFilter = end ? { lte: end } : {}
   const completedWhere: any = {
     businessId: lbId,
     [isPickup ? "pickupRequired" : "deliveryRequired"]: true,
     OR: [
-      { [timeField]: { gte: start, lte: end } },
-      { status: "CANCELLED", updatedAt: { gte: start, lte: end } },
+      { [timeField]: { gte: start, ...endFilter } },
+      { status: "CANCELLED", updatedAt: { gte: start, ...endFilter } },
       // Also include DELIVERED orders within period
-      ...(isPickup ? [] : [{ status: "DELIVERED" as const, deliveredAt: { gte: start, lte: end } }]),
+      ...(isPickup ? [] : [{ status: "DELIVERED" as const, deliveredAt: { gte: start, ...endFilter } }]),
     ],
   }
 

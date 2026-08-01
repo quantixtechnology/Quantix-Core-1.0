@@ -48,6 +48,17 @@ const STATUS_TABS = [
   { key: "completed", label: "Completed" },
 ] as const
 
+// Date presets for the board. "Today" is the default landing view and preserves
+// the legacy behavior exactly; the rest let supervisors review previous + future
+// field work (the API filters pending jobs by scheduled date, completed by time).
+const DATE_PRESETS = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7d", label: "Last 7 Days" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "custom", label: "Custom…" },
+] as const
+
 const BUCKET_STYLES: Record<string, string> = {
   awaiting: "border-amber-200 text-amber-700 bg-amber-50",
   assigned: "border-blue-200 text-blue-700 bg-blue-50",
@@ -70,6 +81,13 @@ const isOverdue = (j: DispatchJob) => {
   const end = new Date(j.scheduledDate); end.setHours(23, 59, 59, 999)
   return new Date() > end
 }
+const RANGE_SUBTITLE: Record<string, string> = {
+  today: "All of today's pickups & deliveries — assign, reassign, monitor, complete",
+  yesterday: "Yesterday's pickups & deliveries — review completed work, manage pending",
+  last7d: "Pickups & deliveries from the last 7 days",
+  upcoming: "Upcoming pickups & deliveries not yet done",
+  custom: "Pickups & deliveries in the selected date range",
+}
 
 export function LaundryDispatchCenter() {
   const { currentBusinessId } = useAuthStore()
@@ -84,15 +102,23 @@ export function LaundryDispatchCenter() {
   const [search, setSearch] = useState("")
   const [execFilter, setExecFilter] = useState<string>("") // "", exec id, or "__unassigned__"
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [datePreset, setDatePreset] = useState<string>("today")
+  const [fromDate, setFromDate] = useState("")
+  const [toDate, setToDate] = useState("")
   const initial = useRef(true)
 
   // ── Load — fetch BOTH work types + executives; filter entirely client-side so
-  // switching lens/status/executive is instant for a full morning of jobs. ────
+  // switching lens/status/executive is instant for a full morning of jobs. The
+  // selected date range is sent to the API (default = today → legacy behavior). ──
   const load = useCallback(async () => {
     if (!currentBusinessId) return
     setRefreshing(true)
     try {
-      const q = (t: Kind) => `/api/laundry/pickup-scheduler?businessId=${currentBusinessId}&type=${t}&scope=active`
+      const q = (t: Kind) => {
+        const p = new URLSearchParams({ businessId: currentBusinessId, type: t, scope: "active", datePreset })
+        if (datePreset === "custom" && fromDate && toDate) { p.set("fromDate", fromDate); p.set("toDate", toDate) }
+        return `/api/laundry/pickup-scheduler?${p.toString()}`
+      }
       const [pu, dv, ex] = await Promise.all([
         fetch(q("pickup")).then((r) => r.json()),
         fetch(q("delivery")).then((r) => r.json()),
@@ -105,7 +131,7 @@ export function LaundryDispatchCenter() {
       setJobs(merged)
       if (ex.success) setExecs(ex.data)
     } catch (err) { console.error("[dispatch-center] load", err) } finally { setRefreshing(false) }
-  }, [currentBusinessId])
+  }, [currentBusinessId, datePreset, fromDate, toDate])
 
   useEffect(() => {
     if (!currentBusinessId) return
@@ -194,7 +220,7 @@ export function LaundryDispatchCenter() {
           <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center"><Truck className="h-4 w-4" /></div>
           <div>
             <h2 className="text-sm font-semibold text-slate-800 leading-tight">Dispatch Center</h2>
-            <p className="text-[10px] text-slate-400 leading-tight">All of today&apos;s pickups &amp; deliveries — assign, reassign, monitor, complete</p>
+            <p className="text-[10px] text-slate-400 leading-tight">{RANGE_SUBTITLE[datePreset] || RANGE_SUBTITLE.today}</p>
           </div>
         </div>
         <button onClick={() => load()} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600">
@@ -229,6 +255,24 @@ export function LaundryDispatchCenter() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-2 flex-wrap">
+        {/* Date range */}
+        <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+          {DATE_PRESETS.map((d) => (
+            <button key={d.key} onClick={() => { setDatePreset(d.key); setSelected(new Set()) }}
+              className={`px-2 h-7 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${datePreset === d.key ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+        {datePreset === "custom" && (
+          <div className="flex items-center gap-1">
+            <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setSelected(new Set()) }}
+              className="h-7 text-[11px] rounded border border-slate-200 px-1 bg-white" />
+            <span className="text-slate-400 text-[10px]">→</span>
+            <input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setSelected(new Set()) }}
+              className="h-7 text-[11px] rounded border border-slate-200 px-1 bg-white" />
+          </div>
+        )}
         {/* Work type */}
         <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
           {WORK_TYPES.map((w) => (

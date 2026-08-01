@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { LaundryOrderStatus } from '@prisma/client'
-import { dispatchBucketOf, PICKUP_QUEUE_STATUSES, type DispatchOrderView } from '@/lib/laundry-dispatch'
+import { dispatchBucketOf, PICKUP_QUEUE_STATUSES, buildDispatchQueueWhere, dispatchDateRangeForPreset, type DispatchOrderView } from '@/lib/laundry-dispatch'
 
 // ============================================================================
 // Tests for the scheduler's WHERE clause construction and bucketing.
@@ -190,5 +190,196 @@ describe('dispatchBucketOf — delivery classification', () => {
   })
   it('classifies awaiting delivery', () => {
     expect(dispatchBucketOf(baseOrder(), 'delivery')).toBe('awaiting')
+  })
+})
+
+// ── Date-ranged live board (buildDispatchQueueWhere) ─────────────────────────
+// The Dispatch Center board supports Today / Yesterday / Last 7 Days / Upcoming /
+// Custom. "today" must reproduce the legacy query EXACTLY; every other preset
+// filters pending jobs by scheduled date and completed jobs by completion time.
+
+const NOW = new Date('2026-08-05T10:00:00.000Z') // fixed "now" for determinism
+
+// Local-timezone-agnostic day arithmetic — mirrors the range helpers (which use
+// local setHours(0,0,0,0) boundaries, matching the legacy query). Tests pass on
+// any host timezone (deployed servers run UTC, dev machines run IST).
+const localMidnight = (d: Date) => { const s = new Date(d); s.setHours(0, 0, 0, 0); return s }
+const addDays = (d: Date, n: number) => { const e = new Date(d); e.setDate(e.getDate() + n); return e }
+const plusHours = (d: Date, h: number) => new Date(d.getTime() + h * 3600 * 1000)
+const TODAY = localMidnight(NOW)
+const YESTERDAY = addDays(TODAY, -1)
+const TOMORROW = addDays(TODAY, 1)
+
+function simulate(orders: any[], where: Record<string, unknown>): any[] {
+  return orders.filter((o) => matchesWhere(o, where))
+}
+
+function matchesWhere(o: Record<string, unknown>, w: Record<string, unknown>): boolean {
+  return Object.entries(w).every(([key, value]) => {
+    if (key === 'OR') return (value as Record<string, unknown>[]).some((sub) => matchesWhere(o, sub))
+    if (key === 'AND') return (value as Record<string, unknown>[]).every((sub) => matchesWhere(o, sub))
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const op = value as Record<string, unknown>
+      if ('in' in op) return (op.in as unknown[]).includes(o[key])
+      if (op.gte !== undefined || op.lte !== undefined || op.lt !== undefined) {
+        const t = o[key] == null ? null : new Date(o[key] as Date).getTime()
+        if (t == null) return false
+        if (op.gte !== undefined && t < new Date(op.gte as Date).getTime()) return false
+        if (op.lt !== undefined && t >= new Date(op.lt as Date).getTime()) return false
+        if (op.lte !== undefined && t > new Date(op.lte as Date).getTime()) return false
+        return true
+      }
+      return matchesWhere(o, value as Record<string, unknown>)
+    }
+    return o[key] === value
+  })
+}
+
+const base = (overrides: Record<string, unknown> = {}) => ({
+  businessId: 'lb-1', status: 'AWAITING_PICKUP_ASSIGNMENT',
+  pickupRequired: true, deliveryRequired: false,
+  pickupDate: TODAY, pickupCompletedAt: null,
+  deliveryDate: null, expectedDeliveryDate: null, deliveryCompletedAt: null,
+  ...overrides,
+})
+
+describe('buildDispatchQueueWhere — today reproduces the legacy query', () => {
+  it('pickup: live queue statuses (any date) + today completions', () => {
+    const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', preset: 'today', now: NOW })
+    expect(where).toEqual({
+      businessId: 'lb-1',
+      pickupRequired: true,
+      OR: [
+        { status: { in: [LaundryOrderStatus.AWAITING_PICKUP_ASSIGNMENT, LaundryOrderStatus.IN_TRANSIT_TO_STORE] } },
+        { pickupCompletedAt: { gte: TODAY, lt: addDays(TODAY, 1) } },
+      ],
+    })
+  })
+
+  it('delivery: uncompleted READY_FOR_DELIVERY (any date) + today completions', () => {
+    const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'delivery', preset: 'today', now: NOW })
+    expect(where).toEqual({
+      businessId: 'lb-1',
+      deliveryRequired: true,
+      OR: [
+        { deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY },
+        { deliveryCompletedAt: { gte: TODAY, lt: addDays(TODAY, 1) } },
+      ],
+    })
+  })
+
+  it('defaults to today when no preset is supplied', () => {
+    const withPreset = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', now: NOW })
+    const defaulted = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', preset: '', now: NOW })
+    expect(defaulted).toEqual(withPreset)
+  })
+})
+
+describe('buildDispatchQueueWhere — yesterday shows previous field work', () => {
+  const orders = [
+    // Pending pickup scheduled yesterday — still manageable.
+    base({ pickupDate: YESTERDAY }),
+    // Pending pickup scheduled today — must NOT leak into yesterday.
+    base({ pickupDate: TODAY }),
+    // Pickup COMPLETED yesterday.
+    base({ status: 'PENDING_STORE_AUDIT', pickupDate: addDays(TODAY, -2), pickupCompletedAt: plusHours(YESTERDAY, 1) }),
+    // Pickup completed today — excluded.
+    base({ status: 'PROCESSING', pickupCompletedAt: plusHours(TODAY, 1) }),
+  ]
+  const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', preset: 'yesterday', now: NOW })
+  const result = simulate(orders, where)
+  it('keeps pending pickups scheduled yesterday (manageable)', () => {
+    expect(result).toHaveLength(2)
+    expect(result.some((o) => o.status === 'AWAITING_PICKUP_ASSIGNMENT' && o.pickupCompletedAt === null)).toBe(true)
+  })
+  it('shows yesterday completed pickups and drops today completions', () => {
+    expect(result.some((o) => o.status === 'PENDING_STORE_AUDIT')).toBe(true)
+    expect(result.some((o) => o.status === 'PROCESSING')).toBe(false)
+  })
+})
+
+describe('buildDispatchQueueWhere — yesterday deliveries + missed deliveries', () => {
+  const orders = [
+    // Missed delivery — READY_FOR_DELIVERY, scheduled yesterday, never delivered.
+    base({ status: LaundryOrderStatus.READY_FOR_DELIVERY, deliveryRequired: true, deliveryDate: YESTERDAY }),
+    // Delivery completed yesterday.
+    base({ status: 'DELIVERED', deliveryRequired: true, deliveryCompletedAt: plusHours(YESTERDAY, 2) }),
+    // Pending delivery scheduled today — excluded.
+    base({ status: LaundryOrderStatus.READY_FOR_DELIVERY, deliveryRequired: true, deliveryDate: TODAY }),
+    // Undated pending delivery — excluded from a dated range.
+    base({ status: LaundryOrderStatus.READY_FOR_DELIVERY, deliveryRequired: true }),
+  ]
+  const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'delivery', preset: 'yesterday', now: NOW })
+  const result = simulate(orders, where)
+  it('keeps missed deliveries accessible and manageable', () => {
+    expect(result).toHaveLength(2)
+    expect(result.some((o) => o.status === LaundryOrderStatus.READY_FOR_DELIVERY)).toBe(true)
+  })
+  it('shows yesterday completed deliveries, excludes today + undated', () => {
+    expect(result.some((o) => o.status === 'DELIVERED')).toBe(true)
+    expect(result.some((o) => o.deliveryDate && new Date(o.deliveryDate as Date).getTime() === TODAY.getTime())).toBe(false)
+  })
+})
+
+describe('buildDispatchQueueWhere — delivery falls back to expectedDeliveryDate', () => {
+  it('matches an undated-delivery order via expectedDeliveryDate', () => {
+    const orders = [
+      base({ status: LaundryOrderStatus.READY_FOR_DELIVERY, deliveryRequired: true, deliveryDate: null, expectedDeliveryDate: YESTERDAY }),
+      base({ status: LaundryOrderStatus.READY_FOR_DELIVERY, deliveryRequired: true, deliveryDate: null, expectedDeliveryDate: TODAY }),
+    ]
+    const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'delivery', preset: 'yesterday', now: NOW })
+    expect(simulate(orders, where)).toHaveLength(1)
+  })
+})
+
+describe('buildDispatchQueueWhere — upcoming shows only future pending work', () => {
+  const orders = [
+    base({ pickupDate: TOMORROW }), // tomorrow — visible
+    base({ pickupDate: TODAY }), // today — excluded
+    base({ status: 'PENDING_STORE_AUDIT', pickupDate: TOMORROW, pickupCompletedAt: plusHours(TODAY, 1) }), // completed early — excluded
+  ]
+  const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', preset: 'upcoming', now: NOW })
+  const result = simulate(orders, where)
+  it('keeps only pending jobs scheduled after today', () => {
+    expect(result).toHaveLength(1)
+    expect(result[0].pickupCompletedAt).toBeNull()
+  })
+})
+
+describe('buildDispatchQueueWhere — custom range', () => {
+  it('filters pickupDate within [from, to]', () => {
+    const day = (d: number) => { const s = new Date(2026, 7, d, 0, 0, 0); return s }
+    const orders = [
+      base({ pickupDate: day(2) }), // Aug 2 — before range
+      base({ pickupDate: day(3) }), // Aug 3 — in range
+      base({ pickupDate: day(9) }), // Aug 9 — after range
+    ]
+    const where = buildDispatchQueueWhere({ businessId: 'lb-1', type: 'pickup', preset: 'custom', fromDate: '2026-08-03', toDate: '2026-08-08', now: NOW })
+    expect(simulate(orders, where)).toHaveLength(1)
+  })
+})
+
+describe('dispatchDateRangeForPreset', () => {
+  it('today → [midnight, next midnight)', () => {
+    const r = dispatchDateRangeForPreset('today', NOW)
+    expect(r.start.getTime()).toBe(TODAY.getTime())
+    expect(r.end!.getTime()).toBe(addDays(TODAY, 1).getTime())
+  })
+  it('yesterday → previous calendar day', () => {
+    const r = dispatchDateRangeForPreset('yesterday', NOW)
+    expect(r.start.getTime()).toBe(YESTERDAY.getTime())
+    expect(r.end!.getTime()).toBe(TODAY.getTime())
+  })
+  it('upcoming → open-ended from tomorrow', () => {
+    const r = dispatchDateRangeForPreset('upcoming', NOW)
+    expect(r.start.getTime()).toBe(TOMORROW.getTime())
+    expect(r.end).toBeNull()
+  })
+  it('custom → inclusive day window', () => {
+    const r = dispatchDateRangeForPreset('custom', NOW, '2026-08-01', '2026-08-03')
+    const s = new Date('2026-08-01'); s.setHours(0, 0, 0, 0)
+    const e = new Date('2026-08-03'); e.setHours(23, 59, 59, 999)
+    expect(r.start.getTime()).toBe(s.getTime())
+    expect(r.end!.getTime()).toBe(e.getTime())
   })
 })
