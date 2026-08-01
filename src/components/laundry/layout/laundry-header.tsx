@@ -18,10 +18,11 @@ import {
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
 import { ROLES } from "@/lib/constants"
 
 export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) {
-  const { supportMode, clearSupportMode } = useAdminStore()
+  const { supportMode, clearSupportMode, resetWorkspaceState } = useAdminStore()
   const { user, logout } = useAuthStore()
   const { assignedRbacRole, isLoaded, businessRole, platformRole } = useRuntimeAuth()
   const { setLaundryPage } = useAdminStore()
@@ -46,7 +47,22 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
     }
   }
 
-  const handleLogout = () => { try { logout() } catch {} ; window.location.href = "/" }
+  const handleLogout = () => {
+    // Full workspace-scoped cleanup before leaving: server-side logout,
+    // workspace view/tenant context, RBAC cache, and workspace storage keys.
+    try { logout() } catch {}
+    try { resetWorkspaceState() } catch {}
+    try { clearRuntimeAuthCache() } catch {}
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("quantix_business_id")
+        localStorage.removeItem("quantix_store_id")
+        sessionStorage.removeItem("quantix_nav_collapsed")
+        sessionStorage.removeItem("quantix_nav_scroll")
+      } catch {}
+    }
+    window.location.href = "/"
+  }
 
   return (
     <>

@@ -144,7 +144,7 @@ describe('isLaundryDateAvailable', () => {
   })
 
   it('blocks weekly off-days', () => {
-    const a = isLaundryDateAvailable(SATURDAY_OFF, '2026-08-01')
+    const a = isLaundryDateAvailable(SATURDAY_OFF, '2026-08-08') // future Saturday
     expect(a.available).toBe(false)
     expect(a.reason).toContain('Saturday')
   })
@@ -190,7 +190,7 @@ describe('laundrySlotsForDate', () => {
 
   it('returns [] on a weekly off / unavailable date', () => {
     const slots = ['07:00 - 09:00', '10:00 - 12:00']
-    expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-01')).toEqual([])
+    expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-08')).toEqual([])
   })
 
   it('returns slots unchanged when no date is given', () => {
@@ -207,7 +207,7 @@ describe('assertLaundryDateAvailable', () => {
   })
 
   it('rejects an unavailable date with a label-prefixed message', () => {
-    const r = assertLaundryDateAvailable(SATURDAY_OFF, '2026-08-01', 'Pickup')
+    const r = assertLaundryDateAvailable(SATURDAY_OFF, '2026-08-08', 'Pickup') // future Saturday
     expect(r.ok).toBe(false)
     if (r.ok) throw new Error('expected rejection')
     expect(r.error).toContain('Pickup')

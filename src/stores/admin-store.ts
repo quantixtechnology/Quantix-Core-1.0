@@ -467,6 +467,11 @@ interface AdminState {
   setBusinessOwnerContext: (id: string, name: string, type: string, slug?: string) => void
   // Clear business context (when super admin exits impersonation)
   clearCurrentBusiness: () => void
+  // Reset ALL workspace-scoped state (view mode, business/tenant context,
+  // workspace page, support mode, storefront context) back to the platform
+  // defaults. Used by logout / workspace cleanup. Never touches Super Admin
+  // selections or navigation data.
+  resetWorkspaceState: () => void
   // Whether super admin is currently impersonating a business
   isImpersonating: boolean
 
@@ -664,6 +669,52 @@ export const useAdminStore = create<AdminState>((set) => ({
     viewMode: "super_admin",
     searchQuery: "",
     orderStages: [],
+  }),
+  resetWorkspaceState: () => set({
+    // View routing → platform default (never leave a workspace view active)
+    viewMode: "super_admin",
+    // Workspace pages → defaults
+    businessPage: "dashboard",
+    laundryPage: "dashboard",
+    processingOrderId: null,
+    // Real tenant context → cleared (a NEW session must rebuild it)
+    currentBusinessId: "",
+    currentBusinessName: "",
+    currentBusinessType: "",
+    currentBusinessSlug: "",
+    currentBusinessPrimaryColor: "",
+    currentBusinessLogo: "",
+    currentBusinessFavicon: "",
+    currentStoreId: "",
+    currentStoreName: "",
+    currentStoreCode: "",
+    isImpersonating: false,
+    // Support mode → off
+    supportMode: {
+      active: false,
+      platformAdminId: "",
+      platformAdminName: "",
+      platformAdminRole: "",
+      laundryBusinessId: "",
+      laundryBusinessName: "",
+    },
+    // Storefront context → defaults (business-scoped, must not leak to next session)
+    orderStages: [],
+    currentImageConfig: PLATFORM_IMAGE_DEFAULTS,
+    currentBusinessTheme: DEFAULT_BUSINESS_THEME,
+    storefrontWhyChooseUs: [],
+    storefrontPromiseBar: [],
+    currentPwaAppearance: PWA_APPEARANCE_DEFAULTS,
+    storeRefreshKey: 0,
+    // Shared UI → closed
+    searchQuery: "",
+    isCreateDialogOpen: false,
+    isDetailSheetOpen: false,
+    // Customer / delivery flags → logged out
+    customerLoggedIn: false,
+    customerName: "",
+    deliveryLoggedIn: false,
+    deliveryPartnerName: "",
   }),
   isImpersonating: false,
 

@@ -14,7 +14,7 @@ import { setBusinessContext } from "@/lib/api-client";
 import { LoginPage } from "@/components/auth/login-page";
 import { Loader2 } from "lucide-react";
 import type { Role } from "@/lib/types";
-import { getProductCodeForHost } from "@/lib/product-hosts";
+import { getProductCodeForHost, isReservedHostPrefix } from "@/lib/product-hosts";
 
 const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in";
 // True when the app is served on a product workspace subdomain (commerce.*, …).
@@ -261,12 +261,15 @@ export function AuthProvider({
   // ─── Not authenticated — show login page (skip for storefront subdomains) ────
   // Storefront subdomains (arbazchicken.quantixtechnology.in) have their own
   // CustomerAuth flow inside CustomerLayout. Never show the admin LoginPage there.
+  // Product workspace hosts (laundry.quantixtechnology.in) are NOT storefronts:
+  // unauthenticated visitors must see the LoginPage — otherwise the app renders
+  // with no session and the protected AuthGuard spins on a blank screen forever.
   if (!isAuthenticated) {
     const hostname = window.location.hostname.split(":")[0]
     const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
     const isStorefrontSubdomain =
       hostname.endsWith(`.${storefrontBase}`) &&
-      !["www", "app", "admin", "api", "mail"].includes(hostname.split(".")[0])
+      !isReservedHostPrefix(hostname.split(".")[0])
 
     console.log("[AuthProvider] unauthenticated | hostname=", hostname, "| isStorefront=", isStorefrontSubdomain)
 

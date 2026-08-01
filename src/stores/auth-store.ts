@@ -536,7 +536,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // session that is still valid — the app simply falls back to the Login page.
   clearSession: () => {
     clearStorage();
-    if (typeof window !== "undefined") localStorage.removeItem("quantix_store_id");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("quantix_store_id");
+      localStorage.removeItem("quantix_business_id");
+    }
     set({
       user: null,
       token: null,

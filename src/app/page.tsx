@@ -16,6 +16,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getProductHostPrefixes, getProductCodeForHost } from "@/lib/product-hosts"
 import { ErrorBoundary } from "@/components/error/error-boundary"
+import { LaundryWorkspaceBootstrap } from "@/components/laundry/laundry-workspace-bootstrap"
 
 // ── Storefront context loader ─────────────────────────────────────────────
 // Receives slug directly (no useSearchParams needed here).
@@ -865,9 +866,13 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     if (currentBusinessType === "LAUNDRY" || productWorkspaceCode === "LAUNDRY") {
       return (
         <AuthGuard>
-          <LaundryLayout>
-            <LaundryPageRouter />
-          </LaundryLayout>
+          <ErrorBoundary view="business">
+            <LaundryWorkspaceBootstrap businessId={wsBusinessId}>
+              <LaundryLayout>
+                <LaundryPageRouter />
+              </LaundryLayout>
+            </LaundryWorkspaceBootstrap>
+          </ErrorBoundary>
         </AuthGuard>
       )
     }
