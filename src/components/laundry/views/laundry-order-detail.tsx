@@ -45,6 +45,7 @@ interface Detail {
   deliveryExecutiveId: string | null; deliveryAssignedAt: string | null
   deliveryAcceptance: string | null; deliveryAcceptedAt: string | null
   deliveryCompletedAt: string | null; deliveryStartedAt: string | null
+  deliveryExecutiveName?: string | null
   fieldStatus: string | null
   feedback?: { rating: number; comment: string | null; submittedAt: string } | null
 }
@@ -217,6 +218,12 @@ export function LaundryOrderDetail() {
     return "PENDING"
   }, [order])
 
+  // A delivery is "completed" the moment the order is DELIVERED. The panel then
+  // shows WHO actually performed it (the assigned executive, or the store staff
+  // who completed a self-delivery) — never "Unassigned" on a finished delivery.
+  const deliveryCompleted = !!order?.deliveryCompletedAt || !!order?.deliveredAt
+  const deliveryExecName = order?.deliveryExecutiveName || null
+
   if (loading) return <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading order…</div>
   if (!order) return (
     <div className="py-16 text-center">
@@ -321,31 +328,60 @@ export function LaundryOrderDetail() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <div><span className="text-slate-400">Scheduled Date</span><p className="font-medium">{fmtDate(order.deliveryDate) || "—"}</p></div>
               <div><span className="text-slate-400">Time Slot</span><p className="font-medium">{order.deliveryTimeSlot || "—"}</p></div>
-              <div className="col-span-2 flex items-center gap-2 flex-wrap">
-                <span className="text-slate-400 shrink-0">Assign Executive</span>
-                <select
-                  value={delExecId || ""}
-                  onChange={(e) => handleAssign("delivery", e.target.value || null)}
-                  disabled={assigning === "delivery"}
-                  className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
-                  <option value="">{assigning === "delivery" ? "Assigning…" : "— Unassigned —"}</option>
-                  {execs.map((ex) => (
-                    <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysDeliveries > 0 ? `(${ex.todaysDeliveries})` : ""}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Assigned / delivering executive — read-only once delivered. For a
+                  completed delivery never render "Unassigned": either the assigned
+                  executive performed it, or store staff completed a self-delivery
+                  (captured in deliveredBy). */}
+              {deliveryCompleted ? (
+                <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-400 shrink-0">Assigned Delivery Executive</span>
+                  {delExecId && deliveryExecName ? (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+                      <Navigation className="h-3.5 w-3.5 text-emerald-600" /> {deliveryExecName}
+                    </span>
+                  ) : delExecId ? (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+                      <Navigation className="h-3.5 w-3.5 text-emerald-600" /> {delExecId}
+                    </span>
+                  ) : order.deliveredBy ? (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
+                      <Navigation className="h-3.5 w-3.5 text-slate-500" /> Delivered by {order.deliveredBy} (Store)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
+                      <Navigation className="h-3.5 w-3.5 text-slate-500" /> Store / Counter
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-400 shrink-0">Assign Executive</span>
+                  <select
+                    value={delExecId || ""}
+                    onChange={(e) => handleAssign("delivery", e.target.value || null)}
+                    disabled={assigning === "delivery"}
+                    className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
+                    <option value="">{assigning === "delivery" ? "Assigning…" : "— Unassigned —"}</option>
+                    {execs.map((ex) => (
+                      <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysDeliveries > 0 ? `(${ex.todaysDeliveries})` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-xs text-slate-400">Delivery not required for this order.</p>
           )}
-          {order.deliveryRequired && order.deliveryExecutiveId && (
+          {/* Assignment Timeline — shown once a delivery is assigned OR completed,
+              so a finished delivery always reflects the real execution. */}
+          {order.deliveryRequired && (order.deliveryExecutiveId || deliveryCompleted) && (
             <div className="border-t border-blue-100 pt-2 mt-1 space-y-1 text-[11px]">
               <p className="text-slate-500 font-medium">Assignment Timeline</p>
               {order.deliveryAssignedAt && <p className="text-slate-500"><span className="text-slate-400">Assigned</span> {fmtDateTimeShort(order.deliveryAssignedAt)}</p>}
               {order.deliveryAcceptedAt && <p className="text-emerald-600"><span className="text-emerald-500">Accepted</span> {fmtDateTimeShort(order.deliveryAcceptedAt)}</p>}
               {order.deliveryStartedAt && <p className="text-indigo-600"><span className="text-indigo-500">Started</span> {fmtDateTimeShort(order.deliveryStartedAt)}</p>}
-              {order.deliveryCompletedAt && <p className="text-emerald-700 font-medium"><span className="text-emerald-500">Delivered</span> {fmtDateTimeShort(order.deliveryCompletedAt)}</p>}
-              {!order.deliveryCompletedAt && !order.deliveryAcceptedAt && order.deliveryExecutiveId && <p className="text-amber-600">Awaiting executive response</p>}
+              {deliveryCompleted && <p className="text-emerald-700 font-medium"><span className="text-emerald-500">Delivered</span> {fmtDateTimeShort(order.deliveryCompletedAt || order.deliveredAt)}</p>}
+              {!deliveryCompleted && !order.deliveryAcceptedAt && order.deliveryExecutiveId && <p className="text-amber-600">Awaiting executive response</p>}
             </div>
           )}
         </CardContent>

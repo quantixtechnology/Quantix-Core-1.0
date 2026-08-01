@@ -21,7 +21,7 @@ export async function markOrderDelivered(opts: {
 }): Promise<DeliverResult> {
   const order = await prisma.laundryOrder.findFirst({
     where: { id: opts.orderId, businessId: opts.lbId },
-    select: { id: true, orderNumber: true, status: true, orderType: true, balanceDue: true, paymentStatus: true },
+    select: { id: true, orderNumber: true, status: true, orderType: true, balanceDue: true, paymentStatus: true, deliveryRequired: true },
   })
   if (!order) return { ok: false, status: 404, error: "Order not found" }
   if (order.status !== "READY_FOR_DELIVERY") {
@@ -36,7 +36,18 @@ export async function markOrderDelivered(opts: {
   const now = new Date()
   const advanced = await prisma.laundryOrder.updateMany({
     where: { id: order.id, status: "READY_FOR_DELIVERY" },
-    data: { status: "DELIVERED", deliveredAt: now, deliveredBy: opts.deliveredBy || null, recipientName: opts.recipientName || null },
+    // For ACTUAL home deliveries (deliveryRequired) the delivery completion is
+    // recorded here so the Delivery panel, Dispatch and History all agree in
+    // every path (executive PWA OR store/counter completion). WALK_IN / STORE_DROP
+    // are customer-pickup handovers — not field deliveries — so they keep no
+    // delivery-completion fields (they never enter the delivery workflow).
+    data: {
+      status: "DELIVERED",
+      deliveredAt: now,
+      deliveredBy: opts.deliveredBy || null,
+      recipientName: opts.recipientName || null,
+      ...(order.deliveryRequired ? { deliveryCompletedAt: now } : {}),
+    },
   })
   if (advanced.count === 0) return { ok: false, status: 409, error: "Order already delivered" }
 

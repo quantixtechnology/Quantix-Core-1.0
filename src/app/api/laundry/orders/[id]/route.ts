@@ -39,7 +39,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }).catch(() => null)
     }
 
-    return NextResponse.json({ success: true, data: { ...order, customer } })
+    // Resolve the assigned Delivery Executive's name (even if later inactive /
+    // archived — the panel is showing historical execution). The order row only
+    // holds the opaque id; the panel needs the display name.
+    let deliveryExecutiveName: string | null = null
+    if (order.deliveryExecutiveId) {
+      deliveryExecutiveName = await prisma.laundryDeliveryExecutive
+        .findUnique({ where: { id: order.deliveryExecutiveId }, select: { name: true } })
+        .then((ex) => ex?.name ?? null)
+        .catch(() => null)
+    }
+
+    return NextResponse.json({ success: true, data: { ...order, customer, deliveryExecutiveName } })
   } catch (error) {
     console.error("[laundry-order-detail] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
