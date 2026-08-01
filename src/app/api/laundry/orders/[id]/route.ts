@@ -39,18 +39,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }).catch(() => null)
     }
 
-    // Resolve the assigned Delivery Executive's name (even if later inactive /
-    // archived — the panel is showing historical execution). The order row only
-    // holds the opaque id; the panel needs the display name.
-    let deliveryExecutiveName: string | null = null
-    if (order.deliveryExecutiveId) {
-      deliveryExecutiveName = await prisma.laundryDeliveryExecutive
-        .findUnique({ where: { id: order.deliveryExecutiveId }, select: { name: true } })
-        .then((ex) => ex?.name ?? null)
-        .catch(() => null)
-    }
+    // Resolve the assigned executive NAMES for Pickup and Delivery — even if the
+    // executive is later inactive / archived (the panel shows historical
+    // execution). The order row only holds the opaque ids; the panel needs names.
+    const [pickupExecutiveName, deliveryExecutiveName] = await Promise.all([
+      order.pickupExecutiveId
+        ? prisma.laundryDeliveryExecutive
+            .findUnique({ where: { id: order.pickupExecutiveId }, select: { name: true } })
+            .then((ex) => ex?.name ?? null)
+            .catch(() => null)
+        : Promise.resolve(null),
+      order.deliveryExecutiveId
+        ? prisma.laundryDeliveryExecutive
+            .findUnique({ where: { id: order.deliveryExecutiveId }, select: { name: true } })
+            .then((ex) => ex?.name ?? null)
+            .catch(() => null)
+        : Promise.resolve(null),
+    ])
 
-    return NextResponse.json({ success: true, data: { ...order, customer, deliveryExecutiveName } })
+    return NextResponse.json({ success: true, data: { ...order, customer, pickupExecutiveName, deliveryExecutiveName } })
   } catch (error) {
     console.error("[laundry-order-detail] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

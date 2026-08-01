@@ -389,38 +389,59 @@ export async function POST(request: Request) {
     // ── Bulk ──────────────────────────────────────────────────────────────
     const orderIds: string[] = b.orderIds
     if (orderIds && Array.isArray(orderIds) && orderIds.length > 0) {
-      const found = await prisma.laundryOrder.findMany({ where: { id: { in: orderIds }, businessId: biz.id }, select: { id: true, storeId: true } })
+      const found = await prisma.laundryOrder.findMany({
+        where: { id: { in: orderIds }, businessId: biz.id },
+        select: { id: true, storeId: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
+      })
       if (found.length !== orderIds.length) return NextResponse.json({ error: "Some orders not found" }, { status: 404 })
+      // Immutability: a completed pickup/delivery leg is permanent history —
+      // never bulk-assigned or bulk-unassigned afterwards.
+      const eligible = found.filter((o) =>
+        type === "delivery" ? !o.deliveryCompletedAt && o.status !== "DELIVERED" : !o.pickupCompletedAt,
+      )
+      const actionIds = eligible.map((o) => o.id)
+      if (actionIds.length === 0) return NextResponse.json({ success: true, assigned: 0, unassigned: 0, skipped: found.length, message: "Selected orders already have completed pickups/deliveries" })
       if (execId && execStoreId) {
-        const mismatched = found.filter((o) => o.storeId !== execStoreId)
+        const mismatched = eligible.filter((o) => o.storeId !== execStoreId)
         if (mismatched.length > 0) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to orders from other stores" }, { status: 403 })
       }
       if (!execId) {
         if (type === "delivery") {
-          await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { deliveryExecutiveId: null, deliveryAssignedAt: null, deliveryAcceptance: null, deliveryAcceptedAt: null, fieldStatus: null } })
-          for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: null, deliveryAssignedAt: null, deliveryAcceptance: null, deliveryAcceptedAt: null, fieldStatus: null } })
+          for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
         } else {
-          await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { pickupExecutiveId: null, pickupAssignedAt: null, pickupAcceptance: null, pickupAcceptedAt: null, fieldStatus: null } })
-          for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: null, pickupAssignedAt: null, pickupAcceptance: null, pickupAcceptedAt: null, fieldStatus: null } })
+          for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
         }
-        return NextResponse.json({ success: true, unassigned: orderIds.length })
+        return NextResponse.json({ success: true, unassigned: actionIds.length, skipped: found.length - actionIds.length })
       }
       const now2 = new Date()
       if (type === "delivery") {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now2, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
-        for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now2, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
       } else {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now2, pickupAcceptance: "PENDING", pickupAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
-        for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
-        for (const oid of orderIds) { await notifyCustomerForOrder(oid, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." }).catch(() => {}) }
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now2, pickupAcceptance: "PENDING", pickupAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
+        for (const oid of actionIds) { await notifyCustomerForOrder(oid, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." }).catch(() => {}) }
       }
-      return NextResponse.json({ success: true, assigned: orderIds.length, executiveId: execId })
+      return NextResponse.json({ success: true, assigned: actionIds.length, executiveId: execId, skipped: found.length - actionIds.length })
     }
 
     // ── Single ────────────────────────────────────────────────────────────
     if (!b.orderId) return NextResponse.json({ error: "orderId required" }, { status: 400 })
-    const order = await prisma.laundryOrder.findFirst({ where: { id: b.orderId, businessId: biz.id }, select: { id: true, storeId: true } })
+    const order = await prisma.laundryOrder.findFirst({
+      where: { id: b.orderId, businessId: biz.id },
+      select: { id: true, storeId: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
+    })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    // Immutability guard: once a leg is completed its executive is permanent
+    // history — no assign / reassign / unassign is ever allowed after that.
+    if (type === "delivery" && (order.deliveryCompletedAt || order.status === "DELIVERED")) {
+      return NextResponse.json({ error: "Delivery already completed — the assigned executive is part of the permanent record" }, { status: 409 })
+    }
+    if (type === "pickup" && order.pickupCompletedAt) {
+      return NextResponse.json({ error: "Pickup already completed — the assigned executive is part of the permanent record" }, { status: 409 })
+    }
     if (execId && execStoreId && order.storeId !== execStoreId) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to this order" }, { status: 403 })
 
     if (type === "delivery") {

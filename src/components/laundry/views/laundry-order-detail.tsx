@@ -45,6 +45,7 @@ interface Detail {
   deliveryExecutiveId: string | null; deliveryAssignedAt: string | null
   deliveryAcceptance: string | null; deliveryAcceptedAt: string | null
   deliveryCompletedAt: string | null; deliveryStartedAt: string | null
+  pickupExecutiveName?: string | null
   deliveryExecutiveName?: string | null
   fieldStatus: string | null
   feedback?: { rating: number; comment: string | null; submittedAt: string } | null
@@ -198,6 +199,7 @@ export function LaundryOrderDetail() {
 
   const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null
   const fmtDateTimeShort = (d: string | null | undefined) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : null
+  const fmtTime = (d: string | null | undefined) => d ? new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"
 
   const pickExecId = order?.pickupExecutiveId
   const delExecId = order?.deliveryExecutiveId
@@ -223,6 +225,10 @@ export function LaundryOrderDetail() {
   // who completed a self-delivery) — never "Unassigned" on a finished delivery.
   const deliveryCompleted = !!order?.deliveryCompletedAt || !!order?.deliveredAt
   const deliveryExecName = order?.deliveryExecutiveName || null
+  // A pickup is "completed" the moment the executive records PICKUP_COMPLETED
+  // (pickupCompletedAt). From then on the assignment is frozen history.
+  const pickupCompleted = !!order?.pickupCompletedAt
+  const pickupExecName = order?.pickupExecutiveName || null
 
   if (loading) return <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading order…</div>
   if (!order) return (
@@ -275,19 +281,33 @@ export function LaundryOrderDetail() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <div><span className="text-slate-400">Scheduled Date</span><p className="font-medium">{fmtDate(order.pickupDate) || "—"}</p></div>
               <div><span className="text-slate-400">Time Slot</span><p className="font-medium">{order.pickupTimeSlot || "—"}</p></div>
-              <div className="col-span-2 flex items-center gap-2 flex-wrap">
-                <span className="text-slate-400 shrink-0">Assign Executive</span>
-                <select
-                  value={pickExecId || ""}
-                  onChange={(e) => handleAssign("pickup", e.target.value || null)}
-                  disabled={assigning === "pickup"}
-                  className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
-                  <option value="">{assigning === "pickup" ? "Assigning…" : "— Unassigned —"}</option>
-                  {execs.map((ex) => (
-                    <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysPickups > 0 ? `(${ex.todaysPickups})` : ""}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Once the pickup is completed the executive becomes immutable
+                  history — no dropdown, no reassignment, only read-only info. */}
+              {pickupCompleted ? (
+                <div className="col-span-2 rounded-lg border border-amber-100 bg-amber-50/50 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-400">Pickup Executive</p>
+                  <p className="text-sm font-semibold text-slate-800">{pickupExecName || pickExecId || "Store / Counter"}</p>
+                  <div className="pt-1.5 text-[11px] font-medium text-emerald-700 leading-tight">
+                    <p>Completed</p>
+                    <p>{fmtDate(order.pickupCompletedAt)}</p>
+                    <p>{fmtTime(order.pickupCompletedAt)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-400 shrink-0">Assign Executive</span>
+                  <select
+                    value={pickExecId || ""}
+                    onChange={(e) => handleAssign("pickup", e.target.value || null)}
+                    disabled={assigning === "pickup"}
+                    className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
+                    <option value="">{assigning === "pickup" ? "Assigning…" : "— Unassigned —"}</option>
+                    {execs.map((ex) => (
+                      <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysPickups > 0 ? `(${ex.todaysPickups})` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-xs text-slate-400">Pickup not required for this order.</p>
@@ -333,25 +353,16 @@ export function LaundryOrderDetail() {
                   executive performed it, or store staff completed a self-delivery
                   (captured in deliveredBy). */}
               {deliveryCompleted ? (
-                <div className="col-span-2 flex items-center gap-2 flex-wrap">
-                  <span className="text-slate-400 shrink-0">Assigned Delivery Executive</span>
-                  {delExecId && deliveryExecName ? (
-                    <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
-                      <Navigation className="h-3.5 w-3.5 text-emerald-600" /> {deliveryExecName}
-                    </span>
-                  ) : delExecId ? (
-                    <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
-                      <Navigation className="h-3.5 w-3.5 text-emerald-600" /> {delExecId}
-                    </span>
-                  ) : order.deliveredBy ? (
-                    <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
-                      <Navigation className="h-3.5 w-3.5 text-slate-500" /> Delivered by {order.deliveredBy} (Store)
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
-                      <Navigation className="h-3.5 w-3.5 text-slate-500" /> Store / Counter
-                    </span>
-                  )}
+                <div className="col-span-2 rounded-lg border border-blue-100 bg-blue-50/50 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-400">Delivery Executive</p>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {deliveryExecName || delExecId || (order.deliveredBy ? `Delivered by ${order.deliveredBy} (Store)` : "Store / Counter")}
+                  </p>
+                  <div className="pt-1.5 text-[11px] font-medium text-emerald-700 leading-tight">
+                    <p>Completed</p>
+                    <p>{fmtDate(order.deliveryCompletedAt || order.deliveredAt)}</p>
+                    <p>{fmtTime(order.deliveryCompletedAt || order.deliveredAt)}</p>
+                  </div>
                 </div>
               ) : (
                 <div className="col-span-2 flex items-center gap-2 flex-wrap">
