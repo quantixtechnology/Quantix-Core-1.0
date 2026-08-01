@@ -25,7 +25,9 @@ export async function POST(request: Request) {
       select: { id: true, status: true, deliveryRequired: true, deliveryExecutiveId: true, deliveryCompletedAt: true, storeId: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
-    if (order.deliveryCompletedAt)
+    // Audit immutability: a completed delivery leg is permanent history — no
+    // scheduling/reassigning afterwards (matches the pickup-scheduler guard).
+    if (order.deliveryCompletedAt || order.status === "DELIVERED")
       return NextResponse.json({ error: "Delivery already completed" }, { status: 409 })
     if (order.deliveryExecutiveId && !executiveId)
       return NextResponse.json({ success: true, data: { orderId: order.id, deliveryExecutiveId: order.deliveryExecutiveId }, existing: true, message: "Delivery already scheduled" })

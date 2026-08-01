@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, Truck, PackageCheck, Navigation, ShoppingBag, Clock, Search, RefreshCw, Users, X } from "lucide-react"
+import { Loader2, Truck, PackageCheck, Navigation, ShoppingBag, Clock, Search, RefreshCw, Users, X, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 type Kind = "pickup" | "delivery"
@@ -29,6 +29,7 @@ interface Job {
   bagCount: number
   executiveId: string | null; executiveName: string | null
   acceptance: string | null; scheduledDate: string | null
+  completedAt: string | null
   bucket: string
 }
 interface DispatchJob extends Job { kind: Kind }
@@ -88,6 +89,13 @@ const RANGE_SUBTITLE: Record<string, string> = {
   upcoming: "Upcoming pickups & deliveries not yet done",
   custom: "Pickups & deliveries in the selected date range",
 }
+
+// Audit immutability: once a pickup/delivery leg is completed, the assigned
+// executive is permanent history and must never be re/assigned. Mirrors the
+// backend guards (pickup → pickupCompletedAt set, incl. IN_TRANSIT pending
+// receipt; delivery → deliveryCompletedAt set or status DELIVERED).
+const isFrozen = (j: { bucket: string; completedAt: string | null }) =>
+  j.bucket === "completed" || !!j.completedAt
 
 export function LaundryDispatchCenter() {
   const { currentBusinessId } = useAuthStore()
@@ -186,7 +194,7 @@ export function LaundryDispatchCenter() {
   // ── Bulk — selection may mix pickups + deliveries; group by kind and issue one
   // call per type (each hits the same endpoint, updating the Orders directly). ──
   const bulkAssign = async (executiveId: string | null) => {
-    const chosen = filtered.filter((j) => selected.has(j.id))
+    const chosen = filtered.filter((j) => selected.has(j.id) && !isFrozen(j))
     if (chosen.length === 0) return
     if (!executiveId && !confirm(`Clear assignment for ${chosen.length} selected job(s)?`)) return
     const groups: Record<Kind, string[]> = { pickup: [], delivery: [] }
@@ -205,8 +213,9 @@ export function LaundryDispatchCenter() {
   }
 
   const visibleIds = filtered.map((j) => j.id)
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visibleIds))
+  const selectableIds = filtered.filter((j) => !isFrozen(j)).map((j) => j.id)
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds))
   const toggleOne = (id: string) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
   const open = (id: string) => { setSelectedOrderId(id); setLaundryPage("order-detail") }
 
@@ -324,11 +333,11 @@ export function LaundryDispatchCenter() {
         </div>
       )}
 
-      {/* Select-all */}
+      {/* Select-all — frozen (completed) jobs are permanently locked and excluded */}
       {filtered.length > 0 && (
         <div className="flex items-center gap-2 px-1">
           <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-          <span className="text-[10px] text-slate-400">{filtered.length} job{filtered.length !== 1 ? "s" : ""}{selected.size > 0 ? ` · ${selected.size} selected` : ""}</span>
+          <span className="text-[10px] text-slate-400">{filtered.length} job{filtered.length !== 1 ? "s" : ""}{selectableIds.length < filtered.length ? ` · ${filtered.length - selectableIds.length} locked` : ""}{selected.size > 0 ? ` · ${selected.size} selected` : ""}</span>
         </div>
       )}
 
@@ -339,10 +348,11 @@ export function LaundryDispatchCenter() {
         <div className="space-y-1">
           {filtered.map((job) => {
             const isDel = job.kind === "delivery"
+            const frozen = isFrozen(job)
             return (
               <Card key={job.id} className={`rounded-lg border ${selected.has(job.id) ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-white"} cursor-pointer hover:border-slate-300`} onClick={() => open(job.id)}>
                 <CardContent className="p-1.5 flex items-center gap-1.5">
-                  <Checkbox checked={selected.has(job.id)} onCheckedChange={() => toggleOne(job.id)} className="shrink-0" onClick={(e) => e.stopPropagation()} />
+                  <Checkbox checked={selected.has(job.id)} disabled={frozen} onCheckedChange={() => !frozen && toggleOne(job.id)} className="shrink-0" onClick={(e) => e.stopPropagation()} />
                   {/* Kind chip */}
                   <Badge variant="outline" className={`text-[9px] leading-none px-1 h-4 shrink-0 gap-0.5 ${isDel ? "border-violet-200 text-violet-700 bg-violet-50" : "border-amber-200 text-amber-700 bg-amber-50"}`}>
                     {isDel ? <PackageCheck className="h-2.5 w-2.5" /> : <Truck className="h-2.5 w-2.5" />}{isDel ? "DEL" : "PICK"}
@@ -361,11 +371,18 @@ export function LaundryDispatchCenter() {
                     {job.bagCount > 0 && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><ShoppingBag className="h-2.5 w-2.5" />{job.bagCount}</span>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <select value={job.executiveId || ""} onChange={(e) => assign(job, e.target.value || null)} onClick={(e) => e.stopPropagation()}
-                      className="h-6 text-[10px] w-20 lg:w-28 rounded border border-slate-200 px-1 bg-white">
-                      <option value="">—</option>
-                      {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
-                    </select>
+                    {frozen ? (
+                      <span title="Executive is permanent history once the job is completed"
+                        className="inline-flex items-center h-6 px-2 rounded border border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700 min-w-20 lg:min-w-28">
+                        <Lock className="h-3 w-3 mr-1" />{job.executiveName || "Store / Counter"}
+                      </span>
+                    ) : (
+                      <select value={job.executiveId || ""} onChange={(e) => assign(job, e.target.value || null)} onClick={(e) => e.stopPropagation()}
+                        className="h-6 text-[10px] w-20 lg:w-28 rounded border border-slate-200 px-1 bg-white">
+                        <option value="">—</option>
+                        {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                      </select>
+                    )}
                     <Badge variant="outline" className={`text-[9px] leading-none px-1 h-4 shrink-0 ${BUCKET_STYLES[job.bucket] || "border-slate-200 text-slate-400"}`}>
                       {BUCKET_LABELS[job.bucket] || job.bucket}
                     </Badge>

@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Store, LogOut, Loader2, ClipboardList, Truck, PackageCheck, ClipboardCheck, Wallet, Boxes,
-  CheckCircle2, PlusCircle, Search, ScanLine, LayoutGrid, ChevronLeft, User, Phone, RefreshCw, X, MapPin,
+  CheckCircle2, PlusCircle, Search, ScanLine, LayoutGrid, ChevronLeft, User, Phone, RefreshCw, X, MapPin, Lock,
 } from "lucide-react"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
@@ -609,7 +609,8 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
     if (!j.success && j.error) alert(j.error); load()
   }
   const bulk = async (executiveId: string | null) => {
-    const ids = [...sel]; if (!ids.length) return
+    const ids = [...sel].filter((id) => { const j = jobs.find((x) => x.id === id); return j && !(j.bucket === "completed" || !!j.completedAt) })
+    if (!ids.length) { setSel(new Set()); return }
     const j = await api("/api/laundry/pickup-scheduler", { method: "POST", body: JSON.stringify({ businessId: staff.businessId, orderIds: ids, type: mode, executiveId }) })
     if (!j.success && j.error) alert(j.error); setSel(new Set()); load()
   }
@@ -635,10 +636,12 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
         )}
         {loading ? <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin inline text-blue-600" /></div>
           : jobs.length === 0 ? <p className="py-16 text-center text-sm text-slate-400">No {mode === "pickup" ? "pickups" : "deliveries"} today.</p>
-          : <div className="space-y-2">{jobs.map((j) => (
+          : <div className="space-y-2">{jobs.map((j) => {
+              const frozen = j.bucket === "completed" || !!j.completedAt
+              return (
               <div key={j.id} className={`bg-white rounded-xl border p-3 ${sel.has(j.id) ? "border-blue-300" : "border-slate-200"}`}>
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={sel.has(j.id)} onChange={() => toggle(j.id)} className="h-4 w-4" />
+                  <input type="checkbox" checked={sel.has(j.id)} disabled={frozen} onChange={() => !frozen && toggle(j.id)} className="h-4 w-4" />
                   <button onClick={() => onOpen(j.id)} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center justify-between"><span className="font-mono font-bold text-[13px]">{j.orderNumber}</span><span className="text-[10px] text-slate-400">{fmtDay(j.scheduledDate)} {j.timeSlot || ""}</span></div>
                     <div className="text-[12px] text-slate-500 truncate">{j.customerName}{mode === "pickup" && j.address ? ` · ${j.address}` : ""}{mode === "delivery" ? ` · ${j.amountDue > 0 ? inr(j.amountDue) + " due" : "Paid"}` : ""}</div>
@@ -652,16 +655,22 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
                     <span className="text-slate-500">Assigned to <span className="font-medium text-slate-700">{j.executiveName}</span></span>
                   </div>
                 )}
-                <select value={j.executiveId || ""} onChange={(e) => assign(j.id, e.target.value || null)} className="mt-2 w-full h-9 rounded-lg border border-slate-200 px-2 text-[12px] bg-white">
-                  <option value="">{j.executiveId ? "Reassign / Unassign…" : "— Unassigned —"}</option>
-                  {execs.map((ex) => (
-                    <option key={ex.id} value={ex.id} disabled={!ex.isActive}>
-                      {ex.name}{ex.isActive === false ? " (inactive)" : ""}{ex.availability && ex.availability !== "AVAILABLE" ? ` · ${ex.availability}` : ""} — P{ex.todaysPickups ?? 0}/D{ex.todaysDeliveries ?? 0}
-                    </option>
-                  ))}
-                </select>
+                {frozen ? (
+                  <div className="mt-2 w-full h-9 rounded-lg border border-emerald-200 bg-emerald-50 flex items-center px-2 text-[12px] font-medium text-emerald-700">
+                    <Lock className="h-3.5 w-3.5 mr-1.5" />{j.executiveName || "Store / Counter"} — completed
+                  </div>
+                ) : (
+                  <select value={j.executiveId || ""} onChange={(e) => assign(j.id, e.target.value || null)} className="mt-2 w-full h-9 rounded-lg border border-slate-200 px-2 text-[12px] bg-white">
+                    <option value="">{j.executiveId ? "Reassign / Unassign…" : "— Unassigned —"}</option>
+                    {execs.map((ex) => (
+                      <option key={ex.id} value={ex.id} disabled={!ex.isActive}>
+                        {ex.name}{ex.isActive === false ? " (inactive)" : ""}{ex.availability && ex.availability !== "AVAILABLE" ? ` · ${ex.availability}` : ""} — P{ex.todaysPickups ?? 0}/D{ex.todaysDeliveries ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-            ))}</div>}
+              )})}</div>}
       </div>
     </div>
   )

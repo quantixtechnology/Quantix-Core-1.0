@@ -21,9 +21,19 @@ export async function POST(request: Request) {
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id: orderId, businessId: biz.id },
-      select: { id: true },
+      select: { id: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+
+    // Audit immutability: cancelling a completed leg would wipe the completion
+    // timestamp and the permanent executive record. Once completed, the field
+    // work is frozen history — never cancellable through this endpoint.
+    if (type === "pickup" && order.pickupCompletedAt) {
+      return NextResponse.json({ error: "Pickup already completed — the assigned executive is part of the permanent record" }, { status: 409 })
+    }
+    if (type === "delivery" && (order.deliveryCompletedAt || order.status === "DELIVERED")) {
+      return NextResponse.json({ error: "Delivery already completed — the assigned executive is part of the permanent record" }, { status: 409 })
+    }
 
     if (type === "pickup") {
       await prisma.laundryOrder.update({

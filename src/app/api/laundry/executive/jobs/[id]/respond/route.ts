@@ -21,8 +21,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const accept = b.action === "accept"
     if (b.action !== "accept" && b.action !== "reject") return NextResponse.json({ error: "Invalid action" }, { status: 400 })
 
-    const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, pickupExecutiveId: true, deliveryExecutiveId: true } })
+    const order = await prisma.laundryOrder.findFirst({
+      where: { id, businessId: session.businessId },
+      select: { id: true, pickupExecutiveId: true, deliveryExecutiveId: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
+    })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    // Audit immutability: once a leg is completed the assigned executive is
+    // permanent history — accepting/rejecting afterwards cannot alter it.
+    if (type === "pickup" && order.pickupCompletedAt) {
+      return NextResponse.json({ error: "Pickup already completed — the assignment is part of the permanent record" }, { status: 409 })
+    }
+    if (type === "delivery" && (order.deliveryCompletedAt || order.status === "DELIVERED")) {
+      return NextResponse.json({ error: "Delivery already completed — the assignment is part of the permanent record" }, { status: 409 })
+    }
     const assignedTo = type === "delivery" ? order.deliveryExecutiveId : order.pickupExecutiveId
     if (assignedTo !== session.executiveId) return NextResponse.json({ error: "This job is not assigned to you" }, { status: 403 })
 
