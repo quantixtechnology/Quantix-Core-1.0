@@ -112,14 +112,29 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   const [pickupDate, setPickupDate] = useState("")
   const [pickupSlot, setPickupSlot] = useState("")
   const [pickupSlots, setPickupSlots] = useState<string[]>(PICKUP_SLOTS)
+  const [dateUnavailable, setDateUnavailable] = useState("")
   const [pickupInstructions, setPickupInstructions] = useState("")
-  // Same slots the store configured in Settings → Time Slots (public endpoint).
+  const todayIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split("T")[0]
+  // Slots are fetched from the public endpoint. The endpoint also validates the
+  // chosen date (past / weekly off / holiday) and restricts slots to that day's
+  // working hours, so we refetch whenever the pickup date changes.
   useEffect(() => {
     if (!currentBusinessId) return
-    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
-      .then((j) => { if (j.success && j.data.pickupSlots?.length) setPickupSlots(j.data.pickupSlots) })
+    const q = pickupDate ? `&date=${encodeURIComponent(pickupDate)}` : ""
+    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(currentBusinessId)}${q}`).then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.dateAvailable === false) {
+          setDateUnavailable(j.dateReason || "Pickup is not available on this date.")
+          setPickupSlot("")
+          return
+        }
+        setDateUnavailable("")
+        const slots = (j.data?.pickup?.slots as string[]) || PICKUP_SLOTS
+        setPickupSlots(slots)
+        if (!slots.includes(pickupSlot)) setPickupSlot("")
+      })
       .catch(() => { /* keep fallback */ })
-  }, [currentBusinessId])
+  }, [currentBusinessId, pickupDate])
   const [paymentMethod, setPaymentMethod] = useState("COD")
   const [payMethods, setPayMethods] = useState<{ cod: boolean; online: { gateway: string; keyId: string; environment: string } | null }>({ cod: true, online: null })
   // Which payment options this business offers (COD switch + active online gateway).
@@ -139,7 +154,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
 
   const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
 
-  const canConfirm = isAuthenticated && !!customerResolved && !!selectedAddressId && !!pickupDate && !!pickupSlot && hasCartItems && !storeClosed
+  const canConfirm = isAuthenticated && !!customerResolved && !!selectedAddressId && !!pickupDate && !!pickupSlot && !dateUnavailable && hasCartItems && !storeClosed
 
   useEffect(() => {
     if (isAuthenticated && token && !customerResolved && (step === "email" || step === "address")) {
@@ -960,11 +975,12 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Pickup Date</label>
-                  <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className={inputCls} />
+                  <input type="date" value={pickupDate} min={todayIst()} onChange={(e) => { setPickupDate(e.target.value); setPickupSlot("") }} className={inputCls} />
+                  {dateUnavailable && <p className="mt-1 text-[11px] text-rose-600">{dateUnavailable}</p>}
                 </div>
                 <div>
                   <label className={labelCls}>Time Slot</label>
-                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls}>
+                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls} disabled={!!dateUnavailable}>
                     <option value="">Select slot</option>
                     {pickupSlots.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -1066,6 +1082,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                   {!selectedAddressId && <p className="text-[10px] text-red-400">Select a pickup address</p>}
                   {!pickupDate && <p className="text-[10px] text-red-400">Select pickup date</p>}
                   {!pickupSlot && <p className="text-[10px] text-red-400">Select pickup time slot</p>}
+                  {dateUnavailable && <p className="text-[10px] text-red-400">{dateUnavailable}</p>}
                   {!hasCartItems && <p className="text-[10px] text-red-400">Add items to your bag</p>}
                   {storeClosed && <p className="text-[10px] text-red-400">Store is closed</p>}
                 </div>

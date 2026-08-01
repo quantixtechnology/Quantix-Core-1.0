@@ -58,7 +58,7 @@ function ServiceCard({ imageUrl, brandColor, title, icon, priceLine, metaLine, f
   )
 }
 
-export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string; nav: WebNav; storeClosed?: boolean }) {
+export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandColor: string; nav: WebNav; storeClosed?: boolean }) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
   const { isAuthenticated, token, user } = useAuthStore()
   // Authenticated customer identity (reused from the shared Quantix session — no
@@ -153,7 +153,10 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </h1>
         <p className="mt-2 text-sm sm:text-base text-gray-500">Fresh clothes. Simple scheduling. Transparent pricing.</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button onClick={() => setActiveService(popular[0] || services[0] || null)} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm active:opacity-80" style={accentBg}>Schedule Pickup</button>
+          <button onClick={() => setActiveService(popular[0] || services[0] || null)} disabled={storeClosed}
+            className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>
+            {storeClosed ? "Store is currently closed" : "Schedule Pickup"}
+          </button>
           <button onClick={() => document.getElementById("laundry-services")?.scrollIntoView({ behavior: "smooth" })} className="rounded-xl px-5 py-2.5 text-sm font-semibold border border-gray-200 text-gray-700 active:bg-gray-50">View Services</button>
         </div>
         <div className="mt-5 relative max-w-xl">
@@ -188,7 +191,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                       ? <p className="mt-0.5 text-sm font-bold text-gray-900"><span className="text-[11px] font-medium text-gray-400">From </span>{inr(s.fromPrice)} <span className="text-xs font-medium text-gray-400">/ {s.fromUnit === "kg" ? "kg" : s.fromUnit === "fixed" ? "item" : "piece"}</span></p>
                       : <p className="mt-0.5 text-xs text-gray-400">Pricing unavailable</p>}
                     metaLine={s.description ? <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p> : undefined}
-                    button={<button onClick={() => setActiveService(s)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{s.orderMode === "BAG" ? <><span className="sm:hidden">Book</span><span className="hidden sm:inline">Book Pickup</span></> : <><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></>}</button>}
+                    button={<button onClick={() => setActiveService(s)} disabled={storeClosed} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>{storeClosed ? "Currently closed" : (s.orderMode === "BAG" ? <><span className="sm:hidden">Book</span><span className="hidden sm:inline">Book Pickup</span></> : <><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></>)}</button>}
                   />
                 ))}
               </div>
@@ -215,7 +218,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                   ) : subscriptionInCart?.id === p.id ? (
                     <button onClick={() => clearSubscription()} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
                   ) : (
-                    <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } addSubscription(p); toast.success(`${p.name} added to your bag — ₹${p.price} at checkout`) }} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in"}</button>
+                    <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } addSubscription(p); toast.success(`${p.name} added to your bag — ₹${p.price} at checkout`) }} disabled={storeClosed} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>{storeClosed ? "Closed — Checkout unavailable" : (isAuthenticated ? "Subscribe" : "Sign in")}</button>
                   )
                   return (
                     <ServiceCard
@@ -285,7 +288,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
       {subscriptionInCart && !activeService && !subOnlyCheckout && (
         <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-100 bg-white px-4 py-3 shadow-[0_-2px_12px_rgba(0,0,0,0.05)] flex items-center justify-between">
           <div className="text-sm"><b className="text-gray-900">{subscriptionInCart.name}</b><span className="text-gray-400"> · {inr(subscriptionInCart.price)} in bag</span><p className="text-[11px] text-gray-400">Add garments from a service to pay together, or check out now.</p></div>
-          <button onClick={openCartCheckout} className="rounded-xl px-4 py-2 text-sm font-semibold text-white active:opacity-80 shrink-0" style={{ backgroundColor: brandColor }}>Checkout</button>
+          <button onClick={openCartCheckout} disabled={storeClosed} className="rounded-xl px-4 py-2 text-sm font-semibold text-white active:opacity-80 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: brandColor }}>{storeClosed ? "Store is closed" : "Checkout"}</button>
         </div>
       )}
 
@@ -386,6 +389,34 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       }
     }).catch(() => {})
   }, [businessId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pickup date availability + working-hours slot filtering ───────────────
+  // The public slots endpoint validates the chosen date (weekly off / holiday /
+  // past) and returns slots restricted to that day's working hours. Unavailable
+  // dates are rejected client-side and never offered (server re-validates).
+  const todayIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split("T")[0]
+  useEffect(() => {
+    if (!businessId) return
+    const d = date || deliveryDate || backupDate
+    if (!d) return
+    const ctl = new AbortController()
+    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(businessId)}&date=${encodeURIComponent(d)}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.dateAvailable === false) {
+          if (d === date) { toast.error(j.dateReason || "Pickup is not available on this date."); setDate("") }
+          else if (d === deliveryDate) { toast.error(j.dateReason || "Standard delivery is not available on this date."); setDeliveryDate("") }
+          else if (d === backupDate) { toast.error(j.dateReason || "Backup delivery is not available on this date."); setBackupDate("") }
+          return
+        }
+        if (j.success && d === date) {
+          setPickupSlots(j.data.pickup.slots || [])
+          if (!j.data.pickup.slots?.includes(slot)) setSlot(j.data.pickup.slots?.[0] || "")
+        }
+      })
+      .catch(() => {})
+    return () => ctl.abort()
+  }, [businessId, date, deliveryDate, backupDate])
 
   // ── Delivery slot capacity ───────────────────────────────────────────────────
   // Full slots are per (date + time slot). Refetch whenever the Standard or
@@ -1147,7 +1178,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Pickup Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+              <Field label="Pickup Date"><input type="date" value={date} min={todayIst()} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={slot} onChange={(e) => setSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
                   {pickupSlots.length === 0 ? <option>Loading…</option> : pickupSlots.map((s) => <option key={s}>{s}</option>)}

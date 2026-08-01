@@ -31,6 +31,7 @@ import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
+import { assertLaundryBookingOpen } from "@/lib/laundry-availability"
 
 export const runtime = "nodejs"
 
@@ -67,6 +68,20 @@ export async function POST(request: Request) {
     const lbId = biz.id
     const platformId = biz.platformBusinessId || businessId
     const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
+
+    // ── Availability guard — store must be open now AND every requested
+    //    date/slot must fall inside that day's working hours. This reuses the
+    //    Commerce checkStoreOpen machinery (single source of truth) and only
+    //    gates customer-facing channels; admins are never affected.
+    const guard = await assertLaundryBookingOpen(businessId, {
+      pickupDate: pickup?.date || null,
+      pickupSlot: pickup?.timeSlot || null,
+      deliveryDate: delivery?.date || null,
+      deliverySlot: delivery?.timeSlot || null,
+      backupDate: backupDelivery?.date || null,
+      backupSlot: backupDelivery?.timeSlot || null,
+    })
+    if (!guard.ok) return NextResponse.json({ success: false, error: guard.error }, { status: 409 })
 
     // Canonical customer — resolved from auth userid (server-side) when
     // authenticated, or from client-provided values as a guest fallback.

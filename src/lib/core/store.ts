@@ -448,15 +448,124 @@ export async function updateStoreTimings(
 // STORE OPEN/CLOSE ENFORCEMENT
 // ============================================================================
 
-interface StoreOpenResult {
+export interface StoreOpenResult {
   isOpen: boolean;
   reason?: string;
   opensAt?: string;
 }
 
+// Day row shape shared by date/slot helpers.
+export interface StoreDayTiming {
+  day: number;
+  openTime: string;
+  closeTime: string;
+  isClosed: boolean;
+}
+
+// ISO weekday → 0=Sunday … 6=Saturday (matches StoreTiming.day).
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+export const DAY_NAMES_SHORT = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// "HH:MM" (24h) → minutes since midnight. NaN on garbage.
+function toMin(hhmm: string): number {
+  const [h, m] = String(hhmm || '').split(':').map(Number);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return NaN;
+  return h * 60 + (Number.isFinite(m) && m >= 0 && m <= 59 ? m : 0);
+}
+
+// minutes → "HH:MM" (24h)
+function toHHMM(min: number): string {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+// "09:00" → "9:00 AM" (12h label used in customer-facing messages).
+export function formatTimeLabel(hhmm: string): string {
+  const min = toMin(hhmm);
+  if (!Number.isFinite(min)) return hhmm || '';
+  const h24 = Math.floor(min / 60);
+  const m = min % 60;
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+// Format a closure re-open moment in IST, e.g. "2 Aug 2026, 9:00 AM".
+export function formatReopenAt(date: Date | string | null | undefined): string | undefined {
+  if (!date) return undefined;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return undefined;
+  const ist = new Date(d.getTime() + IST_OFFSET_MS);
+  const day = ist.getUTCDate();
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][ist.getUTCMonth()];
+  const year = ist.getUTCFullYear();
+  const hhmm = toHHMM(ist.getUTCHours() * 60 + ist.getUTCMinutes());
+  return `${day} ${month} ${year}, ${formatTimeLabel(hhmm)}`;
+}
+
+// Which weekday (0=Sun…6=Sat) a yyyy-mm-dd calendar date falls on in IST.
+// Order dates are persisted as `new Date("yyyy-mm-dd")` (UTC midnight = 5:30 AM
+// IST the same day), so the IST weekday of a date string is the UTC weekday of
+// its UTC-midnight Date. For a live timestamp, shift by the IST offset.
+export function istWeekday(dateISO: string | Date): number {
+  if (dateISO instanceof Date) {
+    if (isNaN(dateISO.getTime())) return -1;
+    return new Date(dateISO.getTime() + IST_OFFSET_MS).getUTCDay();
+  }
+  const d = new Date(`${dateISO}T00:00:00.000Z`);
+  if (isNaN(d.getTime())) return -1;
+  return d.getUTCDay();
+}
+
+// Business-hours row for a specific date, or null when the date is a weekly-off
+// / holiday. `closedUntil` marks a temporary closure (holiday) — the date is
+// unavailable while the closure window covers the start of that day.
+export function timingForDate(
+  timings: StoreDayTiming[],
+  dateISO: string | Date,
+  closedUntil?: Date | string | null,
+): { available: boolean; reason?: string; openTime?: string; closeTime?: string; isClosed: boolean } {
+  const day = istWeekday(dateISO);
+  if (day < 0) return { available: false, reason: 'Invalid date', isClosed: true };
+
+  const dateStart = new Date(dateISO instanceof Date ? dateISO : `${dateISO}T00:00:00.000Z`);
+  if (closedUntil) {
+    const until = new Date(closedUntil);
+    if (!isNaN(until.getTime()) && dateStart.getTime() < until.getTime()) {
+      return { available: false, reason: 'Closed for a holiday', isClosed: true };
+    }
+  }
+
+  const row = timings.find((t) => t.day === day);
+  if (!row || row.isClosed) {
+    return { available: false, reason: `Closed on ${DAY_NAMES_SHORT[day]}`, isClosed: true };
+  }
+  return { available: true, openTime: row.openTime, closeTime: row.closeTime, isClosed: false };
+}
+
+// Intersect a list of "HH:MM - HH:MM" slots with a day's working hours so only
+// slots fully inside business hours are offered.
+export function slotsWithinWorkingHours(
+  slots: string[],
+  openTime: string | undefined,
+  closeTime: string | undefined,
+): string[] {
+  if (!openTime || !closeTime) return slots || [];
+  const openMin = toMin(openTime);
+  const closeMin = toMin(closeTime);
+  if (!Number.isFinite(openMin) || !Number.isFinite(closeMin)) return slots || [];
+  return (slots || []).filter((slot) => {
+    const [startStr, endStr] = String(slot).split('-').map((s) => s.trim());
+    const startMin = toMin(startStr);
+    const endMin = toMin(endStr);
+    return Number.isFinite(startMin) && Number.isFinite(endMin) && startMin >= openMin && endMin <= closeMin;
+  });
+}
+
 /**
  * Check whether a store is currently accepting orders.
  * Checks (in order):
+ *   0. store.closedReason / closedUntil — admin "Temporarily Closed" override
  *   1. business.isOnline — platform-level online/offline toggle
  *   2. store.status      — must be ACTIVE
  *   3. store timings     — current IST time must be within open window
@@ -471,6 +580,8 @@ export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> 
       id: true,
       status: true,
       businessId: true,
+      closedReason: true,
+      closedUntil: true,
       storeTimings: { orderBy: { day: 'asc' } },
     },
   });
@@ -481,6 +592,20 @@ export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> 
 
   if (store.status !== 'ACTIVE') {
     return { isOpen: false, reason: 'Store is currently offline' };
+  }
+
+  // Temporarily Closed (optional reason + optional re-open time). A past
+  // closedUntil is ignored → the store has automatically reopened.
+  if (store.closedReason || store.closedUntil) {
+    const stillClosed = !store.closedUntil || new Date(store.closedUntil).getTime() > Date.now();
+    if (stillClosed) {
+      const opensAt = store.closedUntil ? formatReopenAt(store.closedUntil) : _findNextOpenDay(store.storeTimings, istWeekday(new Date()));
+      return {
+        isOpen: false,
+        reason: store.closedReason || 'Store is temporarily closed',
+        opensAt,
+      };
+    }
   }
 
   // Check business online flag

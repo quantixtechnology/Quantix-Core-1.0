@@ -224,6 +224,9 @@ export async function GET(request: Request) {
               minOrderAmount: resolvedStore.minOrderAmount,
               preparationTime: resolvedStore.preparationTime,
               isMainStore: resolvedStore.isMainStore,
+              status: resolvedStore.status,
+              closedReason: resolvedStore.closedReason,
+              closedUntil: resolvedStore.closedUntil ? resolvedStore.closedUntil.toISOString() : null,
               operatingHours: JSON.parse(resolvedStore.operatingHours || '{}'),
               storeTimings: resolvedStore.storeTimings,
             }

@@ -58,7 +58,7 @@ export function LaundryCustomerApp() {
 
       <main className="flex-1 overflow-y-auto pb-20">
         {view === "home" && <HomeView me={me} go={setView} />}
-        {view === "order" && <OrderView api={api} onPlaced={() => { loadMe(); setView("orders") }} />}
+        {view === "order" && <OrderView api={api} businessId={businessId} onPlaced={() => { loadMe(); setView("orders") }} />}
         {view === "subscription" && <SubscriptionView api={api} />}
         {view === "orders" && <OrdersView api={api} open={(id) => { setSelected(id); setView("orderDetail") }} />}
         {view === "orderDetail" && selected && <OrderDetailView api={api} id={selected} back={() => setView("orders")} />}
@@ -180,7 +180,7 @@ function HomeView({ me, go }: { me: Me; go: (v: View) => void }) {
   )
 }
 
-function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: { services: Service[] } | unknown; error?: string; subscription?: { coveredAmount: number } }>; onPlaced: () => void }) {
+function OrderView({ api, onPlaced, businessId }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: { services: Service[] } | unknown; error?: string; subscription?: { coveredAmount: number } }>; onPlaced: () => void; businessId: string | null }) {
   const [services, setServices] = useState<Service[]>([])
   // ONE shared cart — same store + mapping helpers as the Web Storefront. The
   // PWA keeps no independent cart implementation; only the UI differs.
@@ -193,8 +193,37 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
   const [instructions, setInstructions] = useState("")
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState("")
+  const [storeClosed, setStoreClosed] = useState(false)
+  const [storeClosedMsg, setStoreClosedMsg] = useState("")
+  const [dateMsg, setDateMsg] = useState("")
 
   useEffect(() => { api("/catalog").then((j) => { if (j.success) setServices((j.data as { services: Service[] }).services) }) }, [api])
+  const todayIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split("T")[0]
+
+  // Current store status — closure blocks booking (mirrors the server guard).
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(businessId)}`).then((r) => r.json())
+      .then((j) => {
+        if (j.success && j.availability) {
+          const a = j.availability
+          const closed = a.status !== "OPEN"
+          setStoreClosed(closed)
+          if (closed) setStoreClosedMsg(a.reason || (a.closedReason ? `Temporarily closed — ${a.closedReason}` : a.opensAt ? `Closed — opens ${a.opensAt}` : "Store is closed"))
+        }
+      })
+      .catch(() => {})
+  }, [businessId])
+
+  // Picked pickup date must be bookable (past / weekly off / holiday) — the
+  // public endpoint validates it and the server re-validates on placement.
+  useEffect(() => {
+    if (!businessId || !pickupDate) return
+    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(businessId)}&date=${encodeURIComponent(pickupDate)}`).then((r) => r.json())
+      .then((j) => { if (j.success && j.dateAvailable === false) setDateMsg(j.dateReason || "Pickup is not available on this date."); else setDateMsg("") })
+      .catch(() => {})
+  }, [businessId, pickupDate])
+
   const lines = laundryLines(cartItems)
   const orderItems = cartToOrderItems(cartItems)
   useEffect(() => {
@@ -211,6 +240,8 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
     else if (next > 0) addItem(makeGarmentLine({ serviceId: s.id, serviceName: s.name, garmentId: g.garmentId, garmentName: g.name, unitPrice: g.price, unit: g.pricingType === "PER_KG" ? "kg" : "piece", pricingType: g.pricingType, quantity: next }))
   }
   const place = async () => {
+    if (storeClosed) { setMsg(storeClosedMsg || "Store is closed"); return }
+    if (dateMsg) { setMsg(dateMsg); return }
     setBusy(true); setMsg("")
     const j = await api("/orders", { method: "POST", body: JSON.stringify({ orderType: "HOME_PICKUP", items: orderItems, pickupDate: pickupDate || null, specialInstructions: instructions || null }) })
     setBusy(false)
@@ -240,14 +271,15 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
       ))}
       {lines.length > 0 && (
         <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-2">
-          <div className="space-y-1"><label className="text-xs text-slate-400">Pickup date</label><input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" /></div>
+          {storeClosed && <p className="rounded-lg bg-slate-900 text-white px-3 py-2 text-xs font-medium">🔴 {storeClosedMsg}</p>}
+          <div className="space-y-1"><label className="text-xs text-slate-400">Pickup date</label><input type="date" value={pickupDate} min={todayIst()} onChange={(e) => { setPickupDate(e.target.value); setDateMsg("") }} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" />{dateMsg && <p className="text-[11px] text-rose-600">{dateMsg}</p>}</div>
           <div className="space-y-1"><label className="text-xs text-slate-400">Instructions</label><input value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="e.g. Separate whites" className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" /></div>
           {quote && <div className="border-t pt-2 text-sm space-y-1">
             <div className="flex justify-between"><span className="text-slate-500">Estimated</span><span className="font-medium">{inr(quote.grandTotal)}</span></div>
             {quote.coveredAmount > 0 && <div className="flex justify-between text-emerald-600"><span>Covered by subscription</span><span>− {inr(quote.coveredAmount)}</span></div>}
             <div className="flex justify-between font-bold text-slate-800"><span>You pay</span><span>{inr(quote.extraAmount)}</span></div>
           </div>}
-          <button onClick={place} disabled={busy} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Submit Order</button>
+          <button onClick={place} disabled={busy || storeClosed || !!dateMsg} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{storeClosed ? "Store is closed" : dateMsg ? "Date unavailable" : "Submit Order"}</button>
           {msg && <p className="text-xs text-rose-600 text-center">{msg}</p>}
         </div>
       )}

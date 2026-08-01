@@ -69,19 +69,37 @@ export interface WebNav {
 }
 
 // ── Store status check ──────────────────────────────────────────────────────
-// Called periodically to re-check isOnline + current timings
+// Called periodically to re-check isOnline + current timings. Mirrors the
+// backend checkStoreOpen() logic (Commerce Store/StoreTiming + temporary
+// closure override). Returns a customer-friendly message.
+const fmt12h = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number)
+  const period = h >= 12 ? "PM" : "AM"
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`
+}
+const fmtReopen = (iso: string) => {
+  const d = new Date(new Date(iso).getTime() + 5.5 * 60 * 60 * 1000)
+  if (isNaN(d.getTime())) return ""
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${fmt12h(`${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`)}`
+}
+
 async function fetchStoreStatus(businessId: string, storeId: string | null): Promise<{
   isOnline: boolean
   isOpen: boolean
   message: string
   opensAt: string | null
+  closedReason: string | null
+  closedUntil: string | null
+  businessHours: string | null
 }> {
   try {
     const params = new URLSearchParams({ businessId })
     if (storeId) params.set("storeId", storeId)
     const res = await fetch(`/api/core/storefront/store-context?${params}`)
     const json = await res.json()
-    if (!json.success) return { isOnline: false, isOpen: false, message: "Store unavailable", opensAt: null }
+    if (!json.success) return { isOnline: false, isOpen: false, message: "Store unavailable", opensAt: null, closedReason: null, closedUntil: null, businessHours: null }
 
     const biz   = json.data?.business ?? {}
     const store = json.data?.store ?? {}
@@ -92,14 +110,29 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
     let isOpen = isOnline
     let message = isOnline ? "" : "Store is currently offline"
     let opensAt: string | null = null
+    const closedReason: string | null = store.closedReason || null
+    const closedUntil: string | null = store.closedUntil || null
+    let businessHours: string | null = null
 
-    if (isOnline && store.storeTimings && store.storeTimings.length > 0) {
+    // Temporary closure override — the admin "Temporarily Closed" state.
+    const closedUntilDate = closedUntil ? new Date(closedUntil) : null
+    if (isOnline && closedUntilDate && closedUntilDate.getTime() > Date.now()) {
+      isOpen = false
+      opensAt = fmtReopen(closedUntil as string)
+      message = closedReason || "Store is temporarily closed"
+    } else if (isOnline && closedReason && !closedUntilDate) {
+      isOpen = false
+      message = closedReason || "Store is temporarily closed"
+    } else if (isOnline && store.storeTimings && store.storeTimings.length > 0) {
       const istOffset = 5.5 * 60 * 60 * 1000
       const istNow    = new Date(Date.now() + istOffset)
       const todayDay  = istNow.getUTCDay()
       const nowMin    = istNow.getUTCHours() * 60 + istNow.getUTCMinutes()
       const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
       const todayRow  = store.storeTimings.find((t: { day: number }) => t.day === todayDay)
+      if (todayRow && !todayRow.isClosed) {
+        businessHours = `${fmt12h(todayRow.openTime)} – ${fmt12h(todayRow.closeTime)}`
+      }
 
       if (todayRow?.isClosed) {
         isOpen  = false
@@ -108,7 +141,7 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
         for (let i = 1; i <= 7; i++) {
           const d = (todayDay + i) % 7
           const row = store.storeTimings.find((t: { day: number }) => t.day === d)
-          if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${row.openTime}`; break }
+          if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${fmt12h(row.openTime)}`; break }
         }
       } else if (todayRow) {
         const [oh, om]  = todayRow.openTime.split(":").map(Number)
@@ -118,23 +151,23 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
 
         if (nowMin < openMin) {
           isOpen  = false
-          message = `Store opens at ${todayRow.openTime}`
-          opensAt = todayRow.openTime
+          opensAt = fmt12h(todayRow.openTime)
+          message = `We are currently closed. ${businessHours ? `Business Hours: ${businessHours}. ` : ""}Please schedule your pickup during business hours.`
         } else if (nowMin >= closeMin) {
           isOpen  = false
           for (let i = 1; i <= 7; i++) {
             const d = (todayDay + i) % 7
             const row = store.storeTimings.find((t: { day: number }) => t.day === d)
-            if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${row.openTime}`; break }
+            if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${fmt12h(row.openTime)}`; break }
           }
-          message = `Store is closed. ${opensAt ? `Opens ${opensAt}` : ""}`
+          message = `We are currently closed. ${businessHours ? `Business Hours: ${businessHours}. ` : ""}Please schedule your pickup during business hours.`
         }
       }
     }
 
-    return { isOnline, isOpen, message, opensAt }
+    return { isOnline, isOpen, message, opensAt, closedReason, closedUntil, businessHours }
   } catch {
-    return { isOnline: true, isOpen: true, message: "", opensAt: null }
+    return { isOnline: true, isOpen: true, message: "", opensAt: null, closedReason: null, closedUntil: null, businessHours: null }
   }
 }
 
@@ -167,8 +200,8 @@ export function StorefrontWebsite() {
 
   // Store status — polled every 60 seconds so the UI reacts to open/close windows
   const [storeStatus, setStoreStatus] = useState<{
-    isOnline: boolean; isOpen: boolean; message: string; opensAt: string | null
-  }>({ isOnline: true, isOpen: true, message: "", opensAt: null })
+    isOnline: boolean; isOpen: boolean; message: string; opensAt: string | null; closedReason: string | null; closedUntil: string | null; businessHours: string | null
+  }>({ isOnline: true, isOpen: true, message: "", opensAt: null, closedReason: null, closedUntil: null, businessHours: null })
 
   // On mount: check localStorage for a saved store; if none, show mandatory picker
   useEffect(() => {
@@ -321,16 +354,24 @@ export function StorefrontWebsite() {
       {/* Updates <meta name="theme-color">, apple-touch-icon, and title per business */}
       <PwaMetaUpdater />
 
-      <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker}>
+      <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker} storeClosed={storeClosed}>
         {/* ── Store Offline / Closed Banner ──────────────────────── */}
         {storeClosed && (
           <div className="sticky top-0 z-40 w-full bg-gray-900 text-white text-center py-3 px-4">
             <p className="text-sm font-semibold">
               🔴 {storeStatus.message || "Store is currently closed"}
+              {storeStatus.closedReason && !storeStatus.message.includes(storeStatus.closedReason) && (
+                <span className="ml-2 font-normal text-gray-300">
+                  · Reason: {storeStatus.closedReason}
+                </span>
+              )}
               {storeStatus.opensAt && (
                 <span className="ml-2 font-normal text-gray-300">
-                  · Opens {storeStatus.opensAt}
+                  {storeStatus.closedReason || storeStatus.closedUntil ? `· We will reopen on ${storeStatus.opensAt}` : `· Opens ${storeStatus.opensAt}`}
                 </span>
+              )}
+              {!storeStatus.opensAt && storeStatus.businessHours && (
+                <span className="ml-2 font-normal text-gray-300">· Business Hours: {storeStatus.businessHours}</span>
               )}
             </p>
           </div>

@@ -778,6 +778,8 @@ model Store {
   phone                String?
   email                String?
   status               StoreStatus           @default(ACTIVE)
+  closedReason         String?
+  closedUntil          DateTime?
   isMainStore          Boolean               @default(false)
   deliveryRadius       Float                 @default(5.0)
   minOrderAmount       Float                 @default(0)

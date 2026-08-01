@@ -32,6 +32,7 @@ interface StorefrontLayoutProps {
   nav: WebNav
   currentStore?: PickedStore | null
   onOpenStorePicker?: () => void
+  storeClosed?: boolean
 }
 
 export function StorefrontLayout({
@@ -40,6 +41,7 @@ export function StorefrontLayout({
   nav,
   currentStore,
   onOpenStorePicker,
+  storeClosed,
 }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
   const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType } = useCartStore()
@@ -255,10 +257,11 @@ export function StorefrontLayout({
                   </div>
                   <button
                     onClick={() => { setCartOpen(false); requestLaundryCheckout() }}
-                    className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                    disabled={storeClosed}
+                    className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ backgroundColor: brandColor }}
                   >
-                    Schedule Pickup <ChevronRight className="w-4 h-4" />
+                    {storeClosed ? "Store is closed" : <>Schedule Pickup <ChevronRight className="w-4 h-4" /></>}
                   </button>
                 </>
               ) : (

@@ -29,7 +29,8 @@ export { logActivity, getActivityLogs, exportAuditLog } from './audit';
 export { createBusiness, updateBusiness, getBusiness, listBusinesses, updateBusinessStatus, toggleOnline, evaluateActivation, toggleChecklistItem, getBusinessStats, getOnboardingProgress, updateOnboardingStep, completeOnboarding, convertLeadToBusiness } from './business';
 
 // Store Management
-export { createStore, updateStore, getStore, listStores, updateStoreTimings, getDefaultStoreTimings } from './store';
+export { createStore, updateStore, getStore, listStores, updateStoreTimings, getDefaultStoreTimings, checkStoreOpen, timingForDate, slotsWithinWorkingHours, formatTimeLabel, formatReopenAt, istWeekday } from './store';
+export type { StoreOpenResult, StoreDayTiming } from './store';
 
 // Order Engine
 export { createOrder, updateOrderStatus, cancelOrder, getOrder, listOrders, calculateOrderTotals, generateOrderNumber, isValidStatusTransition } from './order';

@@ -10,6 +10,7 @@ import { resolveSession, bearerToken } from "@/lib/laundry-app-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { POST as createOrder } from "@/app/api/laundry/orders/route"
 import { INTERNAL_HEADER, INTERNAL_TOKEN } from "@/lib/laundry-rbac"
+import { assertLaundryBookingOpen } from "@/lib/laundry-availability"
 
 export const runtime = "nodejs"
 
@@ -31,6 +32,17 @@ export async function POST(request: Request) {
   if (!Array.isArray(b.items) || b.items.length === 0) return NextResponse.json({ error: "Add at least one garment" }, { status: 400 })
   const biz = await resolveLaundryBusiness(sess.businessId)
   if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
+
+  // Availability guard — the store must be open now and the requested pickup /
+  // delivery dates must fall inside that day's working hours (reuses the
+  // Commerce store availability machinery; only gates customer channels).
+  const guard = await assertLaundryBookingOpen(biz.id, {
+    pickupDate: b.pickupDate || null,
+    pickupSlot: b.pickupTimeSlot || null,
+    deliveryDate: b.deliveryDate || null,
+    deliverySlot: b.deliveryTimeSlot || null,
+  })
+  if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: 409 })
 
   // Resolve the fulfilment store: customer's preferred, else the first store.
   const cust = await prisma.customer.findUnique({ where: { id: sess.customerId }, select: { preferredStoreId: true } })

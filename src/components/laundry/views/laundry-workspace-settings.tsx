@@ -9,6 +9,7 @@ import { Truck, Scan, Thermometer, Home, Shield, Loader2, Save } from "lucide-re
 import { LaundryStorageWidget } from "./laundry-storage-widget"
 import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
+import { LaundryAvailabilitySettingsForm } from "./laundry-availability-settings-form"
 import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
 import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
 import { LaundryVerificationSettingsForm } from "./laundry-verification-settings-form"
@@ -107,6 +108,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryStorageWidget businessId={businessId} />
 
       <LaundryFinancialSettingsForm businessId={businessId} />
+
+      <LaundryAvailabilitySettingsForm businessId={businessId} />
 
       <LaundrySlotSettingsForm businessId={businessId} />
 
