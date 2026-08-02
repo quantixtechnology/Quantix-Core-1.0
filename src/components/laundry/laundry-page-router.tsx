@@ -43,6 +43,7 @@ const LaundryStaff = dynamic(() => import("@/components/laundry/views/laundry-st
 const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
 const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
 const LaundryFinishingWorkstation = dynamic(() => import("@/components/laundry/views/laundry-finishing-workstation").then(m => ({ default: m.LaundryFinishingWorkstation })), { loading: () => <PageLoader /> })
+const LaundryDryingQcWorkstation = dynamic(() => import("@/components/laundry/views/laundry-drying-qc-workstation").then(m => ({ default: m.LaundryDryingQcWorkstation })), { loading: () => <PageLoader /> })
 const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryNavigationManager = dynamic(() => import("@/components/laundry/views/laundry-navigation-settings").then(m => ({ default: m.LaundryNavigationManager })), { loading: () => <PageLoader /> })
@@ -146,14 +147,15 @@ export function LaundryPageRouter() {
     case "processing-centers": return <LaundryProcessingConsole />
     case "audit-barcode": return <LaundryAuditBarcodePage />
     case "ws-wash": return <LaundryWorkstation stage="WASH" />
-    case "ws-dry": return <LaundryWorkstation stage="DRY" />
+    // Drying and Quality Check are a SINGLE combined workstation in the
+    // order-based finishing model — both nav keys render the same merged screen.
+    case "ws-dry": case "ws-qc": return <LaundryDryingQcWorkstation />
     case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
     // Iron / Folding are the container-based finishing stations — garment
-    // barcode scanning ends at Quality Check, so they use the finishing
-    // workstation (scan the Processing Package / bag, not garments).
+    // barcode scanning ends at the Drying & QC workstation, so they use the
+    // finishing workstation (scan the Processing Package / bag, not garments).
     case "ws-iron": return <LaundryFinishingWorkstation stage="IRON" />
     case "ws-fold": return <LaundryFinishingWorkstation stage="FOLD" />
-    case "ws-qc": return <LaundryWorkstation stage="QC" />
     case "ws-pack": return <LaundryWorkstation stage="PACKED" />
 
     // ── Fallback ──────────────────────────────────────────────────────────

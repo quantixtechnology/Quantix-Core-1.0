@@ -141,7 +141,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
     try {
       const res = await fetch(`/api/laundry/items/${itemId}/process`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, actorName: user?.name || "operator", expectedStage: stage }),
+        body: JSON.stringify({ action, actorName: user?.name || "operator", expectedStage: stage, fromContainer: true }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) {

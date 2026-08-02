@@ -11,10 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2, Search, X } from "lucide-react"
+import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2, Search, X, ScanLine } from "lucide-react"
 import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
@@ -86,6 +87,13 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [qcFail, setQcFail] = useState<{ itemId: string; garment: string; flow: string | null; serviceName: string } | null>(null)
   const [qcReason, setQcReason] = useState("")
   const [qcStage, setQcStage] = useState("")
+  // Order-Based Finishing Bag: when the LAST garment of an order passes QC the
+  // order becomes eligible for its ONE finishing container. Prompt the operator
+  // to scan the configured container (Bag / Package / Both) once — assigning it
+  // binds every garment of the order and retires all garment barcodes.
+  const [bagPrompt, setBagPrompt] = useState<{ orderId: string; orderNumber: string | null } | null>(null)
+  const [bagTarget, setBagTarget] = useState<{ label: string; hint: string } | null>(null)
+  const [bagErr, setBagErr] = useState<string | null>(null)
   const [manual, setManual] = useState<{ itemId: string; garment: string; action: string; label: string } | null>(null)
   // Bulk-advance selection: ids of IN_PROGRESS garments ticked to move together
   // (e.g. a whole wash load finishing at once). Cleared after each bulk action.
@@ -149,6 +157,12 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       if (!res.ok || !j.success) {
         toast({ title: "Action failed", description: j.error === "Failed to fetch" ? "Server unreachable." : j.error, variant: "destructive" })
         return false
+      }
+      // The last QC pass makes the order eligible for its finishing bag → prompt.
+      if (action === "QC_PASS" && j.data?.awaitingBagAssignment) {
+        const w = j.data.awaitingBagAssignment
+        setBagErr(null)
+        setBagPrompt({ orderId: w.orderId, orderNumber: w.orderNumber || null })
       }
       load()
       return true
@@ -216,6 +230,39 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     }
   }, [stage, user, currentBusinessId, soundEnabled, load])
 
+  // Load the Workspace Scan Mode label whenever a bag-assignment prompt opens.
+  useEffect(() => {
+    if (!bagPrompt || !currentBusinessId) return
+    fetch(`/api/laundry/processing/finishing-bag?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => r.json()).then((j) => {
+        if (j.success && j.data?.target) setBagTarget({ label: j.data.target.label, hint: j.data.target.hint || "" })
+      }).catch(() => setBagTarget({ label: "container", hint: "" }))
+  }, [bagPrompt, currentBusinessId])
+
+  const handleAssignFinishingBag = async (code: string) => {
+    if (!bagPrompt || !currentBusinessId) return
+    setBusy(true); setBagErr(null)
+    try {
+      const res = await fetch("/api/laundry/processing/finishing-bag", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, orderId: bagPrompt.orderId, code, actorName: user?.name || "operator" }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) {
+        playScanError(soundEnabled)
+        setBagErr(j.error || "Could not assign the finishing bag.")
+        return
+      }
+      playScanOk(soundEnabled)
+      const label = bagTarget?.label.replace(/^Scan /, "") || "container"
+      toast({ title: `Finishing bag assigned`, description: `Order ${bagPrompt.orderNumber || ""} → ${label} ${code}; garment barcodes retired.`, duration: 2500 })
+      setBagPrompt(null)
+      load()
+    } catch {
+      setOffline(true); setBagErr("Unable to reach the server. Try again.")
+    } finally { setBusy(false) }
+  }
+
   const handleReturnToQueue = async (itemId: string, garment: string) => {
     if (!hasReturnPerm) {
       toast({ title: "Permission denied", description: "You don't have permission to return items to queue.", variant: "destructive" })
@@ -255,6 +302,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     if (ids.length === 0) return
     setBusy(true); setOffline(false)
     let ok = 0; let fail = 0
+    let awaitingBag: { orderId: string; orderNumber: string | null } | null = null
     for (const id of ids) {
       try {
         const res = await fetch(`/api/laundry/items/${id}/process`, {
@@ -262,10 +310,12 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
           body: JSON.stringify({ action: isQC ? "QC_PASS" : "COMPLETE", actorName: user?.name || "operator", expectedStage: stage }),
         })
         const j = await res.json()
-        if (res.ok && j.success) ok++; else fail++
+        if (res.ok && j.success) { ok++; if (j.data?.awaitingBagAssignment) awaitingBag = { orderId: j.data.awaitingBagAssignment.orderId, orderNumber: j.data.awaitingBagAssignment.orderNumber || null } }
+        else fail++
       } catch { fail++ }
     }
     setBusy(false); setSelected(new Set())
+    if (awaitingBag) { setBagErr(null); setBagPrompt(awaitingBag) }
     playScanOk(soundEnabled)
     toast({
       title: `${ok} garment${ok === 1 ? "" : "s"} moved to the next stage`,
@@ -477,6 +527,25 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
               </>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Order-Based Finishing Bag — triggered the moment the last garment of an
+          order passes QC. One scan assigns the configured container to the WHOLE
+          order and retires all its garment barcodes (no per-garment bag scans). */}
+      <Dialog open={!!bagPrompt} onOpenChange={(o) => { if (!o) { setBagPrompt(null); setBagErr(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5 text-blue-600" /> Assign Finishing Bag</DialogTitle>
+            <DialogDescription className="text-xs">
+              Order {bagPrompt?.orderNumber || ""} has passed Quality Check. Scan the {bagTarget?.label || "configured container"}{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} once to associate every garment with it and retire the garment barcodes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-3 py-2">
+            <BagScanButton onScan={(code) => handleAssignFinishingBag(code)} label={`Scan ${bagTarget?.label || ""}`.replace(/\s+/g, " ")} closeOnScan={false} disabled={busy} />
+            <p className="text-[11px] text-slate-400 text-center">Ironing, Folding and Packing will then load this container only — garments are no longer scanned individually.</p>
+          </div>
+          {bagErr && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{bagErr}</p>}
         </DialogContent>
       </Dialog>
     </div>

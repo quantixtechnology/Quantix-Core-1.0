@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor, stageLabel } from "@/lib/laundry-processing"
-import { syncPackageLifecycle } from "@/lib/laundry-finishing"
+import { syncPackageLifecycle, awaitingFinishingBagAssignment, finishingBagAssigned } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 const STAGE_SCREEN: Record<string, string> = {
@@ -54,6 +54,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const expectedStage = typeof b.expectedStage === "string" && b.expectedStage ? b.expectedStage : null
     if (expectedStage && item.processingStage !== expectedStage)
       return NextResponse.json({ error: `This garment is not ready for ${stageLabel(expectedStage)} — it belongs to ${stageLabel(item.processingStage)}.` }, { status: 409 })
+
+    // ── Post-bag barcode retirement guard (server-authoritative). Once the order's
+    // finishing bag is assigned, every garment barcode is retired and the ONLY
+    // remaining processing is via the container (Ironing / Folding through the
+    // finishing workstation). A garment-barcode style request that would move a
+    // garment forward is rejected here — even if the UI hides the scan box, this
+    // protects against API misuse, stale clients, and future regressions. The
+    // container workstation signals itself with `fromContainer: true`. ──
+    const fromContainer = b.fromContainer === true || b.fromContainer === "true"
+    if (!fromContainer && (await finishingBagAssigned(item.orderId))) {
+      const forward = new Set(["START", "COMPLETE", "QC_PASS", "PAUSE", "RESUME"])
+      if (forward.has(action)) {
+        return NextResponse.json({
+          error: "This order's finishing bag is assigned and its garment barcodes are retired — continue Ironing / Folding by scanning the finishing bag, not a garment barcode.",
+        }, { status: 409 })
+      }
+    }
 
     const flow = resolveFlow(item)
     const cur = item.processingStage
@@ -159,7 +176,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // idempotent, self-healing — never blocks the garment transition.
     await syncPackageLifecycle(item.orderId, item.order.businessId).catch(() => null)
 
-    return NextResponse.json({ success: true, data: { id: row.id, processingStage: row.processingStage, processingStatus: row.processingStatus, department: row.processingDept, qcFailCount: row.qcFailCount, orderComplete } })
+    // Order-Based Finishing Bag: QUALITY CHECK is the final garment-barcode stage.
+    // The moment EVERY garment in the order has passed QC (this action may be the
+    // last), the order becomes eligible for its ONE finishing bag. Awaited
+    // exactly when the container has not been assigned yet. The operator then
+    // scans the configured container (Bag / Package / Both) once — assigning it
+    // binds the whole order and retires all garment barcodes. Never hardcoded.
+    const awaitingBag = await awaitingFinishingBagAssignment(item.orderId, item.order.businessId).catch(() => null)
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: row.id, processingStage: row.processingStage, processingStatus: row.processingStatus,
+        department: row.processingDept, qcFailCount: row.qcFailCount, orderComplete,
+        awaitingBagAssignment: awaitingBag,
+      },
+    })
   } catch (e) {
     console.error("[laundry-item-process] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

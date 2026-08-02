@@ -4998,6 +4998,11 @@ model LaundryOrderItem {
   defects          String? // CSV of defect codes
   inspectionNotes  String?
   inspectedAt      DateTime?
+  // Finishing Bag model: TRUE once this order's finishing bag is assigned (the
+  // moment the LAST garment passes QC). The physical garment barcode tag has
+  // served its purpose — garment barcode scanning stops and Iron/Fold/Packing
+  // operate only by scanning the assigned container. Server-guarded, additive.
+  barcodeRetired Boolean @default(false)
   createdAt        DateTime  @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -5980,6 +5985,14 @@ model LaundryProcessingPackage {
   weightKg      Float     @default(0)
   reusedBagQr   Boolean   @default(false) // tenant setting: reuse the Pickup Bag QR
   status        String    @default("CREATED") // CREATED→PROCESSING→READY_FOR_FINISHING→READY→PACKED→RELEASED→CLOSED (forward-only, self-healed by syncPackageLifecycle)
+  // Finishing Bag model: the ONE container bound to this order when its last
+  // garment passes QC. bagAssigned flips once (single-bag-per-order); bagCode
+  // records the scanned container QR (laundry Bag, Processing Package, or the
+  // reused Pickup bag — per Workspace Scan Mode). Guarantees one bag ↔ one order.
+  bagAssigned   Boolean   @default(false)
+  bagAssignedAt DateTime?
+  bagAssignedBy String?
+  bagCode       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
