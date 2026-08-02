@@ -13,7 +13,7 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
-import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName } from "@/lib/laundry-nav-config"
+import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, screenKeyPermission, screenKeyLegacyPermission } from "@/lib/laundry-nav-config"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -34,6 +34,7 @@ type NavCfg = {
   page?: LaundryBusinessPage
   comingSoon?: boolean
   perm?: string
+  permFallback?: string
   badge?: string
   hidden?: boolean
 }
@@ -84,42 +85,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
 }
 
 // PAGE_MAP is now imported as SCREEN_PAGE_MAP from @/lib/laundry-nav-config
-
-const EXTRA_PERM_MAP: Record<string, string> = {
-  "new-order": "laundry.orders",
-  "garment-lookup": "laundry.orders",
-  "dispatch-center": "laundry.orders",
-  "pickup-scheduler": "laundry.orders",
-  "delivery-assignments": "laundry.orders",
-  "pickup-bags": "store_ops.store_audit",
-  "bag-management": "store_ops.store_audit",
-  "delivery-executives": "laundry.staff",
-  "mobile-apps": "laundry.staff",
-  "roles": "laundry.staff",
-  "order-detail": "laundry.orders",
-  "audit-barcode": "processing.audit_barcode",
-  "inbox": "laundry.orders",
-  "subscription-plans": "laundry.pricing",
-  "charges-rules": "laundry.pricing",
-  "pricing-simulator": "laundry.pricing",
-  "marketing-dashboard": "laundry.settings",
-  "marketing-discounts": "laundry.settings",
-  "marketing-coupons": "laundry.settings",
-  "marketing-reports": "laundry.settings",
-  "marketing-loyalty": "laundry.settings",
-  "marketing-membership": "laundry.settings",
-  "marketing-credits": "laundry.settings",
-  "marketing-giftcards": "laundry.settings",
-  "marketing-referral": "laundry.settings",
-  "marketing-campaigns": "laundry.settings",
-  "marketing-cart-recovery": "laundry.settings",
-}
-
-const MODULE_PREFIXES = ["laundry.", "crm.", "processing.", "store_ops."]
-
-function permForScreenKey(screenKey: string): string | undefined {
-  return EXTRA_PERM_MAP[screenKey] ?? (MODULE_PREFIXES.some((p) => screenKey.startsWith(p)) ? screenKey : undefined)
-}
+// Permission mapping (SCREEN_KEY_PERM_MAP + legacy fallback) lives in
+// @/lib/laundry-nav-config — the single source of truth for nav → RBAC sync.
 
 function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
   const defaults = defaultNavigationConfig()
@@ -133,7 +100,8 @@ function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
         icon: ICON_MAP[item.icon ?? "Circle"] ?? ShoppingBag,
         page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
         comingSoon: item.comingSoon,
-        perm: permForScreenKey(item.screenKey),
+        perm: screenKeyPermission(item.screenKey),
+        permFallback: screenKeyLegacyPermission(item.screenKey),
       })).filter((navItem) => permAllows(navItem)),
     }))
     .filter((g) => g.items.length > 0)
@@ -217,7 +185,11 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const permAllows = useCallback((item: NavCfg) => {
     if (!isLoaded || isOwner) return true
     if (!item.perm) return true
-    return (screenLevels[item.perm] ?? 0) >= VIEW_LEVEL
+    if ((screenLevels[item.perm] ?? 0) >= VIEW_LEVEL) return true
+    // Legacy fallback: roles saved before these screens were registered only
+    // hold the legacy mapped permission — preserve their existing access.
+    if (item.permFallback && (screenLevels[item.permFallback] ?? 0) >= VIEW_LEVEL) return true
+    return false
   }, [isLoaded, isOwner, screenLevels])
 
   const groups: NavGroup[] = useMemo(() => {
@@ -236,7 +208,8 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
             icon: ICON_MAP[item.icon] ?? ShoppingBag,
             page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
             comingSoon: item.comingSoon,
-            perm: permForScreenKey(item.screenKey),
+            perm: screenKeyPermission(item.screenKey),
+            permFallback: screenKeyLegacyPermission(item.screenKey),
             badge: item.badge ?? undefined,
           }))
           .filter((navItem) => permAllows(navItem)),

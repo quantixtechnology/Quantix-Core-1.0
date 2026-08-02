@@ -96,13 +96,6 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   }
 
   const countSelected = () => Object.values(levels).filter((v) => v >= 1).length
-  const setAllLevel = (lvl: number) => {
-    if (selected?.isOwner) return
-    const next: Record<string, number> = {}
-    for (const sk of allScreenKeys) next[sk] = lvl
-    setLevels(next)
-    setDirty(true)
-  }
 
   const save = async () => {
     if (!selected || selected.isOwner) return
@@ -197,17 +190,6 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
                 <>
                   <div className="flex items-center gap-2">
                     <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search screens…" className="pl-8 h-8 text-sm" /></div>
-                    <Select onValueChange={(v) => setAllLevel(Number(v))}>
-                      <SelectTrigger className="w-[140px] h-8 text-xs">
-                        <SelectValue placeholder="Set all to…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">Hide all</SelectItem>
-                        <SelectItem value="1">View all</SelectItem>
-                        <SelectItem value="2">Create all</SelectItem>
-                        <SelectItem value="3">Edit all</SelectItem>
-                      </SelectContent>
-                    </Select>
                     <span className="text-xs text-slate-400">{countSelected()} screens with access</span>
                   </div>
 

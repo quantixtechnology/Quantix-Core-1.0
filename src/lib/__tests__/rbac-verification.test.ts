@@ -5,6 +5,7 @@ import {
 } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES, RBAC_CATALOG } from "@/lib/laundry-rbac-catalog"
 import { isOwnerRole, screenLevel } from "@/lib/laundry-rbac"
+import { defaultNavigationConfig, screenKeyPermission, screenKeyLegacyPermission } from "@/lib/laundry-nav-config"
 
 // ============================================================================
 // GATE 1: Super Admin zero behavioural changes
@@ -175,7 +176,8 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    expect(allScreens.length).toBe(40) // 14 laundry + 7 crm + 9 processing + 6 store_ops + 4 customer_app
+    // 24 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
+    expect(allScreens.length).toBe(66)
   })
 
   it("every screen key validates correctly", () => {
@@ -185,7 +187,7 @@ describe("Gate 3: Registry audit", () => {
   })
 
   it("SCREEN_MODULES is non-empty and consistent", () => {
-    expect(SCREEN_MODULES.length).toBe(5)
+    expect(SCREEN_MODULES.length).toBe(6)
     for (const m of SCREEN_MODULES) {
       expect(m.key).toBeTruthy()
       expect(m.label).toBeTruthy()
@@ -216,64 +218,52 @@ describe("Gate 3: Registry audit", () => {
 // ============================================================================
 // Gate 3 (continued): Sidebar audit — every perm is a valid screen key
 // ============================================================================
-describe("Gate 3b: Sidebar entries audit", () => {
-  // Extract sidebar perm values — must match screen keys exactly
-  const sidebarPerms: string[] = [
-    // CRM
-    "crm.dashboard", "crm.leads", "crm.opportunity", "crm.activities",
-    "crm.activities", "crm.reports", "crm.settings",
-    // Marketing (all gate on laundry.settings)
-    "laundry.settings", "laundry.settings", "laundry.settings", "laundry.settings",
-    "laundry.settings", "laundry.settings", "laundry.settings", "laundry.settings",
-    "laundry.settings", "laundry.settings", "laundry.settings",
-    // Laundry OS
-    "laundry.dashboard", "laundry.orders",
-    // Store Operations
-    "laundry.orders", "store_ops.store_audit", "store_ops.store_audit",
-    "store_ops.store_audit", "store_ops.payment_collection", "store_ops.packing_qr",
-    "store_ops.transit", "store_ops.store_receive", "store_ops.ready_for_delivery",
-    // Orders & Customers
-    "laundry.orders", "laundry.customers", "laundry.orders",
-    // Services & Pricing
-    "laundry.services",
-    "laundry.categories",
-    "laundry.garments",
-    "laundry.pricing", "laundry.pricing", "laundry.pricing", "laundry.pricing",
-    "laundry.pricing", "laundry.pricing", "laundry.pricing",
-    // Business Management
-    "laundry.stores", "laundry.staff", "laundry.staff", "laundry.staff",
-    "laundry.staff", "laundry.subscriptions", "laundry.reports",
-    "laundry.settings", "laundry.navigation",
-    // Processing Center
-    "processing.console_receive", "processing.audit_barcode",
-    "processing.washing", "processing.drying", "processing.dry_cleaning",
-    "processing.ironing", "processing.folding", "processing.quality_check",
-  ]
+describe("Gate 3b: Sidebar ↔ RBAC synchronization (1:1)", () => {
+  const defaults = defaultNavigationConfig()
+  const navItems = defaults.flatMap((sec) => sec.items)
+  const navKeys = [...new Set(navItems.map((i) => i.screenKey))]
+  const primaryPerms = [...new Set(navKeys.map((k) => screenKeyPermission(k)))]
+  const primaryPermSet = new Set(primaryPerms.filter((p): p is string => !!p))
 
-  it("every sidebar perm is a valid registered screen key", () => {
-    const uniquePerms = [...new Set(sidebarPerms)]
+  it("every navigation screenKey resolves to a registered permission (no missing entries)", () => {
+    const missing: string[] = []
+    for (const k of navKeys) {
+      const perm = screenKeyPermission(k)
+      if (!perm || !isValidScreenKey(perm)) missing.push(k)
+    }
+    expect(missing).toEqual([])
+  })
+
+  it("every legacy fallback is a valid registered screen", () => {
     const invalid: string[] = []
-    for (const p of uniquePerms) {
-      if (!isValidScreenKey(p)) invalid.push(p)
+    for (const k of navKeys) {
+      const legacy = screenKeyLegacyPermission(k)
+      if (legacy && !isValidScreenKey(legacy)) invalid.push(`${k} → ${legacy}`)
     }
     expect(invalid).toEqual([])
   })
 
-  it("every registered screen has at least one sidebar entry", () => {
+  it("every registered screen has a corresponding sidebar permission (no orphans)", () => {
     const allScreens = allScreenKeys()
-    const permSet = new Set(sidebarPerms)
     const missing: string[] = []
     for (const sk of allScreens) {
       // customer_app screens are mobile-app only — not in the sidebar
       if (sk.startsWith("customer_app.")) continue
-      // The following screens are accessed programmatically (not from sidebar):
-      //   laundry.bags       — via bag-management, pickup-bags drill-downs
-      //   crm.pipeline       — embedded within CRM pipeline view
-      //   processing.packing — reached via processing flow, not standalone nav
-      if (["laundry.bags", "crm.pipeline", "processing.packing"].includes(sk)) continue
-      if (!permSet.has(sk)) missing.push(sk)
+      // Screens reached programmatically (drill-downs / headers), not nav:
+      if (["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"].includes(sk)) continue
+      if (!primaryPermSet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])
+  })
+
+  it("every extra screen key registered in nav config is in the RBAC registry", () => {
+    // Directly assert the standalone (non-dotted) nav keys map into the registry
+    const standalone = navKeys.filter((k) => !k.includes("."))
+    for (const k of standalone) {
+      const perm = screenKeyPermission(k)
+      expect(perm).toBeTruthy()
+      expect(isValidScreenKey(perm!)).toBe(true)
+    }
   })
 })
 
@@ -626,36 +616,26 @@ describe("Gate 7: API route permission keys", () => {
 // GATE 8: Sidebar-registry consistency
 // ============================================================================
 describe("Gate 8: Sidebar-registry consistency", () => {
-  const SIDEBAR_PERMS: string[] = [
-    "crm.dashboard", "crm.leads", "crm.opportunity", "crm.activities",
-    "crm.reports", "crm.settings",
-    "laundry.dashboard", "laundry.orders", "laundry.customers",
-    "laundry.services", "laundry.categories", "laundry.garments", "laundry.pricing", "laundry.stores", "laundry.staff",
-    "laundry.subscriptions", "laundry.reports", "laundry.settings",
-    "laundry.navigation",
-    "processing.console_receive", "processing.audit_barcode",
-    "processing.washing", "processing.drying", "processing.dry_cleaning",
-    "processing.ironing", "processing.folding", "processing.quality_check",
-    "store_ops.store_audit", "store_ops.payment_collection",
-    "store_ops.packing_qr", "store_ops.transit", "store_ops.store_receive",
-    "store_ops.ready_for_delivery",
-  ]
+  const defaults = defaultNavigationConfig()
+  const navItems = defaults.flatMap((sec) => sec.items)
+  const navKeys = [...new Set(navItems.map((i) => i.screenKey))]
+  const primaryPerms = [...new Set(navKeys.map((k) => screenKeyPermission(k)))]
 
   it("every sidebar perm key is a valid registered screen key", () => {
     const invalid: string[] = []
-    for (const p of SIDEBAR_PERMS) {
-      if (!isValidScreenKey(p)) invalid.push(p)
+    for (const p of primaryPerms) {
+      if (!p || !isValidScreenKey(p)) invalid.push(p ?? "(none)")
     }
     expect(invalid).toEqual([])
   })
 
-  it("every registered screen has corresponding sidebar entries (excl. customer_app, programmatic screens)", () => {
+  it("every registered screen has a 1:1 sidebar permission (excl. customer_app, programmatic)", () => {
     const allScreens = allScreenKeys()
-    const permSet = new Set(SIDEBAR_PERMS)
+    const permSet = new Set(primaryPerms)
     const missing: string[] = []
     for (const sk of allScreens) {
       if (sk.startsWith("customer_app.")) continue
-      if (["laundry.bags", "crm.pipeline", "processing.packing"].includes(sk)) continue
+      if (["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"].includes(sk)) continue
       if (!permSet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])

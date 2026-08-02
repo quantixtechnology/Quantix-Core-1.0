@@ -152,6 +152,92 @@ export function screenIcon(screenKey: string): string {
   return SCREEN_ICONS[screenKey] ?? "Circle"
 }
 
+/**
+ * Single source of truth for navigation screenKey → RBAC permission mapping.
+ *
+ * A navigation item's `screenKey` is either a registered permission key
+ * ("laundry.orders") or a standalone extra key ("new-order"). This map gives
+ * every standalone extra its own registered permission screen key so that
+ * each sidebar item has a 1:1 configurable entry in Roles & Permissions.
+ */
+const SCREEN_KEY_PERM_MAP: Record<string, string> = {
+  "new-order": "laundry.new_order",
+  "garment-lookup": "laundry.garment_lookup",
+  "dispatch-center": "store_ops.dispatch_center",
+  "pickup-scheduler": "store_ops.pickup_scheduler",
+  "delivery-assignments": "store_ops.delivery_assignments",
+  "pickup-bags": "store_ops.pickup_bags",
+  "bag-management": "store_ops.bag_management",
+  "delivery-executives": "laundry.delivery_executives",
+  "mobile-apps": "laundry.mobile_apps",
+  "roles": "laundry.roles",
+  "order-detail": "laundry.order_detail",
+  "audit-barcode": "processing.audit_barcode",
+  "inbox": "laundry.inbox",
+  "subscription-plans": "laundry.subscription_plans",
+  "charges-rules": "laundry.charges_rules",
+  "pricing-simulator": "laundry.pricing_simulator",
+  "marketing-dashboard": "marketing.dashboard",
+  "marketing-discounts": "marketing.discounts",
+  "marketing-coupons": "marketing.coupons",
+  "marketing-reports": "marketing.reports",
+  "marketing-loyalty": "marketing.loyalty",
+  "marketing-membership": "marketing.membership",
+  "marketing-credits": "marketing.credits",
+  "marketing-giftcards": "marketing.giftcards",
+  "marketing-referral": "marketing.referral",
+  "marketing-campaigns": "marketing.campaigns",
+  "marketing-cart-recovery": "marketing.cart_recovery",
+}
+
+/**
+ * Legacy permission each standalone nav key was previously gated by.
+ * Kept as a fallback so roles stored before these screens were registered
+ * (which only hold the legacy screen permission) continue to work unchanged.
+ */
+const SCREEN_KEY_LEGACY_PERM_MAP: Record<string, string> = {
+  "new-order": "laundry.orders",
+  "garment-lookup": "laundry.orders",
+  "dispatch-center": "laundry.orders",
+  "pickup-scheduler": "laundry.orders",
+  "delivery-assignments": "laundry.orders",
+  "pickup-bags": "store_ops.store_audit",
+  "bag-management": "store_ops.store_audit",
+  "delivery-executives": "laundry.staff",
+  "mobile-apps": "laundry.staff",
+  "roles": "laundry.staff",
+  "order-detail": "laundry.orders",
+  "audit-barcode": "processing.audit_barcode",
+  "inbox": "laundry.orders",
+  "subscription-plans": "laundry.pricing",
+  "charges-rules": "laundry.pricing",
+  "pricing-simulator": "laundry.pricing",
+  "marketing-dashboard": "laundry.settings",
+  "marketing-discounts": "laundry.settings",
+  "marketing-coupons": "laundry.settings",
+  "marketing-reports": "laundry.settings",
+  "marketing-loyalty": "laundry.settings",
+  "marketing-membership": "laundry.settings",
+  "marketing-credits": "laundry.settings",
+  "marketing-giftcards": "laundry.settings",
+  "marketing-referral": "laundry.settings",
+  "marketing-campaigns": "laundry.settings",
+  "marketing-cart-recovery": "laundry.settings",
+}
+
+const MODULE_PREFIXES = ["laundry.", "crm.", "processing.", "store_ops.", "marketing."]
+
+/** Primary RBAC permission that gates a navigation screen key. */
+export function screenKeyPermission(screenKey: string): string | undefined {
+  if (SCREEN_KEY_PERM_MAP[screenKey]) return SCREEN_KEY_PERM_MAP[screenKey]
+  return MODULE_PREFIXES.some((p) => screenKey.startsWith(p)) ? screenKey : undefined
+}
+
+/** Legacy RBAC permission a navigation screen key was previously gated by. */
+export function screenKeyLegacyPermission(screenKey: string): string | undefined {
+  return SCREEN_KEY_LEGACY_PERM_MAP[screenKey]
+}
+
 export function defaultNavigationConfig(): DefaultSection[] {
   return [
     {
