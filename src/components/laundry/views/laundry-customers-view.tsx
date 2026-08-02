@@ -2,9 +2,10 @@
 
 // Customers — live, database-backed listing with per-customer KPIs and actions
 // (View / Edit / New Order). Reads GET /api/laundry/customers; edits via
-// PUT /api/laundry/customers/[id]. No placeholders.
+// PUT /api/laundry/customers/[id]. Viewing opens the Customer 360 slide-over
+// (right panel, ~80% desktop width) with lazy-loaded tab sections. No placeholders.
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
@@ -14,10 +15,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle, RotateCcw, Truck, Calendar, Clock, Navigation, CheckCircle2, XCircle } from "lucide-react"
+import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetClose } from "@/components/ui/sheet"
+import {
+  Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail,
+  MapPin, Save, Trash2, AlertTriangle, RotateCcw, Truck, Calendar, CheckCircle2, Star, MessageSquare,
+  CreditCard, Shirt, History, FileText, LayoutDashboard, ShoppingBag, ArrowUpDown, PhoneCall, MessageCircle, X, ExternalLink,
+} from "lucide-react"
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -29,19 +35,64 @@ interface Row {
   status: string; isActive: boolean; lastOrderAt: string | null
 }
 interface Addr { id: string; addressType?: string; label?: string | null; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; country: string; isDefault?: boolean; isPickupDefault?: boolean; isDeliveryDefault?: boolean }
-interface CustStats { totalOrders: number; completed: number; cancelled: number; grossValue: number; collected: number; outstanding: number; avgOrderValue: number; lastOrderAt: string | null }
+interface CustStats { totalOrders: number; completed: number; cancelled: number; grossValue: number; collected: number; outstanding: number; subsidised?: number; avgOrderValue: number; lastOrderAt: string | null; activeOrders?: number; memberSince?: string | null; subscription?: { planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string } | null }
 interface Detail extends Row {
-  addresses: Addr[]; fullAddress?: string; tags?: string[]; comm?: Record<string, boolean>
+  avatar?: string | null; addresses: Addr[]; fullAddress?: string; tags?: string[]; comm?: Record<string, boolean>
   alternateMobile?: string | null; company?: string | null; reference?: string | null; anniversary?: string | null
   gender?: string | null; dateOfBirth?: string | null; gstNumber?: string | null; notes?: string; stats?: CustStats
 }
-interface TL { at: string; type: string; title: string; detail?: string | null; amount?: number | null }
+interface TL { at: string; type: string; title: string; detail?: string | null; amount?: number | null; ref?: string | null }
 interface Note { id: string; type: string; title: string; body: string | null; actorName: string | null; createdAt: string }
+interface OrderRow {
+  id: string; orderNumber: string; status: string; paymentStatus: string
+  grandTotal: number; amountPaid: number; balanceDue: number; createdAt: string; isExpress?: boolean
+  itemCount?: number; store?: { storeName?: string; storeCode?: string } | null
+  services?: { serviceName: string }[]
+  feedback?: { rating: number; comment?: string | null } | null
+}
+
+type TabKey = "overview" | "orders" | "timeline" | "feedback" | "addresses" | "subscriptions" | "payments" | "garments" | "audit"
 
 const PAGE = 10
+const ORDERS_PAGE = 8
 const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`
 const tierStyle = (t: string) => ({ GOLD: "border-amber-300 text-amber-700 bg-amber-50", PLATINUM: "border-violet-300 text-violet-700 bg-violet-50", SILVER: "border-slate-300 text-slate-600 bg-slate-50" }[(t || "").toUpperCase()] || "border-orange-300 text-orange-700 bg-orange-50")
 const initials = (n: string) => n.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+const fmtD = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
+const fmtDT = (d: string | null | undefined) => (d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
+const STATUS_STYLE: Record<string, string> = {
+  PENDING_STORE_AUDIT: "border-amber-300 text-amber-700 bg-amber-50",
+  UNDER_AUDIT: "border-orange-300 text-orange-700 bg-orange-50",
+  PAYMENT_PENDING: "border-rose-300 text-rose-700 bg-rose-50",
+  READY_FOR_PROCESSING: "border-violet-300 text-violet-700 bg-violet-50",
+  PACKED: "border-indigo-300 text-indigo-700 bg-indigo-50",
+  IN_TRANSIT_TO_PROCESSING: "border-sky-300 text-sky-700 bg-sky-50",
+  PROCESSING: "border-blue-300 text-blue-700 bg-blue-50",
+  QC_PENDING: "border-fuchsia-300 text-fuchsia-700 bg-fuchsia-50",
+  RETURN_IN_TRANSIT: "border-teal-300 text-teal-700 bg-teal-50",
+  READY_FOR_DELIVERY: "border-emerald-300 text-emerald-700 bg-emerald-50",
+  DELIVERED: "border-green-300 text-green-700 bg-green-50",
+  CANCELLED: "border-slate-300 text-slate-500 bg-slate-50",
+  DRAFT: "border-slate-300 text-slate-500 bg-slate-50",
+}
+const PAY_STYLE: Record<string, string> = {
+  PAID: "border-green-300 text-green-700 bg-green-50",
+  PARTIAL: "border-amber-300 text-amber-700 bg-amber-50",
+  UNPAID: "border-rose-300 text-rose-700 bg-rose-50",
+  SUBSCRIPTION: "border-blue-300 text-blue-700 bg-blue-50",
+}
+const Stars = ({ n }: { n: number }) => (
+  <div className="flex gap-0.5">
+    {Array.from({ length: 5 }).map((_, i) => <Star key={i} className={`h-3.5 w-3.5 ${i < n ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />)}
+  </div>
+)
+function SortHead({ label, k, sort, onSort }: { label: string; k: string; sort: { key: string; dir: "asc" | "desc" }; onSort: (key: string) => void }) {
+  return (
+    <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-1 hover:text-blue-700">
+      {label}<ArrowUpDown className="h-3 w-3 text-slate-300" />
+    </button>
+  )
+}
 
 export function LaundryCustomersView() {
   const { currentBusinessId, user } = useAuthStore()
@@ -71,7 +122,7 @@ export function LaundryCustomersView() {
   const [timeline, setTimeline] = useState<TL[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
-  const [tab, setTab] = useState<"overview" | "membership" | "addresses" | "dispatch-history" | "timeline" | "notes">("overview")
+  const [tab, setTab] = useState<TabKey>("overview")
   const [dispatchStatus, setDispatchStatus] = useState<any[]>([])
   const [scheduling, setScheduling] = useState(false)
   const [scheduleForm, setScheduleForm] = useState({ address: "", date: "", timeSlot: "", notes: "", assignNow: false, executiveId: "" })
@@ -88,6 +139,20 @@ export function LaundryCustomersView() {
   const [mergeQuery, setMergeQuery] = useState("")
   const [mergeResults, setMergeResults] = useState<Row[]>([])
   const [merging, setMerging] = useState(false)
+  // Customer 360 lazy tab data
+  const [orders, setOrders] = useState<OrderRow[]>([])
+  const [ordersTotal, setOrdersTotal] = useState(0)
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersPage, setOrdersPage] = useState(0)
+  const [ordersSearch, setOrdersSearch] = useState("")
+  const [ordersStatus, setOrdersStatus] = useState("")
+  const [ordersSort, setOrdersSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "createdAt", dir: "desc" })
+  const [ordersLoaded, setOrdersLoaded] = useState(false)
+  const [feedback, setFeedback] = useState<any[]>([])
+  const [feedbackLoaded, setFeedbackLoaded] = useState(false)
+  const [garments, setGarments] = useState<{ totalOrders: number; totalItems: number; services: { name: string; count: number }[] } | null>(null)
+  const [garmentsLoaded, setGarmentsLoaded] = useState(false)
+  const [auditLoaded, setAuditLoaded] = useState(false)
 
   // Archive (soft delete). Orders, invoices, payments, subscription ledger and
   // audit are NEVER deleted — the customer is marked archived and hidden from
@@ -134,8 +199,57 @@ export function LaundryCustomersView() {
   }, [currentBusinessId, page, search, showArchived])
   useEffect(() => { load() }, [load])
 
+  // ── Customer 360 lazy loaders (first activation of a tab only) ─────────────
+  const loadOrders = useCallback(async (custId: string, page: number, status: string, searchText: string) => {
+    if (!custId || !currentBusinessId) return
+    setOrdersLoading(true)
+    try {
+      const params = new URLSearchParams({ businessId: currentBusinessId, customerId: custId, limit: String(ORDERS_PAGE), offset: String(page * ORDERS_PAGE) })
+      if (status) params.set("status", status)
+      if (searchText.trim()) params.set("search", searchText.trim())
+      const j = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
+      if (j.success) { setOrders(j.data || []); setOrdersTotal(j.total || 0) }
+    } catch { setOrders([]); setOrdersTotal(0) } finally { setOrdersLoading(false) }
+  }, [currentBusinessId])
+
+  const loadFeedback = useCallback(async () => {
+    if (!detail || !currentBusinessId) return
+    try {
+      const j = await fetch(`/api/laundry/orders?businessId=${currentBusinessId}&customerId=${detail.id}&limit=100`).then((r) => r.json())
+      const rows = (j.data || []).filter((o: OrderRow) => o.feedback?.rating).map((o: OrderRow) => ({ id: o.id, orderNumber: o.orderNumber, rating: o.feedback?.rating, comment: o.feedback?.comment || "", createdAt: o.createdAt }))
+      setFeedback(rows)
+    } catch { setFeedback([]) }
+  }, [currentBusinessId, detail])
+
+  const loadGarments = useCallback(async () => {
+    if (!detail || !currentBusinessId) return
+    try {
+      const j = await fetch(`/api/laundry/orders?businessId=${currentBusinessId}&customerId=${detail.id}&limit=100`).then((r) => r.json())
+      const rows = (j.data || []) as OrderRow[]
+      const svc = new Map<string, number>()
+      let totalItems = 0
+      for (const o of rows) {
+        totalItems += o.itemCount || 0
+        for (const s of o.services || []) svc.set(s.serviceName, (svc.get(s.serviceName) || 0) + 1)
+      }
+      setGarments({ totalOrders: rows.length, totalItems, services: [...svc.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count) })
+    } catch { setGarments(null) }
+  }, [currentBusinessId, detail])
+
+  const openTab = (t: TabKey) => {
+    setTab(t)
+    if ((t === "overview" || t === "orders") && !ordersLoaded && detail) { setOrdersLoaded(true); loadOrders(detail.id, 0, ordersStatus, ordersSearch) }
+    if (t === "feedback" && !feedbackLoaded) { setFeedbackLoaded(true); loadFeedback() }
+    if (t === "garments" && !garmentsLoaded) { setGarmentsLoaded(true); loadGarments() }
+    if (t === "timeline") loadDispatchHistory()
+    if (t === "audit" && !auditLoaded) setAuditLoaded(true)
+  }
+
   const openCustomer = async (id: string, edit: boolean) => {
     setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setMembership(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true); setScheduling(false); setDispatchStatus([])
+    // Reset lazy tab state for a fresh profile
+    setOrders([]); setOrdersTotal(0); setOrdersPage(0); setOrdersSearch(""); setOrdersStatus(""); setOrdersLoaded(false)
+    setFeedback([]); setFeedbackLoaded(false); setGarments(null); setGarmentsLoaded(false); setAuditLoaded(false)
     fetch(`/api/laundry/customers/${id}/membership?businessId=${currentBusinessId}`).then((r) => r.json())
       .then((j) => setMembership(j.success ? j.data : null)).catch(() => setMembership(null))
     // Active/GRACE subscription (Part 8) — detected, never assumed.
@@ -150,10 +264,12 @@ export function LaundryCustomersView() {
         const d = json.data as Detail; setDetail(d)
         const a = d.addresses?.[0]
         setForm({ name: d.name, mobile: d.phone || "", email: d.email || "", alternateMobile: d.alternateMobile || "", company: d.company || "", gstNumber: d.gstNumber || "", gender: d.gender || "", reference: d.reference || "", tags: (d.tags || []).join(", "), status: d.status || "ACTIVE", addressLine1: a?.addressLine1 || "", addressLine2: a?.addressLine2 || "", area: a?.area || "", landmark: a?.landmark || "", city: a?.city || "", state: a?.state || "", pincode: a?.pincode || "" })
+        // Overview is the default tab → warm the recent-orders list immediately.
+        if (!edit) { setOrdersLoaded(true); loadOrders(id, 0, "", "") }
       }
     } catch { /* noop */ } finally { setLoadingDetail(false) }
   }
-  const closeDialog = () => { setOpenId(null); setDetail(null); setEditing(false) }
+  const closeDialog = () => { setOpenId(null); setDetail(null); setEditing(false); setOrders([]); setOrdersLoaded(false); setFeedback([]); setFeedbackLoaded(false); setGarments(null); setGarmentsLoaded(false) }
 
   // Deep-link from the New Order "View Customer" quick action — open the focused
   // customer once, then clear the flag so it doesn't re-trigger.
@@ -291,6 +407,32 @@ export function LaundryCustomersView() {
     } catch { toast({ title: "Update failed", variant: "destructive" }) } finally { setSavingEdit(false) }
   }
 
+  // ── Customer 360 lazy loaders (first activation of a tab only) ─────────────
+
+  // Client-side sort of the currently loaded order page.
+  const sortedOrders = useMemo(() => {
+    if (!orders.length) return orders
+    const arr = [...orders]
+    const dir = ordersSort.dir === "asc" ? 1 : -1
+    arr.sort((a, b) => {
+      if (ordersSort.key === "orderNumber") return a.orderNumber.localeCompare(b.orderNumber) * dir
+      if (ordersSort.key === "grandTotal") return (a.grandTotal - b.grandTotal) * dir
+      if (ordersSort.key === "status") return a.status.localeCompare(b.status) * dir
+      if (ordersSort.key === "paymentStatus") return a.paymentStatus.localeCompare(b.paymentStatus) * dir
+      return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * dir
+    })
+    return arr
+  }, [orders, ordersSort])
+  const toggleSort = (key: string) => setOrdersSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }))
+
+  const ordersPages = Math.max(1, Math.ceil(ordersTotal / ORDERS_PAGE))
+  const payments = useMemo(() => timeline.filter((t) => t.type === "PAYMENT"), [timeline])
+  const auditRows = useMemo(() => {
+    const activities = (notes as Note[]).map((n) => ({ at: n.createdAt, type: n.type || "ACTIVITY", title: n.title || "Activity", who: n.actorName || "—", body: n.body || "" }))
+    const events = timeline.filter((t) => t.type === "DISPATCH").map((t) => ({ at: t.at, type: "DISPATCH", title: t.title, who: t.detail?.split(" · ")[1] || "—", body: t.detail || "" }))
+    return [...activities, ...events].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+  }, [notes, timeline])
+
   const pages = Math.max(1, Math.ceil(total / PAGE))
 
   // Business-wide counts from the API (not page-scoped) — pagination belongs in
@@ -300,6 +442,22 @@ export function LaundryCustomersView() {
     { label: "Active Customers", value: summary.activeCustomers, icon: UserCheck, color: "text-green-600 bg-green-50" },
     { label: "Customer Memberships", value: summary.activeMemberships, icon: Repeat, color: "text-violet-600 bg-violet-50" },
   ]
+
+  const phoneDigits = (detail?.phone || "").replace(/\D/g, "")
+  const waLink = phoneDigits ? `https://wa.me/${phoneDigits}` : null
+  const telLink = phoneDigits ? `tel:${phoneDigits}` : null
+
+  const stats = detail?.stats
+  const memberSince = stats?.memberSince || null
+  const headerKPIs = [
+    { label: "Wallet", value: inr(detail?.walletBalance || 0), icon: Wallet },
+    { label: "Lifetime", value: inr(detail?.totalSpent || 0), icon: CreditCard },
+    { label: "Active Orders", value: stats?.activeOrders ?? 0, icon: Truck },
+    { label: "Total Orders", value: stats?.totalOrders ?? detail?.totalOrders ?? 0, icon: ShoppingBag },
+    { label: "Customer Since", value: fmtD(memberSince), icon: Calendar },
+  ]
+
+  const openOrder = (id: string) => { setSelectedOrderId(id); setLaundryPage("order-detail") }
 
   return (
     <div className="px-4 lg:px-6 py-6 space-y-4">
@@ -382,254 +540,455 @@ export function LaundryCustomersView() {
         </div>
       )}
 
-      {/* View / Edit dialog */}
-      <Dialog open={!!openId} onOpenChange={(o) => !o && closeDialog()}>
-        <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">{editing ? <Pencil className="h-5 w-5 text-blue-600" /> : <Eye className="h-5 w-5 text-blue-600" />} {editing ? "Edit Customer" : "Customer Details"}</DialogTitle>
-            <DialogDescription>{detail?.customerCode || ""}</DialogDescription>
-          </DialogHeader>
+      {/* ── Customer 360 slide-over (right, ~80% desktop width) ─────────────── */}
+      <Sheet open={!!openId} onOpenChange={(o) => !o && closeDialog()}>
+        <SheetContent side="right" className="w-full sm:w-[85%] lg:w-[80%] xl:w-[75%] sm:max-w-none max-w-[1400px] p-0 gap-0 overflow-y-auto">
+          <SheetTitle className="sr-only">Customer 360</SheetTitle>
+          <SheetDescription className="sr-only">Full customer profile, orders, timeline, feedback, addresses, subscriptions, payments, garments and audit log.</SheetDescription>
           {loadingDetail || !detail ? (
-            <div className="flex items-center justify-center py-10 text-slate-400 gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+            <div className="flex items-center justify-center py-16 text-slate-400 gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
           ) : editing ? (
-            <div className="space-y-3">
-              <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1"><Label className="text-xs">Mobile *</Label><Input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">Alternate Mobile</Label><Input value={form.alternateMobile || ""} onChange={(e) => setForm((f) => ({ ...f, alternateMobile: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">Email</Label><Input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">Company</Label><Input value={form.company || ""} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">GST</Label><Input value={form.gstNumber || ""} onChange={(e) => setForm((f) => ({ ...f, gstNumber: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">Status</Label>
-                  <select value={form.status || "ACTIVE"} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className="w-full h-9 rounded-md border border-input px-3 text-sm bg-background">
-                    {["ACTIVE", "INACTIVE", "BLOCKED"].map((s) => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
-                  </select>
+            <div className="p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-800 flex items-center gap-2"><Pencil className="h-5 w-5 text-blue-600" /> Edit Customer</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+                  <Button onClick={saveEdit} disabled={savingEdit} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</Button>
                 </div>
               </div>
-              <div className="space-y-1"><Label className="text-xs">Tags (comma separated)</Label><Input value={form.tags || ""} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="VIP, Corporate, Premium" /></div>
-              <div className="space-y-1"><Label className="text-xs">Address Line 1</Label><Input value={form.addressLine1} onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))} /></div>
-              <div className="space-y-1"><Label className="text-xs">Address Line 2</Label><Input value={form.addressLine2} onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1"><Label className="text-xs">Area</Label><Input value={form.area} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} /></div>
-                <div className="space-y-1"><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1"><Label className="text-xs">State</Label><SearchableSelect value={form.state} onChange={(v) => setForm((f) => ({ ...f, state: v }))} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="Select state" /></div>
-                <div className="space-y-1"><Label className="text-xs">PIN Code</Label><Input value={form.pincode} inputMode="numeric" maxLength={6} onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
+              <div className="space-y-3">
+                <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Mobile *</Label><Input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Alternate Mobile</Label><Input value={form.alternateMobile || ""} onChange={(e) => setForm((f) => ({ ...f, alternateMobile: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Email</Label><Input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Company</Label><Input value={form.company || ""} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">GST</Label><Input value={form.gstNumber || ""} onChange={(e) => setForm((f) => ({ ...f, gstNumber: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Status</Label>
+                    <select value={form.status || "ACTIVE"} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className="w-full h-9 rounded-md border border-input px-3 text-sm bg-background">
+                      {["ACTIVE", "INACTIVE", "BLOCKED"].map((s) => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-1"><Label className="text-xs">Tags (comma separated)</Label><Input value={form.tags || ""} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="VIP, Corporate, Premium" /></div>
+                <div className="space-y-1"><Label className="text-xs">Address Line 1</Label><Input value={form.addressLine1} onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))} /></div>
+                <div className="space-y-1"><Label className="text-xs">Address Line 2</Label><Input value={form.addressLine2} onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Area</Label><Input value={form.area} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} /></div>
+                  <div className="space-y-1"><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">State</Label><SearchableSelect value={form.state} onChange={(v) => setForm((f) => ({ ...f, state: v }))} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="Select state" /></div>
+                  <div className="space-y-1"><Label className="text-xs">PIN Code</Label><Input value={form.pincode} inputMode="numeric" maxLength={6} onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
+                </div>
               </div>
             </div>
           ) : (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12"><AvatarFallback className="bg-blue-100 text-blue-700 font-semibold">{initials(detail.name)}</AvatarFallback></Avatar>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-800">{detail.name}</p>
-                  <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                    <Badge variant="outline" className={`text-[11px] ${tierStyle(detail.loyaltyTier)}`}>{detail.loyaltyTier || "Bronze"}</Badge>
-                    {detail.status === "MERGED" && <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500">Merged</Badge>}
-                    {(detail.tags || []).map((t) => <Badge key={t} variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">{t}</Badge>)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Dispatch Actions */}
-              <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch</p>
-                  {!scheduling && <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => { const def = detail.addresses?.find((a: Addr) => a.isPickupDefault) || detail.addresses?.[0]; setScheduleForm((f) => ({ ...f, address: def ? `${def.addressLine1}, ${def.area ? def.area + ", " : ""}${def.city}` : "" })); setScheduling(true) }}><Plus className="h-3 w-3" /> Schedule Pickup</Button>}
-                </div>
-                {scheduling && (
-                  <div className="space-y-2 bg-white rounded border border-blue-200 p-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-slate-500">Pickup Address</label>
-                        {detail.addresses.length > 0 && (
-                          <select className="text-[10px] border border-slate-200 rounded px-1 h-5 max-w-[140px]" value="" onChange={(e) => { if (!e.target.value) return; const a = detail.addresses.find((ad: Addr) => ad.id === e.target.value); if (a) setScheduleForm((f) => ({ ...f, address: `${a.addressLine1}, ${a.area ? a.area + ", " : ""}${a.city}` })) }}>
-                            <option value="">Change address…</option>
-                            {detail.addresses.map((a: Addr) => <option key={a.id} value={a.id}>{a.label || a.addressType || "HOME"} — {a.addressLine1}, {a.city}</option>)}
-                          </select>
-                        )}
+            <>
+              {/* Sticky header */}
+              <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+                <div className="p-4 lg:p-5 pb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar className="h-12 w-12"><AvatarImage src={detail.avatar || undefined} alt={detail.name} /><AvatarFallback className="bg-blue-100 text-blue-700 font-semibold">{initials(detail.name)}</AvatarFallback></Avatar>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-slate-800 text-lg leading-tight truncate">{detail.name}</p>
+                          <Badge variant="outline" className={detail.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-amber-300 text-amber-600 bg-amber-50"}>{detail.isActive ? "Active" : detail.status === "MERGED" ? "Merged" : "Archived"}</Badge>
+                          <Badge variant="outline" className={`text-[11px] ${tierStyle(detail.loyaltyTier)}`}>{detail.loyaltyTier || "Bronze"}</Badge>
+                        </div>
+                        <p className="font-mono text-[11px] text-slate-400 mt-0.5">{detail.customerCode || "—"}</p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-600">
+                          {detail.phone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3 text-slate-400" /> {detail.phone}{detail.alternateMobile ? ` · ${detail.alternateMobile}` : ""}</span>}
+                          {detail.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3 text-slate-400" /> {detail.email}</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {(detail.tags || []).map((t) => <Badge key={t} variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">{t}</Badge>)}
+                          {detail.status === "MERGED" && <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500">Merged</Badge>}
+                        </div>
                       </div>
-                      <input value={scheduleForm.address} onChange={(e) => setScheduleForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Type or select an address above" />
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={scheduleForm.date} onChange={(e) => setScheduleForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" /></div>
-                      <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={scheduleForm.timeSlot} onChange={(e) => setScheduleForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="e.g. 10:00–12:00" /></div>
-                    </div>
-                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Notes</label><input value={scheduleForm.notes} onChange={(e) => setScheduleForm((f) => ({ ...f, notes: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Optional" /></div>
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={scheduleForm.assignNow} onChange={(e) => setScheduleForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={schedulingBusy} onClick={schedulePickup}>
-                        {schedulingBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} Schedule
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setScheduling(false)}>Cancel</Button>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+                        <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-3.5 w-3.5" /> New Order</Button>
+                        {telLink && <a href={telLink}><Button size="sm" variant="outline" className="h-8 gap-1" title="Call"><PhoneCall className="h-3.5 w-3.5" /> Call</Button></a>}
+                        {waLink && <a href={waLink} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="h-8 gap-1" title="WhatsApp"><MessageCircle className="h-3.5 w-3.5" /> WhatsApp</Button></a>}
+                        <SheetClose asChild><Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Close"><X className="h-4 w-4" /></Button></SheetClose>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                        {custSub && <span className="inline-flex items-center gap-1"><Repeat className="h-3 w-3 text-blue-500" /> {custSub.planName} · {custSub.status === "GRACE" ? "Grace" : "Active"}</span>}
+                        {stats?.subscription?.planName && !custSub && <span className="inline-flex items-center gap-1"><Repeat className="h-3 w-3 text-blue-500" /> {stats.subscription.planName}</span>}
+                      </div>
                     </div>
                   </div>
-                )}
-                {dispatchStatus.length > 0 && (
-                  <div className="space-y-1">
-                    {dispatchStatus.filter((d: any) => d.pickup.required && d.pickup.status !== "COMPLETED").map((d: any) => (
-                      <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-blue-100 px-2 py-1">
-                        <button type="button" className="font-mono text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
-                        <span className="flex items-center gap-1 text-slate-600">{d.pickup.executiveName || "Unassigned"} · {d.pickup.status}</span>
-                      </div>
-                    ))}
-                    {dispatchStatus.filter((d: any) => d.delivery.required && d.delivery.status !== "COMPLETED").map((d: any) => (
-                      <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-violet-100 px-2 py-1">
-                        <button type="button" className="font-mono text-violet-700 hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
-                        <span className="flex items-center gap-1 text-slate-600">{d.delivery.executiveName || "Unassigned"} · {d.delivery.status}</span>
+                  {/* KPI strip */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">
+                    {headerKPIs.map((k) => (
+                      <div key={k.label} className="rounded-lg border border-slate-200 px-2.5 py-1.5">
+                        <p className="text-[10px] uppercase text-slate-400 flex items-center gap-1"><k.icon className="h-3 w-3" /> {k.label}</p>
+                        <p className="text-sm font-bold text-slate-800 tabular-nums truncate">{k.value}</p>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Statistics (Part 8) */}
-              {detail.stats && (
-                <div className="grid grid-cols-3 gap-2">
-                  {[{ l: "Orders", v: detail.stats.totalOrders }, { l: "Completed", v: detail.stats.completed }, { l: "Cancelled", v: detail.stats.cancelled }, { l: "Revenue", v: inr(detail.stats.grossValue) }, { l: "Outstanding", v: inr(detail.stats.outstanding), c: detail.stats.outstanding > 0 ? "text-rose-600" : "" }, { l: "Avg Order", v: inr(detail.stats.avgOrderValue) }].map((s) => (
-                    <div key={s.l} className="rounded-lg border border-slate-200 px-2 py-1.5"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-sm font-bold ${s.c || "text-slate-800"}`}>{s.v}</p></div>
+                </div>
+                {/* Sticky tabs */}
+                <div className="flex gap-1 px-4 lg:px-5 pt-2 overflow-x-auto">
+                  {([
+                    { k: "overview", l: "Overview", icon: LayoutDashboard },
+                    { k: "orders", l: "Orders", icon: ShoppingBag },
+                    { k: "timeline", l: "Timeline", icon: History },
+                    { k: "feedback", l: "Feedback", icon: Star },
+                    { k: "addresses", l: "Addresses", icon: MapPin },
+                    { k: "subscriptions", l: "Subscriptions", icon: Repeat },
+                    { k: "payments", l: "Payments", icon: CreditCard },
+                    { k: "garments", l: "Garments", icon: Shirt },
+                    { k: "audit", l: "Audit Log", icon: FileText },
+                  ] as { k: TabKey; l: string; icon: typeof Star }[]).map((t) => (
+                    <button key={t.k} onClick={() => openTab(t.k)} className={`inline-flex items-center gap-1.5 px-2.5 h-9 text-xs font-medium capitalize whitespace-nowrap border-b-2 ${tab === t.k ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}><t.icon className="h-3.5 w-3.5" /> {t.l}</button>
                   ))}
                 </div>
-              )}
-
-              {/* Tabs */}
-              <div className="flex gap-1 border-b border-slate-100">
-                {(["overview", "membership", "addresses", "dispatch-history", "timeline", "notes"] as const).map((t) => (
-                  <button key={t} onClick={() => { setTab(t); if (t === "dispatch-history") loadDispatchHistory() }} className={`relative px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t === "dispatch-history" ? "Dispatch" : t}{t === "membership" && membership?.hasMembership && <span className={`ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle ${membership.status === "ACTIVE" ? "bg-emerald-500" : membership.status === "PENDING_PAYMENT" ? "bg-amber-500" : "bg-slate-300"}`} />}</button>
-                ))}
               </div>
 
-              {tab === "overview" && <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" /> Mobile</p><p className="text-slate-700">{detail.phone || "—"}{detail.alternateMobile ? ` · ${detail.alternateMobile}` : ""}</p></div>
-                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Mail className="h-3 w-3" /> Email</p><p className="text-slate-700">{detail.email || "—"}</p></div>
-                  <div><p className="text-xs text-slate-400">Company</p><p className="text-slate-700">{detail.company || "—"}</p></div>
-                  <div><p className="text-xs text-slate-400">GST</p><p className="text-slate-700">{detail.gstNumber || "—"}</p></div>
-                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Wallet className="h-3 w-3" /> Wallet</p><p className="text-slate-700">{inr(detail.walletBalance)}</p></div>
-                  <div><p className="text-xs text-slate-400">Reference</p><p className="text-slate-700">{detail.reference || "—"}</p></div>
-                </div>
-                {/* Communication preferences (Part 5) */}
-                <div><p className="text-xs text-slate-400">Communication</p><div className="flex flex-wrap gap-1 mt-0.5">{["sms", "whatsapp", "email", "push", "marketing"].map((k) => <Badge key={k} variant="outline" className={`text-[10px] capitalize ${detail.comm?.[k] ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{k}</Badge>)}</div></div>
-                {/* Walk-in: invite the customer to the Customer App (email OTP) */}
-                <Button size="sm" variant="outline" className="w-full gap-1.5 border-blue-200 text-blue-700" disabled={!detail.email} onClick={sendInvite}><Mail className="h-3.5 w-3.5" /> Send App Registration Invitation</Button>
-                {/* Current subscription (Part 8) */}
-                {custSub && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
-                    <div className="flex items-center justify-between"><p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {custSub.planName}</p><Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-blue-50">{custSub.status === "GRACE" ? "In Grace" : "Active"}</Badge></div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      {(custSub.allowanceKg ?? 0) > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{custSub.remainingKg} / {custSub.allowanceKg} KG left</span>}
-                      {(custSub.allowancePieces ?? 0) > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{custSub.remainingPieces} / {custSub.allowancePieces} pieces left</span>}
+              {/* Scrollable tab body */}
+              <div className="p-4 lg:p-5 space-y-3 text-sm">
+                {tab === "overview" && <div className="space-y-3">
+                  {/* Statistics */}
+                  {stats && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[{ l: "Orders", v: stats.totalOrders }, { l: "Completed", v: stats.completed }, { l: "Cancelled", v: stats.cancelled }, { l: "Revenue", v: inr(stats.grossValue) }, { l: "Outstanding", v: inr(stats.outstanding), c: stats.outstanding > 0 ? "text-rose-600" : "" }, { l: "Avg Order", v: inr(stats.avgOrderValue) }].map((s) => (
+                        <div key={s.l} className="rounded-lg border border-slate-200 px-2 py-1.5"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-sm font-bold ${s.c || "text-slate-800"}`}>{s.v}</p></div>
+                      ))}
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-500">Expires {new Date(custSub.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · {custSub.autoRenew ? "Auto-renews" : "Manual renewal"}</p>
-                  </div>
-                )}
-                {detail.notes && <div><p className="text-xs text-slate-400">Profile note</p><p className="text-slate-600 text-xs">{detail.notes}</p></div>}
-              </div>}
+                  )}
 
-              {tab === "membership" && <MembershipTab m={membership} businessId={currentBusinessId || ""} onCollected={() => { if (openId && currentBusinessId) fetch(`/api/laundry/customers/${openId}/membership?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setMembership(j.success ? j.data : null)).catch(() => {}) }} />}
-
-              {tab === "addresses" && <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">{detail.addresses.length} address{detail.addresses.length !== 1 ? "es" : ""}</span>
-                  <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => openAddressForm()}><Plus className="h-3 w-3" /> Add Address</Button>
-                </div>
-                {detail.addresses.length === 0 && !editAddress ? <p className="text-slate-400 text-xs py-3 text-center">No addresses saved. Click "Add Address" to create one.</p> : null}
-                {editAddress && addressAction ? (
+                  {/* Dispatch Actions */}
                   <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-blue-800">{addressAction === "add" ? "New Address" : "Edit Address"}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-0.5 col-span-2"><Label className="text-[10px]">Address Line 1 *</Label><Input className="h-7 text-xs" value={editAddress.addressLine1 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine1: e.target.value } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">Address Line 2</Label><Input className="h-7 text-xs" value={editAddress.addressLine2 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine2: e.target.value } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">Area</Label><Input className="h-7 text-xs" value={editAddress.area || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, area: e.target.value } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">Landmark</Label><Input className="h-7 text-xs" value={editAddress.landmark || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, landmark: e.target.value } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">City</Label><Input className="h-7 text-xs" value={editAddress.city || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, city: e.target.value } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">State</Label><SearchableSelect className="h-7 text-xs" value={editAddress.state || ""} onChange={(v) => setEditAddress((f) => f ? { ...f, state: v } : f)} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="State" /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">PIN Code</Label><Input className="h-7 text-xs" value={editAddress.pincode || ""} inputMode="numeric" maxLength={6} onChange={(e) => setEditAddress((f) => f ? { ...f, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) } : f)} /></div>
-                      <div className="space-y-0.5"><Label className="text-[10px]">Label</Label><Input className="h-7 text-xs" value={editAddress.label || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, label: e.target.value } : f)} placeholder="e.g. Home, Office" /></div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch</p>
+                      {!scheduling && <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => { const def = detail.addresses?.find((a: Addr) => a.isPickupDefault) || detail.addresses?.[0]; setScheduleForm((f) => ({ ...f, address: def ? `${def.addressLine1}, ${def.area ? def.area + ", " : ""}${def.city}` : "" })); setScheduling(true) }}><Plus className="h-3 w-3" /> Schedule Pickup</Button>}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isPickupDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isPickupDefault: e.target.checked } : f)} /> Default for Pickup</label>
-                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDeliveryDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDeliveryDefault: e.target.checked } : f)} /> Default for Delivery</label>
-                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDefault: e.target.checked } : f)} /> General Default</label>
+                    {scheduling && (
+                      <div className="space-y-2 bg-white rounded border border-blue-200 p-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] text-slate-500">Pickup Address</label>
+                            {detail.addresses.length > 0 && (
+                              <select className="text-[10px] border border-slate-200 rounded px-1 h-5 max-w-[140px]" value="" onChange={(e) => { if (!e.target.value) return; const a = detail.addresses.find((ad: Addr) => ad.id === e.target.value); if (a) setScheduleForm((f) => ({ ...f, address: `${a.addressLine1}, ${a.area ? a.area + ", " : ""}${a.city}` })) }}>
+                                <option value="">Change address…</option>
+                                {detail.addresses.map((a: Addr) => <option key={a.id} value={a.id}>{a.label || a.addressType || "HOME"} — {a.addressLine1}, {a.city}</option>)}
+                              </select>
+                            )}
+                          </div>
+                          <input value={scheduleForm.address} onChange={(e) => setScheduleForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Type or select an address above" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={scheduleForm.date} onChange={(e) => setScheduleForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" /></div>
+                          <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={scheduleForm.timeSlot} onChange={(e) => setScheduleForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="e.g. 10:00–12:00" /></div>
+                        </div>
+                        <div className="space-y-1"><label className="text-[10px] text-slate-500">Notes</label><input value={scheduleForm.notes} onChange={(e) => setScheduleForm((f) => ({ ...f, notes: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Optional" /></div>
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={scheduleForm.assignNow} onChange={(e) => setScheduleForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={schedulingBusy} onClick={schedulePickup}>
+                            {schedulingBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} Schedule
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setScheduling(false)}>Cancel</Button>
+                        </div>
+                      </div>
+                    )}
+                    {dispatchStatus.length > 0 && (
+                      <div className="space-y-1">
+                        {dispatchStatus.filter((d: any) => d.pickup.required && d.pickup.status !== "COMPLETED").map((d: any) => (
+                          <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-blue-100 px-2 py-1">
+                            <button type="button" className="font-mono text-blue-700 hover:underline text-left" onClick={() => openOrder(d.orderId)}>{d.orderNumber}</button>
+                            <span className="flex items-center gap-1 text-slate-600">{d.pickup.executiveName || "Unassigned"} · {d.pickup.status}</span>
+                          </div>
+                        ))}
+                        {dispatchStatus.filter((d: any) => d.delivery.required && d.delivery.status !== "COMPLETED").map((d: any) => (
+                          <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-violet-100 px-2 py-1">
+                            <button type="button" className="font-mono text-violet-700 hover:underline text-left" onClick={() => openOrder(d.orderId)}>{d.orderNumber}</button>
+                            <span className="flex items-center gap-1 text-slate-600">{d.delivery.executiveName || "Unassigned"} · {d.delivery.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Contact + communication */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><p className="text-xs text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" /> Mobile</p><p className="text-slate-700">{detail.phone || "—"}{detail.alternateMobile ? ` · ${detail.alternateMobile}` : ""}</p></div>
+                    <div><p className="text-xs text-slate-400 flex items-center gap-1"><Mail className="h-3 w-3" /> Email</p><p className="text-slate-700">{detail.email || "—"}</p></div>
+                    <div><p className="text-xs text-slate-400">Company</p><p className="text-slate-700">{detail.company || "—"}</p></div>
+                    <div><p className="text-xs text-slate-400">GST</p><p className="text-slate-700">{detail.gstNumber || "—"}</p></div>
+                    <div><p className="text-xs text-slate-400 flex items-center gap-1"><Wallet className="h-3 w-3" /> Wallet</p><p className="text-slate-700">{inr(detail.walletBalance)}</p></div>
+                    <div><p className="text-xs text-slate-400">Reference</p><p className="text-slate-700">{detail.reference || "—"}</p></div>
+                  </div>
+                  <div><p className="text-xs text-slate-400">Communication</p><div className="flex flex-wrap gap-1 mt-0.5">{["sms", "whatsapp", "email", "push", "marketing"].map((k) => <Badge key={k} variant="outline" className={`text-[10px] capitalize ${detail.comm?.[k] ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{k}</Badge>)}</div></div>
+                  <Button size="sm" variant="outline" className="w-full gap-1.5 border-blue-200 text-blue-700" disabled={!detail.email} onClick={sendInvite}><Mail className="h-3.5 w-3.5" /> Send App Registration Invitation</Button>
+
+                  {/* Current subscription */}
+                  {custSub && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                      <div className="flex items-center justify-between"><p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {custSub.planName}</p><Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-blue-50">{custSub.status === "GRACE" ? "In Grace" : "Active"}</Badge></div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        {(custSub.allowanceKg ?? 0) > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{custSub.remainingKg} / {custSub.allowanceKg} KG left</span>}
+                        {(custSub.allowancePieces ?? 0) > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{custSub.remainingPieces} / {custSub.allowancePieces} pieces left</span>}
+                      </div>
+                      <p className="mt-2 text-[11px] text-slate-500">Expires {fmtD(custSub.expiry)} · {custSub.autoRenew ? "Auto-renews" : "Manual renewal"}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={savingAddress} onClick={saveAddress}>
-                        {savingAddress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} {addressAction === "add" ? "Add Address" : "Save Changes"}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={closeAddressForm}>Cancel</Button>
+                  )}
+                  {detail.notes && <div><p className="text-xs text-slate-400">Profile note</p><p className="text-slate-600 text-xs">{detail.notes}</p></div>}
+
+                  {/* Recent orders */}
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                      <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"><ShoppingBag className="h-3.5 w-3.5 text-blue-600" /> Recent Orders</p>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-blue-600" onClick={() => openTab("orders")}>View all <ExternalLink className="h-3 w-3" /></Button>
+                    </div>
+                    {ordersLoading ? <div className="flex items-center justify-center py-6 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /></div> : sortedOrders.length === 0 ? <p className="text-slate-400 text-xs py-4 text-center">No orders yet.</p> : (
+                      <Table>
+                        <TableHeader><TableRow className="text-[10px] uppercase tracking-wide text-slate-400"><TableHead>Order</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Payment</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {sortedOrders.slice(0, 5).map((o) => (
+                            <TableRow key={o.id} className="cursor-pointer" onClick={() => openOrder(o.id)}>
+                              <TableCell><button type="button" className="font-mono text-blue-700 hover:underline text-left">{o.orderNumber}</button><p className="text-[10px] text-slate-400">{fmtD(o.createdAt)}</p></TableCell>
+                              <TableCell className="text-right tabular-nums font-medium">{inr(o.grandTotal)}</TableCell>
+                              <TableCell><Badge variant="outline" className={`text-[9px] ${PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}`}>{o.paymentStatus}</Badge></TableCell>
+                              <TableCell><Badge variant="outline" className={`text-[9px] ${STATUS_STYLE[o.status] || "border-slate-200 text-slate-500"}`}>{o.status.replace(/_/g, " ")}</Badge></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+
+                  {/* Notes */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5 text-blue-600" /> Internal Notes</p>
+                    <div className="flex gap-2"><Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add an internal note…" className="text-xs h-8" /><Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700 text-white" onClick={addNote} disabled={!newNote.trim()}>Add</Button></div>
+                    <p className="text-[10px] text-slate-400">Internal only — never shown to customers.</p>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {notes.length === 0 ? <p className="text-slate-400 text-xs py-1 text-center">No notes.</p> : notes.map((n) => (
+                        <div key={n.id} className="rounded border border-slate-100 bg-slate-50 p-2"><div className="flex items-center justify-between"><Badge variant="outline" className="text-[9px] capitalize border-slate-200 text-slate-500">{n.type.toLowerCase()}</Badge><span className="text-[10px] text-slate-400">{n.actorName || "staff"} · {fmtD(n.createdAt)}</span></div><p className="text-xs text-slate-600 mt-1">{n.body}</p></div>
+                      ))}
                     </div>
                   </div>
-                ) : null}
-                {detail.addresses.map((a: Addr) => (
-                  <div key={a.id} className="rounded-lg border border-slate-200 p-2.5">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                      <span className="text-xs font-medium text-slate-700">{a.label || a.addressType || "HOME"}</span>
-                      {a.isDefault && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700 bg-emerald-50">Default</Badge>}
-                      {a.isPickupDefault && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-700 bg-blue-50">Pickup</Badge>}
-                      {a.isDeliveryDefault && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-700 bg-violet-50">Delivery</Badge>}
-                      <div className="ml-auto flex gap-1">
-                        <button className="text-[10px] text-slate-400 hover:text-blue-600" onClick={() => openAddressForm(a)}><Pencil className="h-3 w-3" /></button>
-                        <button className="text-[10px] text-slate-400 hover:text-red-600" onClick={() => { if (confirm("Delete this address?")) deleteAddress(a.id) }}><Trash2 className="h-3 w-3" /></button>
+                </div>}
+
+                {tab === "orders" && <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[180px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input placeholder="Search order number…" className="pl-8 h-8 text-xs" value={ordersSearch} onChange={(e) => { setOrdersSearch(e.target.value); setOrdersPage(0); loadOrders(detail.id, 0, ordersStatus, e.target.value) }} /></div>
+                    <select value={ordersStatus} onChange={(e) => { setOrdersStatus(e.target.value); setOrdersPage(0); loadOrders(detail.id, 0, e.target.value, ordersSearch) }} className="h-8 text-xs rounded-md border border-input px-2 bg-background">
+                      <option value="">All statuses</option>
+                      {Object.keys(STATUS_STYLE).map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                    </select>
+                  </div>
+                  {ordersLoading ? <div className="flex items-center justify-center py-10 text-slate-400 gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading orders…</div> : sortedOrders.length === 0 ? <p className="text-slate-400 text-xs py-8 text-center">No orders match.</p> : (
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="text-[10px] uppercase tracking-wide text-slate-400">
+                          <TableHead><SortHead label="Order" k="orderNumber" sort={ordersSort} onSort={toggleSort} /></TableHead><TableHead><SortHead label="Date" k="createdAt" sort={ordersSort} onSort={toggleSort} /></TableHead><TableHead>Store</TableHead><TableHead className="text-right"><SortHead label="Total" k="grandTotal" sort={ordersSort} onSort={toggleSort} /></TableHead>
+                          <TableHead><SortHead label="Payment" k="paymentStatus" sort={ordersSort} onSort={toggleSort} /></TableHead><TableHead><SortHead label="Status" k="status" sort={ordersSort} onSort={toggleSort} /></TableHead><TableHead className="text-right">Action</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {sortedOrders.map((o) => (
+                            <TableRow key={o.id}>
+                              <TableCell><button type="button" className="font-mono text-blue-700 hover:underline text-left" onClick={() => openOrder(o.id)}>{o.orderNumber}</button></TableCell>
+                              <TableCell className="text-xs text-slate-500">{fmtD(o.createdAt)}</TableCell>
+                              <TableCell className="text-xs text-slate-500">{o.store?.storeName || "—"}</TableCell>
+                              <TableCell className="text-right tabular-nums font-medium">{inr(o.grandTotal)}</TableCell>
+                              <TableCell><Badge variant="outline" className={`text-[9px] ${PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}`}>{o.paymentStatus}</Badge></TableCell>
+                              <TableCell><Badge variant="outline" className={`text-[9px] ${STATUS_STYLE[o.status] || "border-slate-200 text-slate-500"}`}>{o.status.replace(/_/g, " ")}</Badge></TableCell>
+                              <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600" title="Open order" onClick={() => openOrder(o.id)}><Eye className="h-3.5 w-3.5" /></Button></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                  {ordersTotal > ORDERS_PAGE && (
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{ordersTotal} order{ordersTotal !== 1 ? "s" : ""}</span>
+                      <div className="flex items-center gap-1">
+                        <Button variant="outline" size="icon" className="h-7 w-7" disabled={ordersPage === 0} onClick={() => { setOrdersPage((p) => p - 1); loadOrders(detail.id, ordersPage - 1, ordersStatus, ordersSearch) }}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+                        <span className="px-2">Page {ordersPage + 1} / {ordersPages}</span>
+                        <Button variant="outline" size="icon" className="h-7 w-7" disabled={ordersPage + 1 >= ordersPages} onClick={() => { setOrdersPage((p) => p + 1); loadOrders(detail.id, ordersPage + 1, ordersStatus, ordersSearch) }}><ChevronRight className="h-3.5 w-3.5" /></Button>
                       </div>
                     </div>
-                    <p className="text-slate-600 text-xs whitespace-pre-line leading-snug">{formatAddressLines(a).join("\n")}</p>
-                    <div className="flex gap-1.5 mt-1">
-                      {!a.isPickupDefault && <button className="text-[9px] text-blue-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isPickupDefault")}>Set pickup default</button>}
-                      {!a.isDeliveryDefault && <button className="text-[9px] text-violet-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isDeliveryDefault")}>Set delivery default</button>}
-                    </div>
-                  </div>
-                ))}
-              </div>}
+                  )}
+                </div>}
 
-              {tab === "dispatch-history" && <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {loadingHistory ? <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No dispatch history found. Run backfill if historical records are missing.</p> : dispatchHistory.map((d: any) => (
-                  <div key={d.orderId} className="rounded-lg border border-slate-200 p-2 text-xs">
-                    <div className="flex items-center justify-between mb-1">
-                      <button type="button" className="font-mono text-blue-700 font-medium hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
-                      <span className="text-[10px] text-slate-400">{d.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span>
-                    </div>
-                    <div className="flex gap-3 text-[10px] text-slate-600">
-                      {d.pickup?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-blue-500" /> Pickup: {d.pickup.status} {d.pickup.executiveName ? `· ${d.pickup.executiveName}` : ""}</span>}
-                      {d.delivery?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-violet-500" /> Delivery: {d.delivery.status} {d.delivery.executiveName ? `· ${d.delivery.executiveName}` : ""}</span>}
-                    </div>
+                {tab === "timeline" && <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    {timeline.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No activity yet.</p> : timeline.map((t, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs border-l-2 border-slate-200 pl-2 py-0.5">
+                        <Badge variant="outline" className="text-[9px] shrink-0 border-slate-200 text-slate-500 capitalize">{t.type.toLowerCase()}</Badge>
+                        <div className="min-w-0 flex-1"><p className="text-slate-700 truncate">{t.title}{t.detail ? ` · ${t.detail}` : ""}</p><p className="text-[10px] text-slate-400">{fmtDT(t.at)}</p></div>
+                        {t.amount != null && <span className="text-slate-500 shrink-0">{inr(t.amount)}</span>}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>}
-
-              {tab === "timeline" && <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {timeline.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No activity yet.</p> : timeline.map((t, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs border-l-2 border-slate-200 pl-2 py-0.5">
-                    <Badge variant="outline" className="text-[9px] shrink-0 border-slate-200 text-slate-500 capitalize">{t.type.toLowerCase()}</Badge>
-                    <div className="min-w-0 flex-1"><p className="text-slate-700 truncate">{t.title}{t.detail ? ` · ${t.detail}` : ""}</p><p className="text-[10px] text-slate-400">{new Date(t.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>
-                    {t.amount != null && <span className="text-slate-500 shrink-0">{inr(t.amount)}</span>}
+                  <div className="rounded-lg border border-slate-200 p-2">
+                    <p className="text-xs font-semibold text-slate-700 mb-2">Dispatch History</p>
+                    {loadingHistory ? <div className="flex items-center justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-2 text-center">No dispatch history found. Run backfill if historical records are missing.</p> : dispatchHistory.map((d: any) => (
+                      <div key={d.orderId} className="rounded-lg border border-slate-100 p-2 text-xs mb-1.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <button type="button" className="font-mono text-blue-700 font-medium hover:underline text-left" onClick={() => openOrder(d.orderId)}>{d.orderNumber}</button>
+                          <span className="text-[10px] text-slate-400">{d.createdAt ? fmtD(d.createdAt) : "—"}</span>
+                        </div>
+                        <div className="flex gap-3 text-[10px] text-slate-600">
+                          {d.pickup?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-blue-500" /> Pickup: {d.pickup.status} {d.pickup.executiveName ? `· ${d.pickup.executiveName}` : ""}</span>}
+                          {d.delivery?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-violet-500" /> Delivery: {d.delivery.status} {d.delivery.executiveName ? `· ${d.delivery.executiveName}` : ""}</span>}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>}
+                </div>}
 
-              {tab === "notes" && <div className="space-y-2">
-                <div className="flex gap-2"><Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add an internal note…" className="text-xs h-8" /><Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700 text-white" onClick={addNote} disabled={!newNote.trim()}>Add</Button></div>
-                <p className="text-[10px] text-slate-400">Internal only — never shown to customers.</p>
-                <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                  {notes.length === 0 ? <p className="text-slate-400 text-xs py-2 text-center">No notes.</p> : notes.map((n) => (
-                    <div key={n.id} className="rounded border border-slate-100 bg-slate-50 p-2"><div className="flex items-center justify-between"><Badge variant="outline" className="text-[9px] capitalize border-slate-200 text-slate-500">{n.type.toLowerCase()}</Badge><span className="text-[10px] text-slate-400">{n.actorName || "staff"} · {new Date(n.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-slate-600 mt-1">{n.body}</p></div>
+                {tab === "feedback" && <div className="space-y-3">
+                  {(() => {
+                    const n = feedback.length
+                    const avg = n ? feedback.reduce((s: number, r: any) => s + r.rating, 0) / n : 0
+                    const dist = [5, 4, 3, 2, 1].map((star) => ({ star, count: feedback.filter((r: any) => r.rating === star).length }))
+                    return (
+                      <>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="rounded-lg border border-slate-200 px-3 py-2 col-span-1"><p className="text-[10px] uppercase text-slate-400">Avg Rating</p><p className="text-xl font-bold text-slate-800">{n ? avg.toFixed(1) : "—"}</p><Stars n={n ? Math.round(avg) : 0} /></div>
+                          <div className="rounded-lg border border-slate-200 px-3 py-2 col-span-2"><p className="text-[10px] uppercase text-slate-400 mb-1">Distribution</p>{dist.map((d) => (
+                            <div key={d.star} className="flex items-center gap-2 text-[10px] text-slate-500"><span className="w-8 shrink-0 flex items-center gap-1"><Star className="h-3 w-3 text-amber-400" /> {d.star}</span><div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-amber-400" style={{ width: n ? `${(d.count / n) * 100}%` : "0%" }} /></div><span className="w-6 text-right tabular-nums">{d.count}</span></div>
+                          ))}</div>
+                        </div>
+                        <p className="text-xs text-slate-400">{n} feedback{n !== 1 ? "s" : ""} from delivered orders.</p>
+                        {n === 0 ? <p className="text-slate-400 text-xs py-6 text-center">No feedback yet.</p> : feedback.map((r: any) => (
+                          <div key={r.id} className="rounded-lg border border-slate-200 p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-blue-700 text-xs">{r.orderNumber}</span>
+                              <Stars n={r.rating} />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1">{fmtD(r.createdAt)}</p>
+                            {r.comment && <p className="text-xs text-slate-600 mt-1.5">{r.comment}</p>}
+                          </div>
+                        ))}
+                      </>
+                    )
+                  })()}
+                </div>}
+
+                {tab === "addresses" && <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">{detail.addresses.length} address{detail.addresses.length !== 1 ? "es" : ""}</span>
+                    <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => openAddressForm()}><Plus className="h-3 w-3" /> Add Address</Button>
+                  </div>
+                  {detail.addresses.length === 0 && !editAddress ? <p className="text-slate-400 text-xs py-3 text-center">No addresses saved. Click "Add Address" to create one.</p> : null}
+                  {editAddress && addressAction ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-blue-800">{addressAction === "add" ? "New Address" : "Edit Address"}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5 col-span-2"><Label className="text-[10px]">Address Line 1 *</Label><Input className="h-7 text-xs" value={editAddress.addressLine1 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine1: e.target.value } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">Address Line 2</Label><Input className="h-7 text-xs" value={editAddress.addressLine2 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine2: e.target.value } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">Area</Label><Input className="h-7 text-xs" value={editAddress.area || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, area: e.target.value } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">Landmark</Label><Input className="h-7 text-xs" value={editAddress.landmark || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, landmark: e.target.value } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">City</Label><Input className="h-7 text-xs" value={editAddress.city || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, city: e.target.value } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">State</Label><SearchableSelect className="h-7 text-xs" value={editAddress.state || ""} onChange={(v) => setEditAddress((f) => f ? { ...f, state: v } : f)} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="State" /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">PIN Code</Label><Input className="h-7 text-xs" value={editAddress.pincode || ""} inputMode="numeric" maxLength={6} onChange={(e) => setEditAddress((f) => f ? { ...f, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) } : f)} /></div>
+                        <div className="space-y-0.5"><Label className="text-[10px]">Label</Label><Input className="h-7 text-xs" value={editAddress.label || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, label: e.target.value } : f)} placeholder="e.g. Home, Office" /></div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isPickupDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isPickupDefault: e.target.checked } : f)} /> Default for Pickup</label>
+                        <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDeliveryDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDeliveryDefault: e.target.checked } : f)} /> Default for Delivery</label>
+                        <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDefault: e.target.checked } : f)} /> General Default</label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={savingAddress} onClick={saveAddress}>
+                          {savingAddress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} {addressAction === "add" ? "Add Address" : "Save Changes"}
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={closeAddressForm}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {detail.addresses.map((a: Addr) => (
+                    <div key={a.id} className="rounded-lg border border-slate-200 p-2.5">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-xs font-medium text-slate-700">{a.label || a.addressType || "HOME"}</span>
+                        {a.isDefault && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700 bg-emerald-50">Default</Badge>}
+                        {a.isPickupDefault && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-700 bg-blue-50">Pickup</Badge>}
+                        {a.isDeliveryDefault && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-700 bg-violet-50">Delivery</Badge>}
+                        <div className="ml-auto flex gap-1">
+                          <button className="text-[10px] text-slate-400 hover:text-blue-600" onClick={() => openAddressForm(a)}><Pencil className="h-3 w-3" /></button>
+                          <button className="text-[10px] text-slate-400 hover:text-red-600" onClick={() => { if (confirm("Delete this address?")) deleteAddress(a.id) }}><Trash2 className="h-3 w-3" /></button>
+                        </div>
+                      </div>
+                      <p className="text-slate-600 text-xs whitespace-pre-line leading-snug">{formatAddressLines(a).join("\n")}</p>
+                      <div className="flex gap-1.5 mt-1">
+                        {!a.isPickupDefault && <button className="text-[9px] text-blue-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isPickupDefault")}>Set pickup default</button>}
+                        {!a.isDeliveryDefault && <button className="text-[9px] text-violet-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isDeliveryDefault")}>Set delivery default</button>}
+                      </div>
+                    </div>
                   ))}
-                </div>
-              </div>}
-            </div>
+                </div>}
+
+                {tab === "subscriptions" && <MembershipTab m={membership} businessId={currentBusinessId || ""} onCollected={() => { if (openId && currentBusinessId) fetch(`/api/laundry/customers/${openId}/membership?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setMembership(j.success ? j.data : null)).catch(() => {}) }} />}
+
+                {tab === "payments" && <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ l: "Wallet", v: inr(detail.walletBalance) }, { l: "Collected", v: inr(stats?.collected || 0) }, { l: "Outstanding", v: inr(stats?.outstanding || 0), c: (stats?.outstanding || 0) > 0 ? "text-rose-600" : "" }, { l: "Subscription Covered", v: inr(stats?.subsidised || 0) }].map((s) => (
+                      <div key={s.l} className="rounded-lg border border-slate-200 px-3 py-2"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-base font-bold tabular-nums ${s.c || "text-slate-800"}`}>{s.v}</p></div>
+                    ))}
+                  </div>
+                  {payments.length === 0 ? <p className="text-slate-400 text-xs py-4 text-center">No payments recorded yet.</p> : (
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="text-[10px] uppercase tracking-wide text-slate-400"><TableHead>Date</TableHead><TableHead>Order</TableHead><TableHead>Method</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {payments.map((p, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-xs text-slate-500">{fmtDT(p.at)}</TableCell>
+                              <TableCell>{p.detail && p.ref ? <button type="button" className="font-mono text-blue-700 hover:underline text-left text-xs" onClick={() => openOrder(p.ref as string)}>{p.detail}</button> : <span className="text-xs text-slate-500">{p.detail || "—"}</span>}</TableCell>
+                              <TableCell className="text-xs text-slate-600 capitalize">{(p.title || "Payment").replace("Payment · ", "")}</TableCell>
+                              <TableCell className="text-right tabular-nums font-medium">{inr(p.amount || 0)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>}
+
+                {tab === "garments" && <div className="space-y-3">
+                  {garments === null ? <div className="flex items-center justify-center py-10 text-slate-400 gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading garments…</div> : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-slate-200 px-3 py-2"><p className="text-[10px] uppercase text-slate-400">Orders</p><p className="text-base font-bold text-slate-800">{garments.totalOrders}</p></div>
+                        <div className="rounded-lg border border-slate-200 px-3 py-2"><p className="text-[10px] uppercase text-slate-400">Garments</p><p className="text-base font-bold text-slate-800">{garments.totalItems}</p></div>
+                      </div>
+                      {garments.services.length === 0 ? <p className="text-slate-400 text-xs py-4 text-center">No service history yet.</p> : (
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold text-slate-700">Favourite Services</p>
+                          {garments.services.map((s) => (
+                            <div key={s.name} className="flex items-center gap-2 text-xs text-slate-600"><span className="flex-1 truncate">{s.name}</span><div className="h-1.5 w-28 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${Math.min(100, (s.count / (garments.services[0].count || 1)) * 100)}%` }} /></div><span className="w-6 text-right tabular-nums text-slate-400">{s.count}</span></div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>}
+
+                {tab === "audit" && <div className="space-y-1.5">
+                  {auditRows.length === 0 ? <p className="text-slate-400 text-xs py-4 text-center">No audit activity yet.</p> : auditRows.map((a, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs border-l-2 border-slate-200 pl-2 py-0.5">
+                      <Badge variant="outline" className="text-[9px] shrink-0 border-slate-200 text-slate-500 capitalize">{a.type.toLowerCase()}</Badge>
+                      <div className="min-w-0 flex-1"><p className="text-slate-700 truncate">{a.title}{a.body ? ` · ${a.body}` : ""}</p><p className="text-[10px] text-slate-400">By {a.who} · {fmtDT(a.at)}</p></div>
+                    </div>
+                  ))}
+                </div>}
+              </div>
+            </>
           )}
-          <DialogFooter>
-            {editing ? (
-              <><Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button><Button onClick={saveEdit} disabled={savingEdit} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</Button></>
-            ) : (
-              <><Button variant="outline" className="gap-1" onClick={() => { setMergeOpen(true); setMergeQuery(""); setMergeResults([]) }}><Users className="h-4 w-4" /> Merge</Button><Button variant="outline" className="gap-1" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button><Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /> New Order</Button></>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* Merge duplicate customers (Part 10) */}
       <Dialog open={mergeOpen} onOpenChange={(o) => { if (!o) { setMergeOpen(false); setMergeQuery(""); setMergeResults([]) } }}>
