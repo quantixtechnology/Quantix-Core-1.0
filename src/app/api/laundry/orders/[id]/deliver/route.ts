@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { markOrderDelivered } from "@/lib/laundry-deliver"
+import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 import { verifyDelivery } from "@/lib/laundry-verification"
 
@@ -42,6 +43,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const r = await markOrderDelivered({ lbId: biz.id, orderId: id, deliveredBy: b.actorName || null, recipientName: b.recipientName || null, note: [b.note || null, `Verified (${v.method}${otp ? `: ${otp}` : " — identity confirmed"})`].filter(Boolean).join(" · "), actor: { id: b.actorId || null, name: b.actorName || null } })
     if (!r.ok) return NextResponse.json({ error: r.error, ...(r.code ? { code: r.code, balanceDue: r.balanceDue } : {}) }, { status: r.status })
     await notifyCustomerForOrder(id, biz.id, { type: "DELIVERY_UPDATE", title: "Order delivered", message: `Your order ${r.orderNumber} has been delivered.` })
+    // Order closed → processing packages advance to CLOSED.
+    await syncPackageLifecycle(id, biz.id).catch(() => null)
     return NextResponse.json({ success: true, data: { orderNumber: r.orderNumber, deliveredAt: r.deliveredAt, deliveryType: r.deliveryType } })
   } catch (e) {
     console.error("[laundry-order-deliver] POST", e)

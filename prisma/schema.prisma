@@ -5979,7 +5979,7 @@ model LaundryProcessingPackage {
   garmentCount  Int       @default(0)
   weightKg      Float     @default(0)
   reusedBagQr   Boolean   @default(false) // tenant setting: reuse the Pickup Bag QR
-  status        String    @default("CREATED") // CREATED | IN_PROCESSING | QC | READY | RETURNED
+  status        String    @default("CREATED") // CREATED→PROCESSING→READY_FOR_FINISHING→READY→PACKED→RELEASED→CLOSED (forward-only, self-healed by syncPackageLifecycle)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

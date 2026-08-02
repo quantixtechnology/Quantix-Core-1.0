@@ -7,6 +7,16 @@
 //      (Services & Pricing → per-service processing route)
 //   3. name-based heuristic — legacy fallback for services with no configured
 //      route, preserved for pre-existing production data.
+//
+// Workflow model (container-based finishing): garment barcodes are scanned
+// through the cleaning stages AND Quality Check. QC is the final garment-barcode
+// stage — after it, Iron / Folding operate on the PROCESSING CONTAINER
+// (the Processing Package QR / bag), never on individual garments. A canonical
+// route therefore places the finishing stages AFTER Quality Check:
+//     e.g. WASH → DRY → QC → IRON → FOLD → PACKED
+// Normalisation is ORDER-PRESERVING for stored snapshots (so an in-flight
+// legacy garment whose route has finishing before QC is never rewritten); the
+// canonical order is applied when a NEW service route is validated/written.
 
 export const STAGE_LABELS: Record<string, string> = {
   RECEIVED: "Received", SORTING: "Sorting", WASH: "Wash", DRYCLEAN: "Dry Clean",
@@ -17,10 +27,30 @@ export const DEPARTMENT: Record<string, string> = {
   WASH: "Washing", DRYCLEAN: "Dry Clean", DRY: "Drying", STEAM: "Steam",
   IRON: "Ironing", FOLD: "Folding", CLEAN: "Cleaning", QC: "Quality Check", PACKED: "Packing",
 }
-// Department workstations shown as separate queues. STEAM is NOT part of the
-// active Laundry OS workflow (no Steam Iron product requirement); its label is
-// retained above only for safe display of any legacy record.
-export const WORKSTATIONS = ["WASH", "DRYCLEAN", "DRY", "IRON", "FOLD", "QC", "PACKED"] as const
+// Department workstations shown as separate queues. Order reflects the
+// container-based finishing workflow: cleaning + QC are garment-barcode stages,
+// then finishing (Iron/Fold) operates on the processing container. STEAM is NOT
+// part of the active Laundry OS workflow (no Steam Iron product requirement);
+// its label is retained above only for safe display of any legacy record.
+export const WORKSTATIONS = ["WASH", "DRYCLEAN", "DRY", "QC", "IRON", "FOLD", "PACKED"] as const
+
+// Finishing stages — the container-based stations AFTER Quality Check. These run
+// on the Processing Package, not on garment barcodes.
+export const FINISHING_STAGES = ["IRON", "FOLD"] as const
+
+// Stages that run BEFORE Quality Check — the garment-barcode stations.
+// Everything at QC or beyond is no longer operated on by individual barcodes.
+const PRE_QC_STAGES = new Set<string>(["RECEIVED", "SORTING", "WASH", "DRYCLEAN", "DRY", "CLEAN"])
+
+// A garment has passed Quality Check when it is no longer in a pre-QC cleaning
+// stage and is not sitting AT Quality Check itself. Used to decide when a
+// Processing Package becomes a READY_FOR_FINISHING container and to gate
+// finishing-workstation actions.
+export function hasPassedQc(stage: string | null | undefined): boolean {
+  return !!stage && !PRE_QC_STAGES.has(stage) && stage !== "QC"
+}
+
+export const isFinishingStage = (stage: string | null | undefined) => !!stage && (FINISHING_STAGES as readonly string[]).includes(stage)
 
 // Stage codes a tenant may compose routes from (stable behaviour keys — the
 // route config UI offers these; labels above are presentation only). STEAM is
@@ -43,19 +73,25 @@ export function parseFlow(raw: string | null | undefined): string[] | null {
   } catch { return null }
 }
 
-// Ensure a route ends in QC → PACKED exactly once, preserving working order.
-// De-duplicates working stages (defence for any legacy record that stored a
-// repeated stage before validateProcessFlow was enforced on write).
+// Normalise a route, preserving the author's stage ORDER. QC keeps whatever
+// position the stored route gave it (a canonical route has finishing AFTER QC,
+// a legacy route may have it before) — an in-flight garment's snapshot is NEVER
+// rewritten, so its remaining journey is unchanged. PACKED is always the last
+// terminal; QC is appended if the stored route lacked it.
 export function normalizeFlow(stages: string[]): string[] {
   const seen = new Set<string>()
-  const work: string[] = []
+  const out: string[] = []
   for (const s of stages) {
-    if (s === "QC" || s === "PACKED" || s === "RECEIVED" || s === "SORTING") continue
-    if (seen.has(s)) continue
+    if (s === "PACKED") continue
+    if (s === "QC") { if (!seen.has("QC")) { seen.add("QC"); out.push("QC") } continue }
+    if (s === "RECEIVED" || s === "SORTING") continue
+    if (seen.has(s) || !VALID_STAGES.has(s)) continue
     seen.add(s)
-    work.push(s)
+    out.push(s)
   }
-  return [...work, "QC", "PACKED"]
+  if (!seen.has("QC")) out.push("QC")
+  out.push("PACKED")
+  return out
 }
 
 // Stage codes a write request may legitimately contain: the configurable
@@ -78,6 +114,10 @@ export type ProcessFlowValidation =
 // never required. null / [] clears the route (engine falls back to the legacy
 // name heuristic). Anything else is REJECTED with INVALID_PROCESS_FLOW — the
 // route is never silently rewritten into something the operator did not choose.
+//
+// Canonical order: the cleaning stages keep their relative order and run BEFORE
+// Quality Check; the finishing stages (Iron / Folding) always run AFTER QC —
+// garment barcode scanning ends at QC, so finishing operates on the container.
 export function validateProcessFlow(input: unknown): ProcessFlowValidation {
   if (input === null || input === undefined) return { ok: true, flow: null }
   if (!Array.isArray(input)) return { ok: false, code: "INVALID_PROCESS_FLOW", error: "Processing route must be a list of stages." }
@@ -107,22 +147,26 @@ export function validateProcessFlow(input: unknown): ProcessFlowValidation {
     if (seen.has(s)) return { ok: false, code: "INVALID_PROCESS_FLOW", error: `Duplicate stage "${label(s)}" — each processing stage may appear only once.` }
     seen.add(s)
   }
-  return { ok: true, flow: [...working, "QC", "PACKED"] }
+  const preQC = working.filter((s) => !(FINISHING_STAGES as readonly string[]).includes(s))
+  const finishing = working.filter((s) => (FINISHING_STAGES as readonly string[]).includes(s))
+  return { ok: true, flow: [...preQC, "QC", ...finishing, "PACKED"] }
 }
 
 // Legacy heuristic — fallback ONLY when no configured route exists (no service
-// processFlow and no item snapshot). Washed garments are dried then FOLDED
-// before QC → PACKED. STEAM is not part of the active workflow, so a "steam
-// iron" service routes as ironing.
+// processFlow and no item snapshot). Follows the container-based finishing
+// model: cleaning + QC are the garment-barcode stages, then finishing
+// (Iron/Fold) runs on the processing container AFTER QC. STEAM is not part of
+// the active workflow, so a "steam iron" service routes as ironing.
 export function getFlow(serviceName: string | null | undefined): string[] {
   const s = (serviceName || "").toLowerCase()
-  if (s.includes("dry clean")) return ["DRYCLEAN", "IRON", "QC", "PACKED"]
-  if (s.includes("iron") && !s.includes("wash")) return ["IRON", "QC", "PACKED"]
+  // Dry Cleaning must pass through Drying + QC before entering Finishing.
+  if (s.includes("dry clean")) return ["DRYCLEAN", "DRY", "QC", "IRON", "PACKED"]
+  if (s.includes("iron") && !s.includes("wash")) return ["QC", "IRON", "PACKED"]
   if (s.includes("shoe")) return ["CLEAN", "QC", "PACKED"]
-  if (s.includes("wash") && s.includes("iron")) return ["WASH", "DRY", "IRON", "FOLD", "QC", "PACKED"]
-  if (s.includes("wash")) return ["WASH", "DRY", "FOLD", "QC", "PACKED"]
-  if (s.includes("curtain") || s.includes("blanket")) return ["WASH", "DRY", "FOLD", "QC", "PACKED"]
-  return ["WASH", "DRY", "FOLD", "QC", "PACKED"]
+  if (s.includes("wash") && s.includes("iron")) return ["WASH", "DRY", "QC", "IRON", "FOLD", "PACKED"]
+  if (s.includes("wash")) return ["WASH", "DRY", "QC", "FOLD", "PACKED"]
+  if (s.includes("curtain") || s.includes("blanket")) return ["WASH", "DRY", "QC", "FOLD", "PACKED"]
+  return ["WASH", "DRY", "QC", "FOLD", "PACKED"]
 }
 
 // Resolve the effective route for a garment: snapshot → service config → heuristic.
@@ -141,10 +185,14 @@ export function nextStageOf(flow: string[], current: string | null | undefined):
   return i >= 0 && i < flow.length - 1 ? flow[i + 1] : null
 }
 
-// Valid rework destinations for a QC failure: any working stage in the
-// garment's own route (before QC).
+// Valid rework destinations for a QC failure: the CLEANING stages BEFORE
+// Quality Check in the garment's own route. A QC failure sends the garment back
+// to be cleaned/dried — never forward to a finishing stage (finishing runs
+// after QC and only once a garment has been approved).
 export function reworkStagesOf(flow: string[]): string[] {
-  return flow.filter((s) => s !== "QC" && s !== "PACKED")
+  const idx = flow.indexOf("QC")
+  const before = idx >= 0 ? flow.slice(0, idx) : flow
+  return before.filter((s) => s !== "QC" && s !== "PACKED")
 }
 
 export const departmentFor = (stage: string | null | undefined) => (stage ? DEPARTMENT[stage] || stage : "")

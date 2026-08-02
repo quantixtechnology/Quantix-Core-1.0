@@ -20,13 +20,16 @@ interface WorkspaceSettingsProps {
 }
 
 type TransportMode = "PACKET" | "BAG" | "BOTH"
+type ScanMode = "GENERATE_NEW" | "REUSE_BAG" | "BOTH"
 
 export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps) {
   const { isEnabled, loading } = useLaundryLicensing(businessId)
   const [storeToProcessing, setStoreToProcessing] = useState<TransportMode>("PACKET")
   const [processingToStore, setProcessingToStore] = useState<TransportMode>("PACKET")
+  const [scanMode, setScanMode] = useState<ScanMode>("GENERATE_NEW")
   const [configLoading, setConfigLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [scanSaving, setScanSaving] = useState(false)
 
   const loadConfig = useCallback(async () => {
     setConfigLoading(true)
@@ -36,6 +39,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
         setStoreToProcessing(j.data.storeToProcessingTransportMode || "PACKET")
         setProcessingToStore(j.data.processingToStoreTransportMode || "PACKET")
       }
+      const s = await fetch(`/api/laundry/pickup-settings?businessId=${businessId}`).then((r) => r.json())
+      if (s.success) setScanMode(s.data.processingPackageQrMode || "GENERATE_NEW")
     } catch { /* noop */ } finally { setConfigLoading(false) }
   }, [businessId])
 
@@ -60,6 +65,26 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
     { value: "BAG", label: "Scan Bag Only" },
     { value: "BOTH", label: "Both" },
   ]
+
+  const SCAN_MODES: { value: ScanMode; label: string }[] = [
+    { value: "GENERATE_NEW", label: "Processing Package QR" },
+    { value: "REUSE_BAG", label: "Bag QR" },
+    { value: "BOTH", label: "Bag or Processing Package QR" },
+  ]
+
+  const saveScanMode = async () => {
+    setScanSaving(true)
+    try {
+      const res = await fetch("/api/laundry/pickup-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, processingPackageQrMode: scanMode }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
+      toast.success("Finishing scan mode saved")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setScanSaving(false) }
+  }
 
   if (loading) {
     return <div className="py-8 text-center text-gray-400">Loading settings...</div>
@@ -112,6 +137,15 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryAvailabilitySettingsForm businessId={businessId} />
 
       <LaundrySlotSettingsForm businessId={businessId} />
+
+      <ScanModeCard
+        scanMode={scanMode}
+        onScanModeChange={setScanMode}
+        loading={configLoading}
+        saving={scanSaving}
+        onSave={saveScanMode}
+        modes={SCAN_MODES}
+      />
 
       <LaundryVerificationSettingsForm businessId={businessId} />
 
@@ -190,7 +224,7 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
   )
 }
 
-function RadioGroup({ name, value, onChange, modes }: { name: string; value: TransportMode; onChange: (v: TransportMode) => void; modes: { value: TransportMode; label: string }[] }) {
+function RadioGroup<T extends string>({ name, value, onChange, modes }: { name: string; value: T; onChange: (v: T) => void; modes: { value: T; label: string }[] }) {
   return (
     <div className="flex gap-4">
       {modes.map((m) => (
@@ -200,6 +234,43 @@ function RadioGroup({ name, value, onChange, modes }: { name: string; value: Tra
         </label>
       ))}
     </div>
+  )
+}
+
+function ScanModeCard({
+  scanMode, onScanModeChange, loading, saving, onSave, modes,
+}: {
+  scanMode: ScanMode; onScanModeChange: (v: ScanMode) => void
+  loading: boolean; saving: boolean; onSave: () => void
+  modes: { value: ScanMode; label: string }[]
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+            <Scan className="h-4 w-4" />
+          </div>
+          <div>
+            <CardTitle className="text-sm">Finishing Scan Mode</CardTitle>
+            <p className="text-xs text-muted-foreground">Choose which QR the finishing stations (Ironing, Folding) scan after garments pass Quality Check.</p>
+          </div>
+          <Badge variant="outline" className="ml-auto text-[10px]">Active</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-400 py-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading configuration…</div>
+        ) : (
+          <div className="space-y-4">
+            <RadioGroup name="finishing-scan-mode" value={scanMode} onChange={onScanModeChange} modes={modes} />
+            <Button onClick={onSave} disabled={saving} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Scan Mode
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

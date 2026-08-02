@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor, stageLabel } from "@/lib/laundry-processing"
+import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 const STAGE_SCREEN: Record<string, string> = {
@@ -149,6 +150,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const row = updated[0]
+
+    // Finishing container lifecycle (Architectural Decision 4): Quality Check is
+    // the final garment-barcode stage. After EVERY action the server recomputes
+    // the order's Processing Package lifecycle — PROCESSING on first start,
+    // READY_FOR_FINISHING once every garment inside it has passed QC, READY once
+    // finishing is complete, PACKED when every garment is packed. Forward-only,
+    // idempotent, self-healing — never blocks the garment transition.
+    await syncPackageLifecycle(item.orderId, item.order.businessId).catch(() => null)
+
     return NextResponse.json({ success: true, data: { id: row.id, processingStage: row.processingStage, processingStatus: row.processingStatus, department: row.processingDept, qcFailCount: row.qcFailCount, orderComplete } })
   } catch (e) {
     console.error("[laundry-item-process] POST", e)

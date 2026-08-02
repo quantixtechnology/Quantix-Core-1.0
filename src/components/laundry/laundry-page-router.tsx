@@ -42,6 +42,7 @@ const LaundryRolesPermissions = dynamic(() => import("@/components/laundry/views
 const LaundryStaff = dynamic(() => import("@/components/laundry/views/laundry-staff").then(m => ({ default: m.LaundryStaff })), { loading: () => <PageLoader /> })
 const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
 const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
+const LaundryFinishingWorkstation = dynamic(() => import("@/components/laundry/views/laundry-finishing-workstation").then(m => ({ default: m.LaundryFinishingWorkstation })), { loading: () => <PageLoader /> })
 const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryNavigationManager = dynamic(() => import("@/components/laundry/views/laundry-navigation-settings").then(m => ({ default: m.LaundryNavigationManager })), { loading: () => <PageLoader /> })
@@ -147,8 +148,11 @@ export function LaundryPageRouter() {
     case "ws-wash": return <LaundryWorkstation stage="WASH" />
     case "ws-dry": return <LaundryWorkstation stage="DRY" />
     case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-    case "ws-iron": return <LaundryWorkstation stage="IRON" />
-    case "ws-fold": return <LaundryWorkstation stage="FOLD" />
+    // Iron / Folding are the container-based finishing stations — garment
+    // barcode scanning ends at Quality Check, so they use the finishing
+    // workstation (scan the Processing Package / bag, not garments).
+    case "ws-iron": return <LaundryFinishingWorkstation stage="IRON" />
+    case "ws-fold": return <LaundryFinishingWorkstation stage="FOLD" />
     case "ws-qc": return <LaundryWorkstation stage="QC" />
     case "ws-pack": return <LaundryWorkstation stage="PACKED" />
 

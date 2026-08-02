@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 
 export const runtime = "nodejs"
 
@@ -76,6 +77,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         note: b.note || `${order.items.length} garment(s) complete — returning to store`,
       },
     }).catch(() => null)
+
+    // Finished goods released → processing packages advance to RELEASED.
+    await syncPackageLifecycle(order.id, biz.id).catch(() => null)
 
     return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, items: order.items.length, packetNumber: order.packet?.packetNumber || null, bagAssigned }, bagWarning })
   } catch (e) {
