@@ -110,8 +110,7 @@ export function LaundryDryingQcWorkstation() {
 
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  // return_queue permission (the merged Dry & Quality Check screen covers both
-  // the legacy DRY and QC keys).
+  // return_queue permission (the merged "Dry & Quality Check" screen).
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/rbac/me?businessId=${encodeURIComponent(currentBusinessId)}`)
@@ -120,7 +119,6 @@ export function LaundryDryingQcWorkstation() {
           const lv = j.data.levels || {}
           const ok = j.data.isOwner
             || (lv["processing.quality_check"] ?? 0) >= 3
-            || (lv["processing.drying"] ?? 0) >= 3
           setHasReturnPerm(!!ok)
         }
       }).catch(() => { /* noop */ })

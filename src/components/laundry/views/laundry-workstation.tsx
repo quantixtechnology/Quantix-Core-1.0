@@ -136,8 +136,8 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       .then((r) => r.json()).then((j) => {
         if (j.success && j.data) {
           const screenMap: Record<string, string> = {
-            WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning",
-            IRON: "ironing", FOLD: "folding", QC: "quality_check", PACKED: "packing",
+            WASH: "washing", DRYCLEAN: "dry_cleaning",
+            IRON: "ironing", FOLD: "folding", QC: "quality_check",
           }
           const screen = screenMap[stage] || "washing"
           const key = `processing.${screen}.return_queue`

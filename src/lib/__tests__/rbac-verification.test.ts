@@ -93,12 +93,10 @@ describe("Gate 2: Legacy-to-new permission migration", () => {
     "processing.console_receive": ["view", "operate", "override"],
     "processing.audit_barcode": ["view", "operate", "override"],
     "processing.washing": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
-    "processing.drying": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
     "processing.dry_cleaning": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
     "processing.ironing": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
     "processing.folding": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
     "processing.quality_check": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
-    "processing.packing": ["view", "process", "pause", "resume", "complete", "override", "return_queue"],
     "store_ops.store_audit": ["view", "operate", "reopen", "override"],
     "store_ops.payment_collection": ["view", "operate", "reopen", "override"],
     "store_ops.packing_qr": ["view", "operate", "reopen", "override"],
@@ -176,8 +174,8 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    // 24 laundry + 7 crm + 11 processing + 11 store_ops + 4 customer_app + 11 marketing
-    expect(allScreens.length).toBe(68)
+    // 24 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
+    expect(allScreens.length).toBe(66)
   })
 
   it("every screen key validates correctly", () => {
@@ -429,6 +427,10 @@ describe("Gate 5: Default business roles", () => {
     expect(map.get("laundry.dashboard")).toBe(Level.VIEW)
     expect(map.get("processing.washing")).toBe(Level.CREATE)
     expect(map.get("processing.quality_check")).toBe(Level.CREATE)
+    expect(map.get("processing.sorting")).toBe(Level.CREATE)
+    expect(map.get("processing.transit")).toBe(Level.CREATE)
+    expect(map.has("processing.drying")).toBe(false)
+    expect(map.has("processing.packing")).toBe(false)
     // No store_ops
     expect(map.has("store_ops.store_audit")).toBe(false)
     expect(map.has("store_ops.payment_collection")).toBe(false)
@@ -441,8 +443,9 @@ describe("Gate 5: Default business roles", () => {
     const map = new Map(screens.map((s) => [s.screenKey, s.level]))
     expect(map.get("laundry.dashboard")).toBe(Level.VIEW)
     expect(map.get("processing.washing")).toBe(Level.CREATE)
-    expect(map.get("processing.drying")).toBe(Level.CREATE)
     expect(map.get("processing.ironing")).toBe(Level.CREATE)
+    expect(map.get("processing.sorting")).toBe(Level.CREATE)
+    expect(map.has("processing.drying")).toBe(false)
     // No store_ops
     expect(map.has("store_ops.store_audit")).toBe(false)
     expect(map.has("store_ops.payment_collection")).toBe(false)
@@ -647,8 +650,8 @@ describe("Gate 8: Sidebar-registry consistency", () => {
 // ============================================================================
 describe("Gate 9: Dynamic processing screen keys", () => {
   const PROCESSING_SCREENS = [
-    "washing", "drying", "dry_cleaning", "ironing",
-    "folding", "quality_check", "sorting", "transit", "packing", "console_receive",
+    "washing", "dry_cleaning", "ironing",
+    "folding", "quality_check", "sorting", "transit", "console_receive",
   ]
 
   it("every processing stage screen is in the registry", () => {

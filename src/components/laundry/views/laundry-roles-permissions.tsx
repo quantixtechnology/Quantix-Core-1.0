@@ -17,7 +17,7 @@ interface ModuleEntry { key: string; label: string; screens: ScreenEntry[] }
 interface Role { id: string; code: string; name: string; description: string | null; isSystem: boolean; isOwner: boolean; isActive: boolean; _count?: { permissions: number; assignments: number } }
 
 const LEVELS = [
-  { value: 0, label: "Hide" },
+  { value: 0, label: "No access" },
   { value: 1, label: "View" },
   { value: 2, label: "Create" },
   { value: 3, label: "Edit" },
@@ -30,11 +30,6 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   const businessId = bizProp || currentBusinessId
   const { toast } = useToast()
   const [moduleData, setModuleData] = useState<ModuleEntry[]>([])
-  const [levelDefs] = useState<Record<number, string>>({
-    1: "View — Read-only (search, filter, print, export, lookup, scan)",
-    2: "Create — Create records + workflow progression (process, pack, dispatch, receive, deliver)",
-    3: "Edit — Destructive/exceptional actions (delete, cancel, reject, override, reverse workflow)",
-  })
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -218,7 +213,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="0">Hide</SelectItem>
+                                        <SelectItem value="0">No access</SelectItem>
                                         <SelectItem value="1">View</SelectItem>
                                         <SelectItem value="2">Create</SelectItem>
                                         <SelectItem value="3">Edit</SelectItem>

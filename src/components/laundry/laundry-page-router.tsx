@@ -149,10 +149,9 @@ export function LaundryPageRouter() {
     case "processing-centers": return <LaundryProcessingConsole />
     case "audit-barcode": return <LaundryAuditBarcodePage />
     case "ws-wash": return <LaundryWorkstation stage="WASH" />
-    // Drying and Quality Check are a SINGLE combined "Dry & Quality Check"
-    // workstation in the approved model — both nav keys render the same merged
-    // screen (garment barcodes are the tracking identity through here).
-    case "ws-dry": case "ws-qc": return <LaundryDryingQcWorkstation />
+    // Quality Check is the merged "Dry & Quality Check" workstation — scanning a
+    // garment barcode is the tracking identity through here.
+    case "ws-qc": return <LaundryDryingQcWorkstation />
     case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
     // Sorting is the permanent garment→bag transition: scan every garment, then
     // bind the order's ONE bag (retiring every garment barcode).
@@ -163,7 +162,6 @@ export function LaundryPageRouter() {
     case "ws-fold": return <LaundryFinishingWorkstation stage="FOLD" />
     // Transit is the bag-based dispatch terminal at the Processing Center.
     case "ws-transit": return <LaundryTransitWorkstation />
-    case "ws-pack": return <LaundryWorkstation stage="PACKED" />
 
     // ── Fallback ──────────────────────────────────────────────────────────
     default:

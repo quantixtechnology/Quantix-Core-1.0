@@ -48,12 +48,10 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "processing.console_receive": "processing-centers",
   "processing.audit_barcode": "audit-barcode",
   "processing.washing": "ws-wash",
-  "processing.drying": "ws-dry",
   "processing.dry_cleaning": "ws-dryclean",
   "processing.ironing": "ws-iron",
   "processing.folding": "ws-fold",
   "processing.quality_check": "ws-qc",
-  "processing.packing": "ws-pack",
   "processing.sorting": "ws-sorting",
   "processing.transit": "ws-transit",
   "store_ops.store_audit": "audit-queue",
@@ -112,12 +110,10 @@ const SCREEN_ICONS: Record<string, string> = {
   "processing.console_receive": "Factory",
   "processing.audit_barcode": "Barcode",
   "processing.washing": "Droplets",
-  "processing.drying": "Wind",
   "processing.dry_cleaning": "Sparkles",
   "processing.ironing": "Shirt",
   "processing.folding": "Layers",
   "processing.quality_check": "ShieldCheck",
-  "processing.packing": "Package",
   "processing.sorting": "ListChecks",
   "processing.transit": "Truck",
   "store_ops.store_audit": "ClipboardCheck",
@@ -305,8 +301,6 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "processing.ironing", displayName: "Ironing" },
         { screenKey: "processing.folding", displayName: "Folding" },
         { screenKey: "processing.transit", displayName: "Transit" },
-        { screenKey: "processing.drying", displayName: "Drying", hidden: true },
-        { screenKey: "processing.packing", displayName: "Packing", hidden: true },
       ],
     },
     {
@@ -414,25 +408,33 @@ export async function ensureNavigationConfig(businessId: string): Promise<void> 
 
 // Processing Center convergence under the approved operational model:
 //   • "Dry & Quality Check" (processing.quality_check) is the SINGLE merged
-//     workstation — the legacy processing.drying key is hidden, not deleted
-//     (routes/back-end stay intact for legacy data).
+//     workstation. The obsolete processing.drying key was removed from the
+//     registry entirely — any residual nav item is deleted, not hidden.
 //   • Sorting (processing.sorting) and Transit (processing.transit) are the new
 //     garment→bag transition and the dispatch terminal — added if missing.
-//   • The garment Packing workstation (processing.packing) is removed from the
+//   • The garment Packing workstation (processing.packing) was removed from the
 //     Processing Center nav (Packing & QR lives under Store Operations); the
-//     legacy key is hidden, not deleted.
+//     obsolete key is deleted, not hidden.
 const PROCESSING_LEGACY = new Set(["processing.drying", "processing.packing"])
 const PROCESSING_APPROVED = ["processing.sorting", "processing.transit"] as const
 
 /** Idempotently converge an existing business's stored navigation so operators
  *  see exactly ONE "Dry & Quality Check" workstation, no garment Packing screen,
- *  and the Sorting + Transit workstations. The surviving legacy keys are hidden,
- *  not deleted (routes/back-end stay intact). No other nav items are touched. */
+ *  and the Sorting + Transit workstations. Obsolete nav items (drying/packing)
+ *  are deleted — they no longer exist in the registry. No other nav items are
+ *  touched. */
 export async function convergeProcessingNav(businessId: string): Promise<void> {
   const nav = await db.laundryNavigation.findUnique({ where: { businessId }, select: { id: true } })
   if (!nav) return
+
+  // Delete obsolete Processing Center nav items entirely (registry no longer
+  // defines them, so they can never render and must not linger in the cache).
+  await db.laundryNavItem.deleteMany({
+    where: { navigationId: nav.id, screenKey: { in: [...PROCESSING_LEGACY] } },
+  }).catch(() => null)
+
   const items = await db.laundryNavItem.findMany({
-    where: { navigationId: nav.id, screenKey: { in: [...PROCESSING_LEGACY, "processing.quality_check"] } },
+    where: { navigationId: nav.id, screenKey: "processing.quality_check" },
     select: { id: true, screenKey: true, hidden: true, displayName: true },
   })
 
@@ -441,7 +443,6 @@ export async function convergeProcessingNav(businessId: string): Promise<void> {
     let hidden = it.hidden
     let displayName = it.displayName
     if (it.screenKey === "processing.quality_check") { hidden = false; displayName = "Dry & Quality Check" }
-    else if (PROCESSING_LEGACY.has(it.screenKey)) hidden = true
     if (hidden !== it.hidden || displayName !== it.displayName) writes.push({ id: it.id, hidden, displayName })
   }
   await Promise.all(writes.map((w) => db.laundryNavItem.update({

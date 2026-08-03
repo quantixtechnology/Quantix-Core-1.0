@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { ensureNavigationConfig, defaultNavigationConfig, screenDisplayName, screenIcon } from "@/lib/laundry-nav-config"
 import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
+import { syncLaundryPermissions } from "@/lib/permission-sync"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { isPlatformRole } from "@/lib/permissions"
@@ -16,6 +17,11 @@ export async function GET(request: Request) {
 
   const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+
+  // Non-destructive sync: drop any stored permission/nav rows whose keys no
+  // longer exist in the registry (e.g. processing.drying / processing.packing).
+  // Idempotent — a no-op when nothing obsolete remains.
+  await syncLaundryPermissions(biz.id)
 
   const action = searchParams.get("action")
 
