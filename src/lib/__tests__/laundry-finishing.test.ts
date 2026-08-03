@@ -29,7 +29,7 @@ import { finishingScanTarget, scanModeAcceptance, syncPackageLifecycle, isProces
 describe('finishingScanTarget (workspace scan mode → station label)', () => {
   it('Processing Package mode (GENERATE_NEW) targets the package QR only', () => {
     const t = finishingScanTarget('GENERATE_NEW')
-    expect(t.label).toBe('Scan Processing Package QR')
+    expect(t.label).toBe('Scan Processing Packet')
     expect(t.isPackage).toBe(true)
     expect(t.isBag).toBe(false)
     expect(t.hint).toBe('PKG-…')
@@ -37,7 +37,7 @@ describe('finishingScanTarget (workspace scan mode → station label)', () => {
 
   it('Bag mode (REUSE_BAG) targets the bag QR only', () => {
     const t = finishingScanTarget('REUSE_BAG')
-    expect(t.label).toBe('Scan Bag QR')
+    expect(t.label).toBe('Scan Laundry Bag')
     expect(t.isPackage).toBe(false)
     expect(t.isBag).toBe(true)
     expect(t.hint).toBe('BAG-… / PB-…')
@@ -45,15 +45,15 @@ describe('finishingScanTarget (workspace scan mode → station label)', () => {
 
   it('Both mode accepts either scan target', () => {
     const t = finishingScanTarget('BOTH')
-    expect(t.label).toBe('Scan Bag or Processing Package QR')
+    expect(t.label).toBe('Scan Laundry Bag / Processing Packet')
     expect(t.isPackage).toBe(true)
     expect(t.isBag).toBe(true)
     expect(t.hint).toBe('PKG-… / BAG-… / PB-…')
   })
 
-  it('defaults unknown modes to Processing Package', () => {
+  it('defaults unknown modes to Processing Packet', () => {
     expect(finishingScanTarget(null).isPackage).toBe(true)
-    expect(finishingScanTarget('WEIRD').label).toBe('Scan Processing Package QR')
+    expect(finishingScanTarget('WEIRD').label).toBe('Scan Processing Packet')
   })
 })
 
@@ -73,8 +73,8 @@ describe('code kind detection', () => {
 describe('scanModeAcceptance (per-workspace gate)', () => {
   it('Mode B (GENERATE_NEW): accepts the Processing Package QR only', () => {
     expect(scanModeAcceptance('PKG-202608-000001', 'GENERATE_NEW')).toBeNull()
-    expect(scanModeAcceptance('BAG-000123', 'GENERATE_NEW')).toMatch(/Processing Package/)
-    expect(scanModeAcceptance('PB-202608-000001', 'GENERATE_NEW')).toMatch(/Processing Package/)
+    expect(scanModeAcceptance('BAG-000123', 'GENERATE_NEW')).toMatch(/Processing Packet/)
+    expect(scanModeAcceptance('PB-202608-000001', 'GENERATE_NEW')).toMatch(/Processing Packet/)
   })
 
   it('Mode A (REUSE_BAG): accepts the bag QR only', () => {

@@ -452,14 +452,14 @@ export function LaundryDryingQcWorkstation() {
       <Dialog open={!!bagPrompt} onOpenChange={(o) => { if (!o) { setBagPrompt(null); setBagErr(null) } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5 text-blue-600" /> Assign Finishing Bag</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5 text-emerald-600" /> Order Complete — Ready for Bag Assignment</DialogTitle>
             <DialogDescription className="text-xs">
-              Order {bagPrompt?.orderNumber || ""} has passed Quality Check. Scan the {bagTarget?.label || "configured container"}{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} once to associate every garment with it and retire the garment barcodes.
+              Order {bagPrompt?.orderNumber || ""} has passed Quality Check. Scan the {bagTarget?.label?.replace(/^Scan /, "") || "bag"}{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} once — every garment of this order is attached to it and all garment barcodes are retired. It then moves straight to Ironing / Folding.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-3 py-2">
-            <BagScanButton onScan={handleAssignFinishingBag} label={`Scan ${bagTarget?.label || ""}`.replace(/\s+/g, " ")} closeOnScan={false} disabled={busy} />
-            <p className="text-[11px] text-slate-400 text-center">Ironing, Folding and Packing will then load this container only.</p>
+            <BagScanButton onScan={handleAssignFinishingBag} label={bagTarget?.label || "Scan container"} closeOnScan={false} disabled={busy} />
+            <p className="text-[11px] text-slate-400 text-center">One bag = one order, assigned permanently. Ironing, Folding and Packing &amp; QR then track this order by the bag only.</p>
           </div>
           {bagErr && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{bagErr}</p>}
         </DialogContent>

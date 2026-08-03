@@ -46,7 +46,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
   const { currentBusinessId, user } = useAuthStore()
   const { toast } = useToast()
   const [mode, setMode] = useState("GENERATE_NEW")
-  const [scanTarget, setScanTarget] = useState("Scan Processing Package QR")
+  const [scanTarget, setScanTarget] = useState("Scan Processing Packet")
   const [scanHint, setScanHint] = useState("PKG-…")
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [hasReturnPerm, setHasReturnPerm] = useState(false)
@@ -68,7 +68,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
       const j = await fetch(`/api/laundry/processing/finishing?businessId=${currentBusinessId}&stage=${stage}`).then((r) => r.json())
       if (j.success && j.data) {
         setMode(j.data.mode || "GENERATE_NEW")
-        setScanTarget(j.data.target?.label || "Scan Processing Package QR")
+        setScanTarget(j.data.target?.label || "Scan Processing Packet")
         setScanHint(j.data.target?.hint || "PKG-…")
         if (j.data.soundEnabled !== undefined) setSoundEnabled(j.data.soundEnabled)
         setContainers(j.data.containers || [])
@@ -306,7 +306,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
               {/* At this station */}
               <Card className="rounded-xl border-slate-200 shadow-sm">
                 <CardHeader className="pb-2"><CardTitle className="text-[14px] font-semibold text-slate-800 flex items-center gap-2"><Factory className="h-4 w-4 text-blue-600" /> At {stageLabel(stage)} <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{atStation.length}</Badge></CardTitle></CardHeader>
-                <CardContent className="space-y-2 max-h-[55vh] overflow-y-auto">
+                <CardContent className="space-y-3">
                   {atStation.length === 0 ? <p className="text-sm text-slate-400 py-5 text-center">Nothing here yet.</p> : atStation.map((g) => <GarmentCard key={g.id} g={g} />)}
                 </CardContent>
               </Card>
@@ -314,7 +314,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
               {awaitingQc.length > 0 && (
                 <Card className="rounded-xl border-slate-200 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-[14px] font-semibold text-slate-800 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-amber-500" /> Awaiting Quality Check <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingQc.length}</Badge></CardTitle></CardHeader>
-                  <CardContent className="space-y-2 max-h-[35vh] overflow-y-auto">
+                  <CardContent className="space-y-3">
                     <p className="text-[11px] text-slate-400">These garments have not passed Quality Check yet — finishing waits for QC approval.</p>
                     {awaitingQc.map((g) => (
                       <div key={g.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
@@ -332,7 +332,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
               {finished.length > 0 && (
                 <Card className="rounded-xl border-slate-200 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-[14px] font-semibold text-slate-800 flex items-center gap-2"><Check className="h-4 w-4 text-emerald-500" /> Completed — Next Stage <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{finished.length}</Badge></CardTitle></CardHeader>
-                  <CardContent className="space-y-2 max-h-[35vh] overflow-y-auto">
+                  <CardContent className="space-y-3">
                     {finished.map((g) => (
                       <div key={g.id} className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
                         <div className="flex items-center justify-between gap-2">
@@ -352,7 +352,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
         {/* Waiting containers */}
         <Card className="rounded-xl border-slate-200 shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Package className="h-[18px] w-[18px] text-violet-600" /> Containers Waiting <Badge variant="outline" className="border-violet-300 text-violet-700 bg-violet-50">{containers.length}</Badge></CardTitle></CardHeader>
-          <CardContent className="space-y-2 max-h-[75vh] overflow-y-auto">
+          <CardContent className="space-y-3">
             <div className="flex justify-end pb-1">
               <Button variant="ghost" size="sm" className="h-7 gap-1 text-slate-500" onClick={() => { load(); if (active) resolve(undefined, active.package.id) }} disabled={loading}>
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh

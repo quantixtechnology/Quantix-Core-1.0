@@ -42,9 +42,9 @@ beforeEach(() => {
 
 describe('finishingBagTarget', () => {
   it('labels per the workspace scan mode (never hardcoded)', () => {
-    expect(finishingBagTarget('GENERATE_NEW').label).toBe('Scan Processing Package QR')
-    expect(finishingBagTarget('REUSE_BAG').label).toBe('Scan Bag QR')
-    expect(finishingBagTarget('BOTH').label).toBe('Scan Bag or Processing Package QR')
+    expect(finishingBagTarget('GENERATE_NEW').label).toBe('Scan Processing Packet')
+    expect(finishingBagTarget('REUSE_BAG').label).toBe('Scan Laundry Bag')
+    expect(finishingBagTarget('BOTH').label).toBe('Scan Laundry Bag / Processing Packet')
   })
 })
 

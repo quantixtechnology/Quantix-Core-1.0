@@ -169,7 +169,7 @@ export async function GET(request: Request) {
       if (!pkg) {
         return NextResponse.json({
           success: false,
-          error: `"${code}" is not a ${target.isPackage ? "Processing Package" : "bag"} QR. After Quality Check, garment barcodes are not scanned — scan the ${target.isPackage ? "processing package" : "bag"} to load the batch.`,
+          error: `"${code}" is not a ${target.isPackage ? "Processing Packet" : "bag"} QR. After Quality Check, garment barcodes are not scanned — scan the ${target.isPackage ? "processing packet" : "bag"} to load the batch.`,
         }, { status: 404 })
       }
 

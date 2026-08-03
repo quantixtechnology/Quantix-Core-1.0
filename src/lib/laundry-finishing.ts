@@ -37,9 +37,9 @@ export function finishingScanTarget(mode: string | null | undefined): {
   hint: string
 } {
   const m = String(mode || "GENERATE_NEW")
-  if (m === "REUSE_BAG") return { label: "Scan Bag QR", isBag: true, isPackage: false, hint: "BAG-… / PB-…" }
-  if (m === "BOTH") return { label: "Scan Bag or Processing Package QR", isBag: true, isPackage: true, hint: "PKG-… / BAG-… / PB-…" }
-  return { label: "Scan Processing Package QR", isBag: false, isPackage: true, hint: "PKG-…" }
+  if (m === "REUSE_BAG") return { label: "Scan Laundry Bag", isBag: true, isPackage: false, hint: "BAG-… / PB-…" }
+  if (m === "BOTH") return { label: "Scan Laundry Bag / Processing Packet", isBag: true, isPackage: true, hint: "PKG-… / BAG-… / PB-…" }
+  return { label: "Scan Processing Packet", isBag: false, isPackage: true, hint: "PKG-…" }
 }
 
 // Acceptable code prefixes per scan mode (the system's own code formats):
@@ -60,9 +60,9 @@ export function scanModeAcceptance(code: string, mode: string | null | undefined
   const isPkg = isProcessingPackageCode(c)
   const isBag = isBagCode(c)
   if (isPkg && !target.isPackage)
-    return "This workspace scans the bag, not the Processing Package — scan the bag QR instead."
+    return "This workspace scans the laundry bag, not a Processing Packet — scan the bag instead."
   if (isBag && !target.isBag)
-    return "This workspace scans the Processing Package — scan the package QR instead of the bag."
+    return "This workspace scans the Processing Packet — scan the packet QR instead of the bag."
   return null
 }
 
@@ -250,7 +250,7 @@ export async function assignFinishingBag(opts: {
   if (!targetPkg)
     return {
       ok: false, code: "INVALID",
-      error: `"${c}" is not this order's container — scan the ${target.isPackage ? "Processing Package" : "bag"} QR for ${order.orderNumber}.`,
+      error: `"${c}" is not this order's container — scan the ${target.isPackage ? "Processing Packet" : "laundry bag"} for ${order.orderNumber}.`,
     }
 
   await prisma.laundryProcessingPackage.update({

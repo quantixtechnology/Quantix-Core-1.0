@@ -67,9 +67,9 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
   ]
 
   const SCAN_MODES: { value: ScanMode; label: string }[] = [
-    { value: "GENERATE_NEW", label: "Processing Package QR" },
-    { value: "REUSE_BAG", label: "Bag QR" },
-    { value: "BOTH", label: "Bag or Processing Package QR" },
+    { value: "GENERATE_NEW", label: "Processing Packet QR" },
+    { value: "REUSE_BAG", label: "Laundry Bag QR" },
+    { value: "BOTH", label: "Laundry Bag or Processing Packet QR" },
   ]
 
   const saveScanMode = async () => {

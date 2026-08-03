@@ -300,7 +300,7 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "processing.drying", displayName: "Drying", hidden: true },
         { screenKey: "processing.ironing", displayName: "Ironing" },
         { screenKey: "processing.folding", displayName: "Folding" },
-        { screenKey: "processing.packing", displayName: "Packing" },
+        { screenKey: "processing.packing", displayName: "Packing", hidden: true },
       ],
     },
     {
@@ -402,6 +402,44 @@ export async function ensureNavigationConfig(businessId: string): Promise<void> 
       })
     }
   })
+
+  await convergeProcessingNav(businessId)
+}
+
+// The processing finishing trio that changed under the Order-Based Bag model:
+// Drying and Quality Control merged into one "Drying & Quality Control" screen,
+// and the garment Packing workstation removed (operators pack under Packing & QR).
+const FINISHING_TRIO = new Set(["processing.drying", "processing.quality_check", "processing.packing"])
+
+/** Idempotently converge an existing business's stored navigation so operators
+ *  see exactly ONE "Drying & Quality Control" finishing station and no Packing
+ *  garment workstation — the surviving legacy keys are hidden, not deleted
+ *  (routes/back-end stay intact). No other nav items are touched. */
+export async function convergeProcessingNav(businessId: string): Promise<void> {
+  const nav = await db.laundryNavigation.findUnique({ where: { businessId }, select: { id: true } })
+  if (!nav) return
+  const items = await db.laundryNavItem.findMany({
+    where: { navigationId: nav.id, screenKey: { in: [...FINISHING_TRIO] } },
+    select: { id: true, screenKey: true, hidden: true, displayName: true },
+  })
+  if (items.length === 0) return
+
+  const primary = items.some((i) => i.screenKey === "processing.quality_check")
+    ? "processing.quality_check"
+    : items.some((i) => i.screenKey === "processing.drying") ? "processing.drying" : null
+
+  const writes: { id: string; hidden: boolean; displayName: string | null }[] = []
+  for (const it of items) {
+    let hidden = it.hidden
+    let displayName = it.displayName
+    if (it.screenKey === primary) { hidden = false; displayName = "Drying & Quality Control" }
+    else if (it.screenKey === "processing.packing" || it.screenKey === "processing.drying") hidden = true
+    if (hidden !== it.hidden || displayName !== it.displayName) writes.push({ id: it.id, hidden, displayName })
+  }
+  await Promise.all(writes.map((w) => db.laundryNavItem.update({
+    where: { id: w.id },
+    data: { hidden: w.hidden, displayName: w.displayName },
+  }).catch(() => null)))
 }
 
 export function isExtraScreenKey(screenKey: string): boolean {
