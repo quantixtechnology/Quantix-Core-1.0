@@ -7,17 +7,27 @@
 // overwritten. RETURN (return-to-queue) requires return_queue permission and
 // records a full audit with operator, department, timestamps, and reason.
 //
+// Garment barcodes are valid ONLY through Cleaning + Dry & Quality Check (QC).
+// Sorting is the garment→bag transition: once the order's finishing bag is
+// assigned at Sorting, every garment barcode is retired and Iron / Fold / Transit
+// operate only by scanning the bag (see the post-bag guard below).
+//
 // Body: { action, actorName?, note?, photos?: string[], reworkStage? }
 //   action ∈ START | PAUSE | RESUME | COMPLETE | QC_PASS | QC_FAIL | REJECT | RETURN | NOTE
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor, stageLabel } from "@/lib/laundry-processing"
-import { syncPackageLifecycle, awaitingFinishingBagAssignment, finishingBagAssigned } from "@/lib/laundry-finishing"
+import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor, stageLabel, isProcessingTerminal, TERMINAL_STAGE } from "@/lib/laundry-processing"
+import { syncPackageLifecycle, finishingBagAssigned } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
+// Workstation screen for each stage — used to require the correct permission for
+// the garment's CURRENT department. Dry & Quality Check is ONE merged station
+// (processing.quality_check) that covers the legacy DRY stage and QC. Sorting and
+// the Transit terminal (DISPATCHED / legacy PACKED) map to their own bag-based
+// screens.
 const STAGE_SCREEN: Record<string, string> = {
-  WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning", IRON: "ironing",
-  FOLD: "folding", QC: "quality_check", PACKED: "packing",
+  WASH: "washing", DRY: "quality_check", DRYCLEAN: "dry_cleaning", IRON: "ironing",
+  FOLD: "folding", QC: "quality_check", SORTING: "sorting", PACKED: "transit", DISPATCHED: "transit",
 }
 
 export const runtime = "nodejs"
@@ -94,8 +104,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         if (curStatus !== "IN_PROGRESS") return NextResponse.json({ error: `Garment is ${curStatus} — start it before completing` }, { status: 409 })
         if (action === "QC_PASS" && cur !== "QC") return NextResponse.json({ error: "QC Pass is only valid at Quality Check" }, { status: 409 })
         const nxt = nextStageOf(flow, cur)
-        stage = nxt || "PACKED"; status = nxt ? "WAITING" : "DONE"; dept = departmentFor(stage); toStage = stage
-        if (stage === "PACKED") status = "DONE"
+        stage = nxt || TERMINAL_STAGE; status = nxt ? "WAITING" : "DONE"; dept = departmentFor(stage); toStage = stage
+        if (isProcessingTerminal(stage)) status = "DONE"
         break
       }
       case "QC_FAIL": {
@@ -148,19 +158,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Conflict — garment was already moved by another operator" }, { status: 409 })
     }
 
-    // Order milestone: when the LAST garment finishes its route, record
-    // "All Garments Completed" once on the order timeline (idempotent).
+    // Order milestone: when the LAST garment finishes its route (reaches the
+    // Transit terminal / legacy Packed), record "All Garments Completed" once on
+    // the order timeline (idempotent).
     let orderComplete = false
-    if (stage === "PACKED" && status === "DONE") {
+    if (isProcessingTerminal(stage) && status === "DONE") {
       const pending = await prisma.laundryOrderItem.count({
-        where: { orderId: item.orderId, NOT: { processingStage: "PACKED", processingStatus: "DONE" } },
+        where: {
+          orderId: item.orderId,
+          NOT: { processingStage: { in: ["PACKED", TERMINAL_STAGE] }, processingStatus: "DONE" },
+        },
       })
       if (pending === 0) {
         orderComplete = true
         const already = await prisma.laundryOrderEvent.findFirst({ where: { orderId: item.orderId, action: "ALL_ITEMS_COMPLETE" }, select: { id: true } })
         if (!already) {
           await prisma.laundryOrderEvent.create({
-            data: { orderId: item.orderId, businessId: item.order.businessId, fromStatus: "PROCESSING", toStatus: "PROCESSING", action: "ALL_ITEMS_COMPLETE", actorName: b.actorName || null, note: "Every garment passed QC and completed its route" },
+            data: { orderId: item.orderId, businessId: item.order.businessId, fromStatus: "PROCESSING", toStatus: "PROCESSING", action: "ALL_ITEMS_COMPLETE", actorName: b.actorName || null, note: "Every garment completed its route and is ready for Transit" },
           }).catch(() => null)
         }
       }
@@ -168,28 +182,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const row = updated[0]
 
-    // Finishing container lifecycle (Architectural Decision 4): Quality Check is
-    // the final garment-barcode stage. After EVERY action the server recomputes
-    // the order's Processing Package lifecycle — PROCESSING on first start,
-    // READY_FOR_FINISHING once every garment inside it has passed QC, READY once
-    // finishing is complete, PACKED when every garment is packed. Forward-only,
+    // Finishing container lifecycle (Architectural Decision 4): Sorting is the
+    // garment→bag transition point. After EVERY action the server recomputes the
+    // order's Processing Package lifecycle — PROCESSING on first start,
+    // READY_FOR_FINISHING once every garment has passed QC, READY once finishing
+    // is complete, PACKED when every garment reached the terminal. Forward-only,
     // idempotent, self-healing — never blocks the garment transition.
     await syncPackageLifecycle(item.orderId, item.order.businessId).catch(() => null)
-
-    // Order-Based Finishing Bag: QUALITY CHECK is the final garment-barcode stage.
-    // The moment EVERY garment in the order has passed QC (this action may be the
-    // last), the order becomes eligible for its ONE finishing bag. Awaited
-    // exactly when the container has not been assigned yet. The operator then
-    // scans the configured container (Bag / Package / Both) once — assigning it
-    // binds the whole order and retires all garment barcodes. Never hardcoded.
-    const awaitingBag = await awaitingFinishingBagAssignment(item.orderId, item.order.businessId).catch(() => null)
 
     return NextResponse.json({
       success: true,
       data: {
         id: row.id, processingStage: row.processingStage, processingStatus: row.processingStatus,
         department: row.processingDept, qcFailCount: row.qcFailCount, orderComplete,
-        awaitingBagAssignment: awaitingBag,
       },
     })
   } catch (e) {

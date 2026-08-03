@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ============================================================================
-// Order-Based Finishing Bag — one finishing bag per order, assigned once when
-// the last garment passes QC; retires garment barcodes; blocks bag sharing.
+// Order-Based Finishing Bag — one finishing bag per order, assigned ONCE at
+// Sorting (when every garment has passed the merged Dry & Quality Check and the
+// scanned set equals the order); retires garment barcodes; blocks bag sharing.
 // ============================================================================
 
 const mocks = vi.hoisted(() => ({

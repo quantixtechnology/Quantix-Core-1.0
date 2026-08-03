@@ -15,25 +15,27 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2, Printer, QrCode, QrCode as QrIcon, X } from "lucide-react"
+import { Loader2, PackageCheck, Factory, ArrowRight, ArrowRightLeft, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2, Printer, QrCode, QrCode as QrIcon, X } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import QRCode from "qrcode"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
-// Department tiles MUST cover every WORKSTATIONS stage — DRY (Drying) is a
-// first-class stage produced by default service routes (e.g. WASH→DRY→QC→PACKED).
-// Omitting DRY previously hid garments parked at Drying from the Processing
-// Console even though the API counts them (stageCounts.DRY).
+// Department tiles MUST cover every WORKSTATIONS stage. Legacy DRY (Drying) and
+// PACKED tiles are kept (read-only) so in-flight garments from pre-migration
+// routes (WASH→DRY→QC→PACKED) stay visible — the API still counts them even
+// though new routes never produce those stages.
 const DEPT_TILES: { stage: string; icon: typeof Droplets; color: string; label?: string }[] = [
   { stage: "WASH", icon: Droplets, color: "text-blue-600 bg-blue-50" },
-  { stage: "DRY", icon: Wind, color: "text-sky-600 bg-sky-50", label: "Drying" },
   { stage: "DRYCLEAN", icon: Sparkles, color: "text-cyan-600 bg-cyan-50" },
+  { stage: "QC", icon: ShieldCheck, color: "text-fuchsia-600 bg-fuchsia-50", label: "Dry & Quality Check" },
+  { stage: "SORTING", icon: ArrowRightLeft, color: "text-orange-600 bg-orange-50" },
   { stage: "IRON", icon: Shirt, color: "text-violet-600 bg-violet-50" },
   { stage: "FOLD", icon: Layers, color: "text-teal-600 bg-teal-50" },
-  { stage: "QC", icon: ShieldCheck, color: "text-fuchsia-600 bg-fuchsia-50" },
-  { stage: "PACKED", icon: Package, color: "text-emerald-600 bg-emerald-50" },
+  { stage: "DISPATCHED", icon: Truck, color: "text-emerald-600 bg-emerald-50", label: "Transit" },
+  { stage: "DRY", icon: Wind, color: "text-slate-500 bg-slate-100", label: "Drying (legacy)" },
+  { stage: "PACKED", icon: Package, color: "text-slate-500 bg-slate-100", label: "Packed (legacy)" },
 ]
 
 interface Incoming { id: string; orderNumber: string; items: number; customer: string | null; status: string; packetNumber: string | null; dispatchedAt: string | null; fromStore: string | null }
@@ -232,7 +234,7 @@ export function LaundryProcessingConsole() {
       </CardContent></Card>
 
       {/* Department summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3">
         {DEPT_TILES.map((d) => (
           <Card key={d.stage} className="rounded-xl border-slate-200 shadow-sm"><CardContent className="p-3.5 flex items-center gap-2.5">
             <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${d.color}`}><d.icon className="h-5 w-5" /></div>

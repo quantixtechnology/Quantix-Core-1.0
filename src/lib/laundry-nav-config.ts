@@ -54,6 +54,8 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "processing.folding": "ws-fold",
   "processing.quality_check": "ws-qc",
   "processing.packing": "ws-pack",
+  "processing.sorting": "ws-sorting",
+  "processing.transit": "ws-transit",
   "store_ops.store_audit": "audit-queue",
   "store_ops.payment_collection": "payment-queue",
   "store_ops.packing_qr": "packing-queue",
@@ -116,6 +118,8 @@ const SCREEN_ICONS: Record<string, string> = {
   "processing.folding": "Layers",
   "processing.quality_check": "ShieldCheck",
   "processing.packing": "Package",
+  "processing.sorting": "ListChecks",
+  "processing.transit": "Truck",
   "store_ops.store_audit": "ClipboardCheck",
   "store_ops.payment_collection": "CreditCard",
   "store_ops.packing_qr": "Barcode",
@@ -296,10 +300,12 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "processing.audit_barcode", displayName: "Barcode Generation" },
         { screenKey: "processing.washing", displayName: "Washing" },
         { screenKey: "processing.dry_cleaning", displayName: "Dry Cleaning" },
-        { screenKey: "processing.quality_check", displayName: "Drying & Quality Control" },
-        { screenKey: "processing.drying", displayName: "Drying", hidden: true },
+        { screenKey: "processing.quality_check", displayName: "Dry & Quality Check" },
+        { screenKey: "processing.sorting", displayName: "Sorting" },
         { screenKey: "processing.ironing", displayName: "Ironing" },
         { screenKey: "processing.folding", displayName: "Folding" },
+        { screenKey: "processing.transit", displayName: "Transit" },
+        { screenKey: "processing.drying", displayName: "Drying", hidden: true },
         { screenKey: "processing.packing", displayName: "Packing", hidden: true },
       ],
     },
@@ -406,40 +412,75 @@ export async function ensureNavigationConfig(businessId: string): Promise<void> 
   await convergeProcessingNav(businessId)
 }
 
-// The processing finishing trio that changed under the Order-Based Bag model:
-// Drying and Quality Control merged into one "Drying & Quality Control" screen,
-// and the garment Packing workstation removed (operators pack under Packing & QR).
-const FINISHING_TRIO = new Set(["processing.drying", "processing.quality_check", "processing.packing"])
+// Processing Center convergence under the approved operational model:
+//   • "Dry & Quality Check" (processing.quality_check) is the SINGLE merged
+//     workstation — the legacy processing.drying key is hidden, not deleted
+//     (routes/back-end stay intact for legacy data).
+//   • Sorting (processing.sorting) and Transit (processing.transit) are the new
+//     garment→bag transition and the dispatch terminal — added if missing.
+//   • The garment Packing workstation (processing.packing) is removed from the
+//     Processing Center nav (Packing & QR lives under Store Operations); the
+//     legacy key is hidden, not deleted.
+const PROCESSING_LEGACY = new Set(["processing.drying", "processing.packing"])
+const PROCESSING_APPROVED = ["processing.sorting", "processing.transit"] as const
 
 /** Idempotently converge an existing business's stored navigation so operators
- *  see exactly ONE "Drying & Quality Control" finishing station and no Packing
- *  garment workstation — the surviving legacy keys are hidden, not deleted
- *  (routes/back-end stay intact). No other nav items are touched. */
+ *  see exactly ONE "Dry & Quality Check" workstation, no garment Packing screen,
+ *  and the Sorting + Transit workstations. The surviving legacy keys are hidden,
+ *  not deleted (routes/back-end stay intact). No other nav items are touched. */
 export async function convergeProcessingNav(businessId: string): Promise<void> {
   const nav = await db.laundryNavigation.findUnique({ where: { businessId }, select: { id: true } })
   if (!nav) return
   const items = await db.laundryNavItem.findMany({
-    where: { navigationId: nav.id, screenKey: { in: [...FINISHING_TRIO] } },
+    where: { navigationId: nav.id, screenKey: { in: [...PROCESSING_LEGACY, "processing.quality_check"] } },
     select: { id: true, screenKey: true, hidden: true, displayName: true },
   })
-  if (items.length === 0) return
-
-  const primary = items.some((i) => i.screenKey === "processing.quality_check")
-    ? "processing.quality_check"
-    : items.some((i) => i.screenKey === "processing.drying") ? "processing.drying" : null
 
   const writes: { id: string; hidden: boolean; displayName: string | null }[] = []
   for (const it of items) {
     let hidden = it.hidden
     let displayName = it.displayName
-    if (it.screenKey === primary) { hidden = false; displayName = "Drying & Quality Control" }
-    else if (it.screenKey === "processing.packing" || it.screenKey === "processing.drying") hidden = true
+    if (it.screenKey === "processing.quality_check") { hidden = false; displayName = "Dry & Quality Check" }
+    else if (PROCESSING_LEGACY.has(it.screenKey)) hidden = true
     if (hidden !== it.hidden || displayName !== it.displayName) writes.push({ id: it.id, hidden, displayName })
   }
   await Promise.all(writes.map((w) => db.laundryNavItem.update({
     where: { id: w.id },
     data: { hidden: w.hidden, displayName: w.displayName },
   }).catch(() => null)))
+
+  // Add Sorting + Transit to the Processing Center section when absent (older
+  // businesses seeded before these screens existed). Idempotent.
+  const existingKeys = await db.laundryNavItem.findMany({
+    where: { navigationId: nav.id, screenKey: { in: [...PROCESSING_APPROVED] } },
+    select: { screenKey: true },
+  })
+  const have = new Set(existingKeys.map((i) => i.screenKey))
+  const toAdd = PROCESSING_APPROVED.filter((k) => !have.has(k))
+  if (toAdd.length === 0) return
+
+  const section = await db.laundryNavSection.findFirst({
+    where: { navigationId: nav.id, name: "Processing Center" },
+    select: { id: true },
+  })
+  if (!section) return
+  const maxOrder = await db.laundryNavItem.aggregate({
+    where: { navigationId: nav.id, sectionId: section.id },
+    _max: { order: true },
+  })
+  let order = (maxOrder._max.order ?? -1) + 1
+  await db.laundryNavItem.createMany({
+    data: toAdd.map((k) => ({
+      navigationId: nav.id,
+      sectionId: section.id,
+      screenKey: k,
+      displayName: k === "processing.sorting" ? "Sorting" : "Transit",
+      icon: k === "processing.sorting" ? "ListChecks" : "Truck",
+      order: order++,
+      active: true,
+      hidden: false,
+    })),
+  })
 }
 
 export function isExtraScreenKey(screenKey: string): boolean {

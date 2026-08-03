@@ -1,16 +1,17 @@
 // POST /api/laundry/orders/[id]/return-dispatch — Transit to Store.
 // The Processing Center dispatches the completed order back to the origin
 // store. SERVER-VALIDATED: every garment must have finished its processing
-// route (stage PACKED / status DONE) — an order with unfinished or QC-failed
-// garments cannot be returned.
+// route (Transit terminal / legacy Packed, status DONE) — an order with
+// unfinished or QC-failed garments cannot be returned.
 //
-// Body: { businessId, actorId?, actorName?, note? }
+// Body: { businessId, actorId?, actorName?, note?, bagCode? }
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { assignBagToOrder } from "@/lib/laundry-bag-assign"
 import { syncPackageLifecycle } from "@/lib/laundry-finishing"
+import { isProcessingTerminal } from "@/lib/laundry-processing"
 
 export const runtime = "nodejs"
 
@@ -36,7 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: order.status === "RETURN_IN_TRANSIT" ? "Order already dispatched to store" : `Order is not in processing (current: ${order.status})` }, { status: 409 })
     }
 
-    const unfinished = order.items.filter((i) => !(i.processingStage === "PACKED" && i.processingStatus === "DONE"))
+    const unfinished = order.items.filter((i) => !(isProcessingTerminal(i.processingStage) && i.processingStatus === "DONE"))
     if (unfinished.length > 0) {
       return NextResponse.json({ error: `${unfinished.length} garment(s) have not completed processing & QC — the order cannot return to store yet.`, pending: unfinished.length }, { status: 409 })
     }

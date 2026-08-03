@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { stageLabel, hasPassedQc } from "@/lib/laundry-processing"
+import { stageLabel, hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { packageGarmentsWhere, PACKAGE_STATUS_FINISHING_READY, finishingScanTarget, scanModeAcceptance, syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -68,7 +68,7 @@ async function loadBatch(pkg: Pkg, businessId: string, stage: string): Promise<B
   }))
   const atStage = garments.filter((g) => g.atThisStage).length
   const awaitingQc = garments.filter((g) => !g.hasPassedQc).length
-  const finished = garments.filter((g) => g.processingStage === "PACKED").length
+  const finished = garments.filter((g) => isProcessingTerminal(g.processingStage)).length
   return {
     package: {
       id: pkg.id, code: pkg.code, qrValue: pkg.qrValue, status: pkg.status,

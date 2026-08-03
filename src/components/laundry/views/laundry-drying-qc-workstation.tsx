@@ -15,7 +15,6 @@ import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Undo2, Search
 import { stageLabel, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
-import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
@@ -30,13 +29,16 @@ interface Completed {
   action: string; actorName: string | null; completedAt: string; toStageLabel: string | null
 }
 
-// Unified Drying + Quality Control operator workstation.
+// Unified Dry & Quality Check operator workstation (the SINGLE merged station in
+// the approved model — there is no separate Drying or separate Quality Check).
 // Layout: ONE sticky scan area pinned at the top, three panels (Waiting / In
 // Progress / Completed) spanning both DRY and QC stages. The natural page scroll
 // is the ONLY scroll container — there are no nested per-column scrollbars.
 // Every card is keyed by its stable garment id so React updates cards in place
 // instead of recreating the list; auto-refresh is diffed against a snapshot so
 // an idle poll causes no re-render, no flicker, and can never reset the scroll.
+// Actions = Pass / Fail (reprocess) / Return-to-queue. Garment barcodes are the
+// tracking identity through this station; the bag is assigned later at Sorting.
 export function LaundryDryingQcWorkstation() {
   const { currentBusinessId, user } = useAuthStore()
   const { toast } = useToast()
@@ -55,9 +57,6 @@ export function LaundryDryingQcWorkstation() {
   const [qcFail, setQcFail] = useState<{ itemId: string; garment: string; flow: string | null; serviceName: string } | null>(null)
   const [qcReason, setQcReason] = useState("")
   const [qcStage, setQcStage] = useState("")
-  const [bagPrompt, setBagPrompt] = useState<{ orderId: string; orderNumber: string | null } | null>(null)
-  const [bagTarget, setBagTarget] = useState<{ label: string; hint: string } | null>(null)
-  const [bagErr, setBagErr] = useState<string | null>(null)
 
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
@@ -111,23 +110,17 @@ export function LaundryDryingQcWorkstation() {
 
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  // Load the Workspace Scan Mode label for the bag-assignment prompt.
-  useEffect(() => {
-    if (!bagPrompt || !currentBusinessId) return
-    fetch(`/api/laundry/processing/finishing-bag?businessId=${encodeURIComponent(currentBusinessId)}`)
-      .then((r) => r.json()).then((j) => {
-        if (j.success && j.data?.target) setBagTarget({ label: j.data.target.label, hint: j.data.target.hint || "" })
-      }).catch(() => setBagTarget({ label: "container", hint: "" }))
-  }, [bagPrompt, currentBusinessId])
-
-  // return_queue permission (either sub-stage grants it).
+  // return_queue permission (the merged Dry & Quality Check screen covers both
+  // the legacy DRY and QC keys).
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/rbac/me?businessId=${encodeURIComponent(currentBusinessId)}`)
       .then((r) => r.json()).then((j) => {
         if (j.success && j.data) {
-          const ok = j.data.isOwner || ["processing.dry.return_queue", "processing.quality_check.return_queue"]
-            .some((k) => j.data.permissions?.includes(k))
+          const lv = j.data.levels || {}
+          const ok = j.data.isOwner
+            || (lv["processing.quality_check"] ?? 0) >= 3
+            || (lv["processing.drying"] ?? 0) >= 3
           setHasReturnPerm(!!ok)
         }
       }).catch(() => { /* noop */ })
@@ -144,11 +137,6 @@ export function LaundryDryingQcWorkstation() {
       if (!res.ok || !j.success) {
         toast({ title: "Action failed", description: j.error === "Failed to fetch" ? "Server unreachable." : j.error, variant: "destructive" })
         return false
-      }
-      if (action === "QC_PASS" && j.data?.awaitingBagAssignment) {
-        const w = j.data.awaitingBagAssignment
-        setBagErr(null)
-        setBagPrompt({ orderId: w.orderId, orderNumber: w.orderNumber || null })
       }
       load(true)
       return true
@@ -220,26 +208,6 @@ export function LaundryDryingQcWorkstation() {
     load(true)
   }, [soundEnabled, load])
 
-  const handleAssignFinishingBag = async (code: string) => {
-    if (!bagPrompt || !currentBusinessId) return
-    setBusy(true); setBagErr(null)
-    try {
-      const res = await fetch("/api/laundry/processing/finishing-bag", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, orderId: bagPrompt.orderId, code, actorName: user?.name || "operator" }),
-      })
-      const j = await res.json()
-      if (!res.ok || !j.success) { playScanError(soundEnabled); setBagErr(j.error || "Could not assign the finishing bag."); return }
-      playScanOk(soundEnabled)
-      const label = bagTarget?.label.replace(/^Scan /, "") || "container"
-      toast({ title: "Finishing bag assigned", description: `Order ${bagPrompt.orderNumber || ""} → ${label} ${code}; garment barcodes retired.`, duration: 2500 })
-      setBagPrompt(null)
-      load(true)
-    } catch {
-      setOffline(true); setBagErr("Unable to reach the server. Try again.")
-    } finally { setBusy(false) }
-  }
-
   const handleReturnToQueue = async (it: Item) => {
     if (!hasReturnPerm) { toast({ title: "Permission denied", description: "You don't have permission to return items to queue.", variant: "destructive" }); return }
     await act(it.id, it.processingStage, "RETURN", { note: `Returned to queue by ${user?.name || "operator"}` })
@@ -266,7 +234,7 @@ export function LaundryDryingQcWorkstation() {
           body: JSON.stringify({ action, actorName: user?.name || "operator", expectedStage: item.processingStage }),
         })
         const j = await res.json()
-        if (res.ok && j.success) { ok++; if (j.data?.awaitingBagAssignment) setBagPrompt({ orderId: j.data.awaitingBagAssignment.orderId, orderNumber: j.data.awaitingBagAssignment.orderNumber || null }) }
+        if (res.ok && j.success) { ok++ }
         else fail++
       } catch { fail++ }
     }
@@ -332,7 +300,8 @@ export function LaundryDryingQcWorkstation() {
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-6 pt-4 pb-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
-            <ScanLine className="h-5 w-5 text-blue-600" /> Drying &amp; Quality Control
+            <ScanLine className="h-5 w-5 text-blue-600" /> Dry &amp; Quality Check
+            <Badge className="border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px] font-semibold">GARMENT TRACKING</Badge>
           </h1>
           <div className="flex items-center gap-2 text-xs">
             <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50"><Clock className="h-3 w-3 mr-1" /> {waiting.length} waiting</Badge>
@@ -343,9 +312,10 @@ export function LaundryDryingQcWorkstation() {
 
         <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">
-            <LaundryBarcodeScanner onDetect={handleBarcode} departmentLabel="Drying + Quality Control" />
+            <LaundryBarcodeScanner onDetect={handleBarcode} departmentLabel="Dry & Quality Check" />
             {offline && <div className="mt-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">Unable to process garment. Server unavailable.</div>}
             {scanErr && !offline && <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{scanErr}</div>}
+            <p className="mt-2 text-[11px] text-slate-500">Drying is completed here; every garment is checked for cleaning, stains, damage and customer instructions, then <span className="font-semibold">Pass / Fail / Reprocess</span>. On Pass the garment moves to <span className="font-semibold">Sorting</span>, where the order's bag is assigned — no bag is assigned at this station.</p>
           </CardContent>
         </Card>
 
@@ -446,22 +416,6 @@ export function LaundryDryingQcWorkstation() {
               </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!bagPrompt} onOpenChange={(o) => { if (!o) { setBagPrompt(null); setBagErr(null) } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5 text-emerald-600" /> Order Complete — Ready for Bag Assignment</DialogTitle>
-            <DialogDescription className="text-xs">
-              Order {bagPrompt?.orderNumber || ""} has passed Quality Check. Scan the {bagTarget?.label?.replace(/^Scan /, "") || "bag"}{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} once — every garment of this order is attached to it and all garment barcodes are retired. It then moves straight to Ironing / Folding.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-3 py-2">
-            <BagScanButton onScan={handleAssignFinishingBag} label={bagTarget?.label || "Scan container"} closeOnScan={false} disabled={busy} />
-            <p className="text-[11px] text-slate-400 text-center">One bag = one order, assigned permanently. Ironing, Folding and Packing &amp; QR then track this order by the bag only.</p>
-          </div>
-          {bagErr && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{bagErr}</p>}
         </DialogContent>
       </Dialog>
     </div>

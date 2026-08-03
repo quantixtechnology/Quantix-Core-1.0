@@ -176,8 +176,8 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    // 24 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
-    expect(allScreens.length).toBe(66)
+    // 24 laundry + 7 crm + 11 processing + 11 store_ops + 4 customer_app + 11 marketing
+    expect(allScreens.length).toBe(68)
   })
 
   it("every screen key validates correctly", () => {
@@ -648,7 +648,7 @@ describe("Gate 8: Sidebar-registry consistency", () => {
 describe("Gate 9: Dynamic processing screen keys", () => {
   const PROCESSING_SCREENS = [
     "washing", "drying", "dry_cleaning", "ironing",
-    "folding", "quality_check", "packing", "console_receive",
+    "folding", "quality_check", "sorting", "transit", "packing", "console_receive",
   ]
 
   it("every processing stage screen is in the registry", () => {

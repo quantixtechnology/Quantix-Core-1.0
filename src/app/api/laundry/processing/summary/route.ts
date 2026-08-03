@@ -11,9 +11,10 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
-// Configurable working stages a garment can sit in on the floor (QC counted
-// separately; RECEIVED = awaiting entry; PACKED/DONE = finished).
-const WORKING_STAGES = ["WASH", "DRYCLEAN", "DRY", "IRON", "FOLD"]
+// Configurable working stages a garment can sit in on the floor (Dry & Quality
+// Check counted separately; RECEIVED = awaiting entry; Transit terminal / legacy
+// Packed = finished).
+const WORKING_STAGES = ["WASH", "DRYCLEAN", "SORTING", "IRON", "FOLD"]
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)

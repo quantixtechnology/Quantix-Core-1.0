@@ -90,6 +90,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     { screenKey: "processing.ironing", level: Level.CREATE },
     { screenKey: "processing.folding", level: Level.CREATE },
     { screenKey: "processing.quality_check", level: Level.CREATE },
+    { screenKey: "processing.sorting", level: Level.CREATE },
+    { screenKey: "processing.transit", level: Level.CREATE },
     { screenKey: "processing.packing", level: Level.CREATE },
   ]},
   { code: "DELIVERY_EXECUTIVE", name: "Delivery Executive", description: "Delivery operations only.", screens: () => [

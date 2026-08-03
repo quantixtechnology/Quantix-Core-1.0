@@ -22,20 +22,22 @@ import { LaundryImageUpload } from "./laundry-image-upload"
 interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[] }
 interface Category { id: string; name: string }
 
-// Configurable working stages a route can be composed from. Quality Check →
-// Packing are mandatory terminals appended by the backend (shown locked below).
-// Steam is retired and intentionally NOT offered.
+// Configurable working stages a route can be composed from — ONLY the
+// service-specific departments. The shared operational stages (Dry & Quality
+// Check → Sorting → Transit) are injected by the backend and shown locked below.
+// Steam is retired and intentionally NOT offered; "Dry" is NOT a separate stage
+// (drying happens at the merged Dry & Quality Check workstation).
 const ROUTE_OPTIONS: { code: string; label: string }[] = [
   { code: "WASH", label: "Wash" }, { code: "DRYCLEAN", label: "Dry Clean" },
-  { code: "DRY", label: "Dry" },
-  { code: "IRON", label: "Iron" }, { code: "FOLD", label: "Folding" }, { code: "CLEAN", label: "Cleaning" },
+  { code: "IRON", label: "Iron" }, { code: "FOLD", label: "Fold" }, { code: "CLEAN", label: "Cleaning" },
 ]
 function parseRoute(raw: string | null): string[] {
   if (!raw) return []
   try { return (JSON.parse(raw) as string[]).filter((s) => ROUTE_OPTIONS.some((o) => o.code === s)) } catch { return [] }
 }
-// Finishing stages always run AFTER Quality Check (container-based). The preview
-// shows the canonical order the backend will save: cleaning → QC → finishing → Packing.
+// Finishing stages (Iron / Fold) run AFTER Sorting, BAG-BASED. The preview shows
+// the canonical order the backend will save:
+//   cleaning → Dry & Quality Check → Sorting → finishing → Transit.
 const FINISH_CODES = new Set<string>(["IRON", "FOLD"])
 interface Garment { id: string; name: string; category?: { id: string; name: string | null } | null }
 interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
@@ -75,9 +77,19 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
   const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
   const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT" }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
-  const moveStage = (i: number, dir: -1 | 1) => setRoute((r) => { const j = i + dir; if (j < 0 || j >= r.length) return r; const c = [...r]; [c[i], c[j]] = [c[j], c[i]]; return c })
-  // Canonical order preview: cleaning stages (as ordered) → QC → finishing → Packing.
-  const routePreview = useMemo(() => [...route.filter((c) => !FINISH_CODES.has(c)), ...route.filter((c) => FINISH_CODES.has(c))], [route])
+  // Reorder WITHIN a group only (cleaning stages or finishing stages) — finishing
+  // always sits after Sorting, so it can never swap places with a cleaning stage.
+  const moveInGroup = (code: string, dir: -1 | 1, isFinish: boolean) => setRoute((r) => {
+    const group = r.filter((c) => FINISH_CODES.has(c) === isFinish)
+    const g = group.indexOf(code)
+    const j = g + dir
+    if (g < 0 || j < 0 || j >= group.length) return r
+    const c = [...r]
+    const from = r.indexOf(group[g])
+    const to = r.indexOf(group[j])
+    ;[c[from], c[to]] = [c[to], c[from]]
+    return c
+  })
   const toggleCat = (id: string) => setCompatCats((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
   const save = async () => {
     if (!form.name.trim()) { toast.error("Service name is required"); return }
@@ -192,7 +204,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
 
             {/* ── Processing Route ── */}
             <FormSection title="Processing Route" subtitle="Departments a garment goes through, in order">
-              <p className="text-[13px] text-slate-400 -mt-1">Leave empty to auto-detect from the service name. Cleaning stages run before Quality Check; Iron / Folding run after it (the finishing container). Packing is always last.</p>
+              <p className="text-[13px] text-slate-400 -mt-1">Leave empty to auto-detect from the service name. Wash or Dry Clean runs first; the shared Dry &amp; Quality Check → Sorting → Transit steps are added automatically — Iron / Folding run after Sorting, on the order&apos;s bag.</p>
               <div className="flex flex-wrap gap-2">
                 {ROUTE_OPTIONS.map((o) => (
                   <button key={o.code} type="button" onClick={() => toggleStage(o.code)}
@@ -203,27 +215,41 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
               </div>
               {route.length > 0 && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-1.5">
-                  {route.map((code, i) => (
+                  {route.filter((c) => !FINISH_CODES.has(c)).map((code) => (
                     <div key={code} className="flex items-center gap-2.5 text-[14px]">
-                      <span className="text-slate-400 w-5">{i + 1}.</span>
+                      <span className="text-slate-400 w-5">{route.filter((x) => !FINISH_CODES.has(x)).indexOf(code) + 1}.</span>
                       <span className="font-medium text-slate-700 flex-1">{ROUTE_OPTIONS.find((o) => o.code === code)?.label || code}</span>
-                      <button type="button" onClick={() => moveStage(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↑</button>
-                      <button type="button" onClick={() => moveStage(i, 1)} disabled={i === route.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↓</button>
+                      <button type="button" onClick={() => moveInGroup(code, -1, false)} disabled={route.filter((x) => !FINISH_CODES.has(x)).indexOf(code) === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↑</button>
+                      <button type="button" onClick={() => moveInGroup(code, 1, false)} disabled={route.filter((x) => !FINISH_CODES.has(x)).indexOf(code) === route.filter((x) => !FINISH_CODES.has(x)).length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↓</button>
+                      <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1.5 text-base">✕</button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2.5 text-[14px]">
+                    <span className="text-slate-400 w-5">{route.filter((x) => !FINISH_CODES.has(x)).length + 1}.</span>
+                    <span className="font-medium text-slate-500 flex-1">Dry &amp; Quality Check</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-[14px]">
+                    <span className="text-slate-400 w-5">{route.filter((x) => !FINISH_CODES.has(x)).length + 2}.</span>
+                    <span className="font-medium text-slate-500 flex-1">Sorting (bag assignment)</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                  </div>
+                  {route.filter((c) => FINISH_CODES.has(c)).map((code) => (
+                    <div key={code} className="flex items-center gap-2.5 text-[14px]">
+                      <span className="text-slate-400 w-5">{route.filter((x) => !FINISH_CODES.has(x)).length + 3 + route.filter((x) => FINISH_CODES.has(x)).indexOf(code)}.</span>
+                      <span className="font-medium text-slate-700 flex-1">{ROUTE_OPTIONS.find((o) => o.code === code)?.label || code} (on bag)</span>
+                      <button type="button" onClick={() => moveInGroup(code, -1, true)} disabled={route.filter((x) => FINISH_CODES.has(x)).indexOf(code) === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↑</button>
+                      <button type="button" onClick={() => moveInGroup(code, 1, true)} disabled={route.filter((x) => FINISH_CODES.has(x)).indexOf(code) === route.filter((x) => FINISH_CODES.has(x)).length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↓</button>
                       <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1.5 text-base">✕</button>
                     </div>
                   ))}
                   <div className="flex items-center gap-2.5 text-[14px] pt-1.5 border-t border-slate-200 mt-1">
-                    <span className="text-slate-400 w-5">{routePreview.length + 1}.</span>
-                    <span className="font-medium text-slate-500 flex-1">Quality Check</span>
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
-                  </div>
-                  <div className="flex items-center gap-2.5 text-[14px]">
-                    <span className="text-slate-400 w-5">{routePreview.length + 2}.</span>
-                    <span className="font-medium text-slate-500 flex-1">Packing</span>
+                    <span className="text-slate-400 w-5">{route.length + 3}.</span>
+                    <span className="font-medium text-slate-500 flex-1">Transit</span>
                     <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
                   </div>
                   <p className="text-[12px] text-slate-400 pt-1.5">
-                    Route: {routePreview.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packing
+                    Route: {route.filter((c) => !FINISH_CODES.has(c)).map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Dry &amp; Quality Check → Sorting{route.some((c) => FINISH_CODES.has(c)) ? ` → ${route.filter((c) => FINISH_CODES.has(c)).map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")}` : ""} → Transit
                   </p>
                 </div>
               )}

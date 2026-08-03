@@ -4,12 +4,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { WORKSTATIONS, stageLabel, departmentFor } from "@/lib/laundry-processing"
+import { WORKSTATIONS, stageLabel, departmentFor, isProcessingTerminal, TERMINAL_STAGE } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
-const STAGE_SCREEN: Record<string, string> = { WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning", IRON: "ironing", FOLD: "folding", QC: "quality_check", PACKED: "packing" }
+const STAGE_SCREEN: Record<string, string> = { WASH: "washing", DRY: "quality_check", DRYCLEAN: "dry_cleaning", IRON: "ironing", FOLD: "folding", QC: "quality_check", SORTING: "sorting", PACKED: "transit", DISPATCHED: "transit" }
 
 export async function GET(request: Request) {
   try {
@@ -35,8 +35,8 @@ export async function GET(request: Request) {
     const cmap = new Map(custs.map((c) => [c.id, c.name]))
     const incoming = incomingOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt, packetNumber: o.packet?.packetNumber || null, dispatchedAt: o.packet?.dispatchedAt || null, fromStore: o.store?.storeName || null }))
 
-    // Ready to Return = every garment finished its route (PACKED/DONE) but the
-    // order is still at the Processing Center.
+    // Ready to Return = every garment finished its route (Transit terminal /
+    // legacy Packed) but the order is still at the Processing Center.
     const processingOrders = await prisma.laundryOrder.findMany({
       where: { businessId: biz.id, status: "PROCESSING" },
       select: { id: true, orderNumber: true, customerId: true, store: { select: { storeName: true } }, packet: { select: { packetNumber: true } }, items: { select: { processingStage: true, processingStatus: true } } },
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     const rtCusts = rtCustIds.length ? await prisma.customer.findMany({ where: { id: { in: rtCustIds } }, select: { id: true, name: true } }) : []
     const rtMap = new Map(rtCusts.map((c) => [c.id, c.name]))
     const readyToReturn = processingOrders
-      .filter((o) => o.items.length > 0 && o.items.every((i) => i.processingStage === "PACKED" && i.processingStatus === "DONE"))
+      .filter((o) => o.items.length > 0 && o.items.every((i) => isProcessingTerminal(i.processingStage) && i.processingStatus === "DONE"))
       .map((o) => ({ id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? rtMap.get(o.customerId) || null : null, items: o.items.length, toStore: o.store?.storeName || null, packetNumber: o.packet?.packetNumber || null }))
 
     // Awaiting Barcode Generation — received, not yet moved to processing.
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
       const cm = new Map(cs.map((c) => [c.id, c.name]))
       items = rows.map((r) => ({
         id: r.id, itemNumber: r.itemNumber, barcode: r.barcode, garmentScanCode: r.garmentScanCode, garmentName: r.garmentName,
-        serviceName: r.serviceName, quantity: r.quantity, orderNumber: r.order.orderNumber,
+        serviceName: r.serviceName, quantity: r.quantity, orderId: r.orderId, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
         processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
         stageLabel: stageLabel(r.processingStage), department: departmentFor(r.processingStage),
@@ -124,10 +124,11 @@ export async function GET(request: Request) {
             orderNumber: it?.order.orderNumber || null,
             action: e.action, actorName: e.actorName || null, completedAt: e.createdAt,
             // Where the garment moved to after finishing this stage — so staff can
-            // see where it went, not just "it's gone". PACKED = processing finished
-            // (no per-garment packing queue; the ORDER is packed in Packing & QR).
+            // see where it went, not just "it's gone". The terminal (Transit /
+            // legacy Packed) = processing finished (no per-garment packing queue;
+            // the ORDER is dispatched in Transit / packed in Store Packing & QR).
             toStage: e.toStage || null,
-            toStageLabel: e.toStage === "PACKED" ? "Processing complete" : e.toStage ? stageLabel(e.toStage) : null,
+            toStageLabel: e.toStage && isProcessingTerminal(e.toStage) ? "Processing complete" : e.toStage ? stageLabel(e.toStage) : null,
           }
         })
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))

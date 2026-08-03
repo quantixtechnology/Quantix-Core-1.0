@@ -122,33 +122,39 @@ describe('syncPackageLifecycle (forward-only container lifecycle)', () => {
   })
 
   it('→ READY once finishing is complete (none left at Iron/Fold)', async () => {
-    await run('PROCESSING', [{ stage: 'PACKED', status: 'WAITING' }])
+    await run('PROCESSING', [{ stage: 'DISPATCHED', status: 'WAITING' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'READY' } }))
   })
 
-  it('→ PACKED once every garment is packed & done', async () => {
+  it('→ PACKED once every garment is at the terminal & done', async () => {
+    await run('PROCESSING', [{ stage: 'DISPATCHED', status: 'DONE' }])
+    await syncPackageLifecycle('ord-1', 'biz-1')
+    expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'PACKED' } }))
+  })
+
+  it('accepts the legacy PACKED terminal as terminal (read-only, never rewritten)', async () => {
     await run('PROCESSING', [{ stage: 'PACKED', status: 'DONE' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'PACKED' } }))
   })
 
   it('→ RELEASED when the order returns to the store / is ready for delivery', async () => {
-    await run('RETURN_IN_TRANSIT', [{ stage: 'PACKED', status: 'DONE' }])
+    await run('RETURN_IN_TRANSIT', [{ stage: 'DISPATCHED', status: 'DONE' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'RELEASED' } }))
     vi.clearAllMocks()
-    await run('READY_FOR_DELIVERY', [{ stage: 'PACKED', status: 'DONE' }])
+    await run('READY_FOR_DELIVERY', [{ stage: 'DISPATCHED', status: 'DONE' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'RELEASED' } }))
   })
 
   it('→ CLOSED on delivery or cancellation', async () => {
-    await run('DELIVERED', [{ stage: 'PACKED', status: 'DONE' }])
+    await run('DELIVERED', [{ stage: 'DISPATCHED', status: 'DONE' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'CLOSED' } }))
     vi.clearAllMocks()
-    await run('CANCELLED', [{ stage: 'PACKED', status: 'DONE' }])
+    await run('CANCELLED', [{ stage: 'DISPATCHED', status: 'DONE' }])
     await syncPackageLifecycle('ord-1', 'biz-1')
     expect(mocks.pkgUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'CLOSED' } }))
   })

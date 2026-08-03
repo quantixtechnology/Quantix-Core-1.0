@@ -1,20 +1,21 @@
-// Order-Based Finishing Bag assignment.
+// Order-Based Finishing Bag assignment (at SORTING — the garment→bag transition).
 //
 // GET  /api/laundry/processing/finishing-bag?businessId= — the Workspace Scan
 //      Mode + the label/hint to show at the bag-assignment prompt (Bag /
 //      Processing Package / Both — never hardcoded).
 // POST /api/laundry/processing/finishing-bag
 //      Body: { businessId, orderId, code, actorName? }
-//      Assign the order's ONE finishing bag at the moment its LAST garment
-//      passes Quality Check. Scanning the configured container associates EVERY
-//      garment of the order with it and retires all garment barcodes — after
-//      that, Ironing/Folding/Packing operate only by scanning the container.
+//      Assign the order's ONE finishing bag at Sorting, once the operator has
+//      scanned every garment of the order (scanned set == expected count).
+//      Scanning the configured container associates EVERY garment of the order
+//      with it and retires all garment barcodes — after that, Ironing/Folding/
+//      Transit operate only by scanning the container.
 //
 // Server enforcements (see assignFinishingBag):
 //   • one active finishing bag per order  (second call is a no-op)
 //   • the scanned code must belong to THIS order (a bag on another order is
 //     rejected — each finishing bag belongs to one order)
-//   • eligible only once every garment has passed QC
+//   • eligible only once every garment has passed Quality Check (at Sorting)
 //   • Scan-Mode gate (Bag / Package / Both) is the workspace setting, never hardcoded
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     const sp = new URL(request.url).searchParams
     const businessId = sp.get("businessId")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
-    const guard = await requireLaundryPermission(request, businessId, "processing.quality_check.view")
+    const guard = await requireLaundryPermission(request, businessId, "processing.sorting.view")
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: { mode: "GENERATE_NEW", target: finishingBagTarget("GENERATE_NEW") } })
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     if (!orderId) return NextResponse.json({ error: "Missing orderId" }, { status: 400 })
     if (!code) return NextResponse.json({ error: "Scan a container code to assign the finishing bag." }, { status: 400 })
 
-    const guard = await requireLaundryPermission(request, businessId, "processing.quality_check.process")
+    const guard = await requireLaundryPermission(request, businessId, "processing.sorting.process")
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })

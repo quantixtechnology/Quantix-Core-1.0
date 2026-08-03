@@ -151,7 +151,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
       }
       playScanOk(soundEnabled)
       const label = action === "START" ? "Started" : action === "PAUSE" ? "Paused" : action === "RESUME" ? "Resumed" : action === "RETURN" ? "Returned to queue" : "Completed"
-      toast({ title: `${label} ${garment}`, description: `${stageLabel(stage)} → ${j.data.processingStage === "PACKED" ? "Processing complete — ready for Packing & QR" : `${stageLabel(j.data.processingStage)}`}`, duration: 2000 })
+      toast({ title: `${label} ${garment}`, description: `${stageLabel(stage)} → ${["PACKED", "DISPATCHED"].includes(j.data.processingStage) ? "Processing complete — ready for Transit" : `${stageLabel(j.data.processingStage)}`}`, duration: 2000 })
       // Refresh the container (garment moved on) + the waiting list.
       if (active) await resolve(undefined, active.package.id)
       load(true)
@@ -220,9 +220,10 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
       <div>
         <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
           <Icon className="h-5 w-5 text-blue-600" /> {stageLabel(stage)} — Finishing
+          <Badge className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] font-semibold">LAUNDRY BAG TRACKING</Badge>
         </h1>
         <p className="text-sm text-slate-500">
-          Garment barcode scanning ends at Quality Check. {scanTarget} to load the whole container and process it in place.
+          Garment barcode scanning ended at Sorting. {scanTarget} to load the whole bag/container and process it in place.
         </p>
       </div>
 

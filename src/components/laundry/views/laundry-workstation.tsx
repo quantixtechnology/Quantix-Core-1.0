@@ -389,6 +389,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       <div>
         <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
           <Icon className="h-5 w-5 text-blue-600" /> {stageLabel(stage)} Department
+          <Badge className="border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px] font-semibold">GARMENT TRACKING</Badge>
         </h1>
         <p className="text-sm text-slate-500">{departmentFor(stage) || stageLabel(stage)} workstation · scan a garment barcode to start or complete.</p>
       </div>

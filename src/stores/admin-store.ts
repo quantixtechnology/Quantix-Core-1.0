@@ -138,6 +138,8 @@ export type LaundryBusinessPage =
   | "ws-fold"
   | "ws-qc"
   | "ws-pack"
+  | "ws-sorting"
+  | "ws-transit"
   | "audit-barcode"
   | "garment-lookup"
   | "navigation"

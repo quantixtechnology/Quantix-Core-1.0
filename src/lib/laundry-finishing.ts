@@ -1,22 +1,25 @@
 // Container-based finishing workflow (after Quality Check).
 //
-// Garment barcodes are scanned through the cleaning stages and QC. QC is the
-// final garment-barcode stage. From there on, Iron / Folding operate on
-// the PROCESSING CONTAINER — the tenant's configured scan target. No new
-// entities: the container IS the existing LaundryProcessingPackage; this module
-// only extends its lifecycle.
+// Garment barcodes are scanned through the cleaning stages and the merged Dry &
+// Quality Check station (QC). QC is the final garment-barcode stage. Sorting is
+// the permanent garment→bag transition: the operator scans every garment, then
+// ONE laundry bag, binding the whole order to it (1 order = 1 bag) and retiring
+// every garment barcode. From there on Iron / Folding / Transit operate on the
+// PROCESSING CONTAINER — the tenant's configured scan target. No new entities:
+// the container IS the existing LaundryProcessingPackage; this module only
+// extends its lifecycle.
 //
 // Lifecycle (Architectural Decisions 3 & 4):
 //   CREATED (after Store Audit / auto) → PROCESSING (garments being worked) →
-//   READY_FOR_FINISHING (automatically, once every garment inside the package
-//   has passed QC) → READY (finishing complete) → PACKED (all garments packed) →
+//   READY_FOR_FINISHING (automatically, once every garment has passed QC, i.e.
+//   reached Sorting) → READY (finishing complete) → PACKED (all garments packed) →
 //   RELEASED (returned to the store / ready for delivery) → CLOSED (delivered /
 //   cancelled). Forward-only — a package status never regresses.
 //
 // The package is created automatically — operators never create/print one.
 import { prisma } from "@/lib/prisma"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
-import { hasPassedQc } from "@/lib/laundry-processing"
+import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 
 // Package lifecycle statuses. Additive — existing CREATED value is preserved.
 export const PACKAGE_STATUS_FINISHING_READY = "READY_FOR_FINISHING"
@@ -116,7 +119,7 @@ export async function syncPackageLifecycle(orderId: string, businessId: string):
 
   const allPassedQc = items.every((i) => hasPassedQc(i.processingStage))
   const noneAtFinishing = items.every((i) => !FINISHING.has(i.processingStage || ""))
-  const allPackedDone = items.every((i) => i.processingStage === "PACKED" && i.processingStatus === "DONE")
+  const allTerminalDone = items.every((i) => isProcessingTerminal(i.processingStage) && i.processingStatus === "DONE")
   const processingStarted = items.some(
     (i) => i.processingStatus === "IN_PROGRESS" || i.processingStatus === "PAUSED"
       || (!!i.processingStage && i.processingStage !== "RECEIVED"),
@@ -125,7 +128,7 @@ export async function syncPackageLifecycle(orderId: string, businessId: string):
   let target = "CREATED"
   if (order.status === "DELIVERED" || order.status === "CANCELLED") target = "CLOSED"
   else if (order.status === "RETURN_IN_TRANSIT" || order.status === "READY_FOR_DELIVERY") target = "RELEASED"
-  else if (allPackedDone) target = "PACKED"
+  else if (allTerminalDone) target = "PACKED"
   else if (allPassedQc && noneAtFinishing) target = "READY"
   else if (allPassedQc) target = "READY_FOR_FINISHING"
   else if (processingStarted || order.status === "PROCESSING" || order.status === "QC_PENDING") target = "PROCESSING"
@@ -140,18 +143,18 @@ export async function syncPackageLifecycle(orderId: string, businessId: string):
 // ══════════════════════════════════════════════════════════════════════════════
 // ORDER-BASED FINISHING BAG MODEL
 // ══════════════════════════════════════════════════════════════════════════════
-// One Order = exactly one finishing bag, assigned ONCE, when the LAST garment of
-// the order passes Quality Check. Before that the Drying/QC workstation scans
-// garment barcodes; at that single moment the operator scans the configured
-// container (Laundry Bag, Processing Package, or Both — per Workspace Scan Mode)
-// and the WHOLE order is associated with it. Every garment barcode is then
-// retired; Ironing/Folding/Packing operate only by scanning the container.
+// One Order = exactly one finishing bag, assigned ONCE, at SORTING — the point
+// where the operator has scanned every garment of the order and the scanned set
+// equals the expected count. At that single moment the operator scans the
+// configured container (Laundry Bag, Processing Package, or Both — per Workspace
+// Scan Mode) and the WHOLE order is associated with it. Every garment barcode is
+// then retired; Ironing/Folding/Transit operate only by scanning the container.
 //
 // Enforcements:
 //   • one active finishing bag per order   — bagAssigned flips once (server re-checks)
 //   • each finishing bag belongs to one order — the scanned code must resolve to
 //     THIS order's package / bag (a bag linked to another order is rejected)
-//   • no garment-barcode scanning after QC — barcodeRetired is set on every item
+//   • no garment-barcode scanning after Sorting — barcodeRetired is set on every item
 // ══════════════════════════════════════════════════════════════════════════════
 
 // The container label + code hints for the bag-assignment prompt (Scan Mode).
@@ -185,10 +188,12 @@ export type AssignBagResult =
   | { ok: true; packageId: string; code: string; bagCode: string; retired: number }
   | { ok: false; error: string; code: "INVALID" | "ORDER_NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_ASSIGNED" | "WRONG_ORDER" }
 
-// Bind the order-based finishing bag. Scanning the configured container at the
-// single "last garment passed QC" moment associates EVERY garment of the order
-// with the binder container and retires all garment barcodes. Pure + idempotent:
-// re-scanning after success is a no-op guard (ALREADY_ASSIGNED), never a second bag.
+// Bind the order-based finishing bag at Sorting. Scanning the configured
+// container when the operator has scanned every garment of the order (scanned set
+// equals the order) associates EVERY garment with the binder container and retires
+// all garment barcodes. Pure + idempotent: re-scanning after success is a no-op
+// guard (ALREADY_ASSIGNED), never a second bag. The caller (Sorting workstation)
+// advances the garments past Sorting after a successful assignment.
 export async function assignFinishingBag(opts: {
   orderId: string; businessId: string; code: string; mode: string; actorName?: string | null
 }): Promise<AssignBagResult> {
@@ -204,7 +209,7 @@ export async function assignFinishingBag(opts: {
   const items = await prisma.laundryOrderItem.findMany({ where: { orderId }, select: { id: true, processingStage: true } })
   if (!items.length) return { ok: false, error: "This order has no garments.", code: "NOT_ELIGIBLE" }
   if (!items.every((i) => hasPassedQc(i.processingStage)))
-    return { ok: false, error: "Assign the bag only after every garment in the order has passed Quality Check.", code: "NOT_ELIGIBLE" }
+    return { ok: false, error: "Assign the bag only after every garment in the order has passed Quality Check and reached Sorting.", code: "NOT_ELIGIBLE" }
 
   // Single active finishing bag per order — never a second.
   const already = await prisma.laundryProcessingPackage.findFirst({ where: { orderId, bagAssigned: true }, select: { code: true } })
