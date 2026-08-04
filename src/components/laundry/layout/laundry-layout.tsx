@@ -13,9 +13,9 @@ export function LaundryLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <RuntimeAuthProvider>
+      <LaundryAuthBridge />
       <LaundryWorkspaceGate>
         <SidebarProvider>
-          <LaundryAuthBridge />
           <LaundrySidebar
             mobileOpen={mobileSidebarOpen}
             onMobileOpenChange={setMobileSidebarOpen}
