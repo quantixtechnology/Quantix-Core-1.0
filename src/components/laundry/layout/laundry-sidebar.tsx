@@ -13,7 +13,7 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
-import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, screenKeyPermission, screenKeyLegacyPermission } from "@/lib/laundry-nav-config"
+import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, screenKeyPermission, screenKeyLegacyPermission, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -229,8 +229,11 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   useEffect(() => {
     if (!navLoaded) return
-    if (!validPages.has(laundryPage)) setLaundryPage("dashboard")
-  }, [laundryPage, navLoaded, validPages])
+    if (!validPages.has(laundryPage)) {
+      const landing = resolveLaundryLandingPage(screenLevels, isOwner) as LaundryBusinessPage
+      setLaundryPage(landing)
+    }
+  }, [laundryPage, navLoaded, validPages, screenLevels, isOwner])
 
   const navigate = (page?: LaundryBusinessPage) => {
     if (!page) return

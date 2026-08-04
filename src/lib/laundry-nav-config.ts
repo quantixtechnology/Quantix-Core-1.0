@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
+import { SCREEN_MODULES, Level } from "@/lib/laundry-rbac-registry"
 
 /**
  * Default navigation sections and screen keys for a Quantix Laundry business.
@@ -225,7 +225,10 @@ const SCREEN_KEY_LEGACY_PERM_MAP: Record<string, string> = {
   "marketing-cart-recovery": "laundry.settings",
 }
 
-const MODULE_PREFIXES = ["laundry.", "crm.", "processing.", "store_ops.", "marketing."]
+// Module prefixes are derived from the permission registry so a nav key that IS a
+// registered screen (e.g. "crm.leads") resolves to itself as its own permission.
+// The list is never hardcoded — any module added to SCREEN_MODULES works automatically.
+const MODULE_PREFIXES = SCREEN_MODULES.map((m) => `${m.key}.`)
 
 /** Primary RBAC permission that gates a navigation screen key. */
 export function screenKeyPermission(screenKey: string): string | undefined {
@@ -236,6 +239,72 @@ export function screenKeyPermission(screenKey: string): string | undefined {
 /** Legacy RBAC permission a navigation screen key was previously gated by. */
 export function screenKeyLegacyPermission(screenKey: string): string | undefined {
   return SCREEN_KEY_LEGACY_PERM_MAP[screenKey]
+}
+
+/**
+ * RBAC-driven accessibility of a navigation item. A nav item is accessible iff
+ * the resolved permission object grants its primary permission key (or its
+ * legacy fallback key) at VIEW or above — owners are always accessible. Uses
+ * the permission registry only; no role names are hardcoded.
+ */
+export function isScreenAccessible(
+  screenLevels: Record<string, number>,
+  isOwner: boolean,
+  screenKey: string,
+): boolean {
+  if (isOwner) return true
+  const perm = screenKeyPermission(screenKey)
+  if (perm && (screenLevels[perm] ?? 0) >= Level.VIEW) return true
+  const legacy = screenKeyLegacyPermission(screenKey)
+  if (legacy && (screenLevels[legacy] ?? 0) >= Level.VIEW) return true
+  return false
+}
+
+/**
+ * All page routes the current RBAC session may open, in navigation order
+ * (default navigation registry, section order then item order). Used to
+ * validate that the active page is permitted.
+ */
+export function accessibleLaundryPages(
+  screenLevels: Record<string, number>,
+  isOwner: boolean,
+): Set<string> {
+  const pages = new Set<string>()
+  for (const section of defaultNavigationConfig()) {
+    if (!section.active) continue
+    for (const item of section.items) {
+      if (item.hidden || item.comingSoon) continue
+      const page = SCREEN_PAGE_MAP[item.screenKey]
+      if (page && isScreenAccessible(screenLevels, isOwner, item.screenKey)) pages.add(page)
+    }
+  }
+  return pages
+}
+
+/**
+ * The workspace landing page for the current RBAC session: the FIRST
+ * accessible page in navigation order (permission registry + navigation
+ * registry). Falls back to the dashboard only when nothing is navigable.
+ *
+ * Examples (no role names hardcoded):
+ *   • CRM-only session → "crm-dashboard"
+ *   • processing-only session → "processing-centers" (Console & Receive)
+ *   • dispatch-only session → "dispatch-center"
+ *   • owner / viewer-with-dashboard → "dashboard"
+ */
+export function resolveLaundryLandingPage(
+  screenLevels: Record<string, number>,
+  isOwner: boolean,
+): string {
+  for (const section of defaultNavigationConfig()) {
+    if (!section.active) continue
+    for (const item of section.items) {
+      if (item.hidden || item.comingSoon) continue
+      const page = SCREEN_PAGE_MAP[item.screenKey]
+      if (page && isScreenAccessible(screenLevels, isOwner, item.screenKey)) return page
+    }
+  }
+  return "dashboard"
 }
 
 export function defaultNavigationConfig(): DefaultSection[] {

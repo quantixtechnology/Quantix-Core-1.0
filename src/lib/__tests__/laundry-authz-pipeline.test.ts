@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { Level, isValidScreenKey } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
-import { laundryRoleLabel, hasLaundryWorkspaceAccess, LAUNDRY_WORKSPACE_ENTRY_KEY } from "@/lib/runtime-auth"
+import { laundryRoleLabel, hasLaundryWorkspaceAccess } from "@/lib/runtime-auth"
+import { isScreenAccessible, resolveLaundryLandingPage, accessibleLaundryPages } from "@/lib/laundry-nav-config"
 import { isOwnerRole, resolveUnassignedPermissions } from "@/lib/laundry-rbac"
 
 // ============================================================================
-// Single-authorization-pipeline regression (FIX 1/3/5)
+// Single-authorization-pipeline regression (FIX 1/3/5) + permission-driven
+// workspace entry & RBAC-driven landing (permission registry + nav registry).
 // ============================================================================
 
 const roleLevels = (code: string): Record<string, number> => {
@@ -38,14 +40,11 @@ describe("laundryRoleLabel — header/user-menu show the assigned RBAC role", ()
   })
 })
 
-describe("hasLaundryWorkspaceAccess — entry gate uses the same permission object", () => {
+describe("hasLaundryWorkspaceAccess — permission-driven entry, no module/role assumptions", () => {
   it("grants entry to every catalog role (regression: no role is locked out)", () => {
     for (const role of SYSTEM_ROLES) {
       if (role.isOwner) continue
-      const dash = role.screens().find((s) => s.screenKey === LAUNDRY_WORKSPACE_ENTRY_KEY)
-      expect(dash, `${role.code} must grant ${LAUNDRY_WORKSPACE_ENTRY_KEY}`).toBeDefined()
-      expect(dash!.level, `${role.code} must grant ${LAUNDRY_WORKSPACE_ENTRY_KEY} >= VIEW`).toBeGreaterThanOrEqual(Level.VIEW)
-      expect(hasLaundryWorkspaceAccess(roleLevels(role.code), false)).toBe(true)
+      expect(hasLaundryWorkspaceAccess(roleLevels(role.code), false), `${role.code} must enter the workspace`).toBe(true)
     }
   })
 
@@ -53,16 +52,108 @@ describe("hasLaundryWorkspaceAccess — entry gate uses the same permission obje
     expect(hasLaundryWorkspaceAccess({}, true)).toBe(true)
   })
 
-  it("denies entry when laundry.dashboard is missing or below VIEW", () => {
+  it("grants entry from a SINGLE screen in ANY registered module — the engine has no module list", () => {
+    const singleScreens = [
+      "laundry.orders",
+      "crm.leads",
+      "processing.washing",
+      "store_ops.dispatch_center",
+      "marketing.coupons",
+      "customer_app.orders",
+    ]
+    for (const key of singleScreens) {
+      expect(hasLaundryWorkspaceAccess({ [key]: Level.VIEW }, false), `${key} alone must grant entry`).toBe(true)
+    }
+  })
+
+  it("grants entry for any combination of screens (custom roles: 1, 5, 50 screens)", () => {
+    expect(hasLaundryWorkspaceAccess({ "crm.dashboard": Level.VIEW, "laundry.reports": Level.VIEW }, false)).toBe(true)
+    expect(hasLaundryWorkspaceAccess({ "store_ops.store_audit": Level.CREATE, "laundry.reports": Level.EDIT }, false)).toBe(true)
+    expect(hasLaundryWorkspaceAccess({ "laundry.orders": Level.EDIT, "crm.leads": Level.CREATE, "marketing.dashboard": Level.VIEW }, false)).toBe(true)
+  })
+
+  it("denies entry with zero accessible screens (UNASSIGNED)", () => {
     expect(hasLaundryWorkspaceAccess({}, false)).toBe(false)
     expect(hasLaundryWorkspaceAccess({ "laundry.dashboard": Level.HIDE }, false)).toBe(false)
-    expect(hasLaundryWorkspaceAccess({ "laundry.orders": Level.EDIT, "crm.leads": Level.CREATE }, false)).toBe(false)
+  })
+
+  it("does not grant entry for screens that are not registered in the permission registry", () => {
+    expect(hasLaundryWorkspaceAccess({ "finance.reports": Level.EDIT }, false)).toBe(false)
+    expect(hasLaundryWorkspaceAccess({ "processing.drying": Level.EDIT }, false)).toBe(false)
   })
 
   it("denies entry to a legacy STORE_EXECUTIVE with no RBAC assignment (no inherited permissions)", () => {
     // BusinessUser.role = STORE_EXECUTIVE with no LaundryAccessAssignment
     // resolves to an empty level map — the workspace is denied.
     expect(hasLaundryWorkspaceAccess({}, false)).toBe(false)
+  })
+})
+
+describe("resolveLaundryLandingPage — RBAC-driven landing (no hardcoded role names)", () => {
+  it("lands a CRM-only session on the CRM dashboard", () => {
+    const levels = { "crm.dashboard": Level.EDIT, "crm.leads": Level.CREATE, "crm.activities": Level.CREATE }
+    expect(resolveLaundryLandingPage(levels, false)).toBe("crm-dashboard")
+  })
+
+  it("lands a dispatch-only session on the Dispatch Center", () => {
+    expect(resolveLaundryLandingPage({ "store_ops.dispatch_center": Level.CREATE }, false)).toBe("dispatch-center")
+  })
+
+  it("lands a processing-only session on the first accessible processing screen", () => {
+    expect(resolveLaundryLandingPage({ "processing.console_receive": Level.CREATE }, false)).toBe("processing-centers")
+    expect(resolveLaundryLandingPage({ "processing.washing": Level.CREATE }, false)).toBe("ws-wash")
+  })
+
+  it("lands an owner on the laundry dashboard", () => {
+    expect(resolveLaundryLandingPage({}, true)).toBe("dashboard")
+  })
+
+  it("lands a viewer (read-only everywhere) on the first readable screen (dashboard)", () => {
+    expect(resolveLaundryLandingPage({ "laundry.dashboard": Level.VIEW }, false)).toBe("dashboard")
+  })
+
+  it("lands system roles that hold laundry.dashboard on the dashboard", () => {
+    expect(resolveLaundryLandingPage(roleLevels("PROCESSING_STAFF"), false)).toBe("dashboard")
+    expect(resolveLaundryLandingPage(roleLevels("CRM_MANAGER"), false)).toBe("dashboard")
+  })
+
+  it("falls back to the dashboard when nothing is navigable (entry denies anyway)", () => {
+    expect(resolveLaundryLandingPage({}, false)).toBe("dashboard")
+  })
+
+  it("works for arbitrary role combinations without any role/module assumptions", () => {
+    // "Laundry Auditor" — Store + Reports → Reports appears first in navigation order.
+    expect(resolveLaundryLandingPage({ "store_ops.store_audit": Level.CREATE, "laundry.reports": Level.VIEW }, false)).toBe("reports")
+    // "CRM + Orders" → first accessible in navigation order is Orders.
+    expect(resolveLaundryLandingPage({ "laundry.orders": Level.CREATE, "crm.dashboard": Level.VIEW }, false)).toBe("orders")
+    // One screen only → that screen's page.
+    expect(resolveLaundryLandingPage({ "crm.leads": Level.CREATE }, false)).toBe("crm-leads")
+    expect(resolveLaundryLandingPage({ "store_ops.ready_for_delivery": Level.VIEW }, false)).toBe("ready-delivery-queue")
+  })
+})
+
+describe("isScreenAccessible / accessibleLaundryPages — nav visibility matches RBAC", () => {
+  it("exposes only the pages a CRM-only session may open", () => {
+    const levels = { "crm.dashboard": Level.EDIT, "crm.leads": Level.CREATE }
+    const pages = accessibleLaundryPages(levels, false)
+    expect(pages.has("crm-dashboard")).toBe(true)
+    expect(pages.has("crm-leads")).toBe(true)
+    expect(pages.has("dashboard")).toBe(false)
+    expect(pages.has("orders")).toBe(false)
+    expect(pages.has("processing-centers")).toBe(false)
+  })
+
+  it("treats owners as having every page", () => {
+    const pages = accessibleLaundryPages({}, true)
+    expect(pages.has("dashboard")).toBe(true)
+    expect(pages.has("roles")).toBe(true)
+    expect(pages.has("crm-dashboard")).toBe(true)
+  })
+
+  it("honours legacy permission fallbacks for pre-registration nav keys", () => {
+    // "new-order" is gated by laundry.new_order but legacy fallback is laundry.orders.
+    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "new-order")).toBe(true)
+    expect(isScreenAccessible({}, false, "new-order")).toBe(false)
   })
 })
 

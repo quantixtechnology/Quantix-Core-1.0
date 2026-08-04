@@ -1,5 +1,5 @@
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
-import { Level } from "@/lib/laundry-rbac-registry"
+import { Level, isValidScreenKey } from "@/lib/laundry-rbac-registry"
 import { ROLES } from "@/lib/constants"
 
 export interface RuntimeAuth {
@@ -20,18 +20,21 @@ export const UNAUTHORIZED: RuntimeAuth = {
   platformRole: "",
 }
 
-/** The single screen key that gates entry to the Laundry OS workspace. */
-export const LAUNDRY_WORKSPACE_ENTRY_KEY = "laundry.dashboard"
-
 /**
- * Workspace entry authorization. Allows entry iff the effective RBAC role
- * grants `laundry.dashboard` at VIEW or above, or the session is an owner /
- * platform identity. This is the SAME permission object the sidebar, dashboard
- * widgets and every `requireLaundryLevel` API guard consume. BusinessUser.role
- * and legacy role enums are never consulted.
+ * Workspace entry authorization — fully permission-driven.
+ *
+ * Entry is allowed iff the effective RBAC role grants at least ONE registered
+ * screen at VIEW or above (or the session is an owner / platform identity). No
+ * module names, role names or screen names are consulted — only the resolved
+ * permission object. Any combination of screens grants entry; zero screens
+ * denies. A tenant with no accessible screen (e.g. UNASSIGNED) is denied —
+ * nothing is defaulted to a legacy role.
  */
 export function hasLaundryWorkspaceAccess(screenLevels: Record<string, number>, isOwner: boolean): boolean {
-  return isOwner || (screenLevels[LAUNDRY_WORKSPACE_ENTRY_KEY] ?? 0) >= Level.VIEW
+  if (isOwner) return true
+  return Object.entries(screenLevels).some(
+    ([screenKey, level]) => level >= Level.VIEW && isValidScreenKey(screenKey),
+  )
 }
 
 const RBAC_ROLE_LABELS: Record<string, string> = {

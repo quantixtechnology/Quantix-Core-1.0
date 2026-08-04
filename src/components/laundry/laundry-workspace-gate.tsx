@@ -1,23 +1,44 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { Shield } from "lucide-react"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { PageLoader } from "@/components/ui/page-loader"
 import { hasLaundryWorkspaceAccess, laundryRoleLabel } from "@/lib/runtime-auth"
+import { accessibleLaundryPages, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
 
 /**
- * Single authorization gate for the entire Laundry OS workspace.
+ * Single authorization gate for the entire Laundry OS workspace — fully
+ * permission-driven.
  *
- * Entry is allowed iff the session's effective role grants `laundry.dashboard`
- * at VIEW or above (or the user is an owner/platform identity). This is the
- * SAME permission object used by the sidebar, the dashboard widgets and every
- * `requireLaundryLevel` API guard. BusinessUser.role / legacy BUSINESS_ROLES
- * are never consulted here — a tenant user with no Laundry RBAC assignment
- * is denied, not defaulted to a legacy role.
+ * Entry is allowed iff the resolved permission object contains at least ONE
+ * registered screen at VIEW or above (owner/platform identities always enter).
+ * No module names, role names or screen names are consulted. A tenant user with
+ * zero accessible screens (UNASSIGNED) is denied — never defaulted to a legacy
+ * role.
+ *
+ * Landing: once entry is granted, a session still sitting on the default
+ * "dashboard" page that has no accessible page mapped to it is redirected to
+ * its FIRST accessible page — walking the navigation registry in configured
+ * order through the same permission resolver. No role-based or module-based
+ * logic. Programmatic pages (order-detail, audit-barcode) and explicit user
+ * navigation are never overridden.
  */
 export function LaundryWorkspaceGate({ children }: { children: ReactNode }) {
   const { isLoaded, isOwner, screenLevels, assignedRbacRole } = useRuntimeAuth()
+  const { laundryPage, setLaundryPage } = useAdminStore()
+
+  const landing = resolveLaundryLandingPage(screenLevels, isOwner) as LaundryBusinessPage
+  const accessible = accessibleLaundryPages(screenLevels, isOwner)
+  // Redirect ONLY when the session is still on the default "dashboard" page and
+  // that page is not reachable through any accessible nav item (and there is a
+  // navigable alternative). Nothing else is overridden.
+  const needsLanding = laundryPage === "dashboard" && !accessible.has("dashboard") && landing !== "dashboard"
+
+  useEffect(() => {
+    if (needsLanding) setLaundryPage(landing)
+  }, [needsLanding, landing, setLaundryPage])
 
   if (!isLoaded) {
     return (
@@ -41,6 +62,14 @@ export function LaundryWorkspaceGate({ children }: { children: ReactNode }) {
           Your role ({roleName}) does not include access to the Laundry workspace.
           Contact your Business Owner to be assigned the correct role in Roles &amp; Permissions.
         </p>
+      </div>
+    )
+  }
+
+  if (needsLanding) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <PageLoader />
       </div>
     )
   }
