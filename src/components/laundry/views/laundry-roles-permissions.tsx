@@ -23,8 +23,6 @@ const LEVELS = [
   { value: 3, label: "Edit" },
 ]
 
-const levelLabel = (l: number) => LEVELS.find((x) => x.value === l)?.label || "Hide"
-
 export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: string }) {
   const { currentBusinessId } = useAuthStore()
   const businessId = bizProp || currentBusinessId
