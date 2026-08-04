@@ -2,13 +2,23 @@
 // GET /api/laundry/orders/stats?businessId=&storeId=
 // Operational workload counts for the Store Counter dashboard — real DB
 // aggregation (groupBy status + today's intake), not generic KPIs.
+//
+// RBAC: caller needs VIEW on the laundry.dashboard screen. The payload is then
+// filtered per-widget — statuses whose governing screen the caller cannot VIEW
+// are omitted, and Today's/Total orders + feedback are only included when the
+// caller can VIEW laundry.orders. Never returns metrics for modules the caller
+// lacks access to.
 // ============================================================================
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { requireLaundryLevel, Level } from "@/lib/laundry-rbac"
 import { getFeedbackSummary } from "@/lib/laundry-feedback"
+import {
+  dashboardOrderStatsVisible,
+  filterStatuses,
+} from "@/lib/laundry-dashboard-perms"
 
 export const runtime = "nodejs"
 
@@ -21,12 +31,21 @@ export async function GET(request: Request) {
     if (!businessId) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
-    const guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    const guard = await requireLaundryLevel(request, businessId, "laundry.dashboard", Level.VIEW)
     if (!guard.ok) return guard.res
+
+    const levels = guard.resolved.levels
+    const orderStatsVisible = dashboardOrderStatsVisible(levels)
 
     const resolved = await resolveLaundryBusiness(businessId)
     if (!resolved) {
-      return NextResponse.json({ success: true, data: { byStatus: {}, today: 0, total: 0 } })
+      return NextResponse.json({
+        success: true,
+        data: {
+          byStatus: {},
+          ...(orderStatsVisible ? { today: 0, total: 0 } : {}),
+        },
+      })
     }
 
     const where: Record<string, unknown> = { businessId: resolved.id }
@@ -41,15 +60,22 @@ export async function GET(request: Request) {
         where: where as never,
         _count: { _all: true },
       }),
-      prisma.laundryOrder.count({ where: { ...where, createdAt: { gte: startOfToday } } as never }),
-      prisma.laundryOrder.count({ where: where as never }),
-      getFeedbackSummary(resolved.id, storeId),
+      orderStatsVisible ? prisma.laundryOrder.count({ where: { ...where, createdAt: { gte: startOfToday } } as never }) : Promise.resolve(0),
+      orderStatsVisible ? prisma.laundryOrder.count({ where: where as never }) : Promise.resolve(0),
+      orderStatsVisible ? getFeedbackSummary(resolved.id, storeId) : Promise.resolve(undefined),
     ])
 
     const byStatus: Record<string, number> = {}
     for (const g of grouped) byStatus[g.status as string] = g._count._all
 
-    return NextResponse.json({ success: true, data: { byStatus, today: todayCount, total, rating: ratingSummary } })
+    const data: Record<string, unknown> = { byStatus: filterStatuses(levels, byStatus) }
+    if (orderStatsVisible) {
+      data.today = todayCount
+      data.total = total
+      data.rating = ratingSummary
+    }
+
+    return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error("[laundry-orders/stats] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

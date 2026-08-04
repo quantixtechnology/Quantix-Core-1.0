@@ -10,9 +10,19 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
+import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import {
+  dashboardDeliveryVisible,
+  dashboardNewOrderVisible,
+  dashboardOrderStatsVisible,
+  dashboardPickupVisible,
+  dashboardStatusVisible,
+} from "@/lib/laundry-dashboard-perms"
 
 // Store Counter operational workload — each card is the live count of orders
 // currently sitting in that workflow stage (real data from /orders/stats).
+// Permission for each widget lives in DASHBOARD_STAGE_PERMS (keyed by status);
+// denied widgets are neither rendered nor fetched, so the layout reflows.
 const WORKLOAD: { key: string; label: string; icon: typeof ShoppingBag; color: string; page?: string }[] = [
   { key: "PENDING_STORE_AUDIT", label: "Pending Store Audit", icon: ClipboardCheck, color: "text-amber-600 bg-amber-100", page: "audit-queue" },
   { key: "PAYMENT_PENDING",     label: "Payment Pending",     icon: CreditCard,     color: "text-rose-600 bg-rose-100", page: "payment-queue" },
@@ -38,6 +48,16 @@ function KpiSkeleton() {
 
 function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) {
   const { setLaundryPage } = useAdminStore()
+  const { screenLevels, isOwner, isLoaded } = useRuntimeAuth()
+
+  const showOrderStats = isOwner || dashboardOrderStatsVisible(screenLevels)
+  const showNewOrder = isOwner || dashboardNewOrderVisible(screenLevels)
+  const canPickup = isOwner || dashboardPickupVisible(screenLevels)
+  const canDelivery = isOwner || dashboardDeliveryVisible(screenLevels)
+  // Only widgets the caller may actually view are rendered — denied ones render
+  // nothing and reserve no layout space, so the grid reflows around the rest.
+  const visibleWorkload = isLoaded ? WORKLOAD.filter((w) => isOwner || dashboardStatusVisible(screenLevels, w.key)) : []
+
   const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -55,7 +75,10 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
     }
   }, [laundryBusinessId])
 
-  useEffect(() => { load() }, [load])
+  const shouldFetch = showOrderStats || visibleWorkload.length > 0
+  useEffect(() => {
+    if (isLoaded && shouldFetch) load()
+  }, [load, isLoaded, shouldFetch])
 
   const count = (key: string) => stats?.byStatus[key] ?? 0
 
@@ -70,54 +93,61 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
           <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
-          <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}>
-            <Plus className="h-3.5 w-3.5" /> New Order
-          </Button>
+          {showNewOrder && (
+            <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}>
+              <Plus className="h-3.5 w-3.5" /> New Order
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Today / total intake */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card><CardContent className="p-4">
-          {loading ? <KpiSkeleton /> : (
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-blue-600 bg-blue-100"><ShoppingBag className="h-5 w-5" /></div>
-              <div><p className="text-xs text-muted-foreground">Today&apos;s Orders</p><p className="text-2xl font-bold">{stats?.today ?? 0}</p></div>
-            </div>
-          )}
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          {loading ? <KpiSkeleton /> : (
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 bg-slate-100"><Package className="h-5 w-5" /></div>
-              <div><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-2xl font-bold">{stats?.total ?? 0}</p></div>
-            </div>
-          )}
-        </CardContent></Card>
-      </div>
+      {showOrderStats && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card><CardContent className="p-4">
+            {loading ? <KpiSkeleton /> : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-blue-600 bg-blue-100"><ShoppingBag className="h-5 w-5" /></div>
+                <div><p className="text-xs text-muted-foreground">Today&apos;s Orders</p><p className="text-2xl font-bold">{stats?.today ?? 0}</p></div>
+              </div>
+            )}
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            {loading ? <KpiSkeleton /> : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 bg-slate-100"><Package className="h-5 w-5" /></div>
+                <div><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-2xl font-bold">{stats?.total ?? 0}</p></div>
+              </div>
+            )}
+          </CardContent></Card>
+        </div>
+      )}
 
       {/* Per-stage workload */}
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">Workload by Stage</h3>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {WORKLOAD.map(w => (
-            <Card key={w.key} className={w.page ? "cursor-pointer hover:bg-accent/40 transition-colors" : ""} onClick={() => w.page && setLaundryPage(w.page as never)}>
-              <CardContent className="p-4">
-                {loading ? <KpiSkeleton /> : (
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${w.color}`}><w.icon className="h-5 w-5" /></div>
-                    <div><p className="text-xs text-muted-foreground">{w.label}</p><p className="text-xl font-bold">{count(w.key)}</p></div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+      {visibleWorkload.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">Workload by Stage</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {visibleWorkload.map(w => (
+              <Card key={w.key} className={w.page ? "cursor-pointer hover:bg-accent/40 transition-colors" : ""} onClick={() => w.page && setLaundryPage(w.page as never)}>
+                <CardContent className="p-4">
+                  {loading ? <KpiSkeleton /> : (
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${w.color}`}><w.icon className="h-5 w-5" /></div>
+                      <div><p className="text-xs text-muted-foreground">{w.label}</p><p className="text-xl font-bold">{count(w.key)}</p></div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Customer Feedback — average rating + per-star distribution of submitted
           reviews (delivered orders only). Never public, Laundry OS summary only. */}
-      <div>
+      {showOrderStats && (
+        <div>
         <h3 className="text-sm font-medium text-muted-foreground mb-3">Customer Feedback</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card><CardContent className="p-4">
@@ -162,9 +192,12 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
           </CardContent></Card>
         </div>
       </div>
+      )}
 
       {/* Field Operations — pickup & delivery assignments/statuses */}
-      <FieldOps businessId={laundryBusinessId} onOpen={(p) => setLaundryPage(p as never)} />
+      {isLoaded && (canPickup || canDelivery) && (
+        <FieldOps businessId={laundryBusinessId} canPickup={canPickup} canDelivery={canDelivery} onOpen={(p) => setLaundryPage(p as never)} />
+      )}
     </div>
   )
 }
@@ -175,18 +208,22 @@ const FIELD_BUCKETS: { key: string; label: string; color: string }[] = [
   { key: "accepted", label: "In Progress", color: "text-indigo-600 bg-indigo-100" },
   { key: "completed", label: "Completed", color: "text-emerald-600 bg-emerald-100" },
 ]
-function FieldOps({ businessId, onOpen }: { businessId: string; onOpen: (page: string) => void }) {
+function FieldOps({ businessId, canPickup, canDelivery, onOpen }: { businessId: string; canPickup: boolean; canDelivery: boolean; onOpen: (page: string) => void }) {
   const [pickup, setPickup] = useState<Record<string, number>>({})
   const [delivery, setDelivery] = useState<Record<string, number>>({})
   useEffect(() => {
     let cancel = false
     const q = `businessId=${encodeURIComponent(businessId)}`
-    Promise.all([
-      fetch(`/api/laundry/pickup-scheduler?${q}&type=pickup`).then((r) => r.json()).catch(() => null),
-      fetch(`/api/laundry/pickup-scheduler?${q}&type=delivery`).then((r) => r.json()).catch(() => null),
-    ]).then(([p, d]) => { if (cancel) return; if (p?.success) setPickup(p.counts || {}); if (d?.success) setDelivery(d.counts || {}) })
+    if (canPickup) {
+      fetch(`/api/laundry/pickup-scheduler?${q}&type=pickup`).then((r) => r.json()).catch(() => null)
+        .then((p) => { if (!cancel && p?.success) setPickup(p.counts || {}) })
+    }
+    if (canDelivery) {
+      fetch(`/api/laundry/pickup-scheduler?${q}&type=delivery`).then((r) => r.json()).catch(() => null)
+        .then((d) => { if (!cancel && d?.success) setDelivery(d.counts || {}) })
+    }
     return () => { cancel = true }
-  }, [businessId])
+  }, [businessId, canPickup, canDelivery])
 
   const Row = ({ title, counts, page }: { title: string; counts: Record<string, number>; page: string }) => (
     <Card className="cursor-pointer hover:bg-accent/40 transition-colors" onClick={() => onOpen(page)}>
@@ -207,8 +244,8 @@ function FieldOps({ businessId, onOpen }: { businessId: string; onOpen: (page: s
     <div>
       <h3 className="text-sm font-medium text-muted-foreground mb-3">Field Operations (Today)</h3>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Row title="Pickups" counts={pickup} page="pickup-scheduler" />
-        <Row title="Deliveries" counts={delivery} page="delivery-assignments" />
+        {canPickup && <Row title="Pickups" counts={pickup} page="pickup-scheduler" />}
+        {canDelivery && <Row title="Deliveries" counts={delivery} page="delivery-assignments" />}
       </div>
     </div>
   )
