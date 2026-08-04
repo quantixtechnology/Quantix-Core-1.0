@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { SCREEN_MODULES, Level } from "@/lib/laundry-rbac-registry"
+import { SCREEN_MODULES, isScreenAccessible } from "@/lib/laundry-rbac-registry"
 
 /**
  * Default navigation sections and screen keys for a Quantix Laundry business.
@@ -17,27 +17,34 @@ export interface DefaultSection {
 
 /**
  * Single source of truth for screenKey → page route mapping.
- * Both sidebar.tsx and page-router.tsx consume this.
+ * Both sidebar.tsx and page-router.tsx consume this. Every key is a registered
+ * SCREEN_MODULES screen key — no standalone/alias keys exist anymore.
  */
 export const SCREEN_PAGE_MAP: Record<string, string> = {
   "laundry.dashboard": "dashboard",
   "laundry.orders": "orders",
+  "laundry.new_order": "new-order",
   "laundry.customers": "customers",
+  "laundry.garment_lookup": "garment-lookup",
   "laundry.subscriptions": "subscriptions",
+  "laundry.subscription_plans": "subscription-plans",
+  "laundry.charges_rules": "charges-rules",
+  "laundry.pricing_simulator": "pricing-simulator",
   "laundry.services": "services",
   "laundry.categories": "categories",
   "laundry.garments": "garments",
   "laundry.pricing": "pricing",
   "laundry.stores": "stores",
-  "inbox": "inbox",
-  "subscription-plans": "subscription-plans",
-  "charges-rules": "charges-rules",
-  "pricing-simulator": "pricing-simulator",
   "laundry.staff": "staff",
   "laundry.bags": "bag-management",
   "laundry.reports": "reports",
   "laundry.settings": "settings",
   "laundry.navigation": "navigation",
+  "laundry.order_detail": "order-detail",
+  "laundry.inbox": "inbox",
+  "laundry.delivery_executives": "delivery-executives",
+  "laundry.mobile_apps": "mobile-apps",
+  "laundry.roles": "roles",
   "crm.dashboard": "crm-dashboard",
   "crm.leads": "crm-leads",
   "crm.opportunity": "crm-opportunities",
@@ -60,29 +67,22 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "store_ops.transit": "dispatch-queue",
   "store_ops.store_receive": "store-receive-queue",
   "store_ops.ready_for_delivery": "ready-delivery-queue",
-  "new-order": "new-order",
-  "garment-lookup": "garment-lookup",
-  "dispatch-center": "dispatch-center",
-  "pickup-scheduler": "pickup-scheduler",
-  "delivery-assignments": "delivery-assignments",
-  "pickup-bags": "pickup-bags",
-  "bag-management": "bag-management",
-  "delivery-executives": "delivery-executives",
-  "mobile-apps": "mobile-apps",
-  "roles": "roles",
-  "order-detail": "order-detail",
-  "audit-barcode": "audit-barcode",
-  "marketing-dashboard": "marketing-dashboard",
-  "marketing-discounts": "marketing-discounts",
-  "marketing-coupons": "marketing-coupons",
-  "marketing-reports": "marketing-reports",
-  "marketing-loyalty": "marketing-loyalty",
-  "marketing-membership": "marketing-membership",
-  "marketing-credits": "marketing-credits",
-  "marketing-giftcards": "marketing-giftcards",
-  "marketing-referral": "marketing-referral",
-  "marketing-campaigns": "marketing-campaigns",
-  "marketing-cart-recovery": "marketing-cart-recovery",
+  "store_ops.pickup_scheduler": "pickup-scheduler",
+  "store_ops.pickup_bags": "pickup-bags",
+  "store_ops.dispatch_center": "dispatch-center",
+  "store_ops.delivery_assignments": "delivery-assignments",
+  "store_ops.bag_management": "bag-management",
+  "marketing.dashboard": "marketing-dashboard",
+  "marketing.discounts": "marketing-discounts",
+  "marketing.coupons": "marketing-coupons",
+  "marketing.reports": "marketing-reports",
+  "marketing.loyalty": "marketing-loyalty",
+  "marketing.membership": "marketing-membership",
+  "marketing.credits": "marketing-credits",
+  "marketing.giftcards": "marketing-giftcards",
+  "marketing.referral": "marketing-referral",
+  "marketing.campaigns": "marketing-campaigns",
+  "marketing.cart_recovery": "marketing-cart-recovery",
 }
 
 const SCREEN_ICONS: Record<string, string> = {
@@ -126,17 +126,17 @@ const SCREEN_ICONS: Record<string, string> = {
   "customer_app.invitation": "UserPlus",
   "customer_app.subscription": "Repeat",
   "customer_app.orders": "ShoppingBag",
-  "marketing-dashboard": "LayoutDashboard",
-  "marketing-discounts": "BadgePercent",
-  "marketing-coupons": "Ticket",
-  "marketing-reports": "BarChart3",
-  "marketing-loyalty": "Gift",
-  "marketing-membership": "Crown",
-  "marketing-credits": "Coins",
-  "marketing-giftcards": "Gift",
-  "marketing-referral": "UserPlus",
-  "marketing-campaigns": "Megaphone",
-  "marketing-cart-recovery": "ShoppingCart",
+  "marketing.dashboard": "LayoutDashboard",
+  "marketing.discounts": "BadgePercent",
+  "marketing.coupons": "Ticket",
+  "marketing.reports": "BarChart3",
+  "marketing.loyalty": "Gift",
+  "marketing.membership": "Crown",
+  "marketing.credits": "Coins",
+  "marketing.giftcards": "Gift",
+  "marketing.referral": "UserPlus",
+  "marketing.campaigns": "Megaphone",
+  "marketing.cart_recovery": "ShoppingCart",
 }
 
 export function screenDisplayName(screenKey: string): string {
@@ -150,114 +150,6 @@ export function screenDisplayName(screenKey: string): string {
 
 export function screenIcon(screenKey: string): string {
   return SCREEN_ICONS[screenKey] ?? "Circle"
-}
-
-/**
- * Single source of truth for navigation screenKey → RBAC permission mapping.
- *
- * A navigation item's `screenKey` is either a registered permission key
- * ("laundry.orders") or a standalone extra key ("new-order"). This map gives
- * every standalone extra its own registered permission screen key so that
- * each sidebar item has a 1:1 configurable entry in Roles & Permissions.
- */
-const SCREEN_KEY_PERM_MAP: Record<string, string> = {
-  "new-order": "laundry.new_order",
-  "garment-lookup": "laundry.garment_lookup",
-  "dispatch-center": "store_ops.dispatch_center",
-  "pickup-scheduler": "store_ops.pickup_scheduler",
-  "delivery-assignments": "store_ops.delivery_assignments",
-  "pickup-bags": "store_ops.pickup_bags",
-  "bag-management": "store_ops.bag_management",
-  "delivery-executives": "laundry.delivery_executives",
-  "mobile-apps": "laundry.mobile_apps",
-  "roles": "laundry.roles",
-  "order-detail": "laundry.order_detail",
-  "audit-barcode": "processing.audit_barcode",
-  "inbox": "laundry.inbox",
-  "subscription-plans": "laundry.subscription_plans",
-  "charges-rules": "laundry.charges_rules",
-  "pricing-simulator": "laundry.pricing_simulator",
-  "marketing-dashboard": "marketing.dashboard",
-  "marketing-discounts": "marketing.discounts",
-  "marketing-coupons": "marketing.coupons",
-  "marketing-reports": "marketing.reports",
-  "marketing-loyalty": "marketing.loyalty",
-  "marketing-membership": "marketing.membership",
-  "marketing-credits": "marketing.credits",
-  "marketing-giftcards": "marketing.giftcards",
-  "marketing-referral": "marketing.referral",
-  "marketing-campaigns": "marketing.campaigns",
-  "marketing-cart-recovery": "marketing.cart_recovery",
-}
-
-/**
- * Legacy permission each standalone nav key was previously gated by.
- * Kept as a fallback so roles stored before these screens were registered
- * (which only hold the legacy screen permission) continue to work unchanged.
- */
-const SCREEN_KEY_LEGACY_PERM_MAP: Record<string, string> = {
-  "new-order": "laundry.orders",
-  "garment-lookup": "laundry.orders",
-  "dispatch-center": "laundry.orders",
-  "pickup-scheduler": "laundry.orders",
-  "delivery-assignments": "laundry.orders",
-  "pickup-bags": "store_ops.store_audit",
-  "bag-management": "store_ops.store_audit",
-  "delivery-executives": "laundry.staff",
-  "mobile-apps": "laundry.staff",
-  "roles": "laundry.staff",
-  "order-detail": "laundry.orders",
-  "audit-barcode": "processing.audit_barcode",
-  "inbox": "laundry.orders",
-  "subscription-plans": "laundry.pricing",
-  "charges-rules": "laundry.pricing",
-  "pricing-simulator": "laundry.pricing",
-  "marketing-dashboard": "laundry.settings",
-  "marketing-discounts": "laundry.settings",
-  "marketing-coupons": "laundry.settings",
-  "marketing-reports": "laundry.settings",
-  "marketing-loyalty": "laundry.settings",
-  "marketing-membership": "laundry.settings",
-  "marketing-credits": "laundry.settings",
-  "marketing-giftcards": "laundry.settings",
-  "marketing-referral": "laundry.settings",
-  "marketing-campaigns": "laundry.settings",
-  "marketing-cart-recovery": "laundry.settings",
-}
-
-// Module prefixes are derived from the permission registry so a nav key that IS a
-// registered screen (e.g. "crm.leads") resolves to itself as its own permission.
-// The list is never hardcoded — any module added to SCREEN_MODULES works automatically.
-const MODULE_PREFIXES = SCREEN_MODULES.map((m) => `${m.key}.`)
-
-/** Primary RBAC permission that gates a navigation screen key. */
-export function screenKeyPermission(screenKey: string): string | undefined {
-  if (SCREEN_KEY_PERM_MAP[screenKey]) return SCREEN_KEY_PERM_MAP[screenKey]
-  return MODULE_PREFIXES.some((p) => screenKey.startsWith(p)) ? screenKey : undefined
-}
-
-/** Legacy RBAC permission a navigation screen key was previously gated by. */
-export function screenKeyLegacyPermission(screenKey: string): string | undefined {
-  return SCREEN_KEY_LEGACY_PERM_MAP[screenKey]
-}
-
-/**
- * RBAC-driven accessibility of a navigation item. A nav item is accessible iff
- * the resolved permission object grants its primary permission key (or its
- * legacy fallback key) at VIEW or above — owners are always accessible. Uses
- * the permission registry only; no role names are hardcoded.
- */
-export function isScreenAccessible(
-  screenLevels: Record<string, number>,
-  isOwner: boolean,
-  screenKey: string,
-): boolean {
-  if (isOwner) return true
-  const perm = screenKeyPermission(screenKey)
-  if (perm && (screenLevels[perm] ?? 0) >= Level.VIEW) return true
-  const legacy = screenKeyLegacyPermission(screenKey)
-  if (legacy && (screenLevels[legacy] ?? 0) >= Level.VIEW) return true
-  return false
 }
 
 /**
@@ -320,8 +212,8 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "laundry.dashboard", displayName: "Dashboard" },
         { screenKey: "laundry.customers", displayName: "Customers" },
         { screenKey: "laundry.orders", displayName: "Orders" },
-        { screenKey: "new-order", displayName: "New Order", icon: "Plus" },
-        { screenKey: "garment-lookup", displayName: "Garment Lookup", icon: "Search" },
+        { screenKey: "laundry.new_order", displayName: "New Order", icon: "Plus" },
+        { screenKey: "laundry.garment_lookup", displayName: "Garment Lookup", icon: "Search" },
         { screenKey: "laundry.subscriptions", displayName: "Subscriptions" },
         { screenKey: "laundry.services", displayName: "Services" },
         { screenKey: "laundry.categories", displayName: "Categories" },
@@ -342,15 +234,15 @@ export function defaultNavigationConfig(): DefaultSection[] {
       items: [
         { screenKey: "store_ops.store_audit", displayName: "Store Audit" },
         { screenKey: "store_ops.payment_collection", displayName: "Payment Collection" },
-        { screenKey: "pickup-scheduler", displayName: "Pickup Scheduler", icon: "Calendar" },
-        { screenKey: "pickup-bags", displayName: "Assign Bags", icon: "Package" },
+        { screenKey: "store_ops.pickup_scheduler", displayName: "Pickup Scheduler", icon: "Calendar" },
+        { screenKey: "store_ops.pickup_bags", displayName: "Assign Bags", icon: "Package" },
         { screenKey: "store_ops.packing_qr", displayName: "Packing & QR" },
         { screenKey: "store_ops.transit", displayName: "Transit / Dispatch" },
         { screenKey: "store_ops.store_receive", displayName: "Store Receive" },
-        { screenKey: "dispatch-center", displayName: "Dispatch Center", icon: "Truck" },
+        { screenKey: "store_ops.dispatch_center", displayName: "Dispatch Center", icon: "Truck" },
         { screenKey: "store_ops.ready_for_delivery", displayName: "Ready for Delivery" },
-        { screenKey: "delivery-assignments", displayName: "Delivery", icon: "Bike" },
-        { screenKey: "bag-management", displayName: "Bag Management", icon: "Package" },
+        { screenKey: "store_ops.delivery_assignments", displayName: "Delivery", icon: "Bike" },
+        { screenKey: "store_ops.bag_management", displayName: "Bag Management", icon: "Package" },
       ],
     },
     {
@@ -397,17 +289,17 @@ export function defaultNavigationConfig(): DefaultSection[] {
       active: false,
       description: "Marketing and promotions",
       items: [
-        { screenKey: "marketing-dashboard", displayName: "Dashboard" },
-        { screenKey: "marketing-discounts", displayName: "Discounts" },
-        { screenKey: "marketing-coupons", displayName: "Coupons" },
-        { screenKey: "marketing-reports", displayName: "Reports" },
-        { screenKey: "marketing-loyalty", displayName: "Loyalty Program", comingSoon: true },
-        { screenKey: "marketing-membership", displayName: "Membership Levels", comingSoon: true },
-        { screenKey: "marketing-credits", displayName: "Promotional Credits", comingSoon: true },
-        { screenKey: "marketing-giftcards", displayName: "Gift Cards", comingSoon: true },
-        { screenKey: "marketing-referral", displayName: "Referral Program", comingSoon: true },
-        { screenKey: "marketing-campaigns", displayName: "Campaigns", comingSoon: true },
-        { screenKey: "marketing-cart-recovery", displayName: "Cart Recovery", comingSoon: true },
+        { screenKey: "marketing.dashboard", displayName: "Dashboard" },
+        { screenKey: "marketing.discounts", displayName: "Discounts" },
+        { screenKey: "marketing.coupons", displayName: "Coupons" },
+        { screenKey: "marketing.reports", displayName: "Reports" },
+        { screenKey: "marketing.loyalty", displayName: "Loyalty Program", comingSoon: true },
+        { screenKey: "marketing.membership", displayName: "Membership Levels", comingSoon: true },
+        { screenKey: "marketing.credits", displayName: "Promotional Credits", comingSoon: true },
+        { screenKey: "marketing.giftcards", displayName: "Gift Cards", comingSoon: true },
+        { screenKey: "marketing.referral", displayName: "Referral Program", comingSoon: true },
+        { screenKey: "marketing.campaigns", displayName: "Campaigns", comingSoon: true },
+        { screenKey: "marketing.cart_recovery", displayName: "Cart Recovery", comingSoon: true },
       ],
     },
     {
@@ -419,9 +311,9 @@ export function defaultNavigationConfig(): DefaultSection[] {
       description: "Business administration and configuration",
       items: [
         { screenKey: "laundry.staff", displayName: "Staff" },
-        { screenKey: "roles", displayName: "Roles & Permissions", icon: "Shield" },
-        { screenKey: "delivery-executives", displayName: "Delivery Executives", icon: "Bike" },
-        { screenKey: "mobile-apps", displayName: "Mobile Apps", icon: "Smartphone" },
+        { screenKey: "laundry.roles", displayName: "Roles & Permissions", icon: "Shield" },
+        { screenKey: "laundry.delivery_executives", displayName: "Delivery Executives", icon: "Bike" },
+        { screenKey: "laundry.mobile_apps", displayName: "Mobile Apps", icon: "Smartphone" },
         { screenKey: "laundry.settings", displayName: "Workspace Settings" },
         { screenKey: "laundry.navigation", displayName: "Navigation Manager" },
       ],
@@ -553,10 +445,6 @@ export async function convergeProcessingNav(businessId: string): Promise<void> {
   })
 }
 
-export function isExtraScreenKey(screenKey: string): boolean {
-  return EXTRA_SCREEN_KEYS.has(screenKey)
-}
-
 export function validateNavSections(sections: { name: string; items: { screenKey: string; displayName?: string }[] }[]): string | null {
   for (const section of sections) {
     if (!section.name?.trim()) return "A section has an empty name."
@@ -578,33 +466,3 @@ export function validateNavSections(sections: { name: string; items: { screenKey
   }
   return null
 }
-
-const EXTRA_SCREEN_KEYS = new Set([
-  "new-order",
-  "garment-lookup",
-  "dispatch-center",
-  "pickup-scheduler",
-  "delivery-assignments",
-  "pickup-bags",
-  "bag-management",
-  "delivery-executives",
-  "mobile-apps",
-  "roles",
-  "order-detail",
-  "audit-barcode",
-  "inbox",
-  "subscription-plans",
-  "charges-rules",
-  "pricing-simulator",
-  "marketing-dashboard",
-  "marketing-discounts",
-  "marketing-coupons",
-  "marketing-loyalty",
-  "marketing-membership",
-  "marketing-credits",
-  "marketing-giftcards",
-  "marketing-referral",
-  "marketing-campaigns",
-  "marketing-cart-recovery",
-  "marketing-reports",
-])

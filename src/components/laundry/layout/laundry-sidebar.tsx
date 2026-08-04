@@ -13,7 +13,8 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
-import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, screenKeyPermission, screenKeyLegacyPermission, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
+import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
+import { isScreenAccessible } from "@/lib/laundry-rbac-registry"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -25,16 +26,12 @@ import {
   Menu, Calendar, type LucideIcon,
 } from "lucide-react"
 
-const VIEW_LEVEL = 1
-
 type NavCfg = {
   key: string
   label: string
   icon: LucideIcon
   page?: LaundryBusinessPage
   comingSoon?: boolean
-  perm?: string
-  permFallback?: string
   badge?: string
   hidden?: boolean
 }
@@ -84,11 +81,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "Circle": ShoppingBag, "Calendar": Calendar,
 }
 
-// PAGE_MAP is now imported as SCREEN_PAGE_MAP from @/lib/laundry-nav-config
-// Permission mapping (SCREEN_KEY_PERM_MAP + legacy fallback) lives in
-// @/lib/laundry-nav-config — the single source of truth for nav → RBAC sync.
+// PAGE_MAP is imported as SCREEN_PAGE_MAP from @/lib/laundry-nav-config and the
+// SINGLE permission resolver (isScreenAccessible) comes from the RBAC registry —
+// the same resolver Roles & Permissions, the workspace entry/landing gate, deep
+// links and the server APIs use. No role names and no fallback permissions.
 
-function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
+function fallbackGroups(canShow: (screenKey: string) => boolean): NavGroup[] {
   const defaults = defaultNavigationConfig()
   const groups: NavGroup[] = defaults
     .filter((sec) => sec.active)
@@ -100,9 +98,7 @@ function fallbackGroups(permAllows: (i: NavCfg) => boolean): NavGroup[] {
         icon: ICON_MAP[item.icon ?? "Circle"] ?? ShoppingBag,
         page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
         comingSoon: item.comingSoon,
-        perm: screenKeyPermission(item.screenKey),
-        permFallback: screenKeyLegacyPermission(item.screenKey),
-      })).filter((navItem) => permAllows(navItem)),
+      })).filter((navItem) => canShow(navItem.key)),
     }))
     .filter((g) => g.items.length > 0)
   return groups.length > 0 ? groups : [{ label: null, items: [] }]
@@ -182,42 +178,34 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       })
   }, [businessId, navRevision])
 
-  const permAllows = useCallback((item: NavCfg) => {
-    if (!isLoaded || isOwner) return true
-    if (!item.perm) return true
-    if ((screenLevels[item.perm] ?? 0) >= VIEW_LEVEL) return true
-    // Legacy fallback: roles saved before these screens were registered only
-    // hold the legacy mapped permission — preserve their existing access.
-    if (item.permFallback && (screenLevels[item.permFallback] ?? 0) >= VIEW_LEVEL) return true
-    return false
+  const canShow = useCallback((screenKey: string) => {
+    if (!isLoaded) return true
+    return isScreenAccessible(screenLevels, isOwner, screenKey)
   }, [isLoaded, isOwner, screenLevels])
 
   const groups: NavGroup[] = useMemo(() => {
     if (navError) {
-      return fallbackGroups(permAllows)
+      return fallbackGroups(canShow)
     }
     return navSections
       .filter((sec) => sec.active)
       .map((sec) => ({
         label: sec.name,
         items: sec.items
-          .filter((item) => !item.hidden)
+          .filter((item) => !item.hidden && canShow(item.screenKey))
           .map((item) => ({
             key: item.id ?? item.screenKey,
             label: item.displayName,
             icon: ICON_MAP[item.icon] ?? ShoppingBag,
             page: SCREEN_PAGE_MAP[item.screenKey] as LaundryBusinessPage | undefined,
             comingSoon: item.comingSoon,
-            perm: screenKeyPermission(item.screenKey),
-            permFallback: screenKeyLegacyPermission(item.screenKey),
             badge: item.badge ?? undefined,
-          }))
-          .filter((navItem) => permAllows(navItem)),
+          })),
         expanded: sec.expanded,
         collapsible: sec.collapsible,
       }))
       .filter((g) => g.items.length > 0)
-  }, [navSections, navError, permAllows])
+  }, [navSections, navError, canShow])
 
   const validPages = useMemo(() => {
     const pages = new Set([

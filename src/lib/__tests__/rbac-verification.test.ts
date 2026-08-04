@@ -5,7 +5,7 @@ import {
 } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES, RBAC_CATALOG } from "@/lib/laundry-rbac-catalog"
 import { isOwnerRole, screenLevel } from "@/lib/laundry-rbac"
-import { defaultNavigationConfig, screenKeyPermission, screenKeyLegacyPermission } from "@/lib/laundry-nav-config"
+import { defaultNavigationConfig } from "@/lib/laundry-nav-config"
 
 // ============================================================================
 // GATE 1: Super Admin zero behavioural changes
@@ -220,23 +220,12 @@ describe("Gate 3b: Sidebar ↔ RBAC synchronization (1:1)", () => {
   const defaults = defaultNavigationConfig()
   const navItems = defaults.flatMap((sec) => sec.items)
   const navKeys = [...new Set(navItems.map((i) => i.screenKey))]
-  const primaryPerms = [...new Set(navKeys.map((k) => screenKeyPermission(k)))]
-  const primaryPermSet = new Set(primaryPerms.filter((p): p is string => !!p))
+  const navKeySet = new Set(navKeys)
 
-  it("every navigation screenKey resolves to a registered permission (no missing entries)", () => {
-    const missing: string[] = []
-    for (const k of navKeys) {
-      const perm = screenKeyPermission(k)
-      if (!perm || !isValidScreenKey(perm)) missing.push(k)
-    }
-    expect(missing).toEqual([])
-  })
-
-  it("every legacy fallback is a valid registered screen", () => {
+  it("every navigation screenKey is a registered screen (no aliases/standalone keys)", () => {
     const invalid: string[] = []
     for (const k of navKeys) {
-      const legacy = screenKeyLegacyPermission(k)
-      if (legacy && !isValidScreenKey(legacy)) invalid.push(`${k} → ${legacy}`)
+      if (!isValidScreenKey(k)) invalid.push(k)
     }
     expect(invalid).toEqual([])
   })
@@ -249,19 +238,9 @@ describe("Gate 3b: Sidebar ↔ RBAC synchronization (1:1)", () => {
       if (sk.startsWith("customer_app.")) continue
       // Screens reached programmatically (drill-downs / headers), not nav:
       if (["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"].includes(sk)) continue
-      if (!primaryPermSet.has(sk)) missing.push(sk)
+      if (!navKeySet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])
-  })
-
-  it("every extra screen key registered in nav config is in the RBAC registry", () => {
-    // Directly assert the standalone (non-dotted) nav keys map into the registry
-    const standalone = navKeys.filter((k) => !k.includes("."))
-    for (const k of standalone) {
-      const perm = screenKeyPermission(k)
-      expect(perm).toBeTruthy()
-      expect(isValidScreenKey(perm!)).toBe(true)
-    }
   })
 })
 
@@ -622,19 +601,18 @@ describe("Gate 8: Sidebar-registry consistency", () => {
   const defaults = defaultNavigationConfig()
   const navItems = defaults.flatMap((sec) => sec.items)
   const navKeys = [...new Set(navItems.map((i) => i.screenKey))]
-  const primaryPerms = [...new Set(navKeys.map((k) => screenKeyPermission(k)))]
 
-  it("every sidebar perm key is a valid registered screen key", () => {
+  it("every sidebar screen key is a valid registered screen key", () => {
     const invalid: string[] = []
-    for (const p of primaryPerms) {
-      if (!p || !isValidScreenKey(p)) invalid.push(p ?? "(none)")
+    for (const p of navKeys) {
+      if (!isValidScreenKey(p)) invalid.push(p)
     }
     expect(invalid).toEqual([])
   })
 
   it("every registered screen has a 1:1 sidebar permission (excl. customer_app, programmatic)", () => {
     const allScreens = allScreenKeys()
-    const permSet = new Set(primaryPerms)
+    const permSet = new Set(navKeys)
     const missing: string[] = []
     for (const sk of allScreens) {
       if (sk.startsWith("customer_app.")) continue

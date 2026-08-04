@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { Level, isValidScreenKey } from "@/lib/laundry-rbac-registry"
+import { Level, isValidScreenKey, isScreenAccessible } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
 import { laundryRoleLabel, hasLaundryWorkspaceAccess } from "@/lib/runtime-auth"
-import { isScreenAccessible, resolveLaundryLandingPage, accessibleLaundryPages } from "@/lib/laundry-nav-config"
+import { resolveLaundryLandingPage, accessibleLaundryPages } from "@/lib/laundry-nav-config"
 import { isOwnerRole, resolveUnassignedPermissions } from "@/lib/laundry-rbac"
 
 // ============================================================================
@@ -150,9 +150,18 @@ describe("isScreenAccessible / accessibleLaundryPages — nav visibility matches
     expect(pages.has("crm-dashboard")).toBe(true)
   })
 
-  it("honours legacy permission fallbacks for pre-registration nav keys", () => {
-    // "new-order" is gated by laundry.new_order but legacy fallback is laundry.orders.
-    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "new-order")).toBe(true)
+  it("grants access only for the exact registered screen key (no legacy fallback)", () => {
+    // The single resolver decides purely on the screenKey → level map. Holding
+    // "laundry.orders" must NEVER open "laundry.new_order" — no legacy grants.
+    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "laundry.new_order")).toBe(false)
+    expect(isScreenAccessible({ "laundry.new_order": Level.CREATE }, false, "laundry.new_order")).toBe(true)
+    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "store_ops.dispatch_center")).toBe(false)
+    expect(isScreenAccessible({ "store_ops.dispatch_center": Level.CREATE }, false, "store_ops.dispatch_center")).toBe(true)
+  })
+
+  it("never grants access for alias / unregistered keys (no alias key space)", () => {
+    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "dispatch-center")).toBe(false)
+    expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "new-order")).toBe(false)
     expect(isScreenAccessible({}, false, "new-order")).toBe(false)
   })
 })

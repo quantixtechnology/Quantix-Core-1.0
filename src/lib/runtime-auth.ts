@@ -1,5 +1,5 @@
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
-import { Level, isValidScreenKey } from "@/lib/laundry-rbac-registry"
+import { isScreenAccessible } from "@/lib/laundry-rbac-registry"
 import { ROLES } from "@/lib/constants"
 
 export interface RuntimeAuth {
@@ -32,9 +32,7 @@ export const UNAUTHORIZED: RuntimeAuth = {
  */
 export function hasLaundryWorkspaceAccess(screenLevels: Record<string, number>, isOwner: boolean): boolean {
   if (isOwner) return true
-  return Object.entries(screenLevels).some(
-    ([screenKey, level]) => level >= Level.VIEW && isValidScreenKey(screenKey),
-  )
+  return Object.keys(screenLevels).some((screenKey) => isScreenAccessible(screenLevels, false, screenKey))
 }
 
 const RBAC_ROLE_LABELS: Record<string, string> = {

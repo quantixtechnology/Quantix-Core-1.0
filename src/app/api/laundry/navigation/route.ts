@@ -2,10 +2,10 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { ensureNavigationConfig, defaultNavigationConfig, screenDisplayName, screenIcon } from "@/lib/laundry-nav-config"
 import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
-import { syncLaundryPermissions } from "@/lib/permission-sync"
+import { syncLaundryPermissions, canonicalizeNavScreenKey } from "@/lib/permission-sync"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { isPlatformRole } from "@/lib/permissions"
+import { isOwnerRole } from "@/lib/laundry-rbac"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -26,6 +26,10 @@ export async function GET(request: Request) {
   const action = searchParams.get("action")
 
   if (action === "available-screens") {
+    // Only registered SCREEN_MODULES screens are exposed — no hardcoded extras.
+    // Every Navigation Manager item is a real registered screen key so Roles &
+    // Permissions, the sidebar, the workspace gate and the server guards all
+    // resolve it through the single permission resolver.
     const screens: { screenKey: string; displayName: string }[] = []
     for (const m of SCREEN_MODULES) {
       if (m.key === "customer_app") continue
@@ -33,21 +37,6 @@ export async function GET(request: Request) {
         screens.push({ screenKey: `${m.key}.${s.key}`, displayName: s.label })
       }
     }
-    const extras = [
-      { screenKey: "new-order", displayName: "New Order" },
-      { screenKey: "garment-lookup", displayName: "Garment Lookup" },
-      { screenKey: "dispatch-center", displayName: "Dispatch Center" },
-      { screenKey: "pickup-scheduler", displayName: "Pickup Scheduler" },
-      { screenKey: "delivery-assignments", displayName: "Delivery Assignments" },
-      { screenKey: "pickup-bags", displayName: "Assign Bags" },
-      { screenKey: "bag-management", displayName: "Bag Management" },
-      { screenKey: "delivery-executives", displayName: "Delivery Executives" },
-      { screenKey: "mobile-apps", displayName: "Mobile Apps" },
-      { screenKey: "roles", displayName: "Roles & Permissions" },
-      { screenKey: "order-detail", displayName: "Order Detail" },
-      { screenKey: "audit-barcode", displayName: "Barcode Generation" },
-    ]
-    screens.push(...extras)
     return NextResponse.json({ data: screens })
   }
 
@@ -84,7 +73,7 @@ export async function PUT(request: Request) {
 
   const ctx = await getLaundryAuthContext(businessId, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-  const canEdit = ctx.role === "owner" || isPlatformRole(ctx.role)
+  const canEdit = isOwnerRole(ctx.role)
   if (!canEdit) {
     return NextResponse.json({ error: "Only Business Owner or Super Admin can modify navigation" }, { status: 403 })
   }
@@ -159,7 +148,7 @@ export async function PUT(request: Request) {
             data: {
               navigationId: existing.id,
               sectionId: sec.id,
-              screenKey: item.screenKey,
+              screenKey: canonicalizeNavScreenKey(item.screenKey),
               displayName: item.displayName ?? screenDisplayName(item.screenKey),
               icon: item.icon ?? screenIcon(item.screenKey),
               order: ii,
@@ -204,7 +193,7 @@ export async function POST(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   if (action === "restore-default") {
-    if (ctx.role !== "owner" && !isPlatformRole(ctx.role)) {
+    if (!isOwnerRole(ctx.role)) {
       return NextResponse.json({ error: "Only Business Owner or Super Admin can restore defaults" }, { status: 403 })
     }
 

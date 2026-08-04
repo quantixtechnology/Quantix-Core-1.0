@@ -161,3 +161,20 @@ export function permKeyToScreenLevel(permKey: string): { screenKey: string; leve
   if (!isValidScreenKey(screenKey)) return null
   return { screenKey, level: actionToLevel(action) }
 }
+
+/**
+ * THE single authorization resolver for the platform. Every surface — sidebar,
+ * Roles & Permissions, workspace entry, landing, deep links, route guards and
+ * server APIs — decides access through this one function using ONLY the
+ * resolved screenKey → level map and the session's owner flag. No role names,
+ * module names or legacy fallback permissions are ever consulted, and a
+ * screenKey that is not registered in SCREEN_MODULES is never accessible.
+ */
+export function isScreenAccessible(
+  screenLevels: Record<string, number>,
+  isOwner: boolean,
+  screenKey: string,
+): boolean {
+  if (isOwner) return true
+  return isValidScreenKey(screenKey) && (screenLevels[screenKey] ?? 0) >= Level.VIEW
+}

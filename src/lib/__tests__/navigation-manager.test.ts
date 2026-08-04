@@ -145,20 +145,11 @@ describe("defaultNavigationConfig integrity", () => {
     }
   })
 
-  it("all screenKeys exist in the screen registry", () => {
+  it("all screenKeys exist in the screen registry (no standalone/alias keys)", () => {
     const all = new Set(allScreenKeys())
-    const extras = new Set([
-      "new-order", "garment-lookup", "dispatch-center", "pickup-scheduler",
-      "delivery-assignments", "pickup-bags", "bag-management", "delivery-executives",
-      "mobile-apps", "roles", "order-detail", "audit-barcode",
-      "marketing-dashboard", "marketing-discounts", "marketing-coupons",
-      "marketing-reports", "marketing-loyalty", "marketing-membership",
-      "marketing-credits", "marketing-giftcards", "marketing-referral",
-      "marketing-campaigns", "marketing-cart-recovery",
-    ])
     for (const sec of defaults) {
       for (const item of sec.items) {
-        if (!all.has(item.screenKey) && !extras.has(item.screenKey)) {
+        if (!all.has(item.screenKey)) {
           throw new Error(`Unknown screenKey "${item.screenKey}" in section "${sec.name}"`)
         }
       }

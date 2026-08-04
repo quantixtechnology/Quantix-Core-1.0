@@ -10,7 +10,7 @@ import {
   OBSOLETE_SCREEN_KEYS,
 } from "@/lib/permission-sync"
 import { allScreenKeys, isValidScreenKey, screenLabel } from "@/lib/laundry-rbac-registry"
-import { defaultNavigationConfig, SCREEN_PAGE_MAP, screenKeyPermission } from "@/lib/laundry-nav-config"
+import { defaultNavigationConfig, SCREEN_PAGE_MAP } from "@/lib/laundry-nav-config"
 
 // ============================================================================
 // PERMISSION SYNC ENGINE — registry ↔ navigation ↔ roles consistency
@@ -140,7 +140,7 @@ describe("permission-sync: registry ↔ nav cross-check", () => {
 
   it("every registered screen maps to a sidebar permission or is mobile/programmatic", () => {
     const navKeys = defaultNavigationConfig().flatMap((s) => s.items.map((i) => i.screenKey))
-    const permsFromNav = [...new Set(navKeys.map((k) => screenKeyPermission(k)).filter((p): p is string => !!p))]
+    const permsFromNav = [...new Set(navKeys)]
     const mobileOnly = ["customer_app.customers", "customer_app.invitation", "customer_app.subscription", "customer_app.orders"]
     const programmatic = ["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"]
     const uncovered: string[] = []

@@ -16,7 +16,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { allScreenKeys, isValidScreenKey, permKeyToScreenLevel } from "@/lib/laundry-rbac-registry"
-import { defaultNavigationConfig, SCREEN_PAGE_MAP, isExtraScreenKey, screenKeyPermission } from "@/lib/laundry-nav-config"
+import { defaultNavigationConfig } from "@/lib/laundry-nav-config"
 
 /** Operator workstation screens in the canonical Processing Center model. */
 export const WORKSTATION_SCREEN_KEYS: string[] = [
@@ -38,6 +38,46 @@ export const OBSOLETE_SCREEN_KEYS: string[] = [
 ]
 
 /**
+ * Legacy standalone nav keys (pre-canonicalisation) → their registered screen
+ * key. Used ONLY to MIGRATE stored navigation rows to the canonical key space —
+ * runtime authorization never consults aliases.
+ */
+const NAV_KEY_ALIASES: Record<string, string> = {
+  "new-order": "laundry.new_order",
+  "garment-lookup": "laundry.garment_lookup",
+  "dispatch-center": "store_ops.dispatch_center",
+  "pickup-scheduler": "store_ops.pickup_scheduler",
+  "delivery-assignments": "store_ops.delivery_assignments",
+  "pickup-bags": "store_ops.pickup_bags",
+  "bag-management": "store_ops.bag_management",
+  "delivery-executives": "laundry.delivery_executives",
+  "mobile-apps": "laundry.mobile_apps",
+  "roles": "laundry.roles",
+  "order-detail": "laundry.order_detail",
+  "audit-barcode": "processing.audit_barcode",
+  "inbox": "laundry.inbox",
+  "subscription-plans": "laundry.subscription_plans",
+  "charges-rules": "laundry.charges_rules",
+  "pricing-simulator": "laundry.pricing_simulator",
+  "marketing-dashboard": "marketing.dashboard",
+  "marketing-discounts": "marketing.discounts",
+  "marketing-coupons": "marketing.coupons",
+  "marketing-reports": "marketing.reports",
+  "marketing-loyalty": "marketing.loyalty",
+  "marketing-membership": "marketing.membership",
+  "marketing-credits": "marketing.credits",
+  "marketing-giftcards": "marketing.giftcards",
+  "marketing-referral": "marketing.referral",
+  "marketing-campaigns": "marketing.campaigns",
+  "marketing-cart-recovery": "marketing.cart_recovery",
+}
+
+/** Map a legacy standalone nav key to its registered screen key (identity otherwise). */
+export function canonicalizeNavScreenKey(screenKey: string): string {
+  return NAV_KEY_ALIASES[screenKey] ?? screenKey
+}
+
+/**
  * Normalize any permission key (screen-level or legacy action-level) to its
  * governing screen key. Legacy action keys like "processing.washing.process"
  * resolve to "processing.washing"; bare screen keys pass through unchanged.
@@ -53,11 +93,11 @@ export function isLivePermissionKey(permKey: string): boolean {
 }
 
 /**
- * A navigation screen key is live when it is a registered screen, a standalone
- * extra nav key, or has a page route. Otherwise it is an orphan.
+ * A navigation screen key is live when it is a registered screen (or migrates
+ * to one via NAV_KEY_ALIASES). Anything else is an orphan.
  */
 export function isLiveNavScreenKey(screenKey: string): boolean {
-  return isValidScreenKey(screenKey) || isExtraScreenKey(screenKey) || SCREEN_PAGE_MAP[screenKey] !== undefined
+  return isValidScreenKey(canonicalizeNavScreenKey(screenKey))
 }
 
 export function isObsoletePermissionKey(permKey: string): boolean {
@@ -77,11 +117,7 @@ const PROGRAMMATIC_SCREENS = new Set(["laundry.order_detail", "laundry.inbox", "
  */
 export function findOrphanRegisteredScreens(): string[] {
   const navKeys = defaultNavigationConfig().flatMap((s) => s.items.map((i) => i.screenKey))
-  const reachable = new Set<string>()
-  for (const k of navKeys) {
-    const perm = screenKeyPermission(k)
-    if (perm && isValidScreenKey(perm)) reachable.add(perm)
-  }
+  const reachable = new Set<string>(navKeys.filter((k) => isValidScreenKey(k)))
   return allScreenKeys().filter((sk) => {
     if (MOBILE_ONLY_SCREENS.has(sk) || PROGRAMMATIC_SCREENS.has(sk)) return false
     return !reachable.has(sk)
@@ -108,6 +144,7 @@ export function buildSyncReport(permissionKeys: string[], navScreenKeys: string[
 export interface SyncResult extends SyncReport {
   removedPermissions: number
   removedNavItems: number
+  migratedNavItems: number
 }
 
 /**
@@ -133,6 +170,18 @@ export async function syncLaundryPermissions(businessId: string): Promise<SyncRe
   const navRows = nav
     ? await prisma.laundryNavItem.findMany({ where: { navigationId: nav.id }, select: { id: true, screenKey: true } })
     : []
+  // Migrate legacy standalone keys (e.g. "dispatch-center") to their registered
+  // screen key (e.g. "store_ops.dispatch_center") BEFORE obsolete cleanup, so
+  // existing businesses keep their custom navigation and items resolve through
+  // the single resolver. Idempotent — a no-op once everything is canonical.
+  let migratedNavItems = 0
+  for (const row of navRows) {
+    const canonical = canonicalizeNavScreenKey(row.screenKey)
+    if (canonical !== row.screenKey) {
+      await prisma.laundryNavItem.update({ where: { id: row.id }, data: { screenKey: canonical } }).catch(() => null)
+      migratedNavItems++
+    }
+  }
   const navIds: string[] = []
   const orphanNavScreenKeys: string[] = []
   for (const row of navRows) {
@@ -158,5 +207,6 @@ export async function syncLaundryPermissions(businessId: string): Promise<SyncRe
     orphanNavKeys: [...new Set(orphanNavScreenKeys)],
     removedPermissions,
     removedNavItems,
+    migratedNavItems,
   }
 }
