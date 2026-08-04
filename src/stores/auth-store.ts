@@ -295,6 +295,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const sessionUser: SessionUser = {
         ...user,
         role: freshRole,
+        platformRole: (d.user?.platformRole ?? user?.platformRole ?? null),
         businessId: primary?.businessId ?? (freshRole !== 'CUSTOMER' ? primary?.businessId : undefined),
         businessName: primary?.businessName,
         businessType: primary?.businessType,

@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogOut, Shield, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth";
-import { ROLES } from "@/lib/constants";
+import { laundryRoleLabel } from "@/lib/runtime-auth";
 import { getAuthHeaders } from "@/lib/admin-fetch";
 
 // ============================================================================
@@ -50,7 +50,7 @@ export function UserMenu() {
   const { assignedRbacRole, isLoaded: rbacLoaded, businessRole, platformRole } = useRuntimeAuth();
   const effectiveRole = platformRole || assignedRbacRole || businessRole;
   const roleLabel = rbacLoaded
-    ? (ROLES[effectiveRole as keyof typeof ROLES]?.label || effectiveRole || "Team Member")
+    ? (laundryRoleLabel(effectiveRole) || "Team Member")
     : "Loading...";
 
   const initials = user.name

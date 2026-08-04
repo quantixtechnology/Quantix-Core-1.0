@@ -19,7 +19,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
 import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
-import { ROLES } from "@/lib/constants"
+import { laundryRoleLabel } from "@/lib/runtime-auth"
 
 export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) {
   const { supportMode, clearSupportMode, resetWorkspaceState } = useAdminStore()
@@ -32,7 +32,7 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
   const effectiveRole = platformRole || assignedRbacRole || businessRole
   const roleLabel = isLoaded
-    ? (ROLES[effectiveRole as keyof typeof ROLES]?.label || effectiveRole || "Team Member")
+    ? (laundryRoleLabel(effectiveRole) || "Team Member")
     : "Loading..."
 
   // Detect GAR codes in search bar and redirect to Garment Lookup

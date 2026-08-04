@@ -69,21 +69,26 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
   const { currentBusinessId, currentRole, user } = useAuthStore()
   const [auth, setAuth] = useState<RuntimeAuth>(() => {
     const role = currentRole || user?.role || ""
+    // platformRole is populated ONLY from User.platformRole (null for tenant
+    // users → ""). The legacy BusinessUser.role (currentRole) must never be
+    // substituted here — it is isolated to legacy compatibility.
+    const platformRole = user?.platformRole ?? ""
     if (currentBusinessId && isCacheValid(currentBusinessId)) {
       const entry = cache.get(currentBusinessId)!
-      return { ...entry.data, businessRole: role, platformRole: role }
+      return { ...entry.data, businessRole: role, platformRole }
     }
-    return { ...UNAUTHORIZED, businessRole: role, platformRole: role }
+    return { ...UNAUTHORIZED, businessRole: role, platformRole }
   })
   const lastBizId = useRef(currentBusinessId)
   const lastRole = useRef<string | null>(currentRole)
+  const lastPlatformRole = useRef<string>(user?.platformRole ?? "")
   const mounted = useRef(true)
 
-  const doFetch = useCallback((id: string, role: string) => {
+  const doFetch = useCallback((id: string, role: string, platformRole: string) => {
     fetchRbac(id).then((r) => {
       if (!mounted.current) return
       if (r) {
-        const merged: RuntimeAuth = { ...r, businessRole: role, platformRole: role }
+        const merged: RuntimeAuth = { ...r, businessRole: role, platformRole }
         cache.set(id, { data: merged, ts: Date.now() })
         setAuth(merged)
       } else {
@@ -92,7 +97,7 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
         setAuth((prev) => ({
           ...prev,
           businessRole: role,
-          platformRole: role,
+          platformRole,
           isLoaded: true,
           assignedRbacRole: prev.assignedRbacRole || "",
         }))
@@ -109,20 +114,22 @@ export function RuntimeAuthProvider({ children }: { children: ReactNode }) {
     if (!currentBusinessId) return
     const id = currentBusinessId
     const role = currentRole || user?.role || ""
+    const platformRole = user?.platformRole ?? ""
 
     if (id !== lastBizId.current || !isCacheValid(id)) {
       lastBizId.current = id
       if (isCacheValid(id)) {
         const entry = cache.get(id)!
-        setAuth({ ...entry.data, businessRole: role, platformRole: role })
+        setAuth({ ...entry.data, businessRole: role, platformRole })
       } else {
-        doFetch(id, role)
+        doFetch(id, role, platformRole)
       }
-    } else if (role !== lastRole.current) {
+    } else if (role !== lastRole.current || platformRole !== lastPlatformRole.current) {
       lastRole.current = role
-      setAuth((prev) => ({ ...prev, businessRole: role, platformRole: role }))
+      lastPlatformRole.current = platformRole
+      setAuth((prev) => ({ ...prev, businessRole: role, platformRole }))
     }
-  }, [currentBusinessId, currentRole, user?.role, doFetch])
+  }, [currentBusinessId, currentRole, user?.role, user?.platformRole, doFetch])
 
   return (
     <RuntimeAuthContext.Provider value={auth}>

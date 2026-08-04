@@ -618,6 +618,7 @@ export interface SessionUser {
   phone?: string | null;
   avatar: string | null;
   role: Role;
+  platformRole?: string | null;
   businessId?: string;
   businessName?: string;
   businessType?: BusinessType;

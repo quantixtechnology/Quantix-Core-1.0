@@ -99,7 +99,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         const res = await fetch(`/api/laundry/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), email: fEmail.trim(), phone: fPhone.trim() || null, password: fPassword.trim() || undefined, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Create failed")
-        setFormOpen(false); setCreds({ email: j.data.email, tempPassword: j.data.tempPassword }); load()
+        setFormOpen(false); setCreds({ email: j.data.email, tempPassword: j.data.tempPassword }); if (businessId) clearRuntimeAuthCache(businessId); load()
       }
     } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
   }
@@ -108,7 +108,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     const res = await fetch(`/api/laundry/staff/${e.userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, active: !e.active }) })
     const j = await res.json()
     if (!res.ok || !j.success) { toast({ title: "Failed", description: j.error, variant: "destructive" }); return }
-    toast({ title: e.active ? "Employee deactivated" : "Employee activated" }); load()
+    toast({ title: e.active ? "Employee deactivated" : "Employee activated" }); if (businessId) clearRuntimeAuthCache(businessId); load()
   }
 
   const resetPassword = async (e: Emp) => {

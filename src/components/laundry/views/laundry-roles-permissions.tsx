@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
+import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -98,7 +99,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
       const res = await fetch(`/api/laundry/rbac/roles/${selected.id}/permissions`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, screens: levels }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
-      toast({ title: "Role saved", description: `${name} · ${countSelected()} screens with access` }); setDirty(false); load()
+      toast({ title: "Role saved", description: `${name} · ${countSelected()} screens with access` }); setDirty(false); if (businessId) clearRuntimeAuthCache(businessId); load()
     } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
   }
 
@@ -108,12 +109,12 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
     setCreating(true)
     try {
       const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, description: newDesc.trim() || null, screens: {} }) }).then((x) => x.json())
-      if (j.success) { setNewOpen(false); await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
+      if (j.success) { setNewOpen(false); if (businessId) clearRuntimeAuthCache(businessId); await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
     } finally { setCreating(false) }
   }
   const clone = async (r: Role) => {
     const j = await fetch(`/api/laundry/rbac/roles/${r.id}/clone`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
-    if (j.success) { toast({ title: "Role cloned", description: j.data.name }); await load(); selectRole(j.data) } else toast({ title: "Clone failed", description: j.error, variant: "destructive" })
+    if (j.success) { toast({ title: "Role cloned", description: j.data.name }); if (businessId) clearRuntimeAuthCache(businessId); await load(); selectRole(j.data) } else toast({ title: "Clone failed", description: j.error, variant: "destructive" })
   }
   const confirmDelete = async () => {
     const r = deleteTarget; if (!r || r.isOwner) return
@@ -122,12 +123,12 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
       const res = await fetch(`/api/laundry/rbac/roles/${r.id}?businessId=${businessId}`, { method: "DELETE" })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error, variant: "destructive" }); return }
-      toast({ title: "Role deleted" }); setDeleteTarget(null); setSelectedId(null); load()
+      toast({ title: "Role deleted" }); setDeleteTarget(null); setSelectedId(null); if (businessId) clearRuntimeAuthCache(businessId); load()
     } finally { setDeleting(false) }
   }
   const seed = async () => {
     const j = await fetch(`/api/laundry/rbac/seed`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
-    if (j.success) { toast({ title: "Default roles created", description: `${j.data.seeded.length} system roles` }); load() } else toast({ title: "Failed", description: j.error, variant: "destructive" })
+    if (j.success) { toast({ title: "Default roles created", description: `${j.data.seeded.length} system roles` }); if (businessId) clearRuntimeAuthCache(businessId); load() } else toast({ title: "Failed", description: j.error, variant: "destructive" })
   }
 
   const q = search.trim().toLowerCase()

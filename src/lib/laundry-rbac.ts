@@ -17,18 +17,6 @@ export function isInternalCall(request: Request): boolean {
   return process.env.NODE_ENV !== "production" && process.env.LAUNDRY_RBAC_TEST_BYPASS === "1"
 }
 
-const LEGACY_ROLE_MAP: Record<string, string> = {
-  LAUNDRY_OWNER: "BUSINESS_OWNER",
-  LAUNDRY_STORE_MANAGER: "STORE_MANAGER",
-  LAUNDRY_COUNTER_STAFF: "COUNTER_EXECUTIVE",
-  LAUNDRY_CASHIER: "COUNTER_EXECUTIVE",
-  PROCESSING_MANAGER: "PROCESSING_MANAGER",
-  PROCESSING_STAFF: "PROCESSING_STAFF",
-  QC_EXECUTIVE: "PROCESSING_STAFF",
-  DELIVERY_EXECUTIVE: "DELIVERY_EXECUTIVE",
-  LAUNDRY_ACCOUNTANT: "ACCOUNTANT",
-}
-
 export function isOwnerRole(businessRole: string | null | undefined): boolean {
   return businessRole === "LAUNDRY_OWNER" || (!!businessRole && isPlatformRole(businessRole))
 }
@@ -39,6 +27,17 @@ function allScreensAtLevel(level: Level): Map<string, number> {
   const m = new Map<string, number>()
   for (const sk of allScreenKeys()) m.set(sk, level)
   return m
+}
+
+/**
+ * Resolution for a tenant user with no active LaundryAccessAssignment.
+ *
+ * Legacy isolation: BusinessUser.role must NEVER grant access. The tenant is
+ * not defaulted to a legacy role nor to the VIEWER system role — they get no
+ * screens at all. Roles are assigned exclusively through Roles & Permissions.
+ */
+export function resolveUnassignedPermissions(): ResolvedPermissions {
+  return { isOwner: false, permissions: new Set(), levels: new Map(), roleCode: "UNASSIGNED", roleName: "No Access", source: "legacy" }
 }
 
 export async function resolveUserPermissions(platformBusinessId: string, userId: string, businessRole: string | null): Promise<ResolvedPermissions> {
@@ -67,11 +66,7 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
     }
     return { isOwner: false, permissions: new Set(levels.keys()), levels, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
   }
-  const code = LEGACY_ROLE_MAP[businessRole || ""] || "VIEWER"
-  const def = SYSTEM_ROLES.find((r) => r.code === code)
-  const levels = new Map<string, number>()
-  if (def) for (const sl of def.screens()) levels.set(sl.screenKey, sl.level)
-  return { isOwner: !!def?.isOwner, permissions: new Set(levels.keys()), levels, roleCode: code, roleName: def?.name || "Viewer", source: "legacy" }
+  return resolveUnassignedPermissions()
 }
 
 export function hasPerm(perms: Set<string>, key: string): boolean { return perms.has(key) }

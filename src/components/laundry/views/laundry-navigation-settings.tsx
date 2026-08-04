@@ -26,6 +26,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers"
 import { useAdminStore } from "@/stores/admin-store"
 import { validateNavSections } from "@/lib/laundry-nav-config"
+import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
 
 const SECTION_PREFIX = "sec_"
 const ITEM_PREFIX = "itm_"
@@ -356,6 +357,7 @@ export function LaundryNavigationManager({ businessId }: NavigationManagerProps)
       const json = await res.json()
       if (json.data?.sections) setSections(json.data.sections.map((s: any) => ({ ...s, items: s.items ?? [] })))
       bumpNavRevision()
+      if (businessId) clearRuntimeAuthCache(businessId)
       toast.success("Navigation saved")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed to save navigation") }
     finally { setSaving(false) }
@@ -369,6 +371,7 @@ export function LaundryNavigationManager({ businessId }: NavigationManagerProps)
       const json = await res.json()
       if (json.data?.sections) setSections(json.data.sections.map((s: any) => ({ ...s, items: s.items ?? [] })))
       bumpNavRevision()
+      if (businessId) clearRuntimeAuthCache(businessId)
       toast.success("Default navigation restored")
     } catch { toast.error("Failed to restore defaults") }
     finally { setLoading(false) }
