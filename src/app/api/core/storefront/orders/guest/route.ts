@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter'
 import { checkStoreOpen } from '@/lib/core/store'
+import { checkAddressServiceability } from '@/lib/core/address-serviceability'
 
 export async function POST(request: Request) {
   try {
@@ -37,16 +38,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Store not found or inactive' }, { status: 404 })
     }
 
-    // ── Store availability + hours check ─────────────────────────────────
-    const storeCheck = await checkStoreOpen(body.storeId as string)
+    const businessId = store.businessId
+
+    // ── Address-first store assignment ────────────────────────────────────
+    // Nearest serviceable store is resolved from the delivery coordinates
+    // (address-first — never device GPS). Out-of-area → structured card.
+    let finalStoreId: string = body.storeId as string
+    let deliveryDistanceKm: number | null = null
+    let serviceabilityStatus: string | null = null
+    let deliveryZoneId: string | null = null
+    let serviceabilityFee: number | null = null
+
+    if (typeof body.deliveryLat === 'number' && typeof body.deliveryLng === 'number'
+      && body.deliveryLat != null && body.deliveryLng != null) {
+      const svc = await checkAddressServiceability({
+        businessId,
+        lat: body.deliveryLat,
+        lng: body.deliveryLng,
+        orderAmount: typeof body.orderAmount === 'number' ? body.orderAmount : undefined,
+      })
+      if (!svc.serviceable || !svc.nearestStoreId) {
+        return NextResponse.json({
+          success: false,
+          error: svc.reason || "We don't deliver to this address yet.",
+          code: 'OUT_OF_SERVICE_AREA',
+          nearestStore: svc.nearestStoreId
+            ? { id: svc.nearestStoreId, name: svc.nearestStoreName, distance: svc.distance ?? null, serviceable: false }
+            : null,
+          serviceability: {
+            status: 'OUT_OF_SERVICE_AREA',
+            distance: svc.distance ?? null,
+            deliveryZoneId: svc.matchedZoneId ?? null,
+          },
+        }, { status: 422 })
+      }
+      finalStoreId = svc.nearestStoreId
+      deliveryDistanceKm = svc.distance ?? null
+      serviceabilityStatus = 'SERVICEABLE'
+      deliveryZoneId = svc.matchedZoneId ?? null
+      serviceabilityFee = svc.deliveryFee ?? null
+    }
+
+    // ── Store availability + hours check (resolved store) ─────────────────
+    const storeCheck = await checkStoreOpen(finalStoreId)
     if (!storeCheck.isOpen) {
       return NextResponse.json(
         { success: false, error: storeCheck.reason || 'Store is currently closed', opensAt: storeCheck.opensAt ?? null },
         { status: 422 }
       )
     }
-
-    const businessId = store.businessId
 
     // Check guest checkout is allowed for this business
     const business = await db.business.findUnique({
@@ -92,7 +132,7 @@ export async function POST(request: Request) {
 
       // Inventory pre-check: only enforce when a row exists (tracked products).
       const inv = await db.inventory.findFirst({
-        where: { storeId: body.storeId, productId: product.id },
+        where: { storeId: finalStoreId, productId: product.id },
         select: { quantity: true, reservedQty: true },
       })
       if (inv) {
@@ -136,7 +176,7 @@ export async function POST(request: Request) {
 
     // ── Minimum order amount enforcement ────────────────────────────────
     const storeConfig = await db.store.findUnique({
-      where: { id: body.storeId as string },
+      where: { id: finalStoreId as string },
       select: { minOrderAmount: true, freeDeliveryAbove: true },
     })
     if (storeConfig?.minOrderAmount && subtotal < storeConfig.minOrderAmount) {
@@ -150,7 +190,9 @@ export async function POST(request: Request) {
       )
     }
     // Apply free delivery above threshold
-    let deliveryFee = body.deliveryFee ?? 0
+    let deliveryFee = serviceabilityFee !== null && serviceabilityFee !== undefined
+      ? serviceabilityFee
+      : (body.deliveryFee ?? 0)
     if (storeConfig?.freeDeliveryAbove && subtotal >= storeConfig.freeDeliveryAbove) {
       deliveryFee = 0
     }
@@ -187,8 +229,8 @@ export async function POST(request: Request) {
             source: 'GUEST',
             isGuest: true,
             verified: false,
-            createdStoreId: body.storeId,
-            preferredStoreId: body.storeId,
+            createdStoreId: finalStoreId,
+            preferredStoreId: finalStoreId,
             totalOrders: 1,
             totalSpent: totalAmount,
             lastOrderAt: new Date(),
@@ -251,7 +293,7 @@ export async function POST(request: Request) {
     const order = await db.order.create({
       data: {
         businessId,
-        storeId: body.storeId,
+        storeId: finalStoreId,
         orderNumber,
         orderType: body.orderType || 'DELIVERY',
         orderSource: 'online',
@@ -265,6 +307,9 @@ export async function POST(request: Request) {
         deliveryAddress: resolvedDeliveryAddress,
         deliveryLat: body.deliveryLat || null,
         deliveryLng: body.deliveryLng || null,
+        deliveryDistanceKm,
+        serviceabilityStatus,
+        deliveryZoneId,
         deliveryInstructions: body.deliveryInstructions || null,
         notes: body.notes || null,
         subtotal: Math.round(subtotal * 100) / 100,
@@ -296,7 +341,7 @@ export async function POST(request: Request) {
     } catch { /* non-critical */ }
 
     try {
-      await emitStoreOrderEvent(businessId, body.storeId, 'order:created', {
+      await emitStoreOrderEvent(businessId, finalStoreId, 'order:created', {
         orderId: order.id,
         orderNumber: order.orderNumber,
         orderType: order.orderType,

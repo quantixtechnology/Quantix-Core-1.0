@@ -27,6 +27,7 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOM
         label?: string; area?: string; line1?: string; line2?: string
         landmark?: string; city?: string; state?: string; pincode?: string
         latitude?: number; longitude?: number; gpsAccuracy?: number
+        googlePlaceId?: string; formattedAddress?: string
         instructions?: string; isDefault?: boolean
       }
 
@@ -48,6 +49,8 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOM
           ...(body.latitude !== undefined ? { latitude: body.latitude } : {}),
           ...(body.longitude !== undefined ? { longitude: body.longitude } : {}),
           ...(body.gpsAccuracy !== undefined ? { gpsAccuracy: body.gpsAccuracy } : {}),
+          ...(body.googlePlaceId !== undefined ? { googlePlaceId: body.googlePlaceId } : {}),
+          ...(body.formattedAddress !== undefined ? { formattedAddress: body.formattedAddress } : {}),
           ...(body.instructions !== undefined ? { instructions: body.instructions } : {}),
           ...(body.isDefault !== undefined ? { isDefault: body.isDefault } : {}),
         },

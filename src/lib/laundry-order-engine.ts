@@ -90,6 +90,14 @@ export interface CreateLaundryOrderInput {
   notes?: string | null
   createdBy?: string | null
 
+  // Address-first: the resolved Address row id + serviceability snapshot so the
+  // order permanently records WHERE the pickup happened and WHY the store was
+  // assigned (analytics / routing / SLA).
+  pickupAddressId?: string | null
+  pickupDistanceKm?: number | null
+  serviceabilityStatus?: string | null
+  deliveryZoneId?: string | null
+
   explode?: boolean // default true — PER_PIECE qty>1 → per-piece rows (see explodePieces)
   updateCustomerSpend?: boolean // default true — increment totalOrders/totalSpent/lastOrderAt
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,6 +187,10 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       backupDeliveryDate: input.backupDeliveryDate ?? null,
       backupDeliveryTimeSlot: input.backupDeliveryTimeSlot ?? null,
       pickupAddress: input.pickupAddress ?? null,
+      pickupAddressId: input.pickupAddressId ?? null,
+      pickupDistanceKm: input.pickupDistanceKm ?? null,
+      serviceabilityStatus: input.serviceabilityStatus ?? null,
+      deliveryZoneId: input.deliveryZoneId ?? null,
       pickupInstructions: input.pickupInstructions ?? null,
       specialInstructions: input.specialInstructions ?? null,
       notes: input.notes ?? null,

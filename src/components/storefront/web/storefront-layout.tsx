@@ -12,10 +12,10 @@ import {
   ChevronRight, ArrowLeft,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
-import type { PickedStore } from "./storefront-store-picker"
 import { ProductImage } from "./product-image"
 import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
+import { shortAddressLabel } from "@/lib/delivery-address"
 import { InstallAppButton } from "@/components/storefront/install-app-button"
 import { usePwaMode } from "@/hooks/use-pwa-mode"
 import { PwaModeContext } from "@/contexts/pwa-mode-context"
@@ -30,8 +30,7 @@ interface StorefrontLayoutProps {
   children: React.ReactNode
   brandColor: string
   nav: WebNav
-  currentStore?: PickedStore | null
-  onOpenStorePicker?: () => void
+  onOpenAddressSheet: () => void
   storeClosed?: boolean
 }
 
@@ -39,12 +38,11 @@ export function StorefrontLayout({
   children,
   brandColor,
   nav,
-  currentStore,
-  onOpenStorePicker,
+  onOpenAddressSheet,
   storeClosed,
 }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
-  const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType } = useCartStore()
+  const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType, deliveryAddress } = useCartStore()
 
   // Stamp the active workspace type onto the shared Quantix Cart Engine — makes
   // the ONE cart business-type-aware (future-ready for analytics, abandoned-cart
@@ -362,17 +360,17 @@ export function StorefrontLayout({
                   >
                     {currentBusinessName || "Store"}
                   </span>
-                  {currentStore && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
-                      className="flex items-center gap-1 p-0 border-0 bg-transparent active:opacity-70 w-fit"
-                      style={{ color: hMuted }}
-                    >
-                      <MapPin className="w-3 h-3 shrink-0" />
-                      <span className="text-[13px] leading-[1.2] truncate max-w-[200px]">{currentStore.name}</span>
-                      <ChevronDown className="w-3 h-3 shrink-0" />
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenAddressSheet() }}
+                    className="flex items-center gap-1 p-0 border-0 bg-transparent active:opacity-70 w-fit"
+                    style={{ color: hMuted }}
+                  >
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span className="text-[13px] leading-[1.2] truncate max-w-[200px]">
+                      Delivering To {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
+                    </span>
+                    <ChevronDown className="w-3 h-3 shrink-0" />
+                  </button>
                 </div>
               </>
             )}
@@ -533,19 +531,17 @@ export function StorefrontLayout({
                 <div className="font-bold text-gray-900 text-sm leading-tight">
                   {currentBusinessName || "Store"}
                 </div>
-                {currentStore ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
-                    className="flex items-center gap-0.5 text-[10px] leading-tight hover:opacity-80 transition-opacity"
-                    style={{ color: brandColor }}
-                  >
-                    <MapPin className="w-2.5 h-2.5 shrink-0" />
-                    <span className="max-w-[120px] truncate">{currentStore.name}</span>
-                    <ChevronDown className="w-2.5 h-2.5 shrink-0" />
-                  </button>
-                ) : (
-                  <div className="text-[10px] text-gray-400 leading-tight">Online Store</div>
-                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpenAddressSheet() }}
+                  className="flex items-center gap-0.5 text-[10px] leading-tight hover:opacity-80 transition-opacity"
+                  style={{ color: brandColor }}
+                >
+                  <MapPin className="w-2.5 h-2.5 shrink-0" />
+                  <span className="max-w-[150px] truncate">
+                    Delivering To {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
+                  </span>
+                  <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                </button>
               </div>
             </button>
 

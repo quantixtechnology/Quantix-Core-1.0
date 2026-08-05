@@ -12,6 +12,7 @@ import { db } from '@/lib/db';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
 import { checkStoreOpen } from '@/lib/core/store';
 import { sendNewOrderEmail } from '@/lib/email-service';
+import { checkAddressServiceability } from '@/lib/core/address-serviceability';
 
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
@@ -103,19 +104,11 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         );
       }
 
-      // ── Store availability + hours check ──────────────────────────────────
-      const storeCheck = await checkStoreOpen(body.storeId as string);
-      if (!storeCheck.isOpen) {
-        return NextResponse.json(
-          { success: false, error: storeCheck.reason || 'Store is currently closed', opensAt: storeCheck.opensAt ?? null },
-          { status: 422 }
-        );
-      }
-
-      // Resolve delivery address if provided
+      // ── Resolve delivery address + coordinates if provided ────────────────
       let deliveryAddress: string | undefined;
       let deliveryLat: number | undefined;
       let deliveryLng: number | undefined;
+      let deliveryAddressId: string | null = body.deliveryAddressId || null;
 
       let addressInstructions: string | undefined;
       if (body.deliveryAddressId) {
@@ -137,6 +130,9 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           deliveryLng = address.longitude || undefined;
           addressInstructions = address.instructions || undefined;
         }
+      } else if (typeof body.deliveryLat === 'number' && typeof body.deliveryLng === 'number') {
+        deliveryLat = body.deliveryLat;
+        deliveryLng = body.deliveryLng;
       }
 
       // Determine businessId from user context early (needed for customer lookup)
@@ -145,6 +141,59 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         return NextResponse.json(
           { success: false, error: 'Business context required' },
           { status: 400 }
+        );
+      }
+
+      // ── Address-first store assignment ────────────────────────────────────
+      // The nearest serviceable store is the SINGLE source of truth for the
+      // order's store. Serviceability is keyed on the delivery address, never
+      // device GPS. Out-of-area addresses return a structured card instead of
+      // the legacy "No Stores Available" empty state. When no coordinates are
+      // available (legacy clients) the client-provided storeId is kept.
+      let finalStoreId: string = body.storeId as string;
+      let deliveryDistanceKm: number | null = null;
+      let serviceabilityStatus: string | null = null;
+      let deliveryZoneId: string | null = null;
+      let serviceabilityFee: number | null = null;
+
+      if (deliveryLat && deliveryLng) {
+        const svc = await checkAddressServiceability({
+          businessId,
+          lat: deliveryLat,
+          lng: deliveryLng,
+          orderAmount: typeof body.orderAmount === 'number' ? body.orderAmount : undefined,
+        });
+        if (!svc.serviceable || !svc.nearestStoreId) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: svc.reason || "We don't deliver to this address yet.",
+              code: 'OUT_OF_SERVICE_AREA',
+              nearestStore: svc.nearestStoreId
+                ? { id: svc.nearestStoreId, name: svc.nearestStoreName, distance: svc.distance ?? null, serviceable: false }
+                : null,
+              serviceability: {
+                status: 'OUT_OF_SERVICE_AREA',
+                distance: svc.distance ?? null,
+                deliveryZoneId: svc.matchedZoneId ?? null,
+              },
+            },
+            { status: 422 }
+          );
+        }
+        finalStoreId = svc.nearestStoreId;
+        deliveryDistanceKm = svc.distance ?? null;
+        serviceabilityStatus = 'SERVICEABLE';
+        deliveryZoneId = svc.matchedZoneId ?? null;
+        serviceabilityFee = svc.deliveryFee ?? null;
+      }
+
+      // ── Store availability + hours check (resolved store) ─────────────────
+      const storeCheck = await checkStoreOpen(finalStoreId);
+      if (!storeCheck.isOpen) {
+        return NextResponse.json(
+          { success: false, error: storeCheck.reason || 'Store is currently closed', opensAt: storeCheck.opensAt ?? null },
+          { status: 422 }
         );
       }
 
@@ -230,7 +279,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         // Inventory pre-check: only enforce when a row exists (tracked products).
         // If no inventory row → product is untracked → allow order.
         const inv = await db.inventory.findFirst({
-          where: { storeId: body.storeId, productId: product.id },
+          where: { storeId: finalStoreId, productId: product.id },
           select: { quantity: true, reservedQty: true },
         });
         if (inv) {
@@ -288,13 +337,15 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         cgstAmount += itemGst / 2;
         sgstAmount += itemGst / 2;
       }
-      let deliveryFee = body.deliveryFee || 0;
+      let deliveryFee = serviceabilityFee !== null && serviceabilityFee !== undefined
+        ? serviceabilityFee
+        : (body.deliveryFee || 0);
       let totalDiscount = 0;
       let resolvedPromoCodeId: string | null = body.promoCodeId || null;
 
       // ── Minimum order amount enforcement ─────────────────────────────────
       const storeForMinOrder = await db.store.findUnique({
-        where: { id: body.storeId as string },
+        where: { id: finalStoreId as string },
         select: { minOrderAmount: true, freeDeliveryAbove: true },
       });
       if (storeForMinOrder?.minOrderAmount && subtotal < storeForMinOrder.minOrderAmount) {
@@ -397,7 +448,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       const order = await db.order.create({
         data: {
           businessId,
-          storeId: body.storeId,
+          storeId: finalStoreId,
           orderNumber,
           orderType: body.orderType,
           orderSource: 'online',
@@ -408,10 +459,13 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           customerName: customer.name || user.name,
           customerPhone: customer.phone || null,
           customerEmail: customer.email || (user.email?.endsWith('@otp.placeholder') ? null : user.email) || null,
-          deliveryAddressId: body.deliveryAddressId || null,
+          deliveryAddressId: body.deliveryAddressId || deliveryAddressId || null,
           deliveryAddress: deliveryAddress || null,
           deliveryLat: deliveryLat || null,
           deliveryLng: deliveryLng || null,
+          deliveryDistanceKm,
+          serviceabilityStatus,
+          deliveryZoneId,
           deliveryInstructions: body.deliveryInstructions || addressInstructions || null,
           promoCodeId: resolvedPromoCodeId,
           notes: body.notes || null,
@@ -478,7 +532,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       try {
         // Invoice number: {STORE_CODE}-{ORDER_NUMBER}-INV-001
         const invoiceStoreData = await db.store.findUnique({
-          where: { id: body.storeId as string },
+          where: { id: finalStoreId as string },
           select: { code: true },
         })
         const storePart = (invoiceStoreData?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'MAIN'
@@ -529,7 +583,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
             data: JSON.stringify({
               orderId: order.id,
               orderNumber: order.orderNumber,
-              storeId: body.storeId,
+              storeId: finalStoreId,
             }),
           },
         });
@@ -539,7 +593,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
 
       // Emit store-scoped real-time event — store staff only see their store's orders
       try {
-        await emitStoreOrderEvent(businessId, body.storeId, 'order:created', {
+        await emitStoreOrderEvent(businessId, finalStoreId, 'order:created', {
           orderId: order.id,
           orderNumber: order.orderNumber,
           orderType: body.orderType,
@@ -552,7 +606,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           customerName: customer.name || user.name,
           customerPhone: customer.phone || null,
           deliveryAddress: order.deliveryAddress || null,
-          storeId: body.storeId,
+          storeId: finalStoreId,
           items: order.items.map((i) => ({
             name: i.itemName,
             variant: i.variantName || null,

@@ -3,15 +3,16 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import type { DeliveryAddress } from "@/stores/cart-store"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   ArrowLeft, MapPin, Plus, Loader2, CheckCircle2, CreditCard,
-  User, Phone as PhoneIcon, Check, LogIn, UserX, Lock, Navigation,
+  User, Phone as PhoneIcon, Check, LogIn, UserX, Lock, Store, ChevronDown,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
+import { formatAddressLine, shortAddressLabel } from "@/lib/delivery-address"
 import type { WebNav } from "./storefront-website"
-import type { PickedStore } from "./storefront-store-picker"
 
 interface Address {
   id: string
@@ -32,69 +33,57 @@ interface Address {
 interface StorefrontCheckoutProps {
   brandColor: string
   nav: WebNav
-  currentStore?: PickedStore | null
+  onOpenAddressSheet: () => void
   storeClosed?: boolean
   storeClosedMessage?: string
 }
 
 type CheckoutStep = "choose" | "form"
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+const emptyGuest = () => ({
+  name: "", phone: "",
+})
+
+interface NearestStoreInfo {
+  id: string
+  name: string
+  distance?: number | null
 }
 
-const LABELS = ["Home", "Office", "Other"]
+interface ServiceabilityState {
+  loading: boolean
+  serviceable: boolean | null
+  reason?: string
+  nearest?: NearestStoreInfo | null
+}
 
-const emptyNewAddr = () => ({
-  label: "Home", area: "", line1: "", landmark: "", city: "", state: "", pincode: "", instructions: "",
-  lat: undefined as number | undefined, lng: undefined as number | undefined, gpsAccuracy: undefined as number | undefined,
-})
-
-const emptyGuest = () => ({
-  area: "", line1: "", landmark: "", city: "", state: "", pincode: "", instructions: "",
-  lat: undefined as number | undefined, lng: undefined as number | undefined, gpsAccuracy: undefined as number | undefined,
-})
-
-export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed = false, storeClosedMessage }: StorefrontCheckoutProps) {
-  const { currentBusinessId, currentStoreId } = useAdminStore()
-  const { items, subtotal, storeDeliveryFee, couponDiscount, paymentGateways, clearCart } = useCartStore()
+export function StorefrontCheckout({ brandColor, nav, onOpenAddressSheet, storeClosed = false, storeClosedMessage }: StorefrontCheckoutProps) {
+  const { currentBusinessId } = useAdminStore()
+  const { items, subtotal, storeDeliveryFee, couponDiscount, paymentGateways, clearCart, deliveryAddress, assignedStore, setDeliveryAddress, assignStore, clearAssignedStore } = useCartStore()
   const { isAuthenticated, user, token } = useAuthStore()
 
   const rawSubtotal = subtotal()
-  // Apply free delivery above threshold from store config
-  const effectiveDeliveryFee = (currentStore?.freeDeliveryAbove && rawSubtotal >= currentStore.freeDeliveryAbove)
-    ? 0
-    : (storeDeliveryFee ?? 0)
-  const deliveryFee = effectiveDeliveryFee
+  const baseFee = assignedStore?.deliveryFee != null ? assignedStore.deliveryFee : (storeDeliveryFee ?? 0)
+  const deliveryFee = (assignedStore?.freeDeliveryAbove && rawSubtotal >= assignedStore.freeDeliveryAbove) ? 0 : baseFee
   const discount = couponDiscount || 0
   const total = Math.round(rawSubtotal + deliveryFee - discount)
 
-  // Minimum order check (client-side pre-validation)
-  const minOrderAmount = currentStore?.minOrderAmount ?? 0
-  const belowMinOrder  = minOrderAmount > 0 && rawSubtotal < minOrderAmount
+  const minOrderAmount = assignedStore?.minOrderAmount ?? 0
+  const belowMinOrder = minOrderAmount > 0 && rawSubtotal < minOrderAmount
 
   const [allowGuest, setAllowGuest] = useState<boolean | null>(null)
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>(isAuthenticated ? "form" : "choose")
   const [isGuestMode, setIsGuestMode] = useState(false)
 
-  // Authenticated address flow
+  // Authenticated saved-address quick picks (the header sheet is the canonical
+  // address entry — selecting here just populates the same cart deliveryAddress).
   const [addresses, setAddresses] = useState<Address[]>([])
-  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newAddr, setNewAddr] = useState(emptyNewAddr())
-  const [addingGps, setAddingGps] = useState(false)
-  const [addrError, setAddrError] = useState("")
-  const [rangeWarning, setRangeWarning] = useState("")
 
-  // Guest form
-  const [guestName, setGuestName] = useState("")
-  const [guestPhone, setGuestPhone] = useState("")
-  const [guestAddr, setGuestAddr] = useState(emptyGuest())
-  const [guestGpsLoading, setGuestGpsLoading] = useState(false)
+  // Guest contact
+  const [guest, setGuest] = useState(emptyGuest())
+
+  // Serviceability — the SELECTED DELIVERY ADDRESS drives store assignment.
+  const [svc, setSvc] = useState<ServiceabilityState>({ loading: false, serviceable: null })
 
   // Payment & order
   const [paymentMethod, setPaymentMethod] = useState("COD")
@@ -120,53 +109,91 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
     try {
       const res = await fetch("/api/core/storefront/addresses", { headers: { Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" } })
       const data = await res.json()
-      if (data.success && data.data?.length) {
-        setAddresses(data.data)
-        const def = data.data.find((a: Address) => a.isDefault)
-        setSelectedAddressId(def?.id || data.data[0]?.id || null)
-      }
+      if (data.success && data.data?.length) setAddresses(data.data)
     } catch { /* non-critical */ }
   }, [token])
 
   useEffect(() => { if (isAuthenticated) fetchAddresses() }, [isAuthenticated, fetchAddresses])
 
-  // Check if selected address is out of delivery range
+  // ── Run the shared serviceability engine whenever the delivery address
+  //    (or cart subtotal, for free-delivery) changes. Never device GPS.
   useEffect(() => {
-    if (!currentStore?.latitude || !currentStore?.longitude || !currentStore?.deliveryRadius) { setRangeWarning(""); return }
-    const addr = addresses.find((a) => a.id === selectedAddressId)
-    if (!addr?.latitude || !addr?.longitude) { setRangeWarning(""); return }
-    const dist = haversineKm(addr.latitude, addr.longitude, currentStore.latitude, currentStore.longitude)
-    if (dist > currentStore.deliveryRadius) {
-      setRangeWarning(`This address is ${dist.toFixed(1)} km from the store. Delivery radius is ${currentStore.deliveryRadius} km.`)
-    } else {
-      setRangeWarning("")
+    if (!currentBusinessId || !deliveryAddress) {
+      setSvc({ loading: false, serviceable: null })
+      return
     }
-  }, [selectedAddressId, addresses, currentStore])
+    const a = deliveryAddress
+    if (typeof a.latitude !== "number" || typeof a.longitude !== "number") {
+      setSvc({ loading: false, serviceable: null, reason: "Set the exact location (map / GPS) so we can find the nearest store." })
+      clearAssignedStore()
+      return
+    }
+    let cancelled = false
+    setSvc({ loading: true, serviceable: null })
+    const body: Record<string, unknown> = { orderAmount: Math.round(rawSubtotal * 100) / 100 }
+    if (a.id) body.addressId = a.id
+    else { body.lat = a.latitude; body.lng = a.longitude }
 
-  const captureGpsForNewAddr = () => {
-    if (!navigator.geolocation) return
-    setAddingGps(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setNewAddr((p) => ({ ...p, lat: pos.coords.latitude, lng: pos.coords.longitude, gpsAccuracy: pos.coords.accuracy }))
-        setAddingGps(false)
-      },
-      () => setAddingGps(false),
-      { timeout: 10000 },
-    )
-  }
+    fetch("/api/core/storefront/serviceability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (!j.success) {
+          setSvc({ loading: false, serviceable: false, reason: j.error || "Could not check delivery for this address." })
+          clearAssignedStore()
+          return
+        }
+        const d = j.data
+        const nearest = d.nearestStore
+        if (!d.serviceable || !nearest) {
+          setSvc({ loading: false, serviceable: false, reason: d.reason || "We don't deliver to this address yet.", nearest })
+          clearAssignedStore()
+          return
+        }
+        setSvc({ loading: false, serviceable: true, nearest })
+        assignStore({
+          id: nearest.id,
+          kind: nearest.kind || "store",
+          name: nearest.name,
+          distanceKm: d.distance ?? nearest.distance ?? null,
+          serviceable: true,
+          deliveryFee: d.deliveryFee ?? nearest.deliveryFee ?? null,
+          freeDeliveryAbove: d.freeDeliveryAbove ?? nearest.freeDeliveryAbove ?? null,
+          minOrderAmount: d.minOrderAmount ?? nearest.minOrderAmount ?? null,
+          preparationTime: nearest.preparationTime ?? null,
+          latitude: nearest.latitude ?? null,
+          longitude: nearest.longitude ?? null,
+          matchedZoneId: d.matchedZoneId ?? null,
+          matchedZoneName: d.matchedZoneName ?? null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSvc({ loading: false, serviceable: false, reason: "Could not check delivery for this address. Please try again." })
+        clearAssignedStore()
+      })
+    return () => { cancelled = true }
+  }, [currentBusinessId, deliveryAddress, rawSubtotal, assignStore, clearAssignedStore])
 
-  const captureGpsForGuest = () => {
-    if (!navigator.geolocation) return
-    setGuestGpsLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGuestAddr((p) => ({ ...p, lat: pos.coords.latitude, lng: pos.coords.longitude, gpsAccuracy: pos.coords.accuracy }))
-        setGuestGpsLoading(false)
-      },
-      () => setGuestGpsLoading(false),
-      { timeout: 10000 },
-    )
+  const chooseSavedAddress = (row: Address) => {
+    setDeliveryAddress({
+      id: row.id,
+      label: row.label,
+      area: row.area,
+      addressLine1: row.addressLine1,
+      addressLine2: row.addressLine2,
+      landmark: row.landmark,
+      city: row.city,
+      state: row.state,
+      pincode: row.pincode,
+      instructions: row.instructions,
+      latitude: row.latitude,
+      longitude: row.longitude,
+    })
   }
 
   if (items.length === 0 && !orderId) {
@@ -272,7 +299,7 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
             ))}
             {items.length > 3 && <p className="text-xs text-gray-400 mt-1">+{items.length - 3} more items</p>}
             <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between text-sm font-bold text-gray-900">
-              <span>Total</span><span>{formatINR(total)}</span>
+              <span>Total</span><span>{formatINR(rawSubtotal + deliveryFee - discount)}</span>
             </div>
           </div>
         </div>
@@ -280,64 +307,47 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
     )
   }
 
-  // ── Address helpers ────────────────────────────────────────────────
-  async function addAddress() {
-    if (!newAddr.line1 || !newAddr.city || !newAddr.pincode) { setAddrError("House/street, city, and pincode are required"); return }
-    setAddrError("")
-    try {
-      const res = await fetch("/api/core/storefront/addresses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
-        body: JSON.stringify({
-          label: newAddr.label,
-          area: newAddr.area || undefined,
-          line1: newAddr.line1,
-          landmark: newAddr.landmark || undefined,
-          city: newAddr.city,
-          state: newAddr.state || undefined,
-          pincode: newAddr.pincode,
-          instructions: newAddr.instructions || undefined,
-          latitude: newAddr.lat,
-          longitude: newAddr.lng,
-          gpsAccuracy: newAddr.gpsAccuracy,
-        }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setNewAddr(emptyNewAddr()); setShowAddForm(false); setAddrError("")
-        await fetchAddresses()
-        setSelectedAddressId(data.data.id)
-      } else setAddrError(data.error || "Failed to add address")
-    } catch { setAddrError("Network error") }
-  }
-
   // ── Place order ────────────────────────────────────────────────────
   async function placeOrder() {
-    // Client-side guards — backend will also enforce these
     if (storeClosed) {
       setOrderError(storeClosedMessage || "Store is currently closed. Please try again later.")
+      return
+    }
+    if (!deliveryAddress) {
+      setOrderError("Set your delivery address first.")
+      return
+    }
+    if (svc.serviceable !== true || !assignedStore) {
+      setOrderError(svc.reason || "This address is outside our delivery area. Please choose a different address.")
       return
     }
     if (belowMinOrder) {
       setOrderError(`Minimum order amount is ₹${minOrderAmount}. Add more items to proceed.`)
       return
     }
+    if (isGuestMode && !isAuthenticated) {
+      if (!guest.name || !guest.phone) {
+        setOrderError("Name and phone number are required")
+        return
+      }
+    }
     setPlacing(true); setOrderError("")
+    const orderItems = items.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity }))
     try {
       if (isAuthenticated && token) {
-        if (!selectedAddressId) { setOrderError("Please select a delivery address"); setPlacing(false); return }
-        if (rangeWarning) { setOrderError("This address is outside the delivery range. Please choose a different address."); setPlacing(false); return }
-        const selAddr = addresses.find((a) => a.id === selectedAddressId)
         const res = await fetch("/api/core/storefront/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
           body: JSON.stringify({
-            storeId: currentStoreId,
+            storeId: assignedStore.id,
             orderType: "DELIVERY",
-            items: items.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
-            deliveryAddressId: selectedAddressId,
-            deliveryInstructions: selAddr?.instructions || undefined,
+            items: orderItems,
+            deliveryAddressId: deliveryAddress.id || undefined,
+            deliveryLat: deliveryAddress.latitude ?? undefined,
+            deliveryLng: deliveryAddress.longitude ?? undefined,
+            deliveryInstructions: deliveryAddress.instructions || undefined,
             deliveryFee,
+            orderAmount: rawSubtotal,
             paymentMethod,
           }),
         })
@@ -345,30 +355,27 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
         if (data.success) { clearCart(); setOrderId(data.data.id); setOrderNumber(data.data.orderNumber) }
         else setOrderError(data.error || "Failed to place order")
       } else {
-        // Guest checkout
-        if (!guestName || !guestPhone || !guestAddr.line1 || !guestAddr.city || !guestAddr.pincode) {
-          setOrderError("Name, phone, house/street, city, and pincode are required"); setPlacing(false); return
-        }
         const res = await fetch("/api/core/storefront/orders/guest", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            storeId: currentStoreId,
-            items: items.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
-            customerName: guestName,
-            customerPhone: `+91${guestPhone.replace(/\D/g, "").slice(-10)}`,
-            // Structured address fields
-            addressLine1: guestAddr.line1,
-            area: guestAddr.area || undefined,
-            landmark: guestAddr.landmark || undefined,
-            city: guestAddr.city,
-            state: guestAddr.state || undefined,
-            pincode: guestAddr.pincode,
-            deliveryInstructions: guestAddr.instructions || undefined,
-            deliveryLat: guestAddr.lat,
-            deliveryLng: guestAddr.lng,
-            gpsAccuracy: guestAddr.gpsAccuracy,
+            storeId: assignedStore.id,
+            items: orderItems,
+            customerName: guest.name,
+            customerPhone: `+91${guest.phone.replace(/\D/g, "").slice(-10)}`,
+            addressLine1: deliveryAddress.addressLine1,
+            area: deliveryAddress.area || undefined,
+            landmark: deliveryAddress.landmark || undefined,
+            city: deliveryAddress.city,
+            state: deliveryAddress.state || undefined,
+            pincode: deliveryAddress.pincode,
+            deliveryInstructions: deliveryAddress.instructions || undefined,
+            deliveryLat: deliveryAddress.latitude ?? undefined,
+            deliveryLng: deliveryAddress.longitude ?? undefined,
+            googlePlaceId: deliveryAddress.googlePlaceId || undefined,
+            formattedAddress: deliveryAddress.formattedAddress || undefined,
             deliveryFee,
+            orderAmount: rawSubtotal,
             orderType: "DELIVERY",
           }),
         })
@@ -382,7 +389,113 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
   const hasCOD = paymentGateways.length === 0 || paymentGateways.some((g) => g.gateway === "COD")
   const onlineGateways = paymentGateways.filter((g) => g.gateway !== "COD")
 
-  // ── Address form shared style ──────────────────────────────────────
+  // ── Delivery address + serviceability card ─────────────────────────
+  const renderAddressGate = () => (
+    <div>
+      {deliveryAddress ? (
+        <div className="flex items-start gap-3 p-4 rounded-xl border-2" style={{ borderColor: brandColor, backgroundColor: `${brandColor}08` }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+            <MapPin className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-900">{shortAddressLabel(deliveryAddress)}</p>
+            <p className="text-xs text-gray-500 line-clamp-2">{formatAddressLine(deliveryAddress)}</p>
+            {svc.serviceable === true && assignedStore && (
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                  <Store className="w-3 h-3 inline mr-0.5" />
+                  {assignedStore.name}
+                  {assignedStore.distanceKm != null && <> · {assignedStore.distanceKm < 1 ? `${Math.round(assignedStore.distanceKm * 1000)} m` : `${assignedStore.distanceKm} km`} away</>}
+                </span>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onOpenAddressSheet}
+            className="shrink-0 text-xs font-semibold px-3 h-9 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+            style={{ color: brandColor }}
+          >
+            Change
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onOpenAddressSheet}
+          className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-dashed text-left transition-colors"
+          style={{ borderColor: `${brandColor}60`, color: brandColor, backgroundColor: `${brandColor}08` }}
+        >
+          <MapPin className="w-5 h-5 shrink-0" />
+          <div>
+            <p className="text-sm font-bold">Set Delivery Address</p>
+            <p className="text-xs opacity-80">Search, use GPS or drop a pin — store is chosen automatically</p>
+          </div>
+          <ChevronDown className="w-4 h-4 shrink-0 ml-auto" />
+        </button>
+      )}
+
+      {/* Saved-address quick picks (authenticated) */}
+      {isAuthenticated && !isGuestMode && addresses.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {addresses.slice(0, 4).map((addr) => (
+            <button
+              key={addr.id}
+              onClick={() => chooseSavedAddress(addr)}
+              className={`w-full flex items-start gap-3 p-3 rounded-xl border transition-colors text-left ${
+                deliveryAddress?.id === addr.id ? "" : "border-gray-100 hover:border-gray-300"
+              }`}
+              style={deliveryAddress?.id === addr.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
+            >
+              <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                <MapPin className="w-4 h-4 text-gray-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-gray-900">
+                  {addr.label || "Address"}
+                  {addr.isDefault && <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>Default</span>}
+                </p>
+                <p className="text-xs text-gray-500 line-clamp-1">{formatAddressLine(addr)}</p>
+              </div>
+            </button>
+          ))}
+          <button onClick={onOpenAddressSheet} className="flex items-center gap-2 text-sm font-medium transition-colors" style={{ color: brandColor }}>
+            <Plus className="w-4 h-4" /> Add or change address
+          </button>
+        </div>
+      )}
+
+      {/* Serviceability status */}
+      {svc.loading && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2.5">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking delivery availability…
+        </div>
+      )}
+      {!svc.loading && deliveryAddress && svc.serviceable === null && svc.reason && (
+        <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 text-xs">
+          {svc.reason}
+          <button onClick={onOpenAddressSheet} className="mt-1.5 block font-semibold" style={{ color: brandColor }}>Set exact location</button>
+        </div>
+      )}
+      {!svc.loading && svc.serviceable === false && (
+        <div className="mt-3 rounded-xl border px-4 py-3" style={{ borderColor: `${brandColor}40`, backgroundColor: `${brandColor}0a` }}>
+          <p className="text-xs font-bold text-gray-900 mb-1">This address is outside our delivery area</p>
+          <p className="text-xs text-gray-600 mb-2">{svc.reason || "We can't deliver to this address right now."}</p>
+          {svc.nearest && (
+            <div className="flex items-center gap-2 text-xs text-gray-700 mb-2">
+              <Store className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
+              <span>
+                Nearest: <b>{svc.nearest.name}</b>
+                {svc.nearest.distance != null && <> · {svc.nearest.distance < 1 ? `${Math.round(svc.nearest.distance * 1000)} m` : `${svc.nearest.distance} km`} away</>}
+              </span>
+            </div>
+          )}
+          <button onClick={onOpenAddressSheet} className="w-full h-9 text-white font-bold text-xs rounded-lg" style={{ backgroundColor: brandColor }}>
+            Change Delivery Address
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
   const inputCls = "w-full h-10 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 bg-white"
 
   // ── Checkout form ──────────────────────────────────────────────────
@@ -410,127 +523,20 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
               <MapPin className="w-4 h-4" style={{ color: brandColor }} />
               Delivery Address
             </h2>
+            {renderAddressGate()}
 
-            {isAuthenticated && !isGuestMode ? (
-              <>
-                {/* Saved addresses list */}
-                {addresses.length > 0 && (
-                  <div className="space-y-3 mb-4">
-                    {addresses.map((addr) => (
-                      <label
-                        key={addr.id}
-                        className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${selectedAddressId === addr.id ? "" : "border-gray-200 hover:border-gray-300"}`}
-                        style={selectedAddressId === addr.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
-                        onClick={() => setSelectedAddressId(addr.id)}
-                      >
-                        <div
-                          className="mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-                          style={selectedAddressId === addr.id ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}
-                        >
-                          {selectedAddressId === addr.id && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            {addr.label && <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{addr.label}</span>}
-                            {addr.isDefault && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>Default</span>}
-                          </div>
-                          <p className="text-sm font-medium text-gray-900">{addr.addressLine1}</p>
-                          {addr.area && <p className="text-xs text-gray-500">{addr.area}</p>}
-                          {addr.landmark && <p className="text-xs text-gray-400">Near {addr.landmark}</p>}
-                          <p className="text-sm text-gray-600">{addr.city}, {addr.state} - {addr.pincode}</p>
-                          {addr.instructions && <p className="text-xs text-gray-400 mt-0.5 italic">{addr.instructions}</p>}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {rangeWarning && (
-                  <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{rangeWarning}</p>
-                )}
-
-                {/* Add new address form */}
-                {showAddForm ? (
-                  <div className="border border-dashed border-gray-300 rounded-xl p-4 space-y-3">
-                    <h3 className="text-sm font-semibold text-gray-700">Add New Address</h3>
-
-                    {/* Label chips */}
-                    <div className="flex gap-2">
-                      {LABELS.map((l) => (
-                        <button key={l} type="button" onClick={() => setNewAddr((p) => ({ ...p, label: l }))}
-                          className="px-3 py-1 rounded-lg text-xs font-medium border transition-colors"
-                          style={newAddr.label === l ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : { borderColor: "#e5e7eb", color: "#4b5563" }}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* GPS button */}
-                    <button type="button" onClick={captureGpsForNewAddr} disabled={addingGps}
-                      className="w-full flex items-center justify-center gap-2 py-2 border border-dashed rounded-xl text-xs font-medium transition-colors"
-                      style={{ borderColor: `${brandColor}60`, color: brandColor }}>
-                      {addingGps ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Detecting location…</> : <><Navigation className="w-3.5 h-3.5" /> Use Current Location</>}
-                    </button>
-                    {newAddr.lat && (
-                      <p className="text-[10px] text-center text-green-600">GPS captured ({newAddr.lat.toFixed(4)}, {newAddr.lng?.toFixed(4)})</p>
-                    )}
-
-                    <input type="text" placeholder="Area / Locality" value={newAddr.area} onChange={(e) => setNewAddr((p) => ({ ...p, area: e.target.value }))} className={inputCls} />
-                    <input type="text" placeholder="House No / Street *" value={newAddr.line1} onChange={(e) => setNewAddr((p) => ({ ...p, line1: e.target.value }))} className={inputCls} />
-                    <input type="text" placeholder="Landmark (optional)" value={newAddr.landmark} onChange={(e) => setNewAddr((p) => ({ ...p, landmark: e.target.value }))} className={inputCls} />
-                    <div className="grid grid-cols-2 gap-3">
-                      <input type="text" placeholder="City *" value={newAddr.city} onChange={(e) => setNewAddr((p) => ({ ...p, city: e.target.value }))} className={inputCls} />
-                      <input type="text" placeholder="State" value={newAddr.state} onChange={(e) => setNewAddr((p) => ({ ...p, state: e.target.value }))} className={inputCls} />
-                    </div>
-                    <input type="text" placeholder="Pincode *" value={newAddr.pincode} onChange={(e) => setNewAddr((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} className={inputCls} />
-                    <textarea placeholder="Delivery instructions (optional)" value={newAddr.instructions} onChange={(e) => setNewAddr((p) => ({ ...p, instructions: e.target.value }))} rows={2} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 bg-white resize-none" />
-
-                    {addrError && <p className="text-xs text-red-500">{addrError}</p>}
-                    <div className="flex gap-2">
-                      <button onClick={addAddress} className="flex-1 h-9 text-sm font-semibold text-white rounded-lg" style={{ backgroundColor: brandColor }}>Save Address</button>
-                      <button onClick={() => { setShowAddForm(false); setNewAddr(emptyNewAddr()); setAddrError("") }} className="flex-1 h-9 text-sm text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button onClick={() => setShowAddForm(true)} className="flex items-center gap-2 text-sm font-medium transition-colors" style={{ color: brandColor }}>
-                    <Plus className="w-4 h-4" /> Add new address
-                  </button>
-                )}
-              </>
-            ) : (
-              // ── Guest form ───────────────────────────────────────────
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" placeholder="Full Name *" value={guestName} onChange={(e) => setGuestName(e.target.value)} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
-                  </div>
-                  <div className="relative">
-                    <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="tel" placeholder="Phone Number *" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
-                  </div>
+            {/* Guest contact details */}
+            {isGuestMode && !isAuthenticated && (
+              <div className="mt-5 pt-5 border-t border-gray-100 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700">Contact Details</h3>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" placeholder="Full Name *" value={guest.name} onChange={(e) => setGuest((p) => ({ ...p, name: e.target.value }))} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
                 </div>
-
-                {/* GPS button for guest */}
-                <button type="button" onClick={captureGpsForGuest} disabled={guestGpsLoading}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed rounded-xl text-xs font-medium transition-colors"
-                  style={{ borderColor: `${brandColor}60`, color: brandColor }}>
-                  {guestGpsLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Detecting location…</> : <><Navigation className="w-3.5 h-3.5" /> Use Current Location</>}
-                </button>
-                {guestAddr.lat && (
-                  <p className="text-[10px] text-center text-green-600">GPS captured ({guestAddr.lat.toFixed(4)}, {guestAddr.lng?.toFixed(4)})</p>
-                )}
-
-                <input type="text" placeholder="Area / Locality" value={guestAddr.area} onChange={(e) => setGuestAddr((p) => ({ ...p, area: e.target.value }))} className={inputCls + " rounded-xl"} />
-                <input type="text" placeholder="House No / Street *" value={guestAddr.line1} onChange={(e) => setGuestAddr((p) => ({ ...p, line1: e.target.value }))} className={inputCls + " rounded-xl"} />
-                <input type="text" placeholder="Landmark (optional)" value={guestAddr.landmark} onChange={(e) => setGuestAddr((p) => ({ ...p, landmark: e.target.value }))} className={inputCls + " rounded-xl"} />
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" placeholder="City *" value={guestAddr.city} onChange={(e) => setGuestAddr((p) => ({ ...p, city: e.target.value }))} className={inputCls + " rounded-xl"} />
-                  <input type="text" placeholder="State" value={guestAddr.state} onChange={(e) => setGuestAddr((p) => ({ ...p, state: e.target.value }))} className={inputCls + " rounded-xl"} />
+                <div className="relative">
+                  <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="tel" placeholder="Phone Number *" value={guest.phone} onChange={(e) => setGuest((p) => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
                 </div>
-                <input type="text" placeholder="Pincode *" value={guestAddr.pincode} onChange={(e) => setGuestAddr((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} className={inputCls + " rounded-xl"} />
-                <textarea placeholder="Delivery instructions (optional)" value={guestAddr.instructions} onChange={(e) => setGuestAddr((p) => ({ ...p, instructions: e.target.value }))} rows={2} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 resize-none" />
-
                 <p className="text-xs text-gray-400">
                   <button onClick={() => nav.go("auth")} className="underline underline-offset-2 hover:text-gray-600">Sign in</button>
                   {" "}to save your address and track orders easily.
@@ -623,15 +629,29 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
               </div>
             )}
 
+            {/* Assigned store + outside-area status */}
+            {!storeClosed && svc.serviceable === true && assignedStore && (
+              <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 text-xs font-medium">
+                ✓ Delivering from <b>{assignedStore.name}</b>
+                {assignedStore.distanceKm != null && ` · ${assignedStore.distanceKm < 1 ? `${Math.round(assignedStore.distanceKm * 1000)} m` : `${assignedStore.distanceKm} km`}`}
+                {assignedStore.matchedZoneName && ` · ${assignedStore.matchedZoneName}`}
+              </div>
+            )}
+            {!storeClosed && svc.serviceable === false && (
+              <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 text-xs font-medium">
+                This address is outside our delivery area. Change your address to continue.
+              </div>
+            )}
+
             {/* Minimum order warning */}
-            {!storeClosed && belowMinOrder && (
+            {!storeClosed && svc.serviceable === true && belowMinOrder && (
               <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 text-xs font-medium">
                 Minimum order is {formatINR(minOrderAmount)}. Add {formatINR(minOrderAmount - rawSubtotal)} more to proceed.
               </div>
             )}
 
             {/* Free delivery badge */}
-            {!storeClosed && currentStore?.freeDeliveryAbove && rawSubtotal >= currentStore.freeDeliveryAbove && deliveryFee === 0 && (
+            {!storeClosed && svc.serviceable === true && assignedStore?.freeDeliveryAbove && rawSubtotal >= assignedStore.freeDeliveryAbove && deliveryFee === 0 && (
               <div className="mt-3 rounded-lg bg-green-50 border border-green-200 text-green-700 px-4 py-3 text-xs font-medium">
                 ✓ Free delivery applied
               </div>
@@ -641,12 +661,14 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
 
             <button
               onClick={placeOrder}
-              disabled={placing || storeClosed || belowMinOrder}
+              disabled={placing || storeClosed || belowMinOrder || svc.serviceable !== true}
               className="w-full h-12 text-white font-bold text-sm rounded-xl mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: brandColor }}
             >
               {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : storeClosed ? (
                 <>🔴 Store Closed</>
+              ) : svc.serviceable !== true ? (
+                <>Select a Deliverable Address</>
               ) : (
                 <><Check className="w-4 h-4" /> Place Order · {formatINR(total)}</>
               )}

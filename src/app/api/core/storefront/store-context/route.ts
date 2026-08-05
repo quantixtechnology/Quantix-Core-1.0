@@ -20,6 +20,7 @@ import { db } from '@/lib/db';
 import { resolveImageUrl } from '@/lib/image-url';
 import { resolveBusinessFromDomain } from '@/lib/tenant-resolver';
 import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
+import { getStorefrontSettings } from '@/lib/core/address-serviceability';
 
 export async function GET(request: Request) {
   try {
@@ -128,6 +129,8 @@ export async function GET(request: Request) {
     };
     const allowGuestCheckout = parsedSettings.allowGuestCheckout !== false; // default true
 
+    const storefrontSettings = await getStorefrontSettings(resolvedBusinessId);
+
     // Business-controlled storefront content — empty arrays mean "hide section".
     // Admins set these via the Store Settings panel.
     const whyChooseUs = (parsedSettings.whyChooseUs as Array<{ emoji: string; title: string; desc: string }>) || [];
@@ -202,6 +205,7 @@ export async function GET(request: Request) {
         },
         ecommerceConfig,
         allowGuestCheckout,
+        storefrontSettings,
         orderStages,
         whyChooseUs,
         promiseBar,

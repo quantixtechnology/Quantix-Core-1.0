@@ -6,16 +6,12 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { checkAddressServiceability } from './address-serviceability';
+import { haversineDistance } from './service-location';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
-/** Earth's radius in kilometers */
-const EARTH_RADIUS_KM = 6371;
-
-/** Default delivery radius in km */
-const DEFAULT_DELIVERY_RADIUS = 5;
 
 /** Default city speed in km/h for ETA estimation */
 const DEFAULT_CITY_SPEED_KMH = 20;
@@ -82,36 +78,21 @@ export interface DeliveryPartnerResult {
 
 // ============================================================================
 // HAVERSINE FORMULA — Distance between two GPS coordinates
+//
+// Canonical implementation lives in `service-location.ts` (so the pure engine
+// has zero dependencies). Re-exported here for backward compatibility with the
+// many existing callers of `@/lib/core/delivery`.
 // ============================================================================
 
-/**
- * Calculate the great-circle distance between two GPS points using the Haversine formula.
- * Returns distance in kilometers.
- */
-export function haversineDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const dLat = toRadians(lat2 - lat1);
-  const dLng = toRadians(lng2 - lng1);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return EARTH_RADIUS_KM * c;
-}
-
-function toRadians(degrees: number): number {
-  return degrees * (Math.PI / 180);
-}
+export { haversineDistance } from './service-location';
 
 // ============================================================================
 // SERVICEABILITY CHECK — Can this address be served?
+//
+// Thin platform wrapper over the shared Service Location engine
+// (see `service-location.ts` + `service-location-providers.ts`). Handles BOTH
+// the generic Store table and the LaundryStore operational table through the
+// same `ServiceLocation` abstraction — no workspace logic lives here.
 // ============================================================================
 
 /**
@@ -126,131 +107,25 @@ export async function checkServiceability(params: {
   deliveryLng: number;
   orderAmount?: number;
 }): Promise<ServiceabilityResult> {
-  // Get all active stores for this business
-  const stores = await db.store.findMany({
-    where: {
-      businessId: params.businessId,
-      status: 'ACTIVE',
-    },
+  const result = await checkAddressServiceability({
+    businessId: params.businessId,
+    lat: params.deliveryLat,
+    lng: params.deliveryLng,
+    orderAmount: params.orderAmount,
   });
-
-  if (stores.length === 0) {
-    return {
-      serviceable: false,
-      reason: 'No active stores found for this business',
-    };
-  }
-
-  // Find nearest store by Haversine distance
-  let nearestStore: typeof stores[0] | null = null;
-  let nearestDistance = Infinity;
-
-  for (const store of stores) {
-    if (!store.latitude || !store.longitude) continue;
-
-    const distance = haversineDistance(
-      params.deliveryLat,
-      params.deliveryLng,
-      store.latitude,
-      store.longitude
-    );
-
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestStore = store;
-    }
-  }
-
-  if (!nearestStore) {
-    return {
-      serviceable: false,
-      reason: 'No stores with location data available',
-    };
-  }
-
-  const deliveryRadius = nearestStore.deliveryRadius || DEFAULT_DELIVERY_RADIUS;
-  const maxDeliveryDistance = nearestStore.maxDeliveryDistance || deliveryRadius;
-
-  // Check if within delivery radius
-  if (nearestDistance > maxDeliveryDistance) {
-    return {
-      serviceable: false,
-      nearestStoreId: nearestStore.id,
-      nearestStoreName: nearestStore.name,
-      distance: Math.round(nearestDistance * 10) / 10,
-      reason: `Location is ${nearestDistance.toFixed(1)}km away — outside the ${maxDeliveryDistance}km delivery radius`,
-    };
-  }
-
-  // Check minimum order amount
-  if (params.orderAmount && nearestStore.minOrderAmount && params.orderAmount < nearestStore.minOrderAmount) {
-    return {
-      serviceable: false,
-      nearestStoreId: nearestStore.id,
-      nearestStoreName: nearestStore.name,
-      distance: Math.round(nearestDistance * 10) / 10,
-      minOrderAmount: nearestStore.minOrderAmount,
-      reason: `Minimum order amount is ₹${nearestStore.minOrderAmount}`,
-    };
-  }
-
-  // Check delivery zones for more specific rules
-  const zones = await db.deliveryZone.findMany({
-    where: {
-      businessId: params.businessId,
-      isActive: true,
-    },
-  });
-
-  let matchedZone: typeof zones[0] | null = null;
-  for (const zone of zones) {
-    if (zone.zoneType === 'CIRCLE' && zone.centerLat && zone.centerLng && zone.radius) {
-      const distToZone = haversineDistance(
-        params.deliveryLat,
-        params.deliveryLng,
-        zone.centerLat,
-        zone.centerLng
-      );
-      if (distToZone <= zone.radius) {
-        matchedZone = zone;
-        break;
-      }
-    } else if (zone.zoneType === 'PINCODE' && zone.pincodes) {
-      // Pincode-based zone check — would need reverse geocoding in production
-      // For now, skip pincode zones in this check
-    }
-  }
-
-  // Determine delivery fee and estimated time
-  let deliveryFee = nearestStore.deliveryFee;
-  let estimatedTime = nearestStore.preparationTime;
-  let freeDeliveryAbove = nearestStore.freeDeliveryAbove;
-  let minOrderAmount = nearestStore.minOrderAmount;
-
-  // Override with zone-specific settings if matched
-  if (matchedZone) {
-    if (matchedZone.deliveryFee > 0) deliveryFee = matchedZone.deliveryFee;
-    if (matchedZone.estimatedTime > 0) estimatedTime = matchedZone.estimatedTime;
-    if (matchedZone.freeDeliveryAbove) freeDeliveryAbove = matchedZone.freeDeliveryAbove;
-    if (matchedZone.minOrderAmount > 0) minOrderAmount = matchedZone.minOrderAmount;
-  }
-
-  // Free delivery if order amount exceeds threshold
-  if (freeDeliveryAbove && params.orderAmount && params.orderAmount >= freeDeliveryAbove) {
-    deliveryFee = 0;
-  }
 
   return {
-    serviceable: true,
-    nearestStoreId: nearestStore.id,
-    nearestStoreName: nearestStore.name,
-    distance: Math.round(nearestDistance * 10) / 10,
-    deliveryFee,
-    estimatedTime,
-    freeDeliveryAbove: freeDeliveryAbove ?? undefined,
-    minOrderAmount: minOrderAmount ?? undefined,
-    matchedZoneId: matchedZone?.id,
-    matchedZoneName: matchedZone?.name,
+    serviceable: result.serviceable,
+    nearestStoreId: result.nearestStoreId,
+    nearestStoreName: result.nearestStoreName,
+    distance: result.distance,
+    deliveryFee: result.deliveryFee,
+    estimatedTime: result.estimatedTime,
+    freeDeliveryAbove: result.freeDeliveryAbove ?? undefined,
+    minOrderAmount: result.minOrderAmount ?? undefined,
+    reason: result.reason,
+    matchedZoneId: result.matchedZoneId,
+    matchedZoneName: result.matchedZoneName,
   };
 }
 

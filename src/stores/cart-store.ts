@@ -52,6 +52,47 @@ export interface StorePaymentGateway {
   isTestMode: boolean
 }
 
+/**
+ * A delivery address selected by the customer — either a saved Address row
+ * (has id) or a guest/inline address (no id). This is what the whole checkout
+ * flow is keyed on: the cart is store-independent until serviceability runs and
+ * assigns the nearest store. Changing this address NEVER clears the cart.
+ */
+export interface DeliveryAddress {
+  id?: string
+  label?: string | null
+  area?: string | null
+  addressLine1?: string | null
+  addressLine2?: string | null
+  landmark?: string | null
+  city?: string | null
+  state?: string | null
+  pincode?: string | null
+  country?: string | null
+  instructions?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  googlePlaceId?: string | null
+  formattedAddress?: string | null
+}
+
+/** The service location assigned to the order at checkout (serviceability result). */
+export interface AssignedStore {
+  id: string
+  kind: string // "store" | "laundryStore"
+  name: string
+  distanceKm: number | null
+  serviceable: boolean
+  deliveryFee?: number | null
+  freeDeliveryAbove?: number | null
+  minOrderAmount?: number | null
+  preparationTime?: number | null
+  latitude?: number | null
+  longitude?: number | null
+  matchedZoneId?: string | null
+  matchedZoneName?: string | null
+}
+
 interface CartState {
   items: CartItem[]
   storeId: string | null
@@ -59,6 +100,9 @@ interface CartState {
   paymentGateways: StorePaymentGateway[]
   couponCode: string | null
   couponDiscount: number
+  // ── Address-first flow (store-independent cart) ──
+  deliveryAddress: DeliveryAddress | null
+  assignedStore: AssignedStore | null
   // ── Quantix Cart Engine metadata (see docs/quantix-cart-standard.md) ──
   // Business-type awareness + change tracking make the ONE cart future-ready for
   // abandoned-cart reminders, analytics and server/device sync WITHOUT redesign.
@@ -72,6 +116,9 @@ interface CartState {
   setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null, paymentGateways?: StorePaymentGateway[]) => void
   switchStore: (newStoreId: string, deliveryFee: number | null, paymentGateways: StorePaymentGateway[]) => void
   restoreStore: (storeId: string, deliveryFee: number | null) => void
+  setDeliveryAddress: (address: DeliveryAddress | null) => void
+  assignStore: (store: AssignedStore) => void
+  clearAssignedStore: () => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -99,6 +146,8 @@ export const useCartStore = create<CartState>()(
   paymentGateways: [],
   couponCode: null,
   couponDiscount: 0,
+  deliveryAddress: null,
+  assignedStore: null,
   businessType: null,
   updatedAt: 0,
 
@@ -112,6 +161,17 @@ export const useCartStore = create<CartState>()(
     set({ storeId: newStoreId, items: [], storeDeliveryFee: deliveryFee, paymentGateways, couponCode: null, couponDiscount: 0 }),
   restoreStore: (storeId, deliveryFee) =>
     set({ storeId, storeDeliveryFee: deliveryFee }),
+  // Address-first: selecting a delivery address is store-independent and never
+  // touches the cart items.
+  setDeliveryAddress: (address) => set({ deliveryAddress: address, updatedAt: Date.now() }),
+  // Store assignment at checkout — keeps the cart intact (only fees/context change).
+  assignStore: (store) => set((state) => ({
+    assignedStore: store,
+    storeId: store.id,
+    storeDeliveryFee: store.deliveryFee ?? state.storeDeliveryFee,
+    updatedAt: Date.now(),
+  })),
+  clearAssignedStore: () => set({ assignedStore: null, updatedAt: Date.now() }),
 
   addItem: (item) => {
     set((state) => {
@@ -161,7 +221,9 @@ export const useCartStore = create<CartState>()(
 
   clearKind: (kind) => set((state) => ({ updatedAt: Date.now(), items: state.items.filter((i) => (i.kind || "product") !== kind) })),
 
-  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0, updatedAt: Date.now() }),
+  // Clearing the cart releases the assigned store but KEEPS the delivery
+  // address (Swiggy-style: the address survives the order).
+  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0, assignedStore: null, updatedAt: Date.now() }),
 
   laundryCheckoutTick: 0,
   requestLaundryCheckout: () => set((state) => ({ laundryCheckoutTick: state.laundryCheckoutTick + 1 })),
@@ -205,6 +267,8 @@ export const useCartStore = create<CartState>()(
       items: state.items,
       storeId: state.storeId,
       storeDeliveryFee: state.storeDeliveryFee,
+      deliveryAddress: state.deliveryAddress,
+      assignedStore: state.assignedStore,
       couponCode: state.couponCode,
       couponDiscount: state.couponDiscount,
       businessType: state.businessType,

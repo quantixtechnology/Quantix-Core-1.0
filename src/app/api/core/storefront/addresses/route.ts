@@ -59,6 +59,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         latitude?: number
         longitude?: number
         gpsAccuracy?: number
+        googlePlaceId?: string
+        formattedAddress?: string
         instructions?: string
         isDefault?: boolean
       }
@@ -97,6 +99,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           latitude: body.latitude,
           longitude: body.longitude,
           gpsAccuracy: body.gpsAccuracy,
+          googlePlaceId: body.googlePlaceId,
+          formattedAddress: body.formattedAddress,
           instructions: body.instructions,
           isDefault: body.isDefault ?? isFirst,
         },

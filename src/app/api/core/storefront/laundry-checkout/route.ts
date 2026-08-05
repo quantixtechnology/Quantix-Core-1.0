@@ -29,6 +29,7 @@ import { generateOrderNumber } from "@/lib/laundry-codes"
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
+import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 import { assertLaundryBookingOpen } from "@/lib/laundry-availability"
@@ -111,7 +112,27 @@ export async function POST(request: Request) {
     // ── Garment LaundryOrder (normal prices) ─────────────────────────────────
     let order: { id: string; orderNumber: string; grandTotal: number } | null = null
     if (hasItems) {
-      const store = await prisma.laundryStore.findFirst({ where: { laundryBusinessId: lbId, isActive: true }, select: { id: true, storeCode: true } })
+      const storeResolution = await resolveLaundryStoreForPickup({
+        laundryBusinessId: lbId,
+        businessId: platformId,
+        lat: addr.latitude,
+        lng: addr.longitude,
+        pickupAddressId: addr.addressId ?? null,
+      })
+      if (!storeResolution.ok) {
+        return NextResponse.json({
+          success: false,
+          error: storeResolution.reason || storeResolution.error || "We don't deliver to this address yet.",
+          code: "OUT_OF_SERVICE_AREA",
+          nearestStore: storeResolution.nearestStore,
+          serviceability: {
+            status: storeResolution.serviceabilityStatus,
+            pickupDistanceKm: storeResolution.pickupDistanceKm,
+            deliveryZoneId: storeResolution.deliveryZoneId,
+          },
+        }, { status: storeResolution.status || 422 })
+      }
+      const store = await prisma.laundryStore.findUnique({ where: { id: storeResolution.storeId! }, select: { id: true, storeCode: true } })
       if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
       const isPickup = !!pickupSnapshot
       const { lines } = await resolveOrderBilling(lbId, { storeId: store.id, customerType: isPickup ? "PICKUP" : "WALK_IN", pickup: isPickup, delivery: isPickup }, items)
@@ -147,6 +168,10 @@ export async function POST(request: Request) {
         backupDeliveryDate: backupDelivery?.date ? new Date(backupDelivery.date) : null,
         backupDeliveryTimeSlot: backupDelivery?.timeSlot || null,
         pickupAddress: pickupSnapshot,
+        pickupAddressId: storeResolution.pickupAddressId ?? null,
+        pickupDistanceKm: storeResolution.pickupDistanceKm ?? null,
+        serviceabilityStatus: storeResolution.serviceabilityStatus ?? null,
+        deliveryZoneId: storeResolution.deliveryZoneId ?? null,
       })
     }
 

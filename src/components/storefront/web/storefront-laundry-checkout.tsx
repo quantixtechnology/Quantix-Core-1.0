@@ -5,12 +5,12 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store"
 import type { WebNav } from "./storefront-website"
-import type { PickedStore } from "./storefront-store-picker"
 import {
   ArrowLeft, Loader2, CheckCircle2, MapPin, Plus, Trash2, Navigation,
-  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, CreditCard, Home, Building, Tag,
+  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, CreditCard, Home, Building, Tag, Store,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
+import { formatAddressLine } from "@/lib/delivery-address"
 
 interface Addr {
   id: string
@@ -43,7 +43,7 @@ interface CustomerInfo {
 interface LaundryCheckoutProps {
   brandColor: string
   nav: WebNav
-  currentStore?: PickedStore | null
+  onOpenAddressSheet: () => void
   storeClosed?: boolean
   storeClosedMessage?: string
 }
@@ -62,14 +62,14 @@ function normalizePhone(p: string) {
   return p.startsWith("+") ? p : `+${d}`
 }
 
-export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, storeClosed = false, storeClosedMessage }: LaundryCheckoutProps) {
+export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet, storeClosed = false, storeClosedMessage }: LaundryCheckoutProps) {
   const { currentBusinessId } = useAdminStore()
-  const { items, subtotal, clearCart } = useCartStore()
+  const { items, subtotal, clearCart, assignedStore, deliveryAddress, setDeliveryAddress, assignStore, clearAssignedStore } = useCartStore()
   const { isAuthenticated, user, token, setSession } = useAuthStore()
 
   const rawSubtotal = subtotal()
   const itemCount = items.filter((i) => i.kind === "laundry" || !i.kind).length
-  const deliveryFee = currentStore?.deliveryFee ?? 0
+  const deliveryFee = assignedStore?.deliveryFee ?? 0
   const hasCartItems = itemCount > 0
 
   const [step, setStep] = useState<Step>(isAuthenticated ? "address" : "email")
@@ -154,7 +154,81 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
 
   const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
 
-  const canConfirm = isAuthenticated && !!customerResolved && !!selectedAddressId && !!pickupDate && !!pickupSlot && !dateUnavailable && hasCartItems && !storeClosed
+  const selectAddress = useCallback((addr: Addr) => {
+    setSelectedAddressId(addr.id)
+    setDeliveryAddress({
+      id: addr.id, label: addr.label, area: addr.area, addressLine1: addr.addressLine1,
+      addressLine2: addr.addressLine2, landmark: addr.landmark, city: addr.city, state: addr.state,
+      pincode: addr.pincode, instructions: addr.instructions,
+      latitude: addr.latitude ?? undefined, longitude: addr.longitude ?? undefined,
+    })
+  }, [setDeliveryAddress])
+
+  // Address-first serviceability — the selected PICKUP address drives store
+  // assignment (nearest LaundryStore), never device GPS.
+  const [svc, setSvc] = useState<{ loading: boolean; serviceable: boolean | null; reason?: string; nearest?: { id: string; name: string; distance: number | null } | null }>({ loading: false, serviceable: null })
+
+  useEffect(() => {
+    if (!currentBusinessId || !selectedAddressId) {
+      setSvc({ loading: false, serviceable: null })
+      return
+    }
+    const addr = addresses.find((a) => a.id === selectedAddressId)
+    if (!addr) return
+    if (typeof addr.latitude !== "number" || typeof addr.longitude !== "number") {
+      setSvc({ loading: false, serviceable: null, reason: "Set the exact location (map / GPS) so we can find the nearest store." })
+      clearAssignedStore()
+      return
+    }
+    let cancelled = false
+    setSvc({ loading: true, serviceable: null })
+    selectAddress(addr)
+    fetch("/api/core/storefront/serviceability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addressId: addr.id, orderAmount: Math.round(rawSubtotal * 100) / 100 }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (!j.success) {
+          setSvc({ loading: false, serviceable: false, reason: j.error || "Could not check delivery for this address." })
+          clearAssignedStore()
+          return
+        }
+        const d = j.data
+        const nearest = d.nearestStore
+        if (!d.serviceable || !nearest) {
+          setSvc({ loading: false, serviceable: false, reason: d.reason || "We don't pick up from this address yet.", nearest })
+          clearAssignedStore()
+          return
+        }
+        setSvc({ loading: false, serviceable: true, nearest })
+        assignStore({
+          id: nearest.id,
+          kind: nearest.kind || "laundryStore",
+          name: nearest.name,
+          distanceKm: d.distance ?? nearest.distance ?? null,
+          serviceable: true,
+          deliveryFee: d.deliveryFee ?? nearest.deliveryFee ?? null,
+          freeDeliveryAbove: d.freeDeliveryAbove ?? nearest.freeDeliveryAbove ?? null,
+          minOrderAmount: d.minOrderAmount ?? nearest.minOrderAmount ?? null,
+          preparationTime: nearest.preparationTime ?? null,
+          latitude: nearest.latitude ?? null,
+          longitude: nearest.longitude ?? null,
+          matchedZoneId: d.matchedZoneId ?? null,
+          matchedZoneName: d.matchedZoneName ?? null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSvc({ loading: false, serviceable: false, reason: "Could not check delivery. Please try again." })
+        clearAssignedStore()
+      })
+    return () => { cancelled = true }
+  }, [currentBusinessId, selectedAddressId, addresses, rawSubtotal, selectAddress, assignStore, clearAssignedStore])
+
+  const canConfirm = isAuthenticated && !!customerResolved && !!selectedAddressId && !!pickupDate && !!pickupSlot && !dateUnavailable && hasCartItems && !storeClosed && svc.serviceable === true && !!assignedStore
 
   useEffect(() => {
     if (isAuthenticated && token && !customerResolved && (step === "email" || step === "address")) {
@@ -212,6 +286,41 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       setAddressesLoading(false)
     }
   }, [token])
+
+  // Sync the cart delivery address (chosen via the address sheet) into the
+  // saved-address selection: an id selects an existing row; a guest/inline
+  // address is persisted as a pickup address first.
+  useEffect(() => {
+    if (!deliveryAddress || !token) return
+    if (deliveryAddress.id) { setSelectedAddressId(deliveryAddress.id); return }
+    if (typeof deliveryAddress.latitude !== "number" || typeof deliveryAddress.longitude !== "number") return
+    let cancelled = false
+    fetch("/api/laundry/app/addresses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        label: deliveryAddress.label || "Home",
+        addressLine1: deliveryAddress.addressLine1,
+        area: deliveryAddress.area || undefined,
+        landmark: deliveryAddress.landmark || undefined,
+        city: deliveryAddress.city,
+        state: deliveryAddress.state || undefined,
+        pincode: deliveryAddress.pincode,
+        latitude: deliveryAddress.latitude,
+        longitude: deliveryAddress.longitude,
+        isPickupDefault: true,
+      }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (j.success) {
+          fetchAddresses().then(() => { if (!cancelled && j.data?.id) setSelectedAddressId(j.data.id) })
+        }
+      })
+      .catch(() => { /* non-critical */ })
+    return () => { cancelled = true }
+  }, [deliveryAddress, token, fetchAddresses])
 
   const handleCheckEmail = async () => {
     const e = normalizeEmail(email)
@@ -485,7 +594,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rzp = new (window as any).Razorpay({
           key: co.data.keyId, order_id: co.data.razorpayOrderId, amount: Math.round(co.data.amount * 100), currency: "INR",
-          name: currentStore?.name || "Laundry", description: `Order ${orderNumber}`,
+          name: assignedStore?.name || "Laundry", description: `Order ${orderNumber}`,
           prefill: { name: customerResolved?.name || undefined, contact: customerResolved?.phone || undefined, email: customerResolved?.email || undefined },
           theme: { color: brandColor },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -519,6 +628,8 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         customer: { id: customerResolved.id },
         pickup: {
           addressId: selectedAddressId,
+          latitude: selAddr.latitude ?? undefined,
+          longitude: selAddr.longitude ?? undefined,
           date: pickupDate || undefined,
           timeSlot: pickupSlot || undefined,
           instructions: pickupInstructions || undefined,
@@ -553,6 +664,13 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         setOrderResult({ orderNumber, orderId })
         setStep("success")
       } else {
+        if (data.code === "OUT_OF_SERVICE_AREA") {
+          setSvc({
+            loading: false, serviceable: false, reason: data.error,
+            nearest: data.nearestStore ? { id: data.nearestStore.id, name: data.nearestStore.name, distance: data.nearestStore.distance ?? null } : null,
+          })
+          setStep("address")
+        }
         setOrderError(data.error || "Failed to place order")
       }
     } catch {
@@ -867,7 +985,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                   <div key={addr.id}
                     className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${selectedAddressId === addr.id ? "" : "border-gray-200 hover:border-gray-300"}`}
                     style={selectedAddressId === addr.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}>
-                    <div className="flex-1" onClick={() => setSelectedAddressId(addr.id)}>
+                    <div className="flex-1" onClick={() => selectAddress(addr)}>
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{addr.label || addr.addressType || "Address"}</span>
                         {(addr.isPickupDefault || addr.isDefault) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>Default</span>}
@@ -934,9 +1052,47 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                 <Plus className="w-4 h-4" /> Add new address
               </button>
             )}
+
+            <button onClick={onOpenAddressSheet} className="flex items-center gap-2 text-sm font-medium mt-3 transition-colors" style={{ color: brandColor }}>
+              <MapPin className="w-4 h-4" /> Choose exact location on map
+            </button>
+
+            {/* Address-first serviceability — nearest store assignment */}
+            {svc.loading && (
+              <div className="mt-4 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability &amp; assigning nearest store…
+              </div>
+            )}
+            {!svc.loading && selectedAddressId && svc.serviceable === null && svc.reason && (
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2.5 text-xs">
+                {svc.reason}
+              </div>
+            )}
+            {!svc.loading && svc.serviceable === true && assignedStore && (
+              <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs font-medium text-emerald-800 flex items-center gap-2">
+                <Store className="w-4 h-4 shrink-0" />
+                <span>
+                  We'll serve you from <b>{assignedStore.name}</b>
+                  {assignedStore.distanceKm != null && <> · {assignedStore.distanceKm < 1 ? `${Math.round(assignedStore.distanceKm * 1000)} m` : `${assignedStore.distanceKm} km`} from you</>}
+                </span>
+              </div>
+            )}
+            {!svc.loading && svc.serviceable === false && (
+              <div className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: `${brandColor}40`, backgroundColor: `${brandColor}0a` }}>
+                <p className="text-xs font-bold text-gray-900 mb-1">This address is outside our service area</p>
+                <p className="text-xs text-gray-600 mb-2">{svc.reason || "We can't serve this address right now."}</p>
+                {svc.nearest && (
+                  <div className="flex items-center gap-2 text-xs text-gray-700 mb-2">
+                    <Store className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
+                    <span>Nearest: <b>{svc.nearest.name}</b>{svc.nearest.distance != null && <> · {svc.nearest.distance < 1 ? `${Math.round(svc.nearest.distance * 1000)} m` : `${svc.nearest.distance} km`} away</>}</span>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">Select a different pickup address to continue.</p>
+              </div>
+            )}
           </div>
 
-          <button onClick={() => setStep("review")} disabled={!selectedAddressId}
+          <button onClick={() => setStep("review")} disabled={!selectedAddressId || svc.loading || svc.serviceable !== true}
             className="w-full h-12 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: brandColor }}>
             Continue to Checkout
@@ -1045,6 +1201,13 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
           <div>
             <div className="bg-white border border-gray-200 rounded-2xl p-5 sticky top-24">
               <h3 className="text-sm font-bold text-gray-900 mb-3">Order Summary</h3>
+              {assignedStore && (
+                <div className="mb-3 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-medium"
+                  style={{ backgroundColor: `${brandColor}0a`, color: brandColor }}>
+                  <Store className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Serving from {assignedStore.name}{assignedStore.distanceKm != null && <> · {assignedStore.distanceKm < 1 ? `${Math.round(assignedStore.distanceKm * 1000)} m` : `${assignedStore.distanceKm} km`}</>}</span>
+                </div>
+              )}
               <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
                 {items.filter((i) => i.kind === "laundry" || !i.kind).map((item, idx) => (
                   <div key={`${item.productId}-${item.variantId}-${idx}`} className="flex justify-between text-sm">
@@ -1080,6 +1243,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                   {!isAuthenticated && <p className="text-[10px] text-red-400">Sign in required</p>}
                   {!customerResolved && <p className="text-[10px] text-red-400">Customer profile required</p>}
                   {!selectedAddressId && <p className="text-[10px] text-red-400">Select a pickup address</p>}
+                  {selectedAddressId && svc.serviceable !== true && <p className="text-[10px] text-red-400">{svc.loading ? "Checking availability…" : "Pickup address is outside our service area"}</p>}
                   {!pickupDate && <p className="text-[10px] text-red-400">Select pickup date</p>}
                   {!pickupSlot && <p className="text-[10px] text-red-400">Select pickup time slot</p>}
                   {dateUnavailable && <p className="text-[10px] text-red-400">{dateUnavailable}</p>}

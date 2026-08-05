@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import type { DeliveryAddress } from "@/stores/cart-store"
 import { StorefrontLayout } from "./storefront-layout"
 import { StorefrontHome } from "./storefront-home"
 import { StorefrontCategoryPage } from "./storefront-category"
@@ -17,7 +18,7 @@ import { CustomerAccountCenter } from "./account/customer-account-center"
 import { CustomerProfileEditor } from "./account/customer-profile-editor"
 import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
-import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
+import { DeliveryAddressSheet } from "./delivery-address-sheet"
 import { PwaMetaUpdater } from "@/components/storefront/pwa-meta-updater"
 import { useLiveTemplate } from "@/components/storefront/commerce/use-live-template"
 import { CommercePageRenderer } from "@/components/storefront/commerce/commerce-page-renderer"
@@ -173,7 +174,7 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
 
 export function StorefrontWebsite() {
   const { currentBusinessId, currentBusinessName, currentBusinessType, currentBusinessPrimaryColor } = useAdminStore()
-  const { switchStore, restoreStore, storeId: cartStoreId } = useCartStore()
+  const { setDeliveryAddress, deliveryAddress, assignedStore } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
   const [page, setPage] = useState<WebPage>("home")
@@ -193,68 +194,34 @@ export function StorefrontWebsite() {
   // synchronously without re-subscribing on every stack change.
   const navStackRef = useRef<NavSnapshot[]>([])
 
-  // Store picker state
-  const [showStorePicker, setShowStorePicker] = useState(false)
-  const [pickerMandatory, setPickerMandatory] = useState(false)
-  const [currentStore, setCurrentStore] = useState<PickedStore | null>(null)
+  // Address-first: the header "Delivering To" sheet is the ONLY location gate.
+  // There is no startup store picker and no mandatory store — browsing, pricing
+  // and the cart all work without a location; store assignment happens at
+  // checkout from the selected delivery address.
+  const [showAddressSheet, setShowAddressSheet] = useState(false)
 
   // Store status — polled every 60 seconds so the UI reacts to open/close windows
   const [storeStatus, setStoreStatus] = useState<{
     isOnline: boolean; isOpen: boolean; message: string; opensAt: string | null; closedReason: string | null; closedUntil: string | null; businessHours: string | null
   }>({ isOnline: true, isOpen: true, message: "", opensAt: null, closedReason: null, closedUntil: null, businessHours: null })
 
-  // On mount: check localStorage for a saved store; if none, show mandatory picker
+  const handleAddressSelected = useCallback((addr: DeliveryAddress) => {
+    setDeliveryAddress(addr)
+    setShowAddressSheet(false)
+  }, [setDeliveryAddress])
+
+  const openAddressSheet = useCallback(() => setShowAddressSheet(true), [])
+
+  // Poll store status once on mount and whenever the assigned store changes,
+  // then every 60s. Without an assigned store the business-level context is used.
   useEffect(() => {
     if (!currentBusinessId) return
-    const key = `quantix_store_${currentBusinessId}`
-    const saved = typeof window !== "undefined" ? localStorage.getItem(key) : null
-    if (saved) {
-      try {
-        const parsed: PickedStore = JSON.parse(saved)
-        setCurrentStore(parsed)
-        // Preserve persisted cart items if same store; clear only on store change.
-        if (cartStoreId === parsed.id) {
-          restoreStore(parsed.id, parsed.deliveryFee)
-        } else {
-          switchStore(parsed.id, parsed.deliveryFee, [])
-        }
-      } catch {
-        // corrupt data — show picker
-        setPickerMandatory(true)
-        setShowStorePicker(true)
-      }
-    } else {
-      setPickerMandatory(true)
-      setShowStorePicker(true)
-    }
-  }, [currentBusinessId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleStoreSelected = useCallback((store: PickedStore) => {
-    const key = `quantix_store_${currentBusinessId}`
-    if (typeof window !== "undefined") {
-      localStorage.setItem(key, JSON.stringify(store))
-    }
-    // User explicitly picked a store — always clear the cart.
-    switchStore(store.id, store.deliveryFee, [])
-    setCurrentStore(store)
-    setShowStorePicker(false)
-    setPickerMandatory(false)
-  }, [currentBusinessId, switchStore])
-
-  const handleOpenStorePicker = useCallback(() => {
-    setPickerMandatory(false)
-    setShowStorePicker(true)
-  }, [])
-
-  // Poll store status once on mount and whenever the store changes, then every 60s
-  useEffect(() => {
-    if (!currentBusinessId) return
-    const storeId = currentStore?.id ?? null
+    const storeId = assignedStore?.id ?? null
     const check = () => fetchStoreStatus(currentBusinessId, storeId).then(setStoreStatus)
     check()
     const id = setInterval(check, 60_000)
     return () => clearInterval(id)
-  }, [currentBusinessId, currentStore?.id])
+  }, [currentBusinessId, assignedStore?.id])
 
   const go = useCallback((
     p: WebPage,
@@ -334,11 +301,11 @@ export function StorefrontWebsite() {
   // page (home, or a custom template page). Resolver logic is entirely
   // server-side; this only consumes the decision. Legacy pages ignore it.
   const activeTemplateSlug = page === "template" ? (templateSlug || "home") : "home"
-  const templateState = useLiveTemplate(currentBusinessId || null, currentStore?.id ?? null, activeTemplateSlug)
+  const templateState = useLiveTemplate(currentBusinessId || null, assignedStore?.id ?? null, activeTemplateSlug)
   const directive = templateState.status === "ready" ? templateState.directive : null
   const renderCtx: RenderContext = {
     businessId: currentBusinessId || "",
-    storeId: currentStore?.id ?? null,
+    storeId: assignedStore?.id ?? null,
     businessName: currentBusinessName || "",
     businessType: currentBusinessType || "",
     brandColor,
@@ -354,7 +321,7 @@ export function StorefrontWebsite() {
       {/* Updates <meta name="theme-color">, apple-touch-icon, and title per business */}
       <PwaMetaUpdater />
 
-      <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker} storeClosed={storeClosed}>
+      <StorefrontLayout brandColor={brandColor} nav={nav} onOpenAddressSheet={openAddressSheet} storeClosed={storeClosed}>
         {/* ── Store Offline / Closed Banner ──────────────────────── */}
         {storeClosed && (
           <div className="sticky top-0 z-40 w-full bg-gray-900 text-white text-center py-3 px-4">
@@ -399,8 +366,8 @@ export function StorefrontWebsite() {
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
         {page === "checkout" && (currentBusinessType === "LAUNDRY"
-          ? <StorefrontLaundryCheckout brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />
-          : <StorefrontCheckout brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />)}
+          ? <StorefrontLaundryCheckout brandColor={brandColor} nav={nav} onOpenAddressSheet={openAddressSheet} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />
+          : <StorefrontCheckout brandColor={brandColor} nav={nav} onOpenAddressSheet={openAddressSheet} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />)}
         {/* LAUNDRY reuses the laundry Order Engine end-to-end (orders + tracking +
             payments + invoice). Non-laundry keeps the ecommerce screens. */}
         {page === "order-tracking" && (currentBusinessType === "LAUNDRY"
@@ -415,16 +382,12 @@ export function StorefrontWebsite() {
         {page === "password"       && <StorefrontPassword      brandColor={brandColor} nav={nav} />}
       </StorefrontLayout>
 
-      {showStorePicker && currentBusinessId && (
-        <StorefrontStorePicker
-          businessId={currentBusinessId}
-          currentStoreId={currentStore?.id}
-          brandColor={brandColor}
-          mandatory={pickerMandatory}
-          onSelect={handleStoreSelected}
-          onClose={pickerMandatory ? undefined : () => setShowStorePicker(false)}
-        />
-      )}
+      <DeliveryAddressSheet
+        open={showAddressSheet}
+        brandColor={brandColor}
+        onSelect={handleAddressSelected}
+        onClose={() => setShowAddressSheet(false)}
+      />
     </>
   )
 }

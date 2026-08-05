@@ -27,6 +27,7 @@ import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
+import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
 
 export const runtime = "nodejs"
 
@@ -68,9 +69,6 @@ export async function POST(request: Request) {
     const platformId = biz.platformBusinessId || businessId
     const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
 
-    const store = await prisma.laundryStore.findFirst({ where: { laundryBusinessId: lbId, isActive: true }, select: { id: true, storeCode: true } })
-    if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
-
     // ── Canonical customer — resolved from auth userid (server-side) when
     //    authenticated, or from client-provided values as a guest fallback.
     //    Never trust client-provided name/phone for authenticated users.
@@ -100,6 +98,33 @@ export async function POST(request: Request) {
     })
     if (!addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
     const pickupSnapshot = addr.snapshot || null
+
+    // ── Address-first store assignment — nearest serviceable LaundryStore is
+    //    resolved from the pickup coordinates via the shared engine. Addresses
+    //    outside every store's radius return an OUT_OF_SERVICE_AREA card (with
+    //    the nearest store + distance) instead of "No Stores Available".
+    const storeResolution = await resolveLaundryStoreForPickup({
+      laundryBusinessId: lbId,
+      businessId: platformId,
+      lat: addr.latitude,
+      lng: addr.longitude,
+      pickupAddressId: addr.addressId ?? null,
+    })
+    if (!storeResolution.ok) {
+      return NextResponse.json({
+        success: false,
+        error: storeResolution.reason || storeResolution.error || "We don't deliver to this address yet.",
+        code: "OUT_OF_SERVICE_AREA",
+        nearestStore: storeResolution.nearestStore,
+        serviceability: {
+          status: storeResolution.serviceabilityStatus,
+          pickupDistanceKm: storeResolution.pickupDistanceKm,
+          deliveryZoneId: storeResolution.deliveryZoneId,
+        },
+      }, { status: storeResolution.status || 422 })
+    }
+    const store = await prisma.laundryStore.findUnique({ where: { id: storeResolution.storeId! }, select: { id: true, storeCode: true } })
+    if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
 
     // ── Subscription context (optional) ──────────────────────────────────────
     let sub: { id: string; totalCredits: number; planName: string; maxOrders: number | null } | null = null
@@ -188,6 +213,10 @@ export async function POST(request: Request) {
       backupDeliveryDate: backupDelivery?.date ? new Date(backupDelivery.date) : null,
       backupDeliveryTimeSlot: backupDelivery?.timeSlot || null,
       pickupAddress: pickupSnapshot,
+      pickupAddressId: storeResolution.pickupAddressId ?? null,
+      pickupDistanceKm: storeResolution.pickupDistanceKm ?? null,
+      serviceabilityStatus: storeResolution.serviceabilityStatus ?? null,
+      deliveryZoneId: storeResolution.deliveryZoneId ?? null,
       pickupInstructions: pickup?.instructions || null,
       include: { items: true, store: { select: { storeName: true, storeCode: true } } },
     })

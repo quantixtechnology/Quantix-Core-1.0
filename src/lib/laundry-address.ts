@@ -11,6 +11,8 @@ export interface StructuredAddress {
   label?: string | null; addressLine1?: string | null; addressLine2?: string | null
   area?: string | null; landmark?: string | null
   city?: string | null; state?: string | null; pincode?: string | null; country?: string | null
+  latitude?: number | null; longitude?: number | null
+  googlePlaceId?: string | null; formattedAddress?: string | null
 }
 
 export function formatAddressSnapshot(a: StructuredAddress, name?: string | null, phone?: string | null): string {
@@ -23,7 +25,7 @@ export function formatAddressSnapshot(a: StructuredAddress, name?: string | null
   return lines.join("\n")
 }
 
-export interface ResolvePickupResult { ok: boolean; snapshot?: string; addressId?: string | null; error?: string; status?: number }
+export interface ResolvePickupResult { ok: boolean; snapshot?: string; addressId?: string | null; latitude?: number | null; longitude?: number | null; googlePlaceId?: string | null; formattedAddress?: string | null; error?: string; status?: number }
 
 /**
  * Resolve the pickup address for an order.
@@ -31,6 +33,9 @@ export interface ResolvePickupResult { ok: boolean; snapshot?: string; addressId
  *   (ownership) and the customer's tenant, then snapshot it.
  * - structured → snapshot the inline fields (guest add-address).
  * - legacyString → backward-compatible free-text snapshot.
+ *
+ * Coordinates (latitude/longitude) are returned when available so the caller
+ * can run the shared Address Serviceability engine to assign the nearest store.
  */
 export async function resolvePickupAddress(input: {
   addressId?: string | null
@@ -44,12 +49,28 @@ export async function resolvePickupAddress(input: {
     const addr = await prisma.address.findUnique({ where: { id: input.addressId } })
     if (!addr) return { ok: false, error: "Address not found", status: 404 }
     if (addr.customerId !== input.customerId) return { ok: false, error: "This address does not belong to your account", status: 403 }
-    return { ok: true, addressId: addr.id, snapshot: formatAddressSnapshot(addr as StructuredAddress, input.customerName, input.customerPhone) }
+    return {
+      ok: true,
+      addressId: addr.id,
+      snapshot: formatAddressSnapshot(addr as StructuredAddress, input.customerName, input.customerPhone),
+      latitude: addr.latitude,
+      longitude: addr.longitude,
+      googlePlaceId: addr.googlePlaceId,
+      formattedAddress: addr.formattedAddress,
+    }
   }
   if (input.structured && (input.structured.addressLine1 || input.structured.area)) {
     const s = input.structured
     if (!s.addressLine1 || !s.city || !s.pincode) return { ok: false, error: "Address line, city and PIN code are required", status: 400 }
-    return { ok: true, addressId: null, snapshot: formatAddressSnapshot(s, input.customerName, input.customerPhone) }
+    return {
+      ok: true,
+      addressId: null,
+      snapshot: formatAddressSnapshot(s, input.customerName, input.customerPhone),
+      latitude: s.latitude ?? null,
+      longitude: s.longitude ?? null,
+      googlePlaceId: s.googlePlaceId ?? null,
+      formattedAddress: s.formattedAddress ?? null,
+    }
   }
   if (input.legacyString && input.legacyString.trim()) {
     return { ok: true, addressId: null, snapshot: input.legacyString.trim() }

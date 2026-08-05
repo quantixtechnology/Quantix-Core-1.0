@@ -696,6 +696,7 @@ model Business {
   promoCodes             PromoCode[]
   reviews                Review[]
   stores                 Store[]
+  storefrontSettings     StorefrontSettings?
   subscriptionPlans      SubscriptionPlan[]
   addons                 Addon[]
   taxConfigs             TaxConfig[]
@@ -1012,6 +1013,9 @@ model Order {
   deliveryAddress      String?
   deliveryLat          Float?
   deliveryLng          Float?
+  deliveryDistanceKm   Float?
+  serviceabilityStatus String?
+  deliveryZoneId       String?
   deliveryInstructions String?
   scheduledAt          DateTime?
   pickupAddress        String?
@@ -1239,6 +1243,18 @@ model WorkforceSettings {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model StorefrontSettings {
+  id                       String   @id @default(cuid())
+  businessId               String   @unique
+  storeAssignmentMode      String   @default("AUTO_ASSIGN_NEAREST") // AUTO_ASSIGN_NEAREST | CUSTOMER_CHOICE
+  allowCustomerStoreChoice Boolean  @default(false)
+  serviceabilityMode       String   @default("CHECKOUT") // CHECKOUT | BROWSE
+  deliveryRadiusFallbackKm Float    @default(5.0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  business                 Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model PartnerAudit {
@@ -1710,7 +1726,7 @@ model SubscriptionPaymentAuditLog {
 }
 
 model SubscriptionPlan {
-  id                 String                   @id @default(cuid())
+  id                 String                     @id @default(cuid())
   businessId         String
   name               String
   slug               String
@@ -1719,8 +1735,8 @@ model SubscriptionPlan {
   billingCycle       SubscriptionBillingCycle
   price              Float
   originalPrice      Float?
-  setupFee           Float                    @default(0)
-  totalCredits       Int                      @default(0)
+  setupFee           Float                      @default(0)
+  totalCredits       Int                        @default(0)
   creditLabel        String?
   image              String? // tenant marketing image (upload URL)
   // Laundry cloth-allowance plans: how the allowance is consumed and how many
@@ -1732,22 +1748,22 @@ model SubscriptionPlan {
   // A plan may grant a weight allowance, a piece allowance, or BOTH at once.
   allowanceKg        Float? // KG covered per billing cycle (null = none)
   allowancePieces    Int? // pieces covered per billing cycle (null = none)
-  autoRenew          Boolean                  @default(false) // auto-renew at cycle end
-  graceDays          Int                      @default(0) // grace window after expiry
+  autoRenew          Boolean                    @default(false) // auto-renew at cycle end
+  graceDays          Int                        @default(0) // grace window after expiry
   validityDays       Int? // explicit validity (null = derived from billingCycle)
   coverageRules      SubscriptionPlanCoverage[]
-  features           String                   @default("[]")
-  isFeatured         Boolean                  @default(false)
+  features           String                     @default("[]")
+  isFeatured         Boolean                    @default(false)
   maxSubscribers     Int?
-  currentSubscribers Int                      @default(0)
-  isActive           Boolean                  @default(true)
-  sortOrder          Int                      @default(0)
+  currentSubscribers Int                        @default(0)
+  isActive           Boolean                    @default(true)
+  sortOrder          Int                        @default(0)
   startsAt           DateTime?
   endsAt             DateTime?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
   subscriptions      CustomerSubscription[]
-  business           Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business           Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
   planItems          SubscriptionPlanItem[]
 
   @@unique([businessId, slug])
@@ -1982,30 +1998,32 @@ model Customer {
 }
 
 model Address {
-  id           String   @id @default(cuid())
-  customerId   String
-  label        String?
+  id                String   @id @default(cuid())
+  customerId        String
+  label             String?
   // Additive customer-management fields: address kind + pickup/delivery
   // defaults. Legacy rows default to HOME and false (backward compatible).
-  addressType  String   @default("HOME") // HOME | OFFICE | OTHER
-  isPickupDefault   Boolean @default(false)
-  isDeliveryDefault Boolean @default(false)
-  area         String?
-  addressLine1 String
-  addressLine2 String?
-  landmark     String?
-  city         String
-  state        String
-  pincode      String
-  country      String   @default("India")
-  latitude     Float?
-  longitude    Float?
-  gpsAccuracy  Float?
-  isDefault    Boolean  @default(false)
-  instructions String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  addressType       String   @default("HOME") // HOME | OFFICE | OTHER
+  isPickupDefault   Boolean  @default(false)
+  isDeliveryDefault Boolean  @default(false)
+  area              String?
+  addressLine1      String
+  addressLine2      String?
+  landmark          String?
+  city              String
+  state             String
+  pincode           String
+  country           String   @default("India")
+  latitude          Float?
+  longitude         Float?
+  gpsAccuracy       Float?
+  googlePlaceId     String?
+  formattedAddress  String?
+  isDefault         Boolean  @default(false)
+  instructions      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
 }
@@ -2059,7 +2077,7 @@ model LaundryAccessRole {
 model LaundryAccessPermission {
   id      String            @id @default(cuid())
   roleId  String
-  permKey String            // screen key, e.g. "laundry.orders"
+  permKey String // screen key, e.g. "laundry.orders"
   level   Int               @default(1) // 1=VIEW, 2=CREATE, 3=EDIT
   effect  String            @default("ALLOW") // ALLOW | DENY
   role    LaundryAccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -2301,38 +2319,38 @@ model SalesTeamMember {
 }
 
 model DomainMapping {
-  id               String       @id @default(cuid())
-  businessId       String       @unique
-  domain           String       @unique
-  subdomain        String?
-  isPrimary        Boolean      @default(true)
-  sslStatus        String       @default("pending")
-  sslExpiryDate    DateTime?
-  sslError         String?
-  sslLastCheckedAt DateTime?
+  id                        String       @id @default(cuid())
+  businessId                String       @unique
+  domain                    String       @unique
+  subdomain                 String?
+  isPrimary                 Boolean      @default(true)
+  sslStatus                 String       @default("pending")
+  sslExpiryDate             DateTime?
+  sslError                  String?
+  sslLastCheckedAt          DateTime?
   // Executive PWA host (delivery.<domain>) provisioning status — the tenant's
   // SECOND public app, provisioned by the same engine alongside the customer site.
-  executiveSslStatus        String    @default("pending")
+  executiveSslStatus        String       @default("pending")
   executiveSslExpiryDate    DateTime?
   executiveSslError         String?
   executiveSslLastCheckedAt DateTime?
   // Store Admin PWA host (store.<domain>) provisioning status — the tenant's THIRD
   // public app, provisioned by the same engine alongside the other two.
-  storeSslStatus        String    @default("pending")
-  storeSslExpiryDate    DateTime?
-  storeSslError         String?
-  storeSslLastCheckedAt DateTime?
-  dnsProvider      String?
-  dnsConfig        String       @default("{}")
-  status           DomainStatus @default(PENDING_DNS)
-  configuredBy     String?
-  configuredAt     DateTime?
-  deployedAt       DateTime?
-  notes            String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  business         Business     @relation(fields: [businessId], references: [id])
-  sslJobs          SslJob[]
+  storeSslStatus            String       @default("pending")
+  storeSslExpiryDate        DateTime?
+  storeSslError             String?
+  storeSslLastCheckedAt     DateTime?
+  dnsProvider               String?
+  dnsConfig                 String       @default("{}")
+  status                    DomainStatus @default(PENDING_DNS)
+  configuredBy              String?
+  configuredAt              DateTime?
+  deployedAt                DateTime?
+  notes                     String?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+  business                  Business     @relation(fields: [businessId], references: [id])
+  sslJobs                   SslJob[]
 
   @@index([status])
 }
@@ -4140,40 +4158,40 @@ model BillingAudit {
 // ============================================================================
 
 model LaundryBusiness {
-  id                           String    @id @default(cuid())
-  businessCode                 String    @unique
-  businessName                 String
-  legalName                    String?
-  ownerName                    String
-  mobile                       String
-  email                        String?
-  gstNumber                    String?
-  logo                         String?
-  favicon                      String?
-  address                      String?
-  plan                         String    @default("STANDARD")
-  status                       String    @default("ONBOARDING")
+  id                             String          @id @default(cuid())
+  businessCode                   String          @unique
+  businessName                   String
+  legalName                      String?
+  ownerName                      String
+  mobile                         String
+  email                          String?
+  gstNumber                      String?
+  logo                           String?
+  favicon                        String?
+  address                        String?
+  plan                           String          @default("STANDARD")
+  status                         String          @default("ONBOARDING")
   // Payment policy: ADVANCE_REQUIRED | BEFORE_DELIVERY | SUBSCRIPTION | CUSTOM.
   // Only ADVANCE_REQUIRED blocks processing before payment; the default lets
   // garments process and requires payment before delivery.
-  paymentPolicy                String    @default("BEFORE_DELIVERY")
-  allowProcessingBeforePayment Boolean   @default(false) // deprecated (kept for compat)
+  paymentPolicy                  String          @default("BEFORE_DELIVERY")
+  allowProcessingBeforePayment   Boolean         @default(false) // deprecated (kept for compat)
   // Pickup-First: how the operational QR is created after Store Audit.
-  processingPackageQrMode      String    @default("GENERATE_NEW") // GENERATE_NEW | REUSE_BAG
+  processingPackageQrMode        String          @default("GENERATE_NEW") // GENERATE_NEW | REUSE_BAG
   // Reusable-bag release policy — WHEN a bag returns to AVAILABLE. Different
   // laundries empty the bag at different points: STORE_RECEIVE (garments removed
   // when the picked-up bag arrives at the store — recommended default) or
   // AFTER_DELIVERY (bag stays with the order through delivery, released after).
-  reusableBagReleaseStage      String       @default("STORE_RECEIVE") // STORE_RECEIVE | AFTER_DELIVERY
+  reusableBagReleaseStage        String          @default("STORE_RECEIVE") // STORE_RECEIVE | AFTER_DELIVERY
   storeToProcessingTransportMode TransportQrMode @default(PACKET)
   processingToStoreTransportMode TransportQrMode @default(PACKET)
-  workstationScanSound         Boolean   @default(true) // play success/error beep on scan
-  defaultServiceRadius         Float?
-  defaultDailyCapacity         Float?
-  platformBusinessId           String?   @unique
-  setupCompletedAt             DateTime? // Guided Initial Setup finished → dashboard is operational
-  createdAt                    DateTime  @default(now())
-  updatedAt                    DateTime  @updatedAt
+  workstationScanSound           Boolean         @default(true) // play success/error beep on scan
+  defaultServiceRadius           Float?
+  defaultDailyCapacity           Float?
+  platformBusinessId             String?         @unique
+  setupCompletedAt               DateTime? // Guided Initial Setup finished → dashboard is operational
+  createdAt                      DateTime        @default(now())
+  updatedAt                      DateTime        @updatedAt
 
   stores               LaundryStore[]
   features             LaundryBusinessFeature[]
@@ -4265,41 +4283,41 @@ model LaundryPlatformProvisioning {
 // ── 3. Operational Configuration ──────────────────────────────────────────
 // Only these 4 toggles. They directly determine workflow stage generation.
 model LaundryOperationalConfig {
-  id                     String          @id @default(cuid())
-  businessId             String          @unique
-  business               LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  transportEnabled       Boolean         @default(true)
-  barcodeEnabled         Boolean         @default(true)
-  homeDeliveryEnabled    Boolean         @default(true)
-  ironingEnabled         Boolean         @default(true)
+  id                      String          @id @default(cuid())
+  businessId              String          @unique
+  business                LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  transportEnabled        Boolean         @default(true)
+  barcodeEnabled          Boolean         @default(true)
+  homeDeliveryEnabled     Boolean         @default(true)
+  ironingEnabled          Boolean         @default(true)
   // Charges & Rules — two simple business rules (minimums are MINIMUM BILL
   // VALUES per order type, not additional charges; 0 = no minimum).
-  walkInMinOrder         Float           @default(0)
-  pickupMinOrder         Float           @default(0)
-  deliveryMinOrder       Float           @default(0)
-  expressEnabled         Boolean         @default(false)
-  expressTurnaroundHours Int?
-  expressChargeType      String          @default("FIXED") // FIXED | PERCENT
-  expressChargeValue     Float           @default(0)
+  walkInMinOrder          Float           @default(0)
+  pickupMinOrder          Float           @default(0)
+  deliveryMinOrder        Float           @default(0)
+  expressEnabled          Boolean         @default(false)
+  expressTurnaroundHours  Int?
+  expressChargeType       String          @default("FIXED") // FIXED | PERCENT
+  expressChargeValue      Float           @default(0)
   // Delivery & Pickup time-slot windows — the SINGLE source of slots used
   // everywhere pickup/delivery are scheduled (New Order, Ready for Delivery,
   // Storefront). Start/end are "HH:MM"; duration is the slot length in minutes.
-  pickupSlotStart         String         @default("07:00")
-  pickupSlotEnd           String         @default("21:00")
-  pickupSlotDurationMin   Int            @default(120)
-  deliverySlotStart       String         @default("14:00")
-  deliverySlotEnd         String         @default("23:00")
-  deliverySlotDurationMin Int            @default(60)
+  pickupSlotStart         String          @default("07:00")
+  pickupSlotEnd           String          @default("21:00")
+  pickupSlotDurationMin   Int             @default(120)
+  deliverySlotStart       String          @default("14:00")
+  deliverySlotEnd         String          @default("23:00")
+  deliverySlotDurationMin Int             @default(60)
   // Delivery slot capacity — ONE limit applies to every generated delivery slot
   // (per date + time slot). A slot counts its Standard + Backup (Alternate)
   // deliveries that are still scheduled/assigned/accepted (Delivered and
   // Cancelled orders free up the slot). 0 = unlimited.
-  deliveryMaxPerSlot      Int            @default(100)
+  deliveryMaxPerSlot      Int             @default(100)
   // Payments: COD is always an option unless the owner switches it off here.
   // Online-gateway selection/config lives with the platform gateway system.
-  codEnabled              Boolean        @default(true)
-  updatedAt              DateTime        @updatedAt
-  createdAt              DateTime        @default(now())
+  codEnabled              Boolean         @default(true)
+  updatedAt               DateTime        @updatedAt
+  createdAt               DateTime        @default(now())
 
   @@index([businessId])
 }
@@ -4329,19 +4347,19 @@ model LaundryPaymentGateway {
 
 // ── 4. Workflow & Quality Controls ────────────────────────────────────────
 model LaundryWorkflowQualityConfig {
-  id          String          @id @default(cuid())
-  businessId  String          @unique
-  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  photoAudit  Boolean         @default(true)
-  auditModule Boolean         @default(true)
+  id                         String          @id @default(cuid())
+  businessId                 String          @unique
+  business                   LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  photoAudit                 Boolean         @default(true)
+  auditModule                Boolean         @default(true)
   // Pickup/Delivery customer verification — how the team confirms the customer
   // before a Pickup / Delivery can be completed. OTP = the customer shares the
   // auto-generated 4-digit code; NAME = the executive confirms identity in
   // person. Enforced server-side on every completion path (no bypass).
-  pickupVerificationMethod   String   @default("OTP") // OTP | NAME
-  deliveryVerificationMethod String   @default("OTP") // OTP | NAME
-  updatedAt   DateTime        @updatedAt
-  createdAt   DateTime        @default(now())
+  pickupVerificationMethod   String          @default("OTP") // OTP | NAME
+  deliveryVerificationMethod String          @default("OTP") // OTP | NAME
+  updatedAt                  DateTime        @updatedAt
+  createdAt                  DateTime        @default(now())
 
   @@index([businessId])
 }
@@ -4431,11 +4449,11 @@ model LaundryStore {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  laundryBusiness LaundryBusiness         @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
-  departments     LaundryDepartment[]
-  assignments     LaundryUserAssignment[]
-  orders          LaundryOrder[]
-  pricingRules    LaundryPricingRule[]
+  laundryBusiness    LaundryBusiness            @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
+  departments        LaundryDepartment[]
+  assignments        LaundryUserAssignment[]
+  orders             LaundryOrder[]
+  pricingRules       LaundryPricingRule[]
   deliveryExecutives LaundryDeliveryExecutive[]
 
   @@index([laundryBusinessId])
@@ -4451,20 +4469,20 @@ model LaundryStore {
 // has one clean screen to manage who can be assigned to field jobs. Only these
 // executives can log into the Pickup & Delivery PWA.
 model LaundryDeliveryExecutive {
-  id            String   @id @default(cuid())
-  businessId    String // LaundryBusiness.id (laundry-scoped, like other laundry masters)
-  userId        String? // linked auth User — login via existing auth system
-  employeeCode  String
-  name          String
-  mobile        String
-  storeId       String? // assigned store
-  canReject     Boolean  @default(true)
-  vehicleType   String? // BIKE | SCOOTER | CAR | VAN | CYCLE | null
-  vehicleNumber String? // registration plate (optional)
-  photo         String? // profile photo URL (optional; future customer-facing)
-  isActive      Boolean  @default(true)
-  availability  String   @default("AVAILABLE") // AVAILABLE | BUSY | OFF
-  currentStatus String? // mirrors live field status; null = idle
+  id              String    @id @default(cuid())
+  businessId      String // LaundryBusiness.id (laundry-scoped, like other laundry masters)
+  userId          String? // linked auth User — login via existing auth system
+  employeeCode    String
+  name            String
+  mobile          String
+  storeId         String? // assigned store
+  canReject       Boolean   @default(true)
+  vehicleType     String? // BIKE | SCOOTER | CAR | VAN | CYCLE | null
+  vehicleNumber   String? // registration plate (optional)
+  photo           String? // profile photo URL (optional; future customer-facing)
+  isActive        Boolean   @default(true)
+  availability    String    @default("AVAILABLE") // AVAILABLE | BUSY | OFF
+  currentStatus   String? // mirrors live field status; null = idle
   // Operational security/status (NOT a new auth system — the platform auth is
   // unchanged; these extend the executive OPERATIONAL model for admin control).
   isLocked        Boolean   @default(false) // admin manual lock
@@ -4473,11 +4491,11 @@ model LaundryDeliveryExecutive {
   lastLoginIp     String?
   lastLoginDevice String?
   archivedAt      DateTime? // never hard-deleted; archived stays searchable
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store    LaundryStore?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  business LaundryBusiness                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store    LaundryStore?                   @relation(fields: [storeId], references: [id], onDelete: SetNull)
   resets   LaundryDeliveryExecutiveReset[]
 
   @@unique([businessId, employeeCode])
@@ -4547,71 +4565,71 @@ enum TransportQrMode {
 }
 
 model LaundryOrder {
-  id                   String             @id @default(cuid())
-  orderNumber          String             @unique
-  businessId           String
-  storeId              String
-  customerId           String?
-  orderType            String             @default("WALK_IN") // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
-  source               String             @default("MANUAL")
+  id                     String             @id @default(cuid())
+  orderNumber            String             @unique
+  businessId             String
+  storeId                String
+  customerId             String?
+  orderType              String             @default("WALK_IN") // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
+  source                 String             @default("MANUAL")
   // Informational channel that CREATED the order. Never branches business logic —
   // the workflow is identical for every source. ONLINE_WEB | ONLINE_APP |
   // STORE_WALKIN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION | API.
-  orderSource          String             @default("STORE_WALKIN")
-  status               LaundryOrderStatus @default(DRAFT)
-  paymentPreference    String             @default("COD") // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
-  expectedDeliveryDate DateTime?
-  deliveryOverride     Boolean            @default(false)
-  overrideReason       String?
-  pickupDate           DateTime?
-  pickupTimeSlot       String?
-  deliveryDate         DateTime?
-  deliveryTimeSlot     String?
-  backupDeliveryDate   DateTime?
+  orderSource            String             @default("STORE_WALKIN")
+  status                 LaundryOrderStatus @default(DRAFT)
+  paymentPreference      String             @default("COD") // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
+  expectedDeliveryDate   DateTime?
+  deliveryOverride       Boolean            @default(false)
+  overrideReason         String?
+  pickupDate             DateTime?
+  pickupTimeSlot         String?
+  deliveryDate           DateTime?
+  deliveryTimeSlot       String?
+  backupDeliveryDate     DateTime?
   backupDeliveryTimeSlot String?
-  pickupAddress        String?
-  pickupInstructions   String?
-  specialInstructions  String?
-  notes                String?
-  createdBy            String?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  pickupAddress          String?
+  pickupInstructions     String?
+  specialInstructions    String?
+  notes                  String?
+  createdBy              String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   // ── Financial snapshot ───────────────────────────────────────────────────
   // Resolved by the Billing Engine and PERSISTED at order creation. This is the
   // immutable financial record of the order — invoices, payments and reports
   // read these values and must NEVER recalculate from the Pricing Engine, so
   // later price changes never alter historical orders.
-  subtotal       Float     @default(0)
-  gstTotal       Float     @default(0)
-  pickupCharge   Float     @default(0)
-  deliveryCharge Float     @default(0)
-  expressCharge  Float     @default(0)
-  discount       Float     @default(0)
-  grandTotal     Float     @default(0)
-  amountPaid     Float     @default(0)
-  balanceDue     Float     @default(0)
-  paymentStatus  String    @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
+  subtotal                  Float     @default(0)
+  gstTotal                  Float     @default(0)
+  pickupCharge              Float     @default(0)
+  deliveryCharge            Float     @default(0)
+  expressCharge             Float     @default(0)
+  discount                  Float     @default(0)
+  grandTotal                Float     @default(0)
+  amountPaid                Float     @default(0)
+  balanceDue                Float     @default(0)
+  paymentStatus             String    @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
   // Portion of this order's charges met by an active customer subscription
   // allowance (KG/Piece). Additive: 0 for every walk-in/regular order — the
   // frozen billing snapshot above is untouched; this only records how much of
   // it was covered so the invoice can separate "Covered by Subscription" from
   // "Extra Charges". The uncovered remainder stays in balanceDue.
-  subscriptionCoveredAmount Float @default(0)
-  isExpress      Boolean   @default(false)
-  customerType   String? // resolved customer type used for pricing
-  billedAt       DateTime? // when the financial snapshot was persisted
+  subscriptionCoveredAmount Float     @default(0)
+  isExpress                 Boolean   @default(false)
+  customerType              String? // resolved customer type used for pricing
+  billedAt                  DateTime? // when the financial snapshot was persisted
 
   // ── Store Audit (Stage 2) — inspection captured against the garments the
   //    order already carries; the audit does not re-enter garments. ──
-  auditNotes  String?
-  auditPhotos String? // JSON array of uploaded photo URLs
-  auditedBy   String?
-  auditedAt   DateTime?
+  auditNotes    String?
+  auditPhotos   String? // JSON array of uploaded photo URLs
+  auditedBy     String?
+  auditedAt     DateTime?
   // The single total order weight (KG) measured at Store Audit. Drives PER_KG
   // billing for the whole order (weight × rate). 0 until weighed. Garment
   // quantities remain on the items for inventory/tracking/barcode/QC/delivery.
-  totalWeightKg Float @default(0)
+  totalWeightKg Float     @default(0)
 
   // ── Delivery completion (final operational action) ──
   deliveredAt   DateTime?
@@ -4629,8 +4647,8 @@ model LaundryOrder {
   // is never pickupRequired; a HOME_PICKUP is pickupRequired immediately. The
   // assignment buckets are derived from the operational fields below — NEVER from
   // the order status.
-  pickupRequired      Boolean   @default(false)
-  deliveryRequired    Boolean   @default(false)
+  pickupRequired   Boolean @default(false)
+  deliveryRequired Boolean @default(false)
 
   // ── Pickup/Delivery customer verification — SECURITY. ──
   // Pickup OTP is generated once at order creation; Delivery OTP is generated
@@ -4639,43 +4657,47 @@ model LaundryOrder {
   // mid-order settings change never applies retroactively. An OTP is cleared
   // the moment it is successfully verified — never reused, and the pickup OTP
   // can never complete a delivery (distinct fields, distinct checks).
-  pickupVerificationMethod   String?   // OTP | NAME (snapshot at creation)
-  deliveryVerificationMethod String?   // OTP | NAME (snapshot at READY_FOR_DELIVERY)
+  pickupVerificationMethod   String? // OTP | NAME (snapshot at creation)
+  deliveryVerificationMethod String? // OTP | NAME (snapshot at READY_FOR_DELIVERY)
   pickupOtp                  String?
   deliveryOtp                String?
   pickupVerifiedAt           DateTime?
   pickupVerifiedBy           String?
 
-  pickupExecutiveId   String?
-  deliveryExecutiveId String?
-  pickupAssignedAt    DateTime?
-  deliveryAssignedAt  DateTime?
-  pickupStartedAt     DateTime?
-  pickupCompletedAt   DateTime?
-  deliveryStartedAt   DateTime?
-  deliveryCompletedAt DateTime?
+  pickupExecutiveId     String?
+  deliveryExecutiveId   String?
+  pickupAssignedAt      DateTime?
+  deliveryAssignedAt    DateTime?
+  pickupStartedAt       DateTime?
+  pickupCompletedAt     DateTime?
+  deliveryStartedAt     DateTime?
+  deliveryCompletedAt   DateTime?
   // Assignment acceptance (dedicated Pickup/Delivery Assignment layer, between
   // order creation and bag scanning). PENDING = assigned, awaiting the
   // executive's response; ACCEPTED / REJECTED = their decision. Rejection returns
   // the job to "Awaiting Assignment" (executive cleared) and is logged.
-  pickupAcceptance    String? // PENDING | ACCEPTED | REJECTED
-  pickupAcceptedAt    DateTime?
-  deliveryAcceptance  String? // PENDING | ACCEPTED | REJECTED
+  pickupAcceptance      String? // PENDING | ACCEPTED | REJECTED
+  pickupAcceptedAt      DateTime?
+  deliveryAcceptance    String? // PENDING | ACCEPTED | REJECTED
   // Delivery bag chain of custody: the executive must scan/assign the bag the
   // order goes out in BEFORE navigating; after delivery the store scans it back.
   deliveryBagNumber     String?
   deliveryBagAssignedAt DateTime?
   deliveryBagReturnedAt DateTime?
-  deliveryAcceptedAt  DateTime?
+  deliveryAcceptedAt    DateTime?
   // Denormalised live status for the Live Operations dashboard / PWA lists, e.g.
   // ASSIGNED, STARTED, NAVIGATING, REACHED, PICKUP_STARTED, PICKUP_COMPLETED,
   // RETURNING_STORE, STORE_RECEIVED, OUT_FOR_DELIVERY, DELIVERED. Purely a
   // reporting mirror — the authoritative history lives in LaundryOrderEvent.
-  fieldStatus         String?
-  pickupLat           Float?
-  pickupLng           Float?
-  pickupLandmark      String?
-  pickupMapsLink      String?
+  fieldStatus           String?
+  pickupAddressId       String?
+  pickupLat             Float?
+  pickupLng             Float?
+  pickupLandmark        String?
+  pickupMapsLink        String?
+  pickupDistanceKm      Float?
+  serviceabilityStatus  String?
+  deliveryZoneId        String?
 
   business   LaundryBusiness         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store      LaundryStore            @relation(fields: [storeId], references: [id])
@@ -4705,13 +4727,13 @@ model LaundryOrder {
 // no length requirement. Submitted once, never edited (for now) — business
 // owners only; never shown publicly / no review system.
 model LaundryOrderFeedback {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   businessId  String
-  orderId     String    @unique
+  orderId     String   @unique
   customerId  String?
   rating      Int // 1–5
   comment     String?
-  submittedAt DateTime  @default(now())
+  submittedAt DateTime @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -4769,25 +4791,25 @@ model LaundryCategory {
 
 // Garment master — referenced by pricing. Default unit Piece/Kg.
 model LaundryGarment {
-  id               String   @id @default(cuid())
-  businessId       String
-  name             String
-  code             String?
-  categoryId       String?
-  defaultService   String?
-  defaultUnit      String   @default("PIECE") // PIECE | KG
-  image            String? // image URL
-  material         String? // Cotton, Silk, Wool, …
-  careInstructions String?
-  barcodePrefix    String?
-  weightFactor     Float? // multiplier for weight-based pricing
-  averageWeight    Float? // avg weight (kg) for estimates
+  id                   String   @id @default(cuid())
+  businessId           String
+  name                 String
+  code                 String?
+  categoryId           String?
+  defaultService       String?
+  defaultUnit          String   @default("PIECE") // PIECE | KG
+  image                String? // image URL
+  material             String? // Cotton, Silk, Wool, …
+  careInstructions     String?
+  barcodePrefix        String?
+  weightFactor         Float? // multiplier for weight-based pricing
+  averageWeight        Float? // avg weight (kg) for estimates
   // Pricing Matrix: a simple per-garment subscription-inclusion flag (Yes/No).
-  subscriptionIncluded Boolean @default(false)
-  displayOrder     Int      @default(0)
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  subscriptionIncluded Boolean  @default(false)
+  displayOrder         Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   category     LaundryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   pricingRules LaundryPricingRule[]
@@ -5002,7 +5024,7 @@ model LaundryOrderItem {
   // moment the LAST garment passes QC). The physical garment barcode tag has
   // served its purpose — garment barcode scanning stops and Iron/Fold/Packing
   // operate only by scanning the assigned container. Server-guarded, additive.
-  barcodeRetired Boolean @default(false)
+  barcodeRetired   Boolean   @default(false)
   createdAt        DateTime  @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -5915,17 +5937,17 @@ model PromotionRule {
 // per-customer limits. Laundry redemptions sit at PENDING_AUDIT until the
 // invoice finalizes them; commerce goes straight to APPLIED.
 model PromotionRedemption {
-  id          String   @id @default(cuid())
-  promotionId String
-  businessId  String
-  customerId  String?
-  orderId     String?
-  status      String   @default("APPLIED") // HELD|APPLIED|PENDING_AUDIT|FINALIZED|REVERSED
-  amount      Float    @default(0) // discount amount (0 while pending)
+  id            String   @id @default(cuid())
+  promotionId   String
+  businessId    String
+  customerId    String?
+  orderId       String?
+  status        String   @default("APPLIED") // HELD|APPLIED|PENDING_AUDIT|FINALIZED|REVERSED
+  amount        Float    @default(0) // discount amount (0 while pending)
   workspaceType String?
-  meta        String? // JSON snapshot (code, orderValue, applyTo)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  meta          String? // JSON snapshot (code, orderValue, applyTo)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 
@@ -6066,20 +6088,20 @@ model LaundryBagAssignment {
 
 // Append-only release audit — one row per time a bag is returned to AVAILABLE.
 model LaundryBagRelease {
-  id              String   @id @default(cuid())
-  bagId           String
-  bagNumber       String
-  businessId      String
-  storeId         String?
-  orderId         String?
-  orderNumber     String?
-  releaseType     String   @default("QR_SCAN") // QR_SCAN | MANUAL
-  reason          String?
-  previousStatus  String
-  newStatus       String   @default("AVAILABLE")
-  releasedBy      String?
-  releasedAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  bagId          String
+  bagNumber      String
+  businessId     String
+  storeId        String?
+  orderId        String?
+  orderNumber    String?
+  releaseType    String   @default("QR_SCAN") // QR_SCAN | MANUAL
+  reason         String?
+  previousStatus String
+  newStatus      String   @default("AVAILABLE")
+  releasedBy     String?
+  releasedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   bag LaundryBag @relation(fields: [bagId], references: [id], onDelete: Cascade)
 
