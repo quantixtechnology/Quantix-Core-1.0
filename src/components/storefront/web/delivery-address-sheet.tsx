@@ -9,7 +9,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import type { DeliveryAddress } from "@/stores/cart-store"
 import { formatAddressLine } from "@/lib/delivery-address"
 import { PlacesAutocomplete } from "./google/places-autocomplete"
-import { MapPinPicker } from "./google/map-pin-picker"
+import { GoogleAddressPicker } from "./google/address-picker"
 
 interface SavedAddressRow {
   id: string
@@ -297,14 +297,17 @@ export function DeliveryAddressSheet({ open, brandColor, onSelect, onClose }: De
         </div>
       </div>
 
-      {/* Full-screen pin map */}
-      <MapPinPicker
+      {/* Full-screen map-first picker */}
+      <GoogleAddressPicker
         open={showMap}
         initial={pending}
         brandColor={brandColor}
-        onConfirm={(addr) => {
+        businessId={currentBusinessId}
+        saveLabel="Use This Location"
+        onSave={(addr) => {
           setPending(addr)
           setShowMap(false)
+          return Promise.resolve(true)
         }}
         onClose={() => setShowMap(false)}
       />

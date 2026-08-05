@@ -1,0 +1,425 @@
+"use client"
+
+import { useEffect, useRef, useState, useCallback } from "react"
+import { X, Loader2, MapPin, Navigation, Check, ChevronDown, ChevronUp } from "lucide-react"
+import { hasGoogleMapsKey, loadGoogleMaps } from "@/lib/google-maps"
+import { reverseGeocodeAddress, formatAddressLine } from "@/lib/delivery-address"
+import type { DeliveryAddress } from "@/stores/cart-store"
+import { PlacesAutocomplete } from "./places-autocomplete"
+import { ServiceabilityPreview } from "./serviceability-preview"
+
+interface GoogleAddressPickerProps {
+  open: boolean
+  initial?: DeliveryAddress | null
+  brandColor: string
+  businessId?: string | null
+  saveLabel?: string
+  onSave: (address: DeliveryAddress) => Promise<boolean>
+  onClose: () => void
+}
+
+const DEFAULT_CENTER = { lat: 19.076, lng: 72.8777 }
+const LABELS = ["Home", "Office", "Other"]
+
+/**
+ * Map-first Google address picker (Swiggy / Blinkit style). Full screen map with
+ * a draggable pin, Places search on top, current-location, reverse geocoding,
+ * live serviceability preview and a Save button gated until a valid coordinate
+ * has been resolved. Degrades to manual entry + GPS when no Maps key is set.
+ */
+export function GoogleAddressPicker({
+  open,
+  initial,
+  brandColor,
+  businessId,
+  saveLabel = "Save Address",
+  onSave,
+  onClose,
+}: GoogleAddressPickerProps) {
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstance = useRef<{ setCenter: (c: { lat: number; lng: number }) => void } | null>(null)
+  const markerInstance = useRef<{ setPosition: (c: { lat: number; lng: number }) => void } | null>(null)
+  const reverseGeocoderRef = useRef<unknown | null>(null)
+  const initialRef = useRef<DeliveryAddress | null>(null)
+
+  const [mapsReady, setMapsReady] = useState(false)
+  const [geocoding, setGeocoding] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [address, setAddress] = useState<DeliveryAddress | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const [showDetails, setShowDetails] = useState(false)
+  const [isEdit, setIsEdit] = useState(false)
+
+  // Snapshot the initial address whenever the picker opens.
+  useEffect(() => {
+    if (open) {
+      initialRef.current = initial ?? null
+      setAddress(initial ?? null)
+      setIsEdit(!!initial?.id)
+      setError("")
+      setSaving(false)
+      setGeocoding(false)
+      setLocating(false)
+      setShowDetails(false)
+      setMapsReady(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const movePin = useCallback((google: any, lat: number, lng: number) => {
+    mapInstance.current?.setCenter({ lat, lng })
+    markerInstance.current?.setPosition({ lat, lng })
+    setGeocoding(true)
+    setError("")
+    reverseGeocodeAddress(google, lat, lng)
+      .then((addr) => {
+        const keep = initialRef.current
+        setAddress((prev) => ({
+          ...(addr ?? {}),
+          latitude: lat,
+          longitude: lng,
+          id: keep?.id ?? prev?.id,
+          label: prev?.label ?? keep?.label ?? addr?.label ?? "Home",
+          instructions: prev?.instructions ?? keep?.instructions,
+        }))
+      })
+      .catch(() => setError("Could not resolve this location. Drag the pin to retry."))
+      .finally(() => setGeocoding(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    if (!hasGoogleMapsKey()) return
+    let mounted = true
+
+    loadGoogleMaps()
+      .then((google) => {
+        if (!mounted || !mapRef.current) return
+        const init = initialRef.current
+        const startLat = init?.latitude ?? DEFAULT_CENTER.lat
+        const startLng = init?.longitude ?? DEFAULT_CENTER.lng
+        const center = { lat: startLat, lng: startLng }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const map = new google.maps.Map(mapRef.current as HTMLElement, {
+          center,
+          zoom: 16,
+          disableDefaultUI: false,
+          gestureHandling: "cooperative",
+        })
+        mapInstance.current = map
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const marker = new google.maps.Marker({
+          position: center,
+          map,
+          draggable: true,
+          animation: google.maps.Animation.DROP,
+        })
+        markerInstance.current = marker
+        reverseGeocoderRef.current = google
+
+        if (typeof init?.latitude === "number" && typeof init?.longitude === "number") {
+          setAddress(init)
+        }
+
+        marker.addListener("dragend", () => {
+          const pos = marker.getPosition()
+          if (!pos) return
+          movePin(google, pos.lat(), pos.lng())
+        })
+
+        setMapsReady(true)
+      })
+      .catch(() => {
+        if (mounted) setError("Could not load the map. Please try again.")
+      })
+
+    return () => {
+      mounted = false
+      mapInstance.current = null
+      markerInstance.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Location is not available on this device.")
+      return
+    }
+    setLocating(true)
+    setError("")
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (reverseGeocoderRef.current) {
+          movePin(reverseGeocoderRef.current, pos.coords.latitude, pos.coords.longitude)
+        } else {
+          setAddress((p) => ({ ...(p ?? {}), label: p?.label ?? "My Location", latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
+        }
+        setLocating(false)
+      },
+      () => {
+        setError("Location access denied. Search for your address or drop a pin instead.")
+        setLocating(false)
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    )
+  }
+
+  const onPlaceSelected = (addr: DeliveryAddress) => {
+    if (addr.latitude != null && addr.longitude != null) {
+      mapInstance.current?.setCenter({ lat: addr.latitude, lng: addr.longitude })
+      markerInstance.current?.setPosition({ lat: addr.latitude, lng: addr.longitude })
+    }
+    const keep = initialRef.current
+    setAddress({ ...addr, id: keep?.id, label: address?.label ?? keep?.label ?? addr.label ?? "Home", instructions: address?.instructions ?? keep?.instructions })
+    setError("")
+  }
+
+  const patch = (updates: Partial<DeliveryAddress>) => setAddress((p) => ({ ...(p ?? {}), ...updates }))
+
+  const noKey = !hasGoogleMapsKey()
+
+  const hasCoords =
+    typeof address?.latitude === "number" && typeof address?.longitude === "number"
+  const resolved =
+    !geocoding && !!address && !!(address.addressLine1 || address.city || address.pincode)
+  const canSave = noKey
+    ? !!(address?.addressLine1 && address?.city && address?.pincode) && !saving
+    : hasCoords && resolved && !saving
+
+  const submit = async () => {
+    if (!address) return
+    setSaving(true)
+    setError("")
+    try {
+      const ok = await onSave(address)
+      if (ok) onClose()
+    } catch {
+      setError("Could not save this address. Please try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) return null
+
+  const inputCls = "w-full h-10 px-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white"
+
+  return (
+    <div className="fixed inset-0 z-[230] flex flex-col bg-white">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-gray-100 shrink-0">
+        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100">
+          <X className="w-5 h-5 text-gray-600" />
+        </button>
+        <h2 className="font-bold text-gray-900 text-[15px]">
+          {isEdit ? "Edit Address" : "Add Address"}
+        </h2>
+        <button
+          onClick={useMyLocation}
+          disabled={locating || (!noKey && !mapsReady)}
+          className="ml-auto flex items-center gap-1.5 px-3 h-9 text-xs font-semibold rounded-full border"
+          style={{ borderColor: `${brandColor}55`, color: brandColor }}
+        >
+          {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+          My location
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+        <PlacesAutocomplete onSelect={onPlaceSelected} />
+      </div>
+
+      {noKey ? (
+        /* ── Manual fallback (no Google Maps key) ─────────────────────────── */
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <p className="text-xs text-gray-400 mb-4">
+            Map service is not configured on this storefront yet — enter your address manually or use current location.
+          </p>
+          <div className="flex gap-2 mb-3">
+            {LABELS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => patch({ label: l })}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                style={address?.label === l ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : { borderColor: "#e5e7eb", color: "#4b5563" }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={useMyLocation}
+            disabled={locating}
+            className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed rounded-xl text-xs font-medium transition-colors mb-4 disabled:opacity-60"
+            style={{ borderColor: `${brandColor}60`, color: brandColor }}
+          >
+            {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+            Use Current Location
+          </button>
+          {hasCoords && (
+            <p className="text-[10px] text-center text-green-600 mb-3">
+              Location captured ({address!.latitude!.toFixed(4)}, {address!.longitude!.toFixed(4)})
+            </p>
+          )}
+          <div className="space-y-3">
+            <input type="text" placeholder="Area / Locality" value={address?.area ?? ""} onChange={(e) => patch({ area: e.target.value })} className={inputCls} />
+            <input type="text" placeholder="House No / Street *" value={address?.addressLine1 ?? ""} onChange={(e) => patch({ addressLine1: e.target.value })} className={inputCls} />
+            <input type="text" placeholder="Landmark (optional)" value={address?.landmark ?? ""} onChange={(e) => patch({ landmark: e.target.value })} className={inputCls} />
+            <div className="grid grid-cols-2 gap-3">
+              <input type="text" placeholder="City *" value={address?.city ?? ""} onChange={(e) => patch({ city: e.target.value })} className={inputCls} />
+              <input type="text" placeholder="State" value={address?.state ?? ""} onChange={(e) => patch({ state: e.target.value })} className={inputCls} />
+            </div>
+            <input type="text" placeholder="Pincode *" value={address?.pincode ?? ""} onChange={(e) => patch({ pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} className={inputCls} />
+          </div>
+        </div>
+      ) : (
+        /* ── Map-first picker ──────────────────────────────────────────────── */
+        <div className="relative flex-1">
+          {!mapsReady && !error && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-[2]">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+                <p className="text-xs text-gray-400">Loading map…</p>
+              </div>
+            </div>
+          )}
+          <div ref={mapRef} className="absolute inset-0" />
+          {error && !mapsReady && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-[2]">
+              <div className="max-w-xs text-center px-4">
+                <MapPin className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {mapsReady && (
+            <div className="absolute bottom-4 inset-x-4 sm:max-w-md sm:mx-auto z-[3]">
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-4 max-h-[60vh] overflow-y-auto">
+                {/* Selected location */}
+                <div className="flex items-start gap-2 mb-3">
+                  <MapPin className="w-4 h-4 shrink-0 mt-0.5" style={{ color: brandColor }} />
+                  <div className="flex-1 min-w-0">
+                    {geocoding ? (
+                      <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Resolving location…
+                      </p>
+                    ) : address?.addressLine1 || address?.city ? (
+                      <>
+                        <p className="text-sm font-semibold text-gray-900">{formatAddressLine(address)}</p>
+                        {address?.formattedAddress && address.formattedAddress !== formatAddressLine(address) && (
+                          <p className="text-[11px] text-gray-400 mt-0.5">{address.formattedAddress}</p>
+                        )}
+                        {hasCoords && (
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            ({address!.latitude!.toFixed(5)}, {address!.longitude!.toFixed(5)})
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500">Search for your address, use my location, or drag the pin.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Label chips */}
+                <div className="flex gap-2 mb-3">
+                  {LABELS.map((l) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => patch({ label: l })}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                      style={address?.label === l ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : { borderColor: "#e5e7eb", color: "#4b5563" }}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Instructions */}
+                <textarea
+                  placeholder="Delivery instructions (optional) — e.g. call on arrival"
+                  value={address?.instructions ?? ""}
+                  onChange={(e) => patch({ instructions: e.target.value })}
+                  rows={1}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 resize-none bg-white mb-3"
+                />
+
+                {/* Editable detail fields (auto-populated by reverse geocoding) */}
+                <button
+                  type="button"
+                  onClick={() => setShowDetails((s) => !s)}
+                  className="flex items-center gap-1 text-xs font-semibold mb-3"
+                  style={{ color: brandColor }}
+                >
+                  {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  {showDetails ? "Hide address details" : "Edit address details"}
+                </button>
+                {showDetails && (
+                  <div className="space-y-3 mb-3">
+                    <input type="text" placeholder="House No / Street" value={address?.addressLine1 ?? ""} onChange={(e) => patch({ addressLine1: e.target.value })} className={inputCls} />
+                    <input type="text" placeholder="Area / Locality" value={address?.area ?? ""} onChange={(e) => patch({ area: e.target.value })} className={inputCls} />
+                    <input type="text" placeholder="Landmark (optional)" value={address?.landmark ?? ""} onChange={(e) => patch({ landmark: e.target.value })} className={inputCls} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input type="text" placeholder="City" value={address?.city ?? ""} onChange={(e) => patch({ city: e.target.value })} className={inputCls} />
+                      <input type="text" placeholder="State" value={address?.state ?? ""} onChange={(e) => patch({ state: e.target.value })} className={inputCls} />
+                    </div>
+                    <input type="text" placeholder="Pincode" value={address?.pincode ?? ""} onChange={(e) => patch({ pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} className={inputCls} />
+                  </div>
+                )}
+
+                {/* Live serviceability preview (never blocks saving) */}
+                <div className="mb-3">
+                  <ServiceabilityPreview lat={address?.latitude} lng={address?.longitude} brandColor={brandColor} businessId={businessId} />
+                </div>
+
+                {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+
+                <button
+                  onClick={submit}
+                  disabled={!canSave}
+                  className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {saveLabel}
+                </button>
+                {!canSave && !saving && (
+                  <p className="text-[10px] text-gray-400 text-center mt-1.5">
+                    Drop the pin, search or use my location to select your delivery point.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer save for manual fallback */}
+      {noKey && (
+        <div className="px-4 py-3 border-t border-gray-100 shrink-0">
+          {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+          <button
+            onClick={submit}
+            disabled={!canSave}
+            className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ backgroundColor: brandColor }}
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {saveLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
