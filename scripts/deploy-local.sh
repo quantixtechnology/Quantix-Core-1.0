@@ -117,6 +117,18 @@ NEW_RELEASE="$RELEASES_DIR/${COMMIT}-$(date +%s)"
 git clone --local --quiet "$REPO" "$NEW_RELEASE" || fail "release clone failed"
 git -C "$NEW_RELEASE" checkout --quiet "$TARGET_SHA" || fail "release checkout failed"
 [ -f "$REPO/.env" ] && cp "$REPO/.env" "$NEW_RELEASE/.env"   # secrets are not in git
+# Optional: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY forwarded from the deploy webhook
+# (GitHub Actions secret → x-maps-key header → QUANTIX_MAPS_KEY). Written into
+# the release .env so `next build` inlines it into the client bundle. Never
+# logged; empty value = key stays disabled (manual-entry fallback).
+if [ -n "${QUANTIX_MAPS_KEY:-}" ]; then
+  if grep -q '^NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=' "$NEW_RELEASE/.env" 2>/dev/null; then
+    sed -i "s|^NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=.*|NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${QUANTIX_MAPS_KEY}|" "$NEW_RELEASE/.env"
+  else
+    printf 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=%s\n' "$QUANTIX_MAPS_KEY" >> "$NEW_RELEASE/.env"
+  fi
+  log "✅ Google Maps key injected into release .env"
+fi
 log "✅ Release dir $NEW_RELEASE @ $COMMIT"
 
 # ─── 4. Build INSIDE the release (bakes this release's own absolute path) ─────────

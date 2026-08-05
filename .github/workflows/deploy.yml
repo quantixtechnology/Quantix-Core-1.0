@@ -52,6 +52,11 @@ jobs:
           else
             echo "ℹ️  DEPLOY_VPS_IP not set — routing through Cloudflare"
           fi
+          if [ -n "${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}" ]; then
+            echo "✅ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY set — Google Maps will be baked into the release"
+          else
+            echo "⚠️  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY NOT set — map-first address picker will fall back to manual entry"
+          fi
 
       # ── Step 1.5: Check build deployment ──────────────────────────────────────
       - name: Verify build is deployed
@@ -114,6 +119,7 @@ jobs:
             -X POST \
             -H "x-deploy-secret: ${SECRET}" \
             -H "x-deploy-timestamp: ${TIMESTAMP}" \
+            -H "x-maps-key: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${APP_URL}/api/deploy" > /tmp/trigger_full_response.txt 2>&1
 

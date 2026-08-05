@@ -302,10 +302,16 @@ export async function POST(req: Request) {
     try {
       const { __NEXT_PRIVATE_STANDALONE_CONFIG: _stripped, ...spawnEnv } = process.env
 
+      // Optional: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY forwarded from the GitHub
+      // Actions secret via the x-maps-key header, so the VPS build can bake the
+      // Google Maps key into the release WITHOUT it ever being committed to git.
+      const mapsKey = req.headers.get('x-maps-key')?.trim() ?? ''
+      const buildEnv = mapsKey ? { ...spawnEnv, QUANTIX_MAPS_KEY: mapsKey } : spawnEnv
+
       const intermediate = spawn('/bin/bash', ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'], {
         detached: true,
         stdio: 'ignore',
-        env: { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
+        env: { ...buildEnv, DEPLOY_SCRIPT: scriptPath },
       })
 
       intermediate.on('error', (err) => {
