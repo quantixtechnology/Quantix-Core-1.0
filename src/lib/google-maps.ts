@@ -42,13 +42,13 @@ export function loadGoogleMaps(): Promise<GoogleNamespace> {
       return
     }
     if (window.google?.maps) {
-      resolve(window.google.maps)
+      resolve(window.google)
       return
     }
 
     const existing = document.getElementById("google-maps-script") as HTMLScriptElement | null
     if (existing) {
-      existing.addEventListener("load", () => resolve(window.google?.maps), { once: true })
+      existing.addEventListener("load", () => resolve(window.google), { once: true })
       existing.addEventListener("error", () => reject(new Error("Google Maps failed to load")), { once: true })
       return
     }
@@ -58,7 +58,7 @@ export function loadGoogleMaps(): Promise<GoogleNamespace> {
     script.src = `${MAPS_URL}?key=${encodeURIComponent(key)}&libraries=places,geometry&v=weekly`
     script.async = true
     script.defer = true
-    script.addEventListener("load", () => resolve(window.google?.maps), { once: true })
+    script.addEventListener("load", () => resolve(window.google), { once: true })
     script.addEventListener("error", () => reject(new Error("Google Maps failed to load")), { once: true })
     document.head.appendChild(script)
   })
