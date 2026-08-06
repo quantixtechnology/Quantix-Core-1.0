@@ -1,4 +1,5 @@
 import type { DeliveryAddress } from "@/stores/cart-store"
+import type { PlaceDetails } from "@/lib/places"
 
 // ============================================================================
 // Delivery address helpers shared by the storefront header, address sheet and
@@ -24,7 +25,6 @@ export function shortAddressLabel(a: DeliveryAddress | null | undefined): string
 
 // ── Google Place → DeliveryAddress ──────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildDeliveryAddressFromPlace(place: any): DeliveryAddress {
   const parts: Record<string, string> = {}
   const order: string[] = []
@@ -62,8 +62,23 @@ export function buildDeliveryAddressFromPlace(place: any): DeliveryAddress {
   }
 }
 
+/** Places API (New) → DeliveryAddress (structured address + coordinates). */
+export function buildDeliveryAddressFromPlaceDetails(details: PlaceDetails): DeliveryAddress {
+  return {
+    addressLine1: details.addressLine1 ?? details.displayName ?? null,
+    area: details.area ?? null,
+    city: details.city ?? null,
+    state: details.state ?? null,
+    pincode: details.pincode ?? null,
+    country: details.country ?? "India",
+    latitude: details.latitude,
+    longitude: details.longitude,
+    googlePlaceId: details.googlePlaceId,
+    formattedAddress: details.formattedAddress,
+  }
+}
+
 /** Reverse geocode a lat/lng into a DeliveryAddress (Google Geocoder). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function reverseGeocodeAddress(google: any, lat: number, lng: number): Promise<DeliveryAddress | null> {
   const geocoder = new google.maps.Geocoder()
   return new Promise((resolve) => {

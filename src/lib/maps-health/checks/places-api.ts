@@ -1,9 +1,10 @@
 // ============================================================================
 // CHECK: Places API
-// Verifies the legacy Places API is enabled. The app's address picker uses
-// google.maps.places.Autocomplete, which requires the legacy Places API.
-// Probing the same autocomplete REST endpoint surfaces the exact REQUEST_DENIED
-// "legacy API not enabled" message when it is missing.
+// Verifies autocomplete reachability. The app's address pickers use the Places
+// API (New) via AutocompleteSuggestion/Place.fetchFields — NOT the legacy
+// google.maps.places.Autocomplete widget. The legacy REST probe below only
+// surfaces REQUEST_DENIED when the old endpoint is blocked (irrelevant to the
+// New Places API path).
 // ============================================================================
 
 import { registerHealthCheck } from "../registry"
@@ -28,7 +29,7 @@ registerHealthCheck({
         label: "Places API",
         status: "healthy",
         summary: "Enabled",
-        detail: `Places autocomplete returned results for a sample query${probe.sample ? ` ("${probe.sample}")` : ""}. The legacy Places API is enabled.`,
+        detail: `Places autocomplete returned results for a sample query${probe.sample ? ` ("${probe.sample}")` : ""}.`,
         apiName: "Places API",
         docsLink: GOOGLE_DOCS.places,
         data: { sample: probe.sample },

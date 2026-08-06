@@ -62,7 +62,7 @@ const CATALOG: CatalogEntry[] = [
     match: /legacy api|legacyapi|you'?re calling a legacy/i,
     apiName: "Places API",
     suggestedFix:
-      "The legacy Places API is not enabled for this project. Enable 'Places API' (legacy) — not just 'Places API (New)' — in Google Cloud Console, or migrate the app to Places API (New).",
+      "A legacy Google API was called. The app now uses the Places API (New) via AutocompleteSuggestion/Place.fetchFields — ensure the code path does not construct google.maps.places.Autocomplete.",
     docsLink: GOOGLE_DOCS.legacyApi,
   },
   {

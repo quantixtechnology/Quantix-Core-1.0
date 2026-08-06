@@ -17,8 +17,10 @@
 // ============================================================================
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { Search, Navigation, Loader2, MapPin } from "lucide-react"
+import { Navigation, Loader2 } from "lucide-react"
 import { hasGoogleMapsKey, loadGoogleMaps } from "@/lib/google-maps"
+import type { PlaceDetails } from "@/lib/places"
+import { PlacesSearch } from "./places-search"
 
 export interface StoreLocation {
   latitude: number | null
@@ -64,7 +66,6 @@ export function StoreLocationPicker({
   onChange,
   placeholder = "Search store address",
 }: StoreLocationPickerProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
    
@@ -174,55 +175,38 @@ export function StoreLocationPicker({
      
   }, [])
 
-  // Set up Places Autocomplete bound to the same google namespace.
-  useEffect(() => {
-    if (!hasGoogleMapsKey()) return
-    let mounted = true
-    let ac: { addListener?: (t: string, cb: () => void) => void; unbindAll?: () => void } | null = null
-
-    loadGoogleMaps()
-      .then((google) => {
-        if (!mounted || !inputRef.current || !google?.maps?.places) return
-         
-        ac = new google.maps.places.Autocomplete(inputRef.current as HTMLInputElement, {
-          types: ["establishment", "address"],
-          componentRestrictions: { country: "IN" },
-        })
-        const inst = ac!
-        inst.addListener?.("place_changed", () => {
-           
-          const place = (inst as any).getPlace()
-          if (!place?.geometry?.location) {
-            setError("Could not resolve that place — choose from the suggestions.")
-            return
-          }
-          setError("")
-          const lat = place.geometry.location.lat()
-          const lng = place.geometry.location.lng()
-          const { address = null, city = null, state = null, pincode = null } = extractParts(
-            place.address_components,
-            place.formatted_address
-          )
-          applyLocation(google, lat, lng, place.place_id || null, place.formatted_address || null)
-          onChange({
-            latitude: lat,
-            longitude: lng,
-            googlePlaceId: place.place_id || null,
-            formattedAddress: place.formatted_address || null,
-            address,
-            city,
-            state,
-            pincode,
-          })
-        })
-      })
-      .catch(() => {})
-    return () => {
-      mounted = false
-      ac?.unbindAll?.()
+// Search: resolve a picked place with the Places API (New) and sync map + value.
+  const onPlaceSelected = (details: PlaceDetails) => {
+    if (
+      typeof details.latitude !== "number" ||
+      typeof details.longitude !== "number"
+    ) {
+      setError("Could not resolve that place — choose from the suggestions.")
+      return
     }
-     
-  }, [])
+    setError("")
+    const google = googleRef.current
+    if (google) {
+      applyLocation(
+        google,
+        details.latitude,
+        details.longitude,
+        details.googlePlaceId,
+        details.formattedAddress
+      )
+    } else {
+      onChange({
+        latitude: details.latitude,
+        longitude: details.longitude,
+        googlePlaceId: details.googlePlaceId ?? null,
+        formattedAddress: details.formattedAddress ?? null,
+        address: details.addressLine1 || details.area || null,
+        city: details.city,
+        state: details.state,
+        pincode: details.pincode,
+      })
+    }
+  }
 
   const useMyLocation = () => {
     if (!navigator.geolocation) {
@@ -251,21 +235,13 @@ export function StoreLocationPicker({
   return (
     <div className="space-y-3">
       {/* Search */}
-      <div className="relative">
-        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={placeholder}
-          disabled={!noKey && !mapsReady}
-          className="w-full pl-10 pr-3 h-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white disabled:opacity-50"
-        />
-        {!noKey && !mapsReady && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Loader2 className="w-4 h-4 animate-spin text-gray-300" />
-          </div>
-        )}
-      </div>
+      <PlacesSearch
+        onSelect={onPlaceSelected}
+        placeholder={placeholder}
+        icon="pin"
+        inputClassName="w-full pl-10 pr-3 h-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white disabled:opacity-50"
+        disabled={noKey}
+      />
 
       {/* My location */}
       <button
