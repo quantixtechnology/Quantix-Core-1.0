@@ -17,6 +17,8 @@ import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
 import type { WebNav } from "./storefront-website"
+import { GoogleAddressPicker } from "./google/address-picker"
+import type { DeliveryAddress } from "@/stores/cart-store"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
@@ -336,10 +338,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [gateCustomer, setGateCustomer] = useState<CustomerInfo | null>(null)
   const [gateAddresses, setGateAddresses] = useState<Addr[]>([])
   const [gateAddrId, setGateAddrId] = useState<string | null>(null)
-  const [gateAddrForm, setGateAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false })
+  const [gateAddrForm, setGateAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false, latitude: undefined as number | undefined, longitude: undefined as number | undefined, googlePlaceId: undefined as string | undefined, formattedAddress: undefined as string | undefined })
   const [gateSaving, setGateSaving] = useState(false)
   const [gateProfileName, setGateProfileName] = useState("")
   const [gateProfilePhone, setGateProfilePhone] = useState("")
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerTarget, setPickerTarget] = useState<"addr" | "gate">("addr")
 
   // Once the auth gate is fully passed, show the real checkout step
   const [gatePassed, setGatePassed] = useState(initialDetails && isAuthenticated)
@@ -600,7 +604,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!t) return
     setGateSaving(true); setAuthError("")
     try {
-      const r = await fetch("/api/laundry/app/addresses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ label: gateAddrForm.label, addressLine1: gateAddrForm.addressLine1, area: gateAddrForm.area || undefined, landmark: gateAddrForm.landmark || undefined, city: gateAddrForm.city, state: gateAddrForm.state, pincode: gateAddrForm.pincode, isPickupDefault: gateAddrForm.isDefault, isDeliveryDefault: gateAddrForm.isDefault }) })
+      const r = await fetch("/api/laundry/app/addresses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ label: gateAddrForm.label, addressLine1: gateAddrForm.addressLine1, area: gateAddrForm.area || undefined, landmark: gateAddrForm.landmark || undefined, city: gateAddrForm.city, state: gateAddrForm.state, pincode: gateAddrForm.pincode, latitude: gateAddrForm.latitude ?? undefined, longitude: gateAddrForm.longitude ?? undefined, googlePlaceId: gateAddrForm.googlePlaceId || undefined, formattedAddress: gateAddrForm.formattedAddress || undefined, isPickupDefault: gateAddrForm.isDefault, isDeliveryDefault: gateAddrForm.isDefault }) })
       const d = await r.json()
       if (d.success) { setPreAuth(null); setGatePassed(true); setStep("details") }
       else { setAuthError(d.error || "Failed to save address") }
@@ -637,7 +641,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [addresses, setAddresses] = useState<Addr[]>([])
   const [selAddr, setSelAddr] = useState<string | null>(null)
   const [showAddAddr, setShowAddAddr] = useState(false)
-  const [addrForm, setAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false })
+  const [addrForm, setAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false, latitude: undefined as number | undefined, longitude: undefined as number | undefined, googlePlaceId: undefined as string | undefined, formattedAddress: undefined as string | undefined })
   const [savingAddr, setSavingAddr] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const authHeaders = useMemo(() => ({ "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}`, "x-business-id": businessId } : {}) }), [token, businessId])
@@ -675,6 +679,30 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       const a: Addr = j.data; setAddresses((p) => [a, ...p]); setSelAddr(a.id); setShowAddAddr(false); toast.success("Address saved")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSavingAddr(false) }
   }
+
+  const openPicker = (target: "addr" | "gate") => { setPickerTarget(target); setPickerOpen(true) }
+  const applyPicked = (a: DeliveryAddress) => {
+    const base = {
+      addressLine1: a.addressLine1 || "",
+      area: a.area || "",
+      landmark: a.landmark || "",
+      city: a.city || "",
+      state: a.state || "",
+      pincode: a.pincode || "",
+      latitude: a.latitude ?? undefined,
+      longitude: a.longitude ?? undefined,
+      googlePlaceId: a.googlePlaceId || undefined,
+      formattedAddress: a.formattedAddress || undefined,
+    }
+    if (pickerTarget === "gate") setGateAddrForm((f) => ({ ...f, ...base }))
+    else setAddrForm((f) => ({ ...f, ...base }))
+    setPickerOpen(false)
+  }
+  const pickerButton = (target: "addr" | "gate") => (
+    <button onClick={() => openPicker(target)} className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed py-2 text-xs font-medium" style={{ borderColor: `${brandColor}60`, color: brandColor }}>
+      <MapPin className="w-3.5 h-3.5" /> Choose on map
+    </button>
+  )
 
   const gq = gSearch.trim().toLowerCase()
   const visibleItems = gq ? service.items.filter((it) => it.garmentName.toLowerCase().includes(gq)) : service.items
@@ -827,6 +855,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -999,6 +1028,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 <div className="flex gap-1.5">{[{ k: "Home", v: "HOME" }, { k: "Office", v: "OFFICE" }, { k: "Other", v: "OTHER" }].map((t) => (
                   <button key={t.k} onClick={() => setGateAddrForm((f) => ({ ...f, label: t.k }))} className={`rounded-lg px-2.5 py-1 text-xs border ${gateAddrForm.label === t.k ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={gateAddrForm.label === t.k ? accentBg : {}}>{t.k}</button>
                 ))}</div>
+                {pickerButton("gate")}
                 <input value={gateAddrForm.addressLine1} onChange={(e) => setGateAddrForm((f) => ({ ...f, addressLine1: e.target.value }))} placeholder="Flat / Building / Street *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                 <input value={gateAddrForm.area} onChange={(e) => setGateAddrForm((f) => ({ ...f, area: e.target.value }))} placeholder="Area / Locality" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                 <input value={gateAddrForm.landmark} onChange={(e) => setGateAddrForm((f) => ({ ...f, landmark: e.target.value }))} placeholder="Landmark (optional)" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
@@ -1154,6 +1184,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               ) : (
                 <div className="space-y-2">
                   <div className="flex gap-1.5">{["Home", "Office", "Other"].map((t) => <button key={t} onClick={() => setAddrForm((f) => ({ ...f, label: t }))} className={`rounded-lg px-2.5 py-1 text-xs border ${addrForm.label === t ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={addrForm.label === t ? accentBg : {}}>{t}</button>)}</div>
+                  {pickerButton("addr")}
                   <input value={addrForm.addressLine1} onChange={(e) => setAddrForm((f) => ({ ...f, addressLine1: e.target.value }))} placeholder="Flat / House / Building *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                   <input value={addrForm.area} onChange={(e) => setAddrForm((f) => ({ ...f, area: e.target.value }))} placeholder="Street / Area / Locality" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                   <input value={addrForm.landmark} onChange={(e) => setAddrForm((f) => ({ ...f, landmark: e.target.value }))} placeholder="Landmark (optional)" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
@@ -1297,6 +1328,15 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         )}
       </div>
     </div>
+      <GoogleAddressPicker
+        open={pickerOpen}
+        brandColor={brandColor}
+        businessId={businessId}
+        saveLabel="Use This Location"
+        onSave={(a) => { applyPicked(a); return Promise.resolve(true) }}
+        onClose={() => setPickerOpen(false)}
+      />
+    </>
   )
 }
 

@@ -237,11 +237,8 @@ export function GoogleAddressPicker({
       </div>
 
       {noKey ? (
-        /* ── Manual fallback (no Google Maps key) ─────────────────────────── */
+        /* ── Manual entry fallback (only when no Maps key is baked in) ────── */
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          <p className="text-xs text-gray-400 mb-4">
-            Map service is not configured on this storefront yet — enter your address manually or use current location.
-          </p>
           <div className="flex gap-2 mb-3">
             {LABELS.map((l) => (
               <button

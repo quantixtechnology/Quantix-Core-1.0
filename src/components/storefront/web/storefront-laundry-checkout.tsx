@@ -11,6 +11,8 @@ import {
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import { formatAddressLine } from "@/lib/delivery-address"
+import { GoogleAddressPicker } from "./google/address-picker"
+import type { DeliveryAddress } from "@/stores/cart-store"
 
 interface Addr {
   id: string
@@ -108,6 +110,24 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
     isPickupDefault: false, isDeliveryDefault: false,
   })
   const [addingGps, setAddingGps] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const applyPicked = (a: DeliveryAddress) => {
+    setNewAddr((p) => ({
+      ...p,
+      label: a.label || p.label,
+      addressType: (a.label || p.label).toUpperCase(),
+      line1: a.addressLine1 || p.line1,
+      area: a.area || p.area,
+      landmark: a.landmark || p.landmark,
+      city: a.city || p.city,
+      state: a.state || p.state,
+      pincode: a.pincode || p.pincode,
+      lat: a.latitude ?? p.lat,
+      lng: a.longitude ?? p.lng,
+    }))
+    setPickerOpen(false)
+  }
 
   const [pickupDate, setPickupDate] = useState("")
   const [pickupSlot, setPickupSlot] = useState("")
@@ -727,6 +747,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
   const labelCls = "text-xs font-semibold text-gray-500 uppercase tracking-wide"
 
   return (
+    <>
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <button
         onClick={() => {
@@ -1028,6 +1049,11 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
                   style={{ borderColor: `${brandColor}60`, color: brandColor }}>
                   {addingGps ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Detecting...</> : <><Navigation className="w-3.5 h-3.5" /> Use Current Location</>}
                 </button>
+                <button type="button" onClick={() => setPickerOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 py-2 border border-dashed rounded-xl text-xs font-medium transition-colors"
+                  style={{ borderColor: `${brandColor}60`, color: brandColor }}>
+                  <MapPin className="w-3.5 h-3.5" /> Choose on map
+                </button>
                 {newAddr.lat && <p className="text-[10px] text-center text-green-600">Location captured</p>}
                 <input type="text" placeholder="Area / Locality" value={newAddr.area} onChange={(e) => setNewAddr((p) => ({ ...p, area: e.target.value }))} className={inputCls} />
                 <input type="text" placeholder="Flat / Building / Street *" value={newAddr.line1} onChange={(e) => setNewAddr((p) => ({ ...p, line1: e.target.value }))} className={inputCls} />
@@ -1256,5 +1282,14 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
         </div>
       )}
     </div>
+      <GoogleAddressPicker
+        open={pickerOpen}
+        brandColor={brandColor}
+        businessId={currentBusinessId}
+        saveLabel="Use This Location"
+        onSave={(a) => { applyPicked(a); return Promise.resolve(true) }}
+        onClose={() => setPickerOpen(false)}
+      />
+    </>
   )
 }
