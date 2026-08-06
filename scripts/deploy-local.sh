@@ -34,6 +34,26 @@ set -euo pipefail
 # ─── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"                 # git source + deploy script
+
+# ─── 0. Self-update from origin/main ───────────────────────────────────────────
+# The /api/deploy webhook executes THIS file from the VPS git working tree, and
+# nothing else updates that tree — so a stale copy silently misses pipeline fixes
+# (e.g. the Google Maps key injection block in c744bf1). Re-exec the latest copy
+# of this script from origin/main whenever it differs. Runs before the lock/traps
+# so an exec never leaks a lock. (The webhook route also syncs this file before
+# spawning; this guards manual `bash scripts/deploy-local.sh` runs.)
+if [ "${QUANTIX_DEPLOY_UPDATED:-0}" != "1" ]; then
+  if timeout 15 git -C "$REPO" fetch origin --quiet 2>/dev/null \
+     && timeout 15 git -C "$REPO" show "origin/main:scripts/deploy-local.sh" >/tmp/quantix-deploy-local.latest.sh 2>/dev/null; then
+    if [ -s /tmp/quantix-deploy-local.latest.sh ] && ! cmp -s /tmp/quantix-deploy-local.latest.sh "$SCRIPT_DIR/deploy-local.sh"; then
+      chmod +x /tmp/quantix-deploy-local.latest.sh
+      export QUANTIX_DEPLOY_UPDATED=1
+      echo "[$(date '+%H:%M:%S')] ↻ deploy-local.sh updated from origin/main — re-executing" >> /tmp/quantix-deploy.log 2>/dev/null || true
+      exec bash /tmp/quantix-deploy-local.latest.sh "$@"
+    fi
+    rm -f /tmp/quantix-deploy-local.latest.sh
+  fi
+fi
 RELEASES_DIR="/home/ubuntu/quantix-releases"          # immutable, built-in-place
 CURRENT_LINK="/home/ubuntu/quantix-current"           # symlink → active release
 PM2_APP="quantix-core"
@@ -167,6 +187,22 @@ log "── next build (inside release; live release untouched) ─────�
     NEXT_TURBOPACK_USE_WORKER="0" \
     npm run build 2>&1 | tail -6 | tee -a "$LOG_FILE" ) \
   || { rm -rf "$NEW_RELEASE"; fail "next build failed — release discarded, live untouched"; }
+
+# ─── 4b. Maps-key build gate ───────────────────────────────────────────────────
+# A key was forwarded (QUANTIX_MAPS_KEY non-empty) but the build does not
+# contain it → the map-first picker would silently fall back to manual entry.
+# Fail the deploy loudly instead of shipping a degraded storefront. The key is
+# inlined by Next.js into client chunks (AIza… literal), so a simple scan of the
+# built chunk dir is a reliable signal. Only enforced when a key was provided.
+if [ -n "${QUANTIX_MAPS_KEY:-}" ]; then
+  CURRENT_STEP="maps-gate"; status "maps-gate" "Verifying Google Maps key in build"
+  if grep -rl "AIza" "$NEW_RELEASE/.next/static/chunks" 2>/dev/null | head -1 | grep -q .; then
+    log "✅ Google Maps key verified in build (client bundle contains AIza…)"
+  else
+    rm -rf "$NEW_RELEASE"
+    fail "Google Maps key NOT inlined into build — release discarded, live untouched"
+  fi
+fi
 
 CURRENT_STEP="assemble"; status "assemble" "Finalising release"
 [ -f "$NEW_RELEASE/.next/standalone/server.js" ] || { rm -rf "$NEW_RELEASE"; fail "standalone missing — release discarded"; }

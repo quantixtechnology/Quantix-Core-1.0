@@ -308,7 +308,20 @@ export async function POST(req: Request) {
       const mapsKey = req.headers.get('x-maps-key')?.trim() ?? ''
       const buildEnv = mapsKey ? { ...spawnEnv, QUANTIX_MAPS_KEY: mapsKey } : spawnEnv
 
-      const intermediate = spawn('/bin/bash', ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'], {
+      // The webhook executes scripts/deploy-local.sh from the VPS git working
+      // tree, which nothing else syncs — a stale copy silently misses pipeline
+      // fixes (e.g. the Google Maps key injection block). Before running, sync
+      // that single file from origin/main so the deploy ALWAYS executes the
+      // latest script. Falls back to the existing file if git is unavailable.
+      const projectDir = path.dirname(path.dirname(scriptPath))
+      const syncScript = [
+        `cd "${projectDir}" 2>/dev/null || true`,
+        `timeout 15 git fetch origin --quiet 2>/dev/null || true`,
+        `timeout 15 git checkout --quiet origin/main -- scripts/deploy-local.sh 2>/dev/null || true`,
+        `exec /bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown`,
+      ].join('; ')
+
+      const intermediate = spawn('/bin/bash', ['-c', syncScript], {
         detached: true,
         stdio: 'ignore',
         env: { ...buildEnv, DEPLOY_SCRIPT: scriptPath },
