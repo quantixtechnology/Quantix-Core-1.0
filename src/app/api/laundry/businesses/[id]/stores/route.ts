@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { generateStoreCode } from "@/lib/laundry-codes"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { assertValidStoreLocation } from "@/lib/core/store"
 
 export const runtime = "nodejs"
 
@@ -30,11 +31,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const guard = await requireLaundryPermission(request, id, "laundry.stores.create")
     if (!guard.ok) return guard.res
     const body = await request.json()
-    const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, serviceRadiusKm, dailyCapacityKg, isActive } = body
+    const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, googlePlaceId, formattedAddress, serviceRadiusKm, dailyCapacityKg, isActive } = body
 
     if (!storeName) {
       return NextResponse.json({ error: "Store name is required" }, { status: 400 })
     }
+
+    assertValidStoreLocation({
+      latitude: latitude ? parseFloat(latitude) : null,
+      longitude: longitude ? parseFloat(longitude) : null,
+      googlePlaceId: googlePlaceId || null,
+    })
 
     // Accept either LaundryBusiness.id or the platform Business.id (self-heals
     // the workspace link if missing) — same resolution the GET uses.
@@ -74,6 +81,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         pincode: pincode || null,
         latitude: latitude ? parseFloat(latitude) : null,
         longitude: longitude ? parseFloat(longitude) : null,
+        googlePlaceId: googlePlaceId || null,
+        formattedAddress: formattedAddress || null,
         serviceRadiusKm: serviceRadiusKm ? parseFloat(serviceRadiusKm) : null,
         dailyCapacityKg: dailyCapacityKg ? parseFloat(dailyCapacityKg) : null,
         isActive: isActive !== undefined ? isActive : true,

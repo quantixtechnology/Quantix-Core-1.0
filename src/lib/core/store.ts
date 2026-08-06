@@ -62,6 +62,42 @@ export async function generateStoreCode(businessId: string): Promise<string> {
 }
 
 // ============================================================================
+// GPS VALIDATION
+// ============================================================================
+
+/**
+ * Validate the Google Maps location payload for a store. Coordinates must be
+ * present together, and any coordinate set must be accompanied by a Google
+ * Place ID so the stored location is always resolvable on the map.
+ *
+ * Throws a human-readable error when the payload is incomplete — the API layer
+ * surfaces this to the UI so a store is never persisted with half a location.
+ */
+export function assertValidStoreLocation(data: {
+  latitude?: number | null;
+  longitude?: number | null;
+  googlePlaceId?: string | null;
+}) {
+  const hasLat = typeof data.latitude === "number" && !Number.isNaN(data.latitude);
+  const hasLng = typeof data.longitude === "number" && !Number.isNaN(data.longitude);
+
+  if (hasLat !== hasLng) {
+    throw new Error("Store location is incomplete: latitude and longitude must be provided together. Use the map to drop the store location.");
+  }
+
+  if (hasLat && hasLng) {
+    const validLat = data.latitude! >= -90 && data.latitude! <= 90;
+    const validLng = data.longitude! >= -180 && data.longitude! <= 180;
+    if (!validLat || !validLng) {
+      throw new Error("Store location is invalid: coordinates are outside the valid lat/lng ranges.");
+    }
+    if (!data.googlePlaceId) {
+      throw new Error("Store location is missing its Google Place ID. Select the store on the map to capture the full location.");
+    }
+  }
+}
+
+// ============================================================================
 // CREATE STORE
 // ============================================================================
 
@@ -124,6 +160,9 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
       });
     }
 
+    // Validate the Google Maps location payload before persisting.
+    assertValidStoreLocation(data);
+
     // Create store
     const store = await tx.store.create({
       data: {
@@ -138,6 +177,10 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
         pincode: data.pincode,
         latitude: data.latitude,
         longitude: data.longitude,
+        googlePlaceId: data.googlePlaceId ?? null,
+        formattedAddress: data.formattedAddress ?? null,
+        pickupRadiusKm: data.pickupRadiusKm ?? 5.0,
+        defaultMapZoom: data.defaultMapZoom ?? 16,
         phone: data.phone,
         email: data.email,
         isMainStore,
@@ -245,6 +288,7 @@ export async function updateStore(storeId: string, data: Partial<CreateStoreRequ
   const directFields = [
     'name', 'code', 'address', 'city', 'state', 'pincode',
     'latitude', 'longitude', 'phone', 'email',
+    'googlePlaceId', 'formattedAddress', 'pickupRadiusKm', 'defaultMapZoom',
     'deliveryRadius', 'minOrderAmount', 'deliveryFee',
     'freeDeliveryAbove', 'preparationTime',
     'posEnabled', 'gstNumber', 'paperSize', 'printerType',
@@ -254,6 +298,12 @@ export async function updateStore(storeId: string, data: Partial<CreateStoreRequ
     if ((data as Record<string, unknown>)[field] !== undefined) {
       updateData[field] = (data as Record<string, unknown>)[field];
     }
+  }
+
+  // Validate the Google Maps location payload whenever coordinates are being
+  // changed — never persist a store with half a location.
+  if ((data as Record<string, unknown>).latitude !== undefined || (data as Record<string, unknown>).longitude !== undefined) {
+    assertValidStoreLocation(data as { latitude?: number; longitude?: number; googlePlaceId?: string | null });
   }
 
   // Merge settings JSON

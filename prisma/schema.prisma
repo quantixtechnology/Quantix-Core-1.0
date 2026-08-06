@@ -776,6 +776,10 @@ model Store {
   country              String                @default("India")
   latitude             Float?
   longitude            Float?
+  googlePlaceId        String?
+  formattedAddress     String?
+  pickupRadiusKm       Float                 @default(5.0)
+  defaultMapZoom       Int                   @default(16)
   phone                String?
   email                String?
   status               StoreStatus           @default(ACTIVE)
@@ -4443,6 +4447,8 @@ model LaundryStore {
   pincode           String?
   latitude          Float?
   longitude         Float?
+  googlePlaceId     String?
+  formattedAddress  String?
   serviceRadiusKm   Float?
   dailyCapacityKg   Float?
   isActive          Boolean  @default(true)

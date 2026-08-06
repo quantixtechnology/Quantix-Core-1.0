@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { assertValidStoreLocation } from "@/lib/core/store"
 
 export const runtime = "nodejs"
 
@@ -12,7 +13,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const guard = await requireLaundryPermission(request, existing.laundryBusinessId, "laundry.stores.edit")
     if (!guard.ok) return guard.res
     const body = await request.json()
-    const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, serviceRadiusKm, dailyCapacityKg, isActive } = body
+    const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, googlePlaceId, formattedAddress, serviceRadiusKm, dailyCapacityKg, isActive } = body
+
+    if (latitude !== undefined || longitude !== undefined) {
+      assertValidStoreLocation({
+        latitude: latitude ? parseFloat(latitude) : null,
+        longitude: longitude ? parseFloat(longitude) : null,
+        googlePlaceId: googlePlaceId || null,
+      })
+    }
 
     const store = await prisma.laundryStore.update({
       where: { id },
@@ -28,6 +37,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(pincode !== undefined && { pincode: pincode || null }),
         ...(latitude !== undefined && { latitude: latitude ? parseFloat(latitude) : null }),
         ...(longitude !== undefined && { longitude: longitude ? parseFloat(longitude) : null }),
+        ...(googlePlaceId !== undefined && { googlePlaceId: googlePlaceId || null }),
+        ...(formattedAddress !== undefined && { formattedAddress: formattedAddress || null }),
         ...(serviceRadiusKm !== undefined && { serviceRadiusKm: serviceRadiusKm ? parseFloat(serviceRadiusKm) : null }),
         ...(dailyCapacityKg !== undefined && { dailyCapacityKg: dailyCapacityKg ? parseFloat(dailyCapacityKg) : null }),
         ...(isActive !== undefined && { isActive }),

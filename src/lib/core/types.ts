@@ -375,6 +375,10 @@ export interface CreateStoreRequest {
   pincode?: string;
   latitude?: number;
   longitude?: number;
+  googlePlaceId?: string | null;
+  formattedAddress?: string | null;
+  pickupRadiusKm?: number;
+  defaultMapZoom?: number;
   phone?: string;
   email?: string;
   isMainStore?: boolean;

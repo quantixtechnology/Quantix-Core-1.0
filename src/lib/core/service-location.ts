@@ -59,6 +59,12 @@ export interface ServiceLocation {
   longitude: number
   /** Primary service radius in km (from the workspace's own config). */
   serviceRadiusKm: number
+  /** Optional pickup radius in km, when the workspace distinguishes pickup. */
+  pickupRadiusKm?: number
+  /** Default map zoom used when centering the map on this location. */
+  defaultMapZoom?: number
+  /** Google Place ID of the location, when the workspace persists one. */
+  googlePlaceId?: string | null
   /** Optional hard cap on distance, if the workspace defines one separately. */
   maxDeliveryDistanceKm?: number | null
   isActive: boolean

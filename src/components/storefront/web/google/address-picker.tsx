@@ -41,12 +41,17 @@ export function GoogleAddressPicker({
   const markerInstance = useRef<{ setPosition: (c: { lat: number; lng: number }) => void } | null>(null)
   const reverseGeocoderRef = useRef<unknown | null>(null)
   const initialRef = useRef<DeliveryAddress | null>(null)
+  // Holds the most recent user-selected coordinates until the map is ready so a
+  // search performed while the map is still loading is never lost (fixes the
+  // "searched Hegde Nagar but the marker stayed in Mumbai" bug).
+  const pendingCoordsRef = useRef<{ lat: number | null; lng: number | null; placeId?: string | null } | null>(null)
 
   const [mapsReady, setMapsReady] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [locating, setLocating] = useState(false)
   const [address, setAddress] = useState<DeliveryAddress | null>(null)
   const [saving, setSaving] = useState(false)
+  const [svcStatus, setSvcStatus] = useState<"idle" | "loading" | "done">("idle")
   const [error, setError] = useState("")
   const [showDetails, setShowDetails] = useState(false)
   const [isEdit, setIsEdit] = useState(false)
@@ -63,29 +68,47 @@ export function GoogleAddressPicker({
       setLocating(false)
       setShowDetails(false)
       setMapsReady(false)
+      setSvcStatus("idle")
+      pendingCoordsRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const movePin = useCallback((google: any, lat: number, lng: number) => {
-    mapInstance.current?.setCenter({ lat, lng })
-    markerInstance.current?.setPosition({ lat, lng })
-    setGeocoding(true)
+  /**
+   * Single path for every way a location is chosen (search / marker drag / My
+   * Location). Keeps marker, map center, coordinates and address strictly in
+   * sync. When the map isn't ready yet the coordinates are parked in
+   * `pendingCoordsRef` and applied as soon as the map initializes — so the
+   * marker ALWAYS follows the last selection and stale coordinates never leak.
+   */
+  const syncLocation = useCallback((google: any, lat: number, lng: number, precomputed?: Partial<DeliveryAddress>) => {
+    pendingCoordsRef.current = { lat, lng, placeId: precomputed?.googlePlaceId ?? null }
+    if (mapInstance.current && markerInstance.current) {
+      mapInstance.current.setCenter({ lat, lng })
+      markerInstance.current.setPosition({ lat, lng })
+    }
     setError("")
+    setGeocoding(true)
     reverseGeocodeAddress(google, lat, lng)
       .then((addr) => {
         const keep = initialRef.current
         setAddress((prev) => ({
           ...(addr ?? {}),
+          ...(precomputed ?? {}),
           latitude: lat,
           longitude: lng,
+          googlePlaceId: precomputed?.googlePlaceId || addr?.googlePlaceId || null,
+          formattedAddress: precomputed?.formattedAddress || addr?.formattedAddress || null,
           id: keep?.id ?? prev?.id,
           label: prev?.label ?? keep?.label ?? addr?.label ?? "Home",
           instructions: prev?.instructions ?? keep?.instructions,
         }))
       })
-      .catch(() => setError("Could not resolve this location. Drag the pin to retry."))
+      .catch(() => {
+        // Reverse geocode failed — keep coordinates + any search data, but flag
+        // it so an incomplete address can never be silently saved.
+        setError("Could not resolve this location. Drag the pin to retry.")
+      })
       .finally(() => setGeocoding(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -99,8 +122,11 @@ export function GoogleAddressPicker({
       .then((google) => {
         if (!mounted || !mapRef.current) return
         const init = initialRef.current
-        const startLat = init?.latitude ?? DEFAULT_CENTER.lat
-        const startLng = init?.longitude ?? DEFAULT_CENTER.lng
+        const pending = pendingCoordsRef.current
+        // Prefer the last user selection over the initial address so the marker
+        // never reverts to a stale default.
+        const startLat = pending?.lat ?? init?.latitude ?? DEFAULT_CENTER.lat
+        const startLng = pending?.lng ?? init?.longitude ?? DEFAULT_CENTER.lng
         const center = { lat: startLat, lng: startLng }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,14 +148,17 @@ export function GoogleAddressPicker({
         markerInstance.current = marker
         reverseGeocoderRef.current = google
 
-        if (typeof init?.latitude === "number" && typeof init?.longitude === "number") {
+        if (pending && typeof pending.lat === "number" && typeof pending.lng === "number") {
+          // A search happened before the map was ready — now the marker follows it.
+          syncLocation(google, pending.lat, pending.lng, { googlePlaceId: pending.placeId ?? null })
+        } else if (typeof init?.latitude === "number" && typeof init?.longitude === "number") {
           setAddress(init)
         }
 
         marker.addListener("dragend", () => {
           const pos = marker.getPosition()
           if (!pos) return
-          movePin(google, pos.lat(), pos.lng())
+          syncLocation(google, pos.lat(), pos.lng())
         })
 
         setMapsReady(true)
@@ -156,8 +185,9 @@ export function GoogleAddressPicker({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         if (reverseGeocoderRef.current) {
-          movePin(reverseGeocoderRef.current, pos.coords.latitude, pos.coords.longitude)
+          syncLocation(reverseGeocoderRef.current, pos.coords.latitude, pos.coords.longitude)
         } else {
+          pendingCoordsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }
           setAddress((p) => ({ ...(p ?? {}), label: p?.label ?? "My Location", latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
         }
         setLocating(false)
@@ -171,13 +201,28 @@ export function GoogleAddressPicker({
   }
 
   const onPlaceSelected = (addr: DeliveryAddress) => {
-    if (addr.latitude != null && addr.longitude != null) {
-      mapInstance.current?.setCenter({ lat: addr.latitude, lng: addr.longitude })
-      markerInstance.current?.setPosition({ lat: addr.latitude, lng: addr.longitude })
+    if (reverseGeocoderRef.current && addr.latitude != null && addr.longitude != null) {
+      // Route the search through the SAME sync path so marker, map, coordinates
+      // and reverse geocoding always reference one location.
+      syncLocation(reverseGeocoderRef.current, addr.latitude, addr.longitude, {
+        googlePlaceId: addr.googlePlaceId ?? null,
+        formattedAddress: addr.formattedAddress ?? null,
+        addressLine1: addr.addressLine1,
+        area: addr.area,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+      })
+    } else {
+      pendingCoordsRef.current = {
+        lat: addr.latitude ?? null,
+        lng: addr.longitude ?? null,
+        placeId: addr.googlePlaceId ?? null,
+      }
+      const keep = initialRef.current
+      setAddress({ ...addr, id: keep?.id, label: address?.label ?? keep?.label ?? addr.label ?? "Home", instructions: address?.instructions ?? keep?.instructions })
+      setError("")
     }
-    const keep = initialRef.current
-    setAddress({ ...addr, id: keep?.id, label: address?.label ?? keep?.label ?? addr.label ?? "Home", instructions: address?.instructions ?? keep?.instructions })
-    setError("")
   }
 
   const patch = (updates: Partial<DeliveryAddress>) => setAddress((p) => ({ ...(p ?? {}), ...updates }))
@@ -188,9 +233,15 @@ export function GoogleAddressPicker({
     typeof address?.latitude === "number" && typeof address?.longitude === "number"
   const resolved =
     !geocoding && !!address && !!(address.addressLine1 || address.city || address.pincode)
+  // PHASE 6 — an address is only complete when it carries BOTH coordinates and a
+  // Google Place ID. Never save coords without a Place ID, never save text
+  // without coordinates.
+  const hasPlaceId = !!address?.googlePlaceId
+  // PHASE 4 — the Save button stays disabled until the serviceability
+  // calculation for the current pin has finished.
   const canSave = noKey
     ? !!(address?.addressLine1 && address?.city && address?.pincode) && !saving
-    : hasCoords && resolved && !saving
+    : hasCoords && hasPlaceId && resolved && svcStatus !== "loading" && !saving
 
   const submit = async () => {
     if (!address) return
@@ -377,7 +428,7 @@ export function GoogleAddressPicker({
 
                 {/* Live serviceability preview (never blocks saving) */}
                 <div className="mb-3">
-                  <ServiceabilityPreview lat={address?.latitude} lng={address?.longitude} brandColor={brandColor} businessId={businessId} />
+                  <ServiceabilityPreview lat={address?.latitude} lng={address?.longitude} brandColor={brandColor} businessId={businessId} onStatus={setSvcStatus} />
                 </div>
 
                 {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
@@ -393,7 +444,9 @@ export function GoogleAddressPicker({
                 </button>
                 {!canSave && !saving && (
                   <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                    Drop the pin, search or use my location to select your delivery point.
+                    {svcStatus === "loading"
+                      ? "Checking delivery availability…"
+                      : "Drop the pin, search or use my location to select your delivery point."}
                   </p>
                 )}
               </div>

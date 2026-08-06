@@ -35,6 +35,7 @@ import { useAdminStore } from '@/stores/admin-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { showSuccess, showError } from '@/lib/toast-utils'
+import { StoreLocationPicker, type StoreLocation } from '@/components/shared/google/store-location-picker'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,10 @@ interface StoreRecord {
   status: string
   isMainStore: boolean
   deliveryRadius: number | null
+  pickupRadiusKm: number | null
+  defaultMapZoom: number | null
+  googlePlaceId: string | null
+  formattedAddress: string | null
   deliveryFee: number | null
   minOrderAmount: number | null
   freeDeliveryAbove: number | null
@@ -91,6 +96,10 @@ interface StoreForm {
   gstNumber: string
   latitude: string
   longitude: string
+  googlePlaceId: string
+  formattedAddress: string
+  pickupRadiusKm: string
+  defaultMapZoom: string
 }
 
 const EMPTY_FORM: StoreForm = {
@@ -99,7 +108,8 @@ const EMPTY_FORM: StoreForm = {
   whatsappNumber: '', supportEmail: '', notificationEmail: '', otpSenderEmail: '',
   deliveryRadius: '', deliveryFee: '',
   minOrderAmount: '', freeDeliveryAbove: '', gstNumber: '',
-  latitude: '', longitude: '',
+  latitude: '', longitude: '', googlePlaceId: '', formattedAddress: '',
+  pickupRadiusKm: '', defaultMapZoom: '',
 }
 
 function parseStoreSettings(raw: string | null | undefined): Record<string, string> {
@@ -122,6 +132,10 @@ function storeToForm(s: StoreRecord): StoreForm {
     notificationEmail: settings.notificationEmail ?? '',
     otpSenderEmail: settings.otpSenderEmail ?? '',
     deliveryRadius: s.deliveryRadius != null ? String(s.deliveryRadius) : '',
+    pickupRadiusKm: s.pickupRadiusKm != null ? String(s.pickupRadiusKm) : '',
+    defaultMapZoom: s.defaultMapZoom != null ? String(s.defaultMapZoom) : '',
+    googlePlaceId: s.googlePlaceId ?? '',
+    formattedAddress: s.formattedAddress ?? '',
     deliveryFee: s.deliveryFee != null ? String(s.deliveryFee) : '',
     minOrderAmount: s.minOrderAmount != null ? String(s.minOrderAmount) : '',
     freeDeliveryAbove: s.freeDeliveryAbove != null ? String(s.freeDeliveryAbove) : '',
@@ -263,6 +277,10 @@ export function StoresView() {
           phone: form.phone.trim() || undefined,
           email: form.email.trim() || undefined,
           deliveryRadius: form.deliveryRadius ? parseFloat(form.deliveryRadius) : undefined,
+          pickupRadiusKm: form.pickupRadiusKm ? parseFloat(form.pickupRadiusKm) : undefined,
+          defaultMapZoom: form.defaultMapZoom ? parseInt(form.defaultMapZoom, 10) : undefined,
+          googlePlaceId: form.googlePlaceId.trim() || undefined,
+          formattedAddress: form.formattedAddress.trim() || undefined,
           deliveryFee: form.deliveryFee ? parseFloat(form.deliveryFee) : undefined,
           minOrderAmount: form.minOrderAmount ? parseFloat(form.minOrderAmount) : undefined,
           freeDeliveryAbove: form.freeDeliveryAbove ? parseFloat(form.freeDeliveryAbove) : undefined,
@@ -340,6 +358,10 @@ export function StoresView() {
           phone: form.phone.trim() || null,
           email: form.email.trim() || null,
           deliveryRadius: form.deliveryRadius ? parseFloat(form.deliveryRadius) : undefined,
+          pickupRadiusKm: form.pickupRadiusKm ? parseFloat(form.pickupRadiusKm) : undefined,
+          defaultMapZoom: form.defaultMapZoom ? parseInt(form.defaultMapZoom, 10) : undefined,
+          googlePlaceId: form.googlePlaceId.trim() || null,
+          formattedAddress: form.formattedAddress.trim() || null,
           deliveryFee: form.deliveryFee ? parseFloat(form.deliveryFee) : undefined,
           minOrderAmount: form.minOrderAmount ? parseFloat(form.minOrderAmount) : undefined,
           freeDeliveryAbove: form.freeDeliveryAbove ? parseFloat(form.freeDeliveryAbove) : undefined,
@@ -839,16 +861,52 @@ export function StoresView() {
             <Separator />
 
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location & Tax</p>
+            <div className="space-y-1">
+              <Label className="text-xs">Store Location</Label>
+              <StoreLocationPicker
+                value={{
+                  latitude: form.latitude ? parseFloat(form.latitude) : null,
+                  longitude: form.longitude ? parseFloat(form.longitude) : null,
+                  googlePlaceId: form.googlePlaceId || null,
+                  formattedAddress: form.formattedAddress || null,
+                  address: form.address || null,
+                  city: form.city || null,
+                  state: form.state || null,
+                  pincode: form.pincode || null,
+                }}
+                onChange={(loc: StoreLocation) => {
+                  setForm(prev => ({
+                    ...prev,
+                    latitude: loc.latitude != null ? String(loc.latitude) : '',
+                    longitude: loc.longitude != null ? String(loc.longitude) : '',
+                    googlePlaceId: loc.googlePlaceId ?? '',
+                    formattedAddress: loc.formattedAddress ?? '',
+                    address: loc.address ?? '',
+                    city: loc.city ?? '',
+                    state: loc.state ?? '',
+                    pincode: loc.pincode ?? '',
+                  }))
+                }}
+              />
+            </div>
+            {form.latitude && form.longitude && (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
+                <MapPin className="size-3 shrink-0" />
+                <span className="font-mono">
+                  ({parseFloat(form.latitude).toFixed(6)}, {parseFloat(form.longitude).toFixed(6)}){form.googlePlaceId ? ' · Place ID captured' : ''}
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Latitude</Label>
-                <Input className="h-8 text-sm" type="number" step="any" placeholder="19.0760"
-                  value={form.latitude} onChange={e => handleFieldChange('latitude', e.target.value)} />
+                <Label className="text-xs">Pickup Radius (km)</Label>
+                <Input className="h-8 text-sm" type="number" min="0" step="0.5" placeholder="e.g. 7"
+                  value={form.pickupRadiusKm} onChange={e => handleFieldChange('pickupRadiusKm', e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Longitude</Label>
-                <Input className="h-8 text-sm" type="number" step="any" placeholder="72.8777"
-                  value={form.longitude} onChange={e => handleFieldChange('longitude', e.target.value)} />
+                <Label className="text-xs">Default Map Zoom</Label>
+                <Input className="h-8 text-sm" type="number" min="3" max="20" placeholder="16"
+                  value={form.defaultMapZoom} onChange={e => handleFieldChange('defaultMapZoom', e.target.value)} />
               </div>
             </div>
             <div className="space-y-1">

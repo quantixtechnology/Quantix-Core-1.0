@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { StoreLocationPicker, type StoreLocation } from "@/components/shared/google/store-location-picker"
 
 type Store = {
   id: string
@@ -33,6 +34,8 @@ type Store = {
   pincode: string | null
   latitude: number | null
   longitude: number | null
+  googlePlaceId: string | null
+  formattedAddress: string | null
   serviceRadiusKm: number | null
   dailyCapacityKg: number | null
   isActive: boolean
@@ -55,6 +58,8 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
     pincode: "",
     latitude: "",
     longitude: "",
+    googlePlaceId: "",
+    formattedAddress: "",
     serviceRadiusKm: "",
     dailyCapacityKg: "",
     isActive: true,
@@ -73,7 +78,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
 
   const openCreate = () => {
     setEditingStore(null)
-    setForm({ storeName: "", storeType: "RETAIL_STORE", managerName: "", mobile: "", email: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "", serviceRadiusKm: "", dailyCapacityKg: "", isActive: true })
+    setForm({ storeName: "", storeType: "RETAIL_STORE", managerName: "", mobile: "", email: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "", googlePlaceId: "", formattedAddress: "", serviceRadiusKm: "", dailyCapacityKg: "", isActive: true })
     setDialogOpen(true)
   }
 
@@ -91,6 +96,8 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
       pincode: store.pincode || "",
       latitude: store.latitude?.toString() || "",
       longitude: store.longitude?.toString() || "",
+      googlePlaceId: store.googlePlaceId || "",
+      formattedAddress: store.formattedAddress || "",
       serviceRadiusKm: store.serviceRadiusKm?.toString() || "",
       dailyCapacityKg: store.dailyCapacityKg?.toString() || "",
       isActive: store.isActive,
@@ -243,13 +250,33 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
               <Label>Pincode</Label>
               <Input value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value }))} placeholder="400001" />
             </div>
-            <div>
-              <Label>Latitude</Label>
-              <Input value={form.latitude} onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))} placeholder="28.6139" />
-            </div>
-            <div>
-              <Label>Longitude</Label>
-              <Input value={form.longitude} onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))} placeholder="77.2090" />
+            <div className="col-span-2">
+              <Label>Store Location</Label>
+              <StoreLocationPicker
+                value={{
+                  latitude: form.latitude ? parseFloat(form.latitude) : null,
+                  longitude: form.longitude ? parseFloat(form.longitude) : null,
+                  googlePlaceId: form.googlePlaceId || null,
+                  formattedAddress: form.formattedAddress || null,
+                  address: form.address || null,
+                  city: form.city || null,
+                  state: form.state || null,
+                  pincode: form.pincode || null,
+                }}
+                onChange={(loc: StoreLocation) => {
+                  setForm(p => ({
+                    ...p,
+                    latitude: loc.latitude != null ? String(loc.latitude) : "",
+                    longitude: loc.longitude != null ? String(loc.longitude) : "",
+                    googlePlaceId: loc.googlePlaceId ?? "",
+                    formattedAddress: loc.formattedAddress ?? "",
+                    address: loc.address ?? "",
+                    city: loc.city ?? "",
+                    state: loc.state ?? "",
+                    pincode: loc.pincode ?? "",
+                  }))
+                }}
+              />
             </div>
             <div>
               <Label>Service Radius (KM)</Label>

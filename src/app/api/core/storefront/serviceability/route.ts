@@ -124,6 +124,7 @@ export async function POST(request: Request) {
           latitude: nearestLocation.latitude,
           longitude: nearestLocation.longitude,
           serviceRadiusKm: nearestLocation.serviceRadiusKm,
+          pickupRadiusKm: (nearestLocation as { pickupRadiusKm?: number }).pickupRadiusKm ?? null,
           deliveryFee: nearestLocation.deliveryFee ?? null,
           freeDeliveryAbove: nearestLocation.freeDeliveryAbove ?? null,
           minOrderAmount: nearestLocation.minOrderAmount ?? null,
