@@ -9,7 +9,7 @@ import {
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal, Paperclip,
   TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette, Sparkles, Store, LayoutList,
-  Route, UserCog, Shield,
+  Route, UserCog, Shield, MapPin,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -157,6 +157,7 @@ const systemNavItems: NavItem[] = [
   { key: "security-access",     label: "Security & Access",   icon: Lock      },
   { key: "audit-logs",          label: "Audit Logs",          icon: ScrollText},
   { key: "brand-studio",        label: "Brand Studio",        icon: Palette   },
+  { key: "google-maps-health",  label: "Google Maps Health",  icon: MapPin     },
   { key: "settings",            label: "Settings",            icon: Settings  },
 ]
 

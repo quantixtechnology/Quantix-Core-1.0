@@ -160,6 +160,7 @@ const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").th
 const NotificationsView = dynamic(() => import("@/components/admin/notifications/notifications-view").then(m => ({ default: m.NotificationsView })), { loading: () => <PageLoader /> })
 const SettingsView = dynamic(() => import("@/components/admin/settings/settings-view").then(m => ({ default: m.SettingsView })), { loading: () => <PageLoader /> })
 const PlatformSettingsView = dynamic(() => import("@/components/admin/settings/platform-settings-view").then(m => ({ default: m.PlatformSettingsView })), { loading: () => <PageLoader /> })
+const GoogleMapsHealthView = dynamic(() => import("@/components/admin/settings/google-maps-health-view").then(m => ({ default: m.GoogleMapsHealthView })), { loading: () => <PageLoader /> })
 const BrandStudioView = dynamic(() => import("@/components/admin/brand-studio/brand-studio-view").then(m => ({ default: m.BrandStudioView })), { loading: () => <PageLoader /> })
 const CommissionView = dynamic(() => import("@/components/admin/commission/commission-view").then(m => ({ default: m.CommissionView })), { loading: () => <PageLoader /> })
 const PlatformUsersView = dynamic(() => import("@/components/admin/users/platform-users-view").then(m => ({ default: m.PlatformUsersView })), { loading: () => <PageLoader /> })
@@ -618,6 +619,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "notifications": return <NotificationsView />
       case "settings": return <SettingsView />
       case "platform-settings": return <PlatformSettingsView />
+      case "google-maps-health": return <GoogleMapsHealthView />
       case "brand-studio": return <BrandStudioView />
       case "commission-calculator": return <CommissionView />
       // HRMS

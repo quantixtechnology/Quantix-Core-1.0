@@ -69,6 +69,7 @@ export type AdminPage =
   | "platform-invoices"
   | "addons"
   | "platform-settings"
+  | "google-maps-health"
   | "commission-calculator"
   | "hrms-employees"
   | "hrms-offer-letter"

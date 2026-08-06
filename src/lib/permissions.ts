@@ -882,6 +882,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "security-access":        "platform:security",
   "audit-logs":             "platform:audit_logs",
   "platform-settings":      "settings:view",
+  "google-maps-health":     "settings:view",
   "brand-studio":           "brand_studio:view",
   "settings":               "settings:view",
   "commission-calculator":  "commission:view",
