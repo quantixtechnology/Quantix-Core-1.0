@@ -5679,6 +5679,88 @@ model LaundryCrmEvent {
   @@index([createdAt])
 }
 
+// ── CRM Communication (Phase 1 — lightweight, no telephony backend) ─────────
+// Device-native communication: tel:, wa.me deep links and mailto: only. No
+// Exotel/VoIP/SIP/SMTP/WhatsApp Business API. The UI/API surface is designed so
+// paid integrations (Exotel, WhatsApp Business API, SMTP, SMS) can later attach
+// to the same per-lead records without a redesign.
+
+// Per-tenant toggles for the communication buttons (CRM Settings → Communication).
+// ──────────────────────────────────────────────────────────────────────────────
+// Quantix Platform CRM — generic communication infrastructure.
+// Workspace-independent: these models are NOT tied to the Laundry workspace.
+// They key on a tenant `businessId` (the destination workspace's business id)
+// and are reused by every CRM (Laundry, Commerce, Automotive, Services, …).
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Per-tenant toggles for the CRM communication buttons.
+// Workspace-agnostic: enable/disable Call / WhatsApp / Email / Recording upload
+// for a given tenant's CRM.
+model CrmCommunicationSetting {
+  id                    String   @id @default(cuid())
+  businessId            String   @unique // tenant id — any workspace
+  enableCalls           Boolean  @default(true)
+  enableWhatsApp        Boolean  @default(true)
+  enableEmail           Boolean  @default(true)
+  enableRecordingUpload Boolean  @default(true)
+  updatedBy             String?
+  updatedByName         String?
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+
+  @@index([businessId])
+}
+
+// Workspace-agnostic WhatsApp + Email message templates (template master).
+// channel: WHATSAPP | EMAIL. Same placeholder set for both:
+//   {{customerName}} {{businessName}} {{employeeName}} {{leadId}}
+//   {{mobile}} {{email}} {{currentDate}}
+model CrmCommunicationTemplate {
+  id            String   @id @default(cuid())
+  businessId    String   // tenant id — any workspace id
+  channel       String // WHATSAPP | EMAIL
+  name          String
+  category      String? // Welcome | Follow-up | Quotation | Payment Reminder | …
+  subject       String? // EMAIL only
+  body          String
+  active        Boolean  @default(true)
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([businessId, channel])
+  @@index([businessId, active])
+}
+
+// Manually uploaded call recordings (post-call, from any phone), workspace-
+// independent and polymorphic: a recording can be attached to a Lead, Customer,
+// Opportunity or Activity (refType + refId). Phase 1 only exposes LEAD, but the
+// schema already supports the other reference types without a future redesign.
+// Files live in UPLOAD_ROOT/crm-recordings/<businessId>/ and metadata here.
+model CrmCallRecording {
+  id             String   @id @default(cuid())
+  businessId     String   // tenant id — any workspace
+  refType        String // LEAD | CUSTOMER | OPPORTUNITY | ACTIVITY
+  refId          String
+  fileName       String // original name, e.g. Pricing Discussion.mp3
+  storageName    String // stored file name under UPLOAD_ROOT/crm-recordings/<businessId>/
+  mimeType       String
+  size           Int
+  durationSec    Int? // optional duration metadata
+  remarks        String?
+  uploadedById   String?
+  uploadedByName String?
+  createdAt      DateTime @default(now())
+
+  @@index([businessId])
+  @@index([refType, refId])
+  @@index([businessId, refType, refId])
+  @@index([businessId, refId])
+  @@index([createdAt])
+}
+
 // ── Package / Packet — persistent identity for store ⇄ processing transport ──
 // ONE packet per order (enforced by the unique orderId): the store packs the
 // audited order into a single package whose QR resolves to packetNumber.

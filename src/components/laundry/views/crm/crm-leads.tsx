@@ -20,6 +20,7 @@ import {
 import {
   Loader2, Plus, Search, Users, ChevronLeft, ChevronRight, MoreHorizontal,
   Pencil, Archive, ArrowRightCircle, Columns3, Download, UserPlus,
+  Phone, Mail, Mic, MessageCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
@@ -29,12 +30,15 @@ import {
 import { DynamicCrmFieldRenderer } from "./dynamic-crm-field-renderer"
 import { CrmLeadDetail } from "./crm-lead-detail"
 import { ConvertLeadDialog } from "./crm-convert-dialog"
+import { RecordingDialog } from "./crm-communication-center"
+import { type CommSettings, useCommSettings, telHref, waHref, mailtoHref, openDeepLink, useCommContext } from "./crm-comms"
 
 const PAGE_SIZE = 20
 
 export function CrmLeads({ businessId }: { businessId: string }) {
   const meta = useCrmMeta(businessId)
   const actor = useCrmActor()
+  const { settings: commSettings } = useCommSettings(businessId)
 
   const [rows, setRows] = useState<CrmLead[]>([])
   const [total, setTotal] = useState(0)
@@ -53,6 +57,7 @@ export function CrmLeads({ businessId }: { businessId: string }) {
   const [creating, setCreating] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [convertLead, setConvertLead] = useState<CrmLead | null>(null)
+  const [recLead, setRecLead] = useState<CrmLead | null>(null)
 
   // Table columns from field config (showInList) — displayName/status/source are fixed.
   const listFields = useMemo(() => meta.fields.filter((f) => f.showInList && !["first_name", "last_name"].includes(f.fieldKey)), [meta.fields])
@@ -246,7 +251,8 @@ export function CrmLeads({ businessId }: { businessId: string }) {
                         ))}
                         <TableCell className="text-sm text-slate-600">{l.assignedToName || "—"}</TableCell>
                         <TableCell className="text-sm text-slate-500 whitespace-nowrap">{fmtDate(l.createdAt)}</TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell onClick={(e) => e.stopPropagation()} className="w-[120px]">
+                          <LeadQuickActions lead={l} settings={commSettings} onRecord={() => setRecLead(l)} />
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 w-7 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -298,6 +304,9 @@ export function CrmLeads({ businessId }: { businessId: string }) {
           onConverted={() => { setConvertLead(null); load() }}
         />
       )}
+      {recLead && (
+        <RecordingDialog businessId={businessId} lead={recLead} onClose={() => setRecLead(null)} />
+      )}
     </div>
   )
 
@@ -306,6 +315,31 @@ export function CrmLeads({ businessId }: { businessId: string }) {
     toast.success("Lead archived")
     load()
   }
+}
+
+// Quick per-row communication actions (Call / WhatsApp / Email / Recording).
+function LeadQuickActions({ lead, settings, onRecord }: { lead: CrmLead; settings: CommSettings; onRecord: () => void }) {
+  const comm = useCommContext(lead)
+  const phone = comm.ctx.mobile
+  const email = comm.ctx.email
+  const stop = (e: React.MouseEvent) => e.stopPropagation()
+  const btn = "p-1.5 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:pointer-events-none"
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {settings.enableCalls && phone && (
+        <button type="button" title="Call" className={btn} onClick={(e) => { stop(e); openDeepLink(telHref(phone)) }}><Phone className="h-3.5 w-3.5" /></button>
+      )}
+      {settings.enableWhatsApp && phone && (
+        <button type="button" title="WhatsApp" className={btn} onClick={(e) => { stop(e); openDeepLink(waHref(phone, `Hi ${comm.ctx.customerName},`)) }}><MessageCircle className="h-3.5 w-3.5 text-green-600" /></button>
+      )}
+      {settings.enableEmail && email && (
+        <button type="button" title="Email" className={btn} onClick={(e) => { stop(e); openDeepLink(mailtoHref(email, "", "")) }}><Mail className="h-3.5 w-3.5 text-blue-600" /></button>
+      )}
+      {settings.enableRecordingUpload && (
+        <button type="button" title="Add Recording" className={btn} onClick={(e) => { stop(e); onRecord() }}><Mic className="h-3.5 w-3.5 text-rose-500" /></button>
+      )}
+    </span>
+  )
 }
 
 function BulkAssign({ onAssign }: { onAssign: (name: string) => void }) {

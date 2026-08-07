@@ -21,6 +21,8 @@ import {
 import { LeadFormDialog } from "./crm-leads"
 import { ConvertLeadDialog } from "./crm-convert-dialog"
 import { LogActivityDialog, NewTaskDialog } from "./crm-activity-task-dialogs"
+import { CommunicationCenter } from "./crm-communication-center"
+import { useCommSettings } from "./crm-comms"
 
 type LeadFull = CrmLead & {
   activities: CrmActivity[]
@@ -32,6 +34,7 @@ type LeadFull = CrmLead & {
 export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: string; leadId: string; onBack: () => void }) {
   const meta = useCrmMeta(businessId)
   const actor = useCrmActor()
+  const { settings: commSettings } = useCommSettings(businessId)
   const [lead, setLead] = useState<LeadFull | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -119,6 +122,8 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
           )}
         </div>
       </div>
+
+      <CommunicationCenter lead={lead} settings={commSettings} businessId={businessId} />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
         {/* Left: info + timeline */}

@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Plus, Settings, ChevronUp, ChevronDown, Pencil, ListChecks,
-  Tags, Waypoints, XCircle, ClipboardList, FormInput,
+  Tags, Waypoints, XCircle, ClipboardList, FormInput, MessagesSquare,
 } from "lucide-react"
 import { toast } from "sonner"
+import { CrmCommunicationSettings } from "./crm-communication-settings"
 import {
   type CrmField, type CrmFieldOption, useCrmMeta, parseOptions,
 } from "./crm-shared"
@@ -67,6 +68,7 @@ export function CrmSettings({ businessId }: { businessId: string }) {
           <TabsTrigger value="stages" className="gap-1.5"><Waypoints className="h-3.5 w-3.5" /> Sales Stages</TabsTrigger>
           <TabsTrigger value="lost-reasons" className="gap-1.5"><XCircle className="h-3.5 w-3.5" /> Lost Reasons</TabsTrigger>
           <TabsTrigger value="activity-types" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Activity Types</TabsTrigger>
+          <TabsTrigger value="communication" className="gap-1.5"><MessagesSquare className="h-3.5 w-3.5" /> Communication</TabsTrigger>
         </TabsList>
 
         <TabsContent value="fields"><LeadFieldBuilder businessId={businessId} fields={meta.fields} reload={meta.reload} /></TabsContent>
@@ -84,6 +86,7 @@ export function CrmSettings({ businessId }: { businessId: string }) {
           <SimpleConfig businessId={businessId} rows={meta.activityTypes} reload={meta.reload} endpoint="activity-types"
             title="Activity Types" description="Types available when logging CRM activities (Call, Meeting, WhatsApp…)." />
         </TabsContent>
+        <TabsContent value="communication"><CrmCommunicationSettings businessId={businessId} /></TabsContent>
       </Tabs>
     </div>
   )
