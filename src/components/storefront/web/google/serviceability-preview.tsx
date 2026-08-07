@@ -52,7 +52,9 @@ export function ServiceabilityPreview({ lat, lng, brandColor, businessId, onStat
           onStatus?.("done")
           return
         }
-        setState({ status: data.serviceable ? "ok" : "no", data })
+        // The API wraps the payload under { success, data: {...} }; unwrap it
+        const payload = data?.data ?? data
+        setState({ status: payload.serviceable ? "ok" : "no", data: payload })
         onStatus?.("done")
       } catch {
         if (!cancelled) {
