@@ -173,6 +173,27 @@ export function accessibleLaundryPages(
   return pages
 }
 
+const PAGE_SCREEN_KEYS: Record<string, string[]> = Object.entries(SCREEN_PAGE_MAP).reduce(
+  (acc, [screenKey, page]) => {
+    acc[page] = acc[page] ?? []
+    acc[page].push(screenKey)
+    return acc
+  }, {} as Record<string, string[]>,
+)
+
+export function resolveLaundryScreenKeys(page: string): string[] {
+  return PAGE_SCREEN_KEYS[page] ?? []
+}
+
+export function isLaundryPageAccessible(
+  screenLevels: Record<string, number>,
+  isOwner: boolean,
+  page: string,
+): boolean {
+  const screenKeys = resolveLaundryScreenKeys(page)
+  return screenKeys.some((screenKey) => isScreenAccessible(screenLevels, isOwner, screenKey))
+}
+
 /**
  * The workspace landing page for the current RBAC session: the FIRST
  * accessible page in navigation order (permission registry + navigation

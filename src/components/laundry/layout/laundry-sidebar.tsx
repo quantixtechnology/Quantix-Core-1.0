@@ -13,7 +13,7 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
-import { SCREEN_PAGE_MAP, defaultNavigationConfig, screenDisplayName, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
+import { SCREEN_PAGE_MAP, defaultNavigationConfig, isLaundryPageAccessible, screenDisplayName, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
 import { isScreenAccessible } from "@/lib/laundry-rbac-registry"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
@@ -141,7 +141,14 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
   const toggleGroup = (key: string) => setCollapsed((s) => {
-    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); persistCollapsed(n); return n
+    const n = new Set(s)
+    if (n.has(key)) {
+      n.delete(key)
+    } else {
+      n.add(key)
+    }
+    persistCollapsed(n)
+    return n
   })
   const scrollRef = useRef<HTMLDivElement>(null)
   const onNavScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -162,6 +169,9 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   useEffect(() => {
     if (!businessId) return
+    // Reset the error state before fetching navigation; the effect is intentionally
+    // managing this local state for the current business context.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNavError(false)
     fetch(`/api/laundry/navigation?businessId=${businessId}`)
       .then((r) => {
@@ -210,10 +220,10 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const validPages = useMemo(() => {
     const pages = new Set([
       ...groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
-      ...PROGRAMMATIC_PAGES,
+      ...[...PROGRAMMATIC_PAGES].filter((page) => isLaundryPageAccessible(screenLevels, isOwner, page)),
     ])
     return pages
-  }, [groups])
+  }, [groups, screenLevels, isOwner])
 
   useEffect(() => {
     if (!navLoaded) return

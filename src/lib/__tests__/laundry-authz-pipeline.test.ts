@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { Level, isValidScreenKey, isScreenAccessible } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
 import { laundryRoleLabel, hasLaundryWorkspaceAccess } from "@/lib/runtime-auth"
-import { resolveLaundryLandingPage, accessibleLaundryPages } from "@/lib/laundry-nav-config"
+import { resolveLaundryLandingPage, accessibleLaundryPages, isLaundryPageAccessible, resolveLaundryScreenKeys } from "@/lib/laundry-nav-config"
 import { isOwnerRole, resolveUnassignedPermissions } from "@/lib/laundry-rbac"
 
 // ============================================================================
@@ -163,6 +163,22 @@ describe("isScreenAccessible / accessibleLaundryPages — nav visibility matches
     expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "dispatch-center")).toBe(false)
     expect(isScreenAccessible({ "laundry.orders": Level.CREATE }, false, "new-order")).toBe(false)
     expect(isScreenAccessible({}, false, "new-order")).toBe(false)
+  })
+})
+
+describe("resolveLaundryScreenKeys / isLaundryPageAccessible — page-level permission mapping", () => {
+  it("maps pages to their registered screen keys", () => {
+    expect(resolveLaundryScreenKeys("orders")).toContain("laundry.orders")
+    expect(resolveLaundryScreenKeys("order-detail")).toContain("laundry.order_detail")
+  })
+
+  it("grants access to a page when any mapped screen is accessible", () => {
+    expect(isLaundryPageAccessible({ "laundry.order_detail": Level.VIEW }, false, "order-detail")).toBe(true)
+    expect(isLaundryPageAccessible({ "laundry.orders": Level.VIEW }, false, "orders")).toBe(true)
+  })
+
+  it("denies access to pages with no registered screen mapping", () => {
+    expect(isLaundryPageAccessible({}, false, "unknown-page")).toBe(false)
   })
 })
 
