@@ -5736,14 +5736,15 @@ model CrmCommunicationTemplate {
 
 // Manually uploaded call recordings (post-call, from any phone), workspace-
 // independent and polymorphic: a recording can be attached to a Lead, Customer,
-// Opportunity or Activity (refType + refId). Phase 1 only exposes LEAD, but the
-// schema already supports the other reference types without a future redesign.
+// Opportunity or Activity (entityType + entityId — aligned with the platform's
+// generic BusinessAuditLog/ActivityLog convention). Phase 1 only exposes LEAD,
+// but the schema already supports the other reference types without a redesign.
 // Files live in UPLOAD_ROOT/crm-recordings/<businessId>/ and metadata here.
 model CrmCallRecording {
   id             String   @id @default(cuid())
   businessId     String   // tenant id — any workspace
-  refType        String // LEAD | CUSTOMER | OPPORTUNITY | ACTIVITY
-  refId          String
+  entityType     String // LEAD | CUSTOMER | OPPORTUNITY | ACTIVITY
+  entityId       String
   fileName       String // original name, e.g. Pricing Discussion.mp3
   storageName    String // stored file name under UPLOAD_ROOT/crm-recordings/<businessId>/
   mimeType       String
@@ -5755,9 +5756,9 @@ model CrmCallRecording {
   createdAt      DateTime @default(now())
 
   @@index([businessId])
-  @@index([refType, refId])
-  @@index([businessId, refType, refId])
-  @@index([businessId, refId])
+  @@index([entityType, entityId])
+  @@index([businessId, entityType, entityId])
+  @@index([businessId, entityId])
   @@index([createdAt])
 }
 

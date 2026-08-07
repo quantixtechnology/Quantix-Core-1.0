@@ -1,7 +1,7 @@
 // GET/POST /api/laundry/crm/leads/[id]/recordings — list and upload manual call
 // recordings for a lead. POST accepts multipart/form-data (file + durationSec +
 // remarks). mp3/m4a/wav/aac, max 25MB. Uses the generic CrmCallRecording with
-// refType "LEAD" so recordings can later attach to Customer/Opportunity/Activity.
+// entityType "LEAD" so recordings can later attach to Customer/Opportunity/Activity.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const lead = await prisma.laundryCrmLead.findFirst({ where: { id, businessId: biz.id }, select: { id: true } })
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     const rows = await prisma.crmCallRecording.findMany({
-      where: { businessId: biz.id, refType: "LEAD", refId: id },
+      where: { businessId: biz.id, entityType: "LEAD", entityId: id },
       orderBy: { createdAt: "desc" },
     })
     return NextResponse.json({ success: true, data: rows })
@@ -71,8 +71,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const rec = await prisma.crmCallRecording.create({
       data: {
         businessId: biz.id,
-        refType: "LEAD",
-        refId: id,
+        entityType: "LEAD",
+        entityId: id,
         fileName: file.name,
         storageName,
         mimeType: file.type || "audio/mpeg",

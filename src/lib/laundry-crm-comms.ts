@@ -7,7 +7,7 @@
 //
 // Recording files are stored under
 // UPLOAD_ROOT/crm-recordings/<businessId>/ and the DB metadata lives in the
-// generic CrmCallRecording (polymorphic refType + refId).
+// generic CrmCallRecording (polymorphic entityType + entityId).
 import { join } from "path"
 import { writeFile, unlink } from "fs/promises"
 import { UPLOAD_ROOT, ensureDir } from "@/lib/upload-root"
