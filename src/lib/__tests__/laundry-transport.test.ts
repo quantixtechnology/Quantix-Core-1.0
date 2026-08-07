@@ -30,7 +30,7 @@ import {
   transportNoun, transportScanPlaceholder, usesBag, usesPacket, normalizeTransportMode,
 } from '@/lib/laundry-transport'
 import {
-  getTransportModes, resolveOrderByTransportCode, transportRefForOrder,
+  getTransportModes, resolveOrderByTransportCode, transportRefForOrder, transportRefsForOrders,
 } from '@/lib/laundry-transport-server'
 
 const PACKET = { orderId: 'o1', packetNumber: 'PKT-ORD-1', qrValue: 'PKT-ORD-1' }
@@ -119,9 +119,41 @@ describe('transport reference resolution', () => {
 
   it('falls back to a released bag via assignment history', async () => {
     mocks.bagFindMany.mockResolvedValue([])
-    mocks.asgFindMany.mockResolvedValue([{ orderId: 'o1', bag: { bagNumber: 'BAG-000999', qrValue: 'BAG-000999' } }])
+    mocks.asgFindMany.mockResolvedValue([{ orderId: 'o1', assignedAt: new Date('2026-08-01'), bag: { bagNumber: 'BAG-000999', qrValue: 'BAG-000999' } }])
     const ref = await transportRefForOrder('lb1', 'o1', 'BAG')
     expect(ref.code).toBe('BAG-000999')
+  })
+})
+
+// Bags are a shared pool: the SAME order can go out in one bag and come back in
+// another, so a history row must show the bag used on THAT leg — never be
+// rewritten by a later re-bagging.
+describe('history keeps the bag each leg actually used', () => {
+  const OUT = { orderId: 'o1', assignedAt: new Date('2026-08-01T09:00:00Z'), bag: { bagNumber: 'BAG-000001', qrValue: 'BAG-000001' } }
+  const BACK = { orderId: 'o1', assignedAt: new Date('2026-08-01T15:00:00Z'), bag: { bagNumber: 'BAG-000091', qrValue: 'BAG-000091' } }
+
+  beforeEach(() => {
+    mocks.asgFindMany.mockResolvedValue([BACK, OUT]) // newest-first, as queried
+    mocks.bagFindMany.mockResolvedValue([{ currentOrderId: 'o1', bagNumber: 'BAG-000091', qrValue: 'BAG-000091' }])
+  })
+
+  it('the Store → PC row keeps the bag it went out in', async () => {
+    const refs = await transportRefsForOrders('lb1', ['o1'], 'BAG', { at: new Map([['o1', new Date('2026-08-01T10:00:00Z')]]) })
+    expect(refs.get('o1')?.code).toBe('BAG-000001')
+  })
+
+  it('the PC → Store row shows the bag it came back in', async () => {
+    const refs = await transportRefsForOrders('lb1', ['o1'], 'BAG', { at: new Map([['o1', new Date('2026-08-01T16:00:00Z')]]) })
+    expect(refs.get('o1')?.code).toBe('BAG-000091')
+  })
+
+  it('live screens and scanning still use the bag it is in NOW', async () => {
+    expect((await transportRefForOrder('lb1', 'o1', 'BAG')).code).toBe('BAG-000091')
+  })
+
+  it('an event older than every assignment falls back to the live bag', async () => {
+    const refs = await transportRefsForOrders('lb1', ['o1'], 'BAG', { at: new Map([['o1', new Date('2026-07-01T00:00:00Z')]]) })
+    expect(refs.get('o1')?.code).toBe('BAG-000091')
   })
 })
 

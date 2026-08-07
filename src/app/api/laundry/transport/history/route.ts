@@ -77,12 +77,16 @@ export async function GET(request: Request) {
     const rows = events.filter((e) => (seen.has(e.orderId) ? false : (seen.add(e.orderId), true)))
     const orderIds = rows.map((r) => r.orderId)
 
+    // Resolve each row's bag AS OF its own event time. Bags come from a shared
+    // pool, so an order that went out in BAG-000001 and returned in BAG-000091
+    // must keep showing BAG-000001 on its outbound row.
+    const at = new Map(rows.map((r) => [r.orderId, r.createdAt]))
     const [orders, refs] = await Promise.all([
       prisma.laundryOrder.findMany({
         where: { id: { in: orderIds } },
         select: { id: true, orderNumber: true, status: true, customerId: true, store: { select: { storeName: true } }, _count: { select: { items: true } } },
       }),
-      transportRefsForOrders(biz.id, orderIds, mode),
+      transportRefsForOrders(biz.id, orderIds, mode, { at }),
     ])
     const orderMap = new Map(orders.map((o) => [o.id, o]))
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]

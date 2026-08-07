@@ -35,39 +35,58 @@ export async function getTransportMode(lbId: string, direction: TransportDirecti
 
 interface BagRef { bagNumber: string; qrValue: string }
 
+/** When to resolve the bag: one instant for all orders, or one per order. */
+export type TransportAt = Date | Map<string, Date>
+
 /**
- * The bag that identifies each order: the bag currently holding it, else the
- * most recent assignment (history survives the bag being released, so a
- * delivered order still shows the bag it travelled in).
+ * The bag that identifies each order.
+ *
+ * Bags are a shared pool, so ONE order can travel in DIFFERENT bags on
+ * different legs — it may go to the Processing Center in BAG-000001 and come
+ * back in BAG-000091. "Which bag" therefore depends on WHEN you ask:
+ *   · no `at` → the bag holding it now (else its most recent assignment, so a
+ *     delivered order still shows the bag it travelled in)
+ *   · with `at` → the bag it was in at that moment, from assignment history.
+ * History rows pass their own event time so a past leg keeps showing the bag it
+ * actually used, instead of being rewritten by a later re-bagging.
  */
-async function bagRefsForOrders(lbId: string, orderIds: string[]): Promise<Map<string, BagRef>> {
+async function bagRefsForOrders(lbId: string, orderIds: string[], at?: TransportAt): Promise<Map<string, BagRef>> {
   const out = new Map<string, BagRef>()
   if (orderIds.length === 0) return out
 
-  // Newest first, so an order carrying more than one bag (pickup bag + a bag
-  // scanned later) always resolves to the same, most recent one.
-  const live = await prisma.laundryBag.findMany({
-    where: { businessId: lbId, currentOrderId: { in: orderIds } },
-    orderBy: { lastUsedAt: "desc" },
-    select: { currentOrderId: true, bagNumber: true, qrValue: true },
-  })
-  for (const b of live) {
-    if (!b.currentOrderId || out.has(b.currentOrderId)) continue
-    out.set(b.currentOrderId, { bagNumber: b.bagNumber, qrValue: b.qrValue || b.bagNumber })
-  }
-
-  const missing = orderIds.filter((id) => !out.has(id))
-  if (missing.length) {
-    const past = await prisma.laundryBagAssignment.findMany({
-      where: { businessId: lbId, orderId: { in: missing } },
+  const [live, history] = await Promise.all([
+    // Newest first, so an order holding more than one bag resolves consistently.
+    prisma.laundryBag.findMany({
+      where: { businessId: lbId, currentOrderId: { in: orderIds } },
+      orderBy: { lastUsedAt: "desc" },
+      select: { currentOrderId: true, bagNumber: true, qrValue: true },
+    }),
+    prisma.laundryBagAssignment.findMany({
+      where: { businessId: lbId, orderId: { in: orderIds } },
       orderBy: { assignedAt: "desc" },
-      select: { orderId: true, bag: { select: { bagNumber: true, qrValue: true } } },
-    })
-    // Ordered newest-first → the first row per order wins.
-    for (const a of past) {
-      if (!a.bag || out.has(a.orderId)) continue
-      out.set(a.orderId, { bagNumber: a.bag.bagNumber, qrValue: a.bag.qrValue || a.bag.bagNumber })
+      take: 500,
+      select: { orderId: true, assignedAt: true, bag: { select: { bagNumber: true, qrValue: true } } },
+    }),
+  ])
+
+  const liveByOrder = new Map<string, BagRef>()
+  for (const b of live) {
+    if (!b.currentOrderId || liveByOrder.has(b.currentOrderId)) continue
+    liveByOrder.set(b.currentOrderId, { bagNumber: b.bagNumber, qrValue: b.qrValue || b.bagNumber })
+  }
+  const asRef = (bag: { bagNumber: string; qrValue: string }) => ({ bagNumber: bag.bagNumber, qrValue: bag.qrValue || bag.bagNumber })
+
+  for (const orderId of orderIds) {
+    const when = at instanceof Date ? at : at?.get(orderId)
+    if (when) {
+      // History is newest-first → the first assignment at or before `when` wins.
+      const row = history.find((h) => h.orderId === orderId && h.bag && h.assignedAt <= when)
+      if (row?.bag) { out.set(orderId, asRef(row.bag)); continue }
     }
+    const liveRef = liveByOrder.get(orderId)
+    if (liveRef) { out.set(orderId, liveRef); continue }
+    const latest = history.find((h) => h.orderId === orderId && h.bag)
+    if (latest?.bag) out.set(orderId, asRef(latest.bag))
   }
   return out
 }
@@ -78,7 +97,7 @@ async function bagRefsForOrders(lbId: string, orderIds: string[]): Promise<Map<s
  * setting change (never generated going forward) — flagged `legacy: true`.
  */
 export async function transportRefsForOrders(
-  lbId: string, orderIds: string[], mode: TransportMode,
+  lbId: string, orderIds: string[], mode: TransportMode, opts: { at?: TransportAt } = {},
 ): Promise<Map<string, TransportRef>> {
   const ids = [...new Set(orderIds.filter(Boolean))]
   const refs = new Map<string, TransportRef>()
@@ -89,7 +108,7 @@ export async function transportRefsForOrders(
       where: { businessId: lbId, orderId: { in: ids } },
       select: { orderId: true, packetNumber: true, qrValue: true },
     }),
-    usesBag(mode) ? bagRefsForOrders(lbId, ids) : Promise.resolve(new Map<string, BagRef>()),
+    usesBag(mode) ? bagRefsForOrders(lbId, ids, opts.at) : Promise.resolve(new Map<string, BagRef>()),
   ])
   const packetMap = new Map(packets.map((p) => [p.orderId, p]))
 
