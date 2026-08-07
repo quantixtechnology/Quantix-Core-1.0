@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getTransportModes, transportRefForOrder } from "@/lib/laundry-transport-server"
 
 export const runtime = "nodejs"
 
@@ -57,7 +58,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         : Promise.resolve(null),
     ])
 
-    return NextResponse.json({ success: true, data: { ...order, customer, pickupExecutiveName, deliveryExecutiveName } })
+    // Transport identity for the detail panel — bag or packet, per Transport
+    // Setup. Never a raw packet lookup: a BAG-mode business must not see PKT.
+    const transportModes = await getTransportModes(order.businessId)
+    const transport = await transportRefForOrder(order.businessId, order.id, transportModes.storeToProcessing)
+
+    return NextResponse.json({ success: true, data: { ...order, customer, pickupExecutiveName, deliveryExecutiveName, transport, transportCode: transport.code, transportModes } })
   } catch (error) {
     console.error("[laundry-order-detail] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

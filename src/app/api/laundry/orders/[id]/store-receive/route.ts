@@ -12,6 +12,8 @@ import { advanceBagsForOrder } from "@/lib/laundry-bag-assign"
 import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { ensureDeliveryVerification } from "@/lib/laundry-verification"
 import { notifyDeliveryOtpGenerated } from "@/lib/laundry-notify"
+import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
+import { transportRefLabel } from "@/lib/laundry-transport"
 
 export const runtime = "nodejs"
 
@@ -26,12 +28,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id, businessId: biz.id },
-      select: { id: true, orderNumber: true, status: true, packet: { select: { id: true, packetNumber: true } }, _count: { select: { items: true } } },
+      select: { id: true, orderNumber: true, status: true, packet: { select: { id: true } }, _count: { select: { items: true } } },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.status !== "RETURN_IN_TRANSIT") {
       return NextResponse.json({ error: order.status === "READY_FOR_DELIVERY" ? "Order already received at store" : `Order is not in return transit (current: ${order.status})` }, { status: 409 })
     }
+
+    // Audit note names the package by whatever Transport Setup uses (bag / packet).
+    const mode = await getTransportMode(biz.id, "PROCESSING_TO_STORE")
+    const ref = await transportRefForOrder(biz.id, order.id, mode)
 
     const now = new Date()
     const advanced = await prisma.laundryOrder.updateMany({
@@ -51,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         orderId: order.id, businessId: biz.id,
         fromStatus: "RETURN_IN_TRANSIT", toStatus: "READY_FOR_DELIVERY", action: "RECEIVE_AT_STORE",
         actorId: b.actorId || null, actorName: b.actorName || null,
-        note: b.note || `${order._count.items} garment(s) verified at store`,
+        note: b.note || `${order._count.items} garment(s) verified at store${transportRefLabel(ref) ? ` · ${transportRefLabel(ref)}` : ""}`,
       },
     }).catch(() => null)
 
@@ -71,7 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       console.error("[laundry-order-store-receive] delivery verification init failed:", e)
     }
 
-    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber } })
+    return NextResponse.json({ success: true, mode, data: { orderNumber: order.orderNumber, transport: ref, transportCode: ref.code } })
   } catch (e) {
     console.error("[laundry-order-store-receive] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

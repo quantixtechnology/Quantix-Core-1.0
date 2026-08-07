@@ -1,9 +1,11 @@
 "use client"
 
 // Processing Center — Console & Receive. Real receiving workflow: identify the
-// packet by QR value / packet code / order number (manual entry works without
-// a camera), confirm receipt of DISPATCHED packets only, monitor department
-// workload, and dispatch completed orders back to their store.
+// incoming package by its TRANSPORT IDENTIFIER — the bag QR or the packet QR,
+// whichever Workspace Settings → Transport Setup configures for this business
+// (manual entry works without a camera) — confirm receipt of DISPATCHED
+// packages only, monitor department workload, and dispatch completed orders
+// back to their store using the return-leg identifier.
 
 import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
@@ -21,6 +23,8 @@ import { printHtmlDocument } from "@/lib/print-utils"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import QRCode from "qrcode"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { useTransportModes } from "@/hooks/use-transport-modes"
+import { transportNoun, transportNounPlural, transportScanPlaceholder, usesBag, type TransportMode, type TransportRef } from "@/lib/laundry-transport"
 
 // Department tiles MUST cover every WORKSTATIONS stage. Legacy DRY (Drying) and
 // PACKED tiles are kept (read-only) so in-flight garments from pre-migration
@@ -38,55 +42,65 @@ const DEPT_TILES: { stage: string; icon: typeof Droplets; color: string; label?:
   { stage: "PACKED", icon: Package, color: "text-slate-500 bg-slate-100", label: "Packed (legacy)" },
 ]
 
-interface Incoming { id: string; orderNumber: string; items: number; customer: string | null; status: string; packetNumber: string | null; dispatchedAt: string | null; fromStore: string | null }
-interface ReturnRow { id: string; orderNumber: string; customer: string | null; items: number; toStore: string | null; packetNumber: string | null }
+interface Incoming { id: string; orderNumber: string; items: number; customer: string | null; status: string; transport: TransportRef | null; transportCode: string | null; dispatchedAt: string | null; fromStore: string | null }
+interface ReturnRow { id: string; orderNumber: string; customer: string | null; items: number; toStore: string | null; transport: TransportRef | null; transportCode: string | null }
 
-// The return package carries the SAME packet QR it was sent in with — reprint it
-// here (post-folding) so the store can scan it back. QR payload = packet number.
+// The return package carries the SAME identifier it was sent in with — reprint
+// it here (post-folding) so the store can scan it back. Only a PACKET identity
+// is ever printed: a bag's QR is permanent and already on the bag.
 function ReturnQr({ value, size = 150 }: { value: string; size?: number }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => { QRCode.toDataURL(value, { width: size, margin: 1 }).then(setUrl).catch(() => setUrl(null)) }, [value, size])
   // eslint-disable-next-line @next/next/no-img-element
   return url ? <img src={url} alt={value} width={size} height={size} className="rounded border border-slate-200" /> : <div style={{ width: size, height: size }} className="rounded border border-slate-200 bg-slate-50" />
 }
-function printReturnLabel(packetNumber: string, orderNumber: string, storeName: string | null | undefined) {
-  QRCode.toDataURL(packetNumber, { width: 240, margin: 1 }).then((url) => {
+function printReturnLabel(code: string, orderNumber: string, storeName: string | null | undefined) {
+  QRCode.toDataURL(code, { width: 240, margin: 1 }).then((url) => {
     // Print via a hidden iframe (never a popup — see printHtmlDocument).
-    printHtmlDocument(`<html><head><title>${packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px"><img src="${url}" width="240" height="240"/><h2 style="margin:8px 0 2px">${packetNumber}</h2><p style="margin:2px 0">${orderNumber}</p><p style="margin:2px 0;color:#555">${storeName || ""}</p><p style="margin:6px 0;font-size:12px;color:#777">Return to store — scan to receive</p></body></html>`, packetNumber)
+    printHtmlDocument(`<html><head><title>${code}</title></head><body style="font-family:monospace;text-align:center;padding:16px"><img src="${url}" width="240" height="240"/><h2 style="margin:8px 0 2px">${code}</h2><p style="margin:2px 0">${orderNumber}</p><p style="margin:2px 0;color:#555">${storeName || ""}</p><p style="margin:6px 0;font-size:12px;color:#777">Return to store — scan to receive</p></body></html>`, code)
   }).catch(() => {})
 }
 
-// Packet history for a console section: past packets in the given statuses, with a
-// search and a Reprint QR (same packet QR) — for when a label was missed at dispatch.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HistPacket = { id: string; packetNumber: string; status: string; itemCount: number; dispatchedAt: string | null; receivedAt: string | null; returnDispatchedAt: string | null; order: { orderNumber: string; store?: { storeName?: string | null } | null }; customer: { name?: string | null } | null }
-function PacketHistory({ businessId, statusIn, timeField, timeLabel }: { businessId: string | null; statusIn: string; timeField: "receivedAt" | "returnDispatchedAt" | "dispatchedAt"; timeLabel: string }) {
-  const [rows, setRows] = useState<HistPacket[]>([])
+// Transport history for a console section, read from the order AUDIT LOG so it
+// is identical in every transport mode. Reprint is offered only for a packet
+// identity (a bag already carries its permanent QR).
+type HistRow = {
+  id: string; orderId: string; orderNumber: string; storeName: string | null
+  customer: string | null; itemCount: number; at: string
+  transport: TransportRef | null
+}
+function TransportHistory({ businessId, stage, timeLabel, mode }: { businessId: string | null; stage: string; timeLabel: string; mode: TransportMode }) {
+  const [rows, setRows] = useState<HistRow[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState("")
+  const noun = transportNoun(mode)
   const load = useCallback(() => {
     if (!businessId) return
     setLoading(true)
-    const params = new URLSearchParams({ businessId, statusIn })
+    const params = new URLSearchParams({ businessId, stage })
     if (q.trim()) params.set("search", q.trim())
-    fetch(`/api/laundry/packets?${params}`).then((r) => r.json()).then((j) => setRows(j.success ? j.data : [])).catch(() => setRows([])).finally(() => setLoading(false))
-  }, [businessId, statusIn, q])
+    fetch(`/api/laundry/transport/history?${params}`).then((r) => r.json()).then((j) => setRows(j.success ? j.data : [])).catch(() => setRows([])).finally(() => setLoading(false))
+  }, [businessId, stage, q])
   useEffect(() => { const t = setTimeout(load, q ? 250 : 0); return () => clearTimeout(t) }, [load, q])
   const f = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
   return (
     <div className="p-4 space-y-2">
-      <div className="relative max-w-xs"><ScanLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search order / packet…" className="pl-8 h-9 text-sm font-mono" /></div>
-      {loading ? <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : rows.length === 0 ? <p className="py-6 text-center text-sm text-slate-400">{q ? "No packet matches that." : "No history yet."}</p> : (
+      <div className="relative max-w-xs"><ScanLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search order / ${noun.toLowerCase()}…`} className="pl-8 h-9 text-sm font-mono" /></div>
+      {loading ? <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : rows.length === 0 ? <p className="py-6 text-center text-sm text-slate-400">{q ? `No ${noun.toLowerCase()} matches that.` : "No history yet."}</p> : (
         <Table>
-          <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Packet</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>{timeLabel}</TableHead><TableHead className="text-right">QR</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>{noun}</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>{timeLabel}</TableHead><TableHead className="text-right">QR</TableHead></TableRow></TableHeader>
           <TableBody>{rows.map((p) => (
             <TableRow key={p.id}>
-              <TableCell className="font-mono text-xs">{p.order.orderNumber}</TableCell>
-              <TableCell className="font-mono text-xs">{p.packetNumber}</TableCell>
-              <TableCell className="text-sm">{p.customer?.name || "—"}</TableCell>
+              <TableCell className="font-mono text-xs">{p.orderNumber}</TableCell>
+              <TableCell className="font-mono text-xs">{p.transport?.code || "—"}</TableCell>
+              <TableCell className="text-sm">{p.customer || "—"}</TableCell>
               <TableCell className="text-center">{p.itemCount}</TableCell>
-              <TableCell className="text-xs text-slate-500">{f((p as unknown as Record<string, string | null>)[timeField])}</TableCell>
-              <TableCell className="text-right"><Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => printReturnLabel(p.packetNumber, p.order.orderNumber, p.order.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Reprint QR</Button></TableCell>
+              <TableCell className="text-xs text-slate-500">{f(p.at)}</TableCell>
+              <TableCell className="text-right">
+                {p.transport?.kind === "PACKET" && p.transport.code
+                  ? <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => printReturnLabel(p.transport!.code!, p.orderNumber, p.storeName)}><Printer className="h-3.5 w-3.5" /> Reprint QR</Button>
+                  : <span className="text-[11px] text-slate-400">Bag QR</span>}
+              </TableCell>
             </TableRow>
           ))}</TableBody>
         </Table>
@@ -112,9 +126,10 @@ export function LaundryProcessingConsole() {
   const [acting, setActing] = useState(false)
   const [code, setCode] = useState("")
   const [looking, setLooking] = useState(false)
-  const [bagCode, setBagCode] = useState("")
-  const [transportMode, setTransportMode] = useState<string>("PACKET")
-  const [returnTransportMode, setReturnTransportMode] = useState<string>("PACKET")
+  // Transport Setup — inbound leg governs receiving, return leg governs dispatch.
+  const { storeToProcessing: transportMode, processingToStore: returnTransportMode } = useTransportModes(currentBusinessId)
+  const noun = transportNoun(transportMode)
+  const returnNoun = transportNoun(returnTransportMode)
 
   const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
@@ -129,54 +144,34 @@ export function LaundryProcessingConsole() {
   // department counts update without a manual page refresh.
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  useEffect(() => {
-    if (!currentBusinessId) return
-    fetch(`/api/laundry/transport-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) { setTransportMode(j.data.storeToProcessingTransportMode); setReturnTransportMode(j.data.processingToStoreTransportMode) } }).catch(() => {})
-  }, [currentBusinessId])
-
-  // Receive a dispatched packet → immediately open Barcode Generation.
+  // Receive a dispatched package → immediately open Barcode Generation.
   const receive = async (orderId: string) => {
     setActing(true)
     try {
       const res = await fetch(`/api/laundry/orders/${orderId}/receive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actorName: user?.name || "operator" }) })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Receive failed", description: j.error, variant: "destructive" }); return }
-      toast({ title: "Packet received", description: `${j.data.packetNumber || ""} · ${j.data.received} garment(s) → Barcode Generation.` })
+      toast({ title: `${noun} received`, description: `${j.data.transportCode || ""} · ${j.data.received} garment(s) → Barcode Generation.` })
       openAuditBarcode(orderId)
     } catch { toast({ title: "Receive failed", variant: "destructive" }) } finally { setActing(false) }
   }
 
-  // QR / manual code entry — packet number, QR payload or order number. Accepts
-  // an explicit value (from the camera scanner) or falls back to the typed field.
+  // QR / manual code entry — resolved through Transport Setup, so the SAME box
+  // accepts a bag QR, a packet QR or an order number exactly as configured.
+  // Accepts an explicit value (camera scanner) or the typed field.
   const lookupAndReceive = async (raw?: string) => {
     const q = (raw ?? code).trim()
     if (!q || !currentBusinessId) return
     setLooking(true)
     try {
-      const j = await fetch(`/api/laundry/packets?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}`).then((r) => r.json())
-      const p = (j.data || [])[0]
-      if (!p) { toast({ title: "Not found", description: `No packet matches "${q}"`, variant: "destructive" }); return }
-      if (p.status !== "IN_TRANSIT_TO_PC") {
-        toast({ title: "Not receivable", description: `Packet ${p.packetNumber} is ${p.status.replace(/_/g, " ").toLowerCase()} — only a dispatched packet can be received.`, variant: "destructive" })
+      const j = await fetch(`/api/laundry/transport/resolve?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}&direction=STORE_TO_PROCESSING`).then((r) => r.json())
+      if (!j.success) { toast({ title: "Not found", description: j.error || `No ${noun.toLowerCase()} matches "${q}"`, variant: "destructive" }); return }
+      if (j.data.status !== "IN_TRANSIT_TO_PROCESSING") {
+        toast({ title: "Not receivable", description: `${j.data.orderNumber} is ${String(j.data.status).replace(/_/g, " ").toLowerCase()} — only a dispatched ${noun.toLowerCase()} can be received.`, variant: "destructive" })
         return
       }
       setCode("")
-      await receive(p.order.id)
-      load()
-    } catch { toast({ title: "Lookup failed", variant: "destructive" }) } finally { setLooking(false) }
-  }
-
-  const lookupByBagAndReceive = async (raw?: string) => {
-    const q = (raw ?? bagCode).trim()
-    if (!q || !currentBusinessId) return
-    setLooking(true)
-    try {
-      const bj = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
-      const bag = (bj.data || []).find((b: { bagNumber: string; qrValue: string; currentOrderId?: string }) => (b.bagNumber || "").toUpperCase() === q.toUpperCase() || (b.qrValue || "") === q) || (bj.data || [])[0]
-      if (!bag) { toast({ title: "Not found", description: `No bag matches "${q}"`, variant: "destructive" }); return }
-      if (!bag.currentOrderId) { toast({ title: "Bag not linked", description: `Bag ${bag.bagNumber} is not currently assigned to any order.`, variant: "destructive" }); return }
-      setBagCode("")
-      await receive(bag.currentOrderId)
+      await receive(j.data.orderId)
       load()
     } catch { toast({ title: "Lookup failed", variant: "destructive" }) } finally { setLooking(false) }
   }
@@ -210,27 +205,18 @@ export function LaundryProcessingConsole() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Factory className="h-5 w-5 text-blue-600" /> Processing Center</h1>
-          <p className="text-sm text-slate-500">Receive dispatched packets, monitor department workload, and return completed orders to the store.</p>
+          <p className="text-sm text-slate-500">Receive dispatched {transportNounPlural(transportMode).toLowerCase()}, monitor department workload, and return completed orders to the store.</p>
         </div>
         <Button variant="outline" size="sm" className="gap-1" onClick={() => load()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
       </div>
 
-      {/* QR / manual packet entry */}
+      {/* QR / manual entry — ONE box; Transport Setup decides what it accepts. */}
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm"><CardContent className="p-4">
         <div className="flex items-center gap-3 max-w-2xl">
-          <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupAndReceive()} placeholder="Scan packet QR or enter packet / order code (PKT-… / ORD-…)" className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
-          {transportMode !== "BAG" && (
-            <><BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
-            <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button></>
-          )}
+          <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupAndReceive()} placeholder={transportScanPlaceholder(transportMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
+          <BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
+          <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
         </div>
-        {transportMode !== "PACKET" && (
-          <div className="flex items-center gap-3 max-w-2xl mt-2">
-            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-emerald-500" /><Input value={bagCode} onChange={(e) => setBagCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupByBagAndReceive()} placeholder="Scan bag QR to receive…" className="pl-10 h-11 bg-white border-emerald-200 font-mono" /></div>
-            <BagScanButton label="Scan Bag" onScan={(c) => lookupByBagAndReceive(c)} disabled={looking} closeOnScan className="h-11 bg-emerald-600 hover:bg-emerald-700 text-white" />
-            <Button onClick={() => lookupByBagAndReceive()} disabled={looking || !bagCode.trim()} className="h-11 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
-          </div>
-        )}
       </CardContent></Card>
 
       {/* Department summary */}
@@ -245,16 +231,16 @@ export function LaundryProcessingConsole() {
 
       {/* Receive dispatched packets */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Truck className="h-[18px] w-[18px] text-blue-600" /> In Transit — Receive Packets <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{incoming.length}</Badge>{histToggle("receive")}</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Truck className="h-[18px] w-[18px] text-blue-600" /> In Transit — Receive {transportNounPlural(transportMode)} <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{incoming.length}</Badge>{histToggle("receive")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {hist.receive ? <PacketHistory businessId={currentBusinessId} statusIn="AT_PROCESSING_CENTER,RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="receivedAt" timeLabel="Received" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : incoming.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No packets in transit. Only dispatched packets appear here.</p>
+          {hist.receive ? <TransportHistory businessId={currentBusinessId} stage="RECEIVED" timeLabel="Received" mode={transportMode} /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : incoming.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">No {transportNounPlural(transportMode).toLowerCase()} in transit. Only dispatched {transportNounPlural(transportMode).toLowerCase()} appear here.</p>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>Packet</TableHead><TableHead>Order</TableHead><TableHead>From Store</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>Dispatched</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>{noun}</TableHead><TableHead>Order</TableHead><TableHead>From Store</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>Dispatched</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
               <TableBody>{incoming.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell className="font-mono text-xs">{o.packetNumber || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{o.transportCode || "—"}</TableCell>
                   <TableCell><button type="button" className="font-mono text-xs text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
                   <TableCell className="text-sm">{o.fromStore || "—"}</TableCell>
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
@@ -272,8 +258,8 @@ export function LaundryProcessingConsole() {
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Awaiting Barcode Generation <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingBarcode.length}</Badge>{histToggle("barcode")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {hist.barcode ? <PacketHistory businessId={currentBusinessId} statusIn="AT_PROCESSING_CENTER,RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="receivedAt" timeLabel="Received" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : awaitingBarcode.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No packets awaiting audit.</p>
+          {hist.barcode ? <TransportHistory businessId={currentBusinessId} stage="RECEIVED" timeLabel="Received" mode={transportMode} /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : awaitingBarcode.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">No {transportNounPlural(transportMode).toLowerCase()} awaiting audit.</p>
           ) : (
             <Table>
               <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>Barcodes</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
@@ -295,15 +281,15 @@ export function LaundryProcessingConsole() {
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Undo2 className="h-[18px] w-[18px] text-emerald-600" /> Completed — Dispatch to Store <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{readyToReturn.length}</Badge>{histToggle("dispatch")}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {hist.dispatch ? <PacketHistory businessId={currentBusinessId} statusIn="RETURN_IN_TRANSIT,RETURNED_TO_STORE" timeField="returnDispatchedAt" timeLabel="Dispatched" /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : readyToReturn.length === 0 ? (
+          {hist.dispatch ? <TransportHistory businessId={currentBusinessId} stage="RETURN_DISPATCHED" timeLabel="Dispatched" mode={returnTransportMode} /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : readyToReturn.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No completed orders waiting. Orders appear when every garment has passed QC.</p>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Packet</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>To Store</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>{returnNoun}</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>To Store</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
               <TableBody>{readyToReturn.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell><button type="button" className="font-mono text-xs text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
-                  <TableCell className="font-mono text-xs">{o.packetNumber || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{o.transportCode || "—"}</TableCell>
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
                   <TableCell className="text-center">{o.items}</TableCell>
                   <TableCell className="text-sm">{o.toStore || "—"}</TableCell>
@@ -315,32 +301,40 @@ export function LaundryProcessingConsole() {
         </CardContent>
       </Card>
 
-      {/* Dispatch-to-store dialog: reprint the SAME packet QR for the return
-          package, optionally scan ANY bag it's placed in, then dispatch. */}
+      {/* Dispatch-to-store dialog: driven by the return-leg transport mode.
+          BAG   → scan the bag it goes back in (required; it IS the identifier).
+          PACKET→ reprint the SAME packet QR it arrived with; bag optional.
+          BOTH  → packet QR reprint plus an optional bag. */}
       <Dialog open={!!dispatchRow} onOpenChange={(o) => { if (!o) { setDispatchRow(null); setDispatchBag("") } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Truck className="h-5 w-5 text-emerald-600" /> Dispatch to Store</DialogTitle></DialogHeader>
           {dispatchRow && (
             <div className="space-y-4">
               <div className="text-sm text-slate-600"><span className="font-mono font-semibold">{dispatchRow.orderNumber}</span> · {dispatchRow.items} garment(s){dispatchRow.toStore ? ` · ${dispatchRow.toStore}` : ""}</div>
-              {returnTransportMode !== "BAG" && dispatchRow.packetNumber ? (
+              {returnTransportMode !== "BAG" && (dispatchRow.transport?.kind === "PACKET" && dispatchRow.transport.code ? (
                 <div className="flex flex-col items-center gap-2 rounded-lg border border-slate-200 p-3">
-                  <ReturnQr value={dispatchRow.packetNumber} />
-                  <p className="font-mono text-sm font-bold">{dispatchRow.packetNumber}</p>
+                  <ReturnQr value={dispatchRow.transport.code} />
+                  <p className="font-mono text-sm font-bold">{dispatchRow.transport.code}</p>
                   <p className="text-[11px] text-slate-400">Same QR it was sent with — put it on the return package so the store can scan it.</p>
-                  <Button variant="outline" size="sm" className="gap-1" onClick={() => printReturnLabel(dispatchRow.packetNumber!, dispatchRow.orderNumber, dispatchRow.toStore)}><Printer className="h-3.5 w-3.5" /> Print QR</Button>
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => printReturnLabel(dispatchRow.transport!.code!, dispatchRow.orderNumber, dispatchRow.toStore)}><Printer className="h-3.5 w-3.5" /> Print QR</Button>
                 </div>
-              ) : returnTransportMode !== "BAG" ? <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">No packet on this order — the store can still receive by order number.</p> : null}
-              <div className="space-y-1.5">
-                <p className="text-[12px] font-semibold text-slate-600">Return bag <span className="font-normal text-slate-400">{returnTransportMode === "BAG" ? "(scan bag to dispatch)" : "(optional — any available bag)"}</span></p>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1"><QrIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={dispatchBag} onChange={(e) => setDispatchBag(e.target.value)} placeholder="Scan / enter bag no." className="pl-8 h-10 font-mono text-sm" /></div>
-                  <BagScanButton label="Scan" size="sm" onScan={(c) => setDispatchBag(c)} closeOnScan className="h-10" />
-                  {dispatchBag && <button onClick={() => setDispatchBag("")} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+              ) : <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">No packet on this order — the store can still receive by order number.</p>)}
+              {usesBag(returnTransportMode) && (
+                <div className="space-y-1.5">
+                  <p className="text-[12px] font-semibold text-slate-600">Return bag <span className="font-normal text-slate-400">{returnTransportMode === "BAG" ? "(required — this bag identifies the package)" : "(optional — any available bag)"}</span></p>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1"><QrIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={dispatchBag} onChange={(e) => setDispatchBag(e.target.value)} placeholder="Scan / enter bag no." className="pl-8 h-10 font-mono text-sm" /></div>
+                    <BagScanButton label="Scan" size="sm" onScan={(c) => setDispatchBag(c)} closeOnScan className="h-10" />
+                    {dispatchBag && <button onClick={() => setDispatchBag("")} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {returnTransportMode === "BAG"
+                      ? "The store receives this order by scanning this bag."
+                      : "Whatever bag the packet goes into — the store can scan the packet QR or this bag to receive."}
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-400">Whatever bag the packet goes into — the store can scan the packet QR or this bag to receive.</p>
-              </div>
-              <Button onClick={() => returnToStore(dispatchRow.id, dispatchBag.trim() || undefined)} disabled={acting} className="w-full h-11 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Dispatch to Store</Button>
+              )}
+              <Button onClick={() => returnToStore(dispatchRow.id, dispatchBag.trim() || undefined)} disabled={acting || (returnTransportMode === "BAG" && !dispatchBag.trim())} className="w-full h-11 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Dispatch to Store</Button>
             </div>
           )}
         </DialogContent>

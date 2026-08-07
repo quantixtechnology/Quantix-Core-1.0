@@ -37,6 +37,10 @@ export async function assignBagToOrder(opts: {
 
   const bag = await prisma.laundryBag.findFirst({ where: { businessId: opts.lbId, OR: [{ bagNumber: code }, { qrValue: code }] } })
   if (!bag) return { ok: false, status: 404, error: "Bag not found." }
+  // Idempotent: this bag is already carrying this order (e.g. the pickup bag
+  // re-scanned at Packing to confirm the transport identity). Nothing to do —
+  // re-assigning would fail the AVAILABLE check and block the workflow.
+  if (bag.currentOrderId === orderId) return { ok: true, bag }
   if (bag.status !== "AVAILABLE") {
     const msg = bag.status === "DAMAGED" ? "Bag marked as Damaged. Please use another bag."
       : bag.status === "LOST" ? "Bag is marked Lost."

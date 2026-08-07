@@ -83,6 +83,15 @@ describe('assignBagToOrder — multiple bags per service', () => {
     expect(tx.laundryBagAssignment.create).not.toHaveBeenCalled()
   })
 
+  // BAG transport mode re-scans the order's own bag at Packing to confirm the
+  // transport identity — that must succeed, not trip the AVAILABLE check.
+  it('is a no-op success when the bag already carries THIS order', async () => {
+    mockBagFindFirst.mockResolvedValue({ id: 'bag-2', bagNumber: 'BAG-0002', status: 'COLLECTED', currentOrderId: 'ord-1' })
+    const r = await assignBagToOrder({ lbId: 'lb-1', code: 'BAG-0002', orderId: 'ord-1', serviceId: 'svc-1', serviceName: 'Wash & Fold' })
+    expect(r).toMatchObject({ ok: true })
+    expect(tx.laundryBagAssignment.create).not.toHaveBeenCalled()
+  })
+
   it('rejects a bag marked Damaged', async () => {
     mockBagFindFirst.mockResolvedValue({ id: 'bag-2', bagNumber: 'BAG-0002', status: 'DAMAGED' })
     const r = await assignBagToOrder({ lbId: 'lb-1', code: 'BAG-0002', orderId: 'ord-1', serviceId: 'svc-1', serviceName: 'Wash & Fold' })

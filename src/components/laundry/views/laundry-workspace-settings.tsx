@@ -14,12 +14,13 @@ import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
 import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
 import { LaundryVerificationSettingsForm } from "./laundry-verification-settings-form"
 import { toast } from "sonner"
+import { invalidateTransportModes } from "@/hooks/use-transport-modes"
+import type { TransportMode } from "@/lib/laundry-transport"
 
 interface WorkspaceSettingsProps {
   businessId: string
 }
 
-type TransportMode = "PACKET" | "BAG" | "BOTH"
 type ScanMode = "GENERATE_NEW" | "REUSE_BAG" | "BOTH"
 
 export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps) {
@@ -56,6 +57,9 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
+      // Every transport screen reads the cached modes — drop them so the new
+      // setting takes effect immediately, without a reload.
+      invalidateTransportModes(businessId)
       toast.success("Transport settings saved")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
   }

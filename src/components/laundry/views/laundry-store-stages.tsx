@@ -4,9 +4,10 @@
 // action for its stage (never a bare status change):
 //   · Payment Collection  — records money against the order (or an explicit
 //     policy-allowed pay-later decision), then the order advances.
-//   · Packing & QR        — creates the persistent packet (PKT-…) whose QR
-//     payload is the packet number; print/reprint without duplicates.
-//   · Transit to Processing — dispatches the packet (who/when/transport).
+//   · Packing & QR        — stamps the package's transport identity. WHICH
+//     identity comes from Workspace Settings → Transport Setup: a generated
+//     packet QR (PKT-…) or the reusable laundry bag QR. Never both hardcoded.
+//   · Transit to Processing — dispatches that package (who/when/transport).
 //   · Store Receive       — confirms the returned processed order.
 //   · Ready for Delivery  — outstanding balance + final payment + handover.
 
@@ -31,6 +32,8 @@ import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 import { printHtmlDocument } from "@/lib/print-utils"
+import { useTransportModes } from "@/hooks/use-transport-modes"
+import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
 // the orders API (has garments AND none left un-inspected). undefined (older
@@ -50,6 +53,9 @@ interface OrderRow {
   pickupOtp?: string | null; pickupVerificationMethod?: string | null
   store?: { storeName: string | null } | null
   customer?: { name: string; phone: string | null } | null
+  // Transport identity resolved by the API through Transport Setup.
+  transport?: TransportRef | null
+  transportCode?: string | null
 }
 
 // ── Shared queue shell: list on the left, stage action panel on the right ──
@@ -297,7 +303,8 @@ export function LaundryPaymentCollection() {
 }
 
 // ═════════════════════════ PACKING & QR ═════════════════════════════════════
-interface Packet { id: string; packetNumber: string; status: string; qrValue: string; itemCount: number; packedBy: string | null; packedAt: string; dispatchedAt: string | null }
+// The result of a pack: the transport identity the operator must act on.
+interface PackResult { transport: TransportRef; itemCount: number; packedBy: string | null; packedAt: string }
 
 function QrImage({ value, size = 160 }: { value: string; size?: number }) {
   const [url, setUrl] = useState<string | null>(null)
@@ -306,20 +313,27 @@ function QrImage({ value, size = 160 }: { value: string; size?: number }) {
   return url ? <img src={url} alt={value} width={size} height={size} className="rounded border border-slate-200" /> : <div style={{ width: size, height: size }} className="rounded bg-slate-100" />
 }
 
-function printPacketLabel(p: { packetNumber: string; qrValue: string; itemCount: number }, orderNumber: string, storeName: string | null | undefined) {
+// Only ever called for a PACKET identity — a bag already carries its permanent
+// printed QR, so BAG mode never prints a transport label.
+function printPacketLabel(p: { code: string; qrValue: string; itemCount: number }, orderNumber: string, storeName: string | null | undefined) {
   QRCode.toDataURL(p.qrValue, { width: 240, margin: 1 }).then((url) => {
     // Print via a hidden iframe (never a popup — see printHtmlDocument). The QR
     // is an inline data-URI, so there is nothing external to wait on.
-    printHtmlDocument(`<html><head><title>${p.packetNumber}</title></head><body style="font-family:monospace;text-align:center;padding:16px">
+    printHtmlDocument(`<html><head><title>${p.code}</title></head><body style="font-family:monospace;text-align:center;padding:16px">
       <img src="${url}" width="240" height="240" />
-      <h2 style="margin:8px 0 2px">${p.packetNumber}</h2>
+      <h2 style="margin:8px 0 2px">${p.code}</h2>
       <p style="margin:2px">Order: ${orderNumber}</p>
       <p style="margin:2px">Store: ${storeName || "—"} · ${p.itemCount} garment(s)</p>
-    </body></html>`, p.packetNumber)
+    </body></html>`, p.code)
   })
 }
 
-interface PackHistoryRow { id: string; orderNumber: string; customer?: { name?: string | null } | null; customerName?: string | null; store?: { storeName?: string | null } | null; createdAt: string; packet?: { packetNumber: string; qrValue: string; itemCount: number; packedBy: string | null; packedAt: string } | null }
+interface PackHistoryRow {
+  id: string; orderNumber: string; customer?: { name?: string | null } | null; customerName?: string | null
+  store?: { storeName?: string | null } | null; createdAt: string; itemCount?: number
+  // The ONLY identity a history row carries — resolved via Transport Setup.
+  transport?: TransportRef | null; transportCode?: string | null
+}
 
 export function LaundryPacking() {
   const { currentBusinessId, user } = useAuthStore()
@@ -328,31 +342,31 @@ export function LaundryPacking() {
   // Incomplete-audit orders never appear in the Packing queue.
   const queue = useQueue("READY_FOR_PROCESSING", auditReadyForPacking)
   const [selected, setSelected] = useState<OrderRow | null>(null)
-  const [packet, setPacket] = useState<Packet | null>(null)
+  const [result, setResult] = useState<PackResult | null>(null)
   const [busy, setBusy] = useState(false)
-  const [transportMode, setTransportMode] = useState<string>("PACKET")
-  // History (packet completion, stored data — not order status)
+  // Transport Setup is the ONLY thing that decides what identifies the package.
+  const { storeToProcessing: mode } = useTransportModes(currentBusinessId)
+  const noun = transportNoun(mode)
+  // History (packing completion, stored data — not order status)
   const [hist, setHist] = useState<PackHistoryRow[]>([])
   const [histSel, setHistSel] = useState<PackHistoryRow | null>(null)
   const [histSearch, setHistSearch] = useState("")
   const [histLoading, setHistLoading] = useState(false)
 
-  const openOrder = (o: OrderRow | null) => { setSelected(o); setPacket(null) }
+  const openOrder = (o: OrderRow | null) => { setSelected(o); setResult(null) }
 
-  useEffect(() => {
-    if (!currentBusinessId) return
-    fetch(`/api/laundry/transport-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) setTransportMode(j.data.storeToProcessingTransportMode) }).catch(() => {})
-  }, [currentBusinessId])
-
-  const assignBagAndPack = async (code: string) => {
+  const runPack = async (bagCode?: string) => {
     if (!selected || !currentBusinessId) return
     setBusy(true)
     try {
-      const svc = selected as { services?: { serviceId: string; serviceName: string }[] }
-      if (svc.services?.[0]) {
+      if (bagCode) {
+        const svc = selected as { services?: { serviceId: string; serviceName: string }[] }
         await fetch("/api/laundry/bags/assign", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ businessId: currentBusinessId, code, orderId: selected.id, serviceId: svc.services[0].serviceId, serviceName: svc.services[0].serviceName }),
+          body: JSON.stringify({
+            businessId: currentBusinessId, code: bagCode, orderId: selected.id,
+            serviceId: svc.services?.[0]?.serviceId ?? null, serviceName: svc.services?.[0]?.serviceName ?? "Transport",
+          }),
         }).then((r) => r.json()).then((j) => { if (!j.success) throw new Error(j.error || "Bag assignment failed") })
       }
       const res = await fetch(`/api/laundry/orders/${selected.id}/pack`, {
@@ -361,24 +375,9 @@ export function LaundryPacking() {
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.message || j.error || "Packing failed")
-      setPacket(j.data)
-      toast.success(`Bag assigned — ${j.data.packetNumber}`)
-      queue.load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Action failed") } finally { setBusy(false) }
-  }
-
-  const pack = async () => {
-    if (!selected || !currentBusinessId) return
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/laundry/orders/${selected.id}/pack`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name }),
-      })
-      const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.message || j.error || "Packing failed")
-      setPacket(j.data)
-      toast.success(j.alreadyPacked ? `Packet already exists — ${j.data.packetNumber}` : `Packet created — ${j.data.packetNumber}`)
+      setResult({ transport: j.data.transport, itemCount: j.data.itemCount, packedBy: j.data.packedBy, packedAt: j.data.packedAt })
+      const code = j.data.transport?.code
+      toast.success(j.alreadyPacked ? `${noun} already assigned — ${code}` : `${noun} ${code} ready for transit`)
       queue.load()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Packing failed") } finally { setBusy(false) }
   }
@@ -408,31 +407,36 @@ export function LaundryPacking() {
       <div>
         {Tabs}
         <div className="px-4 lg:px-6 py-4">
-          {histSel && histSel.packet ? (
+          {histSel && histSel.transport?.code ? (
             <Card><CardContent className="p-5 space-y-3">
               <button onClick={() => setHistSel(null)} className="text-sm text-slate-500">← Back to History</button>
               <div className="flex items-center gap-2"><span className="font-mono text-sm font-bold text-slate-800">{histSel.orderNumber}</span><Badge variant="outline" className="border-slate-300 text-slate-600 bg-slate-50">History · Read-only</Badge></div>
               <div className="flex flex-col items-center gap-3 py-2">
-                <QrImage value={histSel.packet.qrValue} />
-                <p className="font-mono text-sm font-bold">{histSel.packet.packetNumber}</p>
-                <p className="text-xs text-slate-400">{histSel.packet.itemCount} garment(s) · packed by {histSel.packet.packedBy || "—"} · {fmt(histSel.packet.packedAt)}</p>
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => printPacketLabel(histSel.packet!, histSel.orderNumber, histSel.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Print QR Again</Button>
+                <QrImage value={histSel.transport.qrValue || histSel.transport.code} />
+                <p className="font-mono text-sm font-bold">{histSel.transport.code}</p>
+                <p className="text-xs text-slate-400">
+                  {histSel.transport.kind === "BAG" ? "Laundry bag" : "Processing packet"} · {histSel.itemCount ?? 0} garment(s) · {fmt(histSel.createdAt)}
+                </p>
+                {/* A bag's QR is permanent and already printed on the bag. */}
+                {histSel.transport.kind === "PACKET" && (
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => printPacketLabel({ code: histSel.transport!.code!, qrValue: histSel.transport!.qrValue || histSel.transport!.code!, itemCount: histSel.itemCount ?? 0 }, histSel.orderNumber, histSel.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Print QR Again</Button>
+                )}
               </div>
             </CardContent></Card>
           ) : (
             <Card><CardContent className="p-4">
-              <div className="relative w-full max-w-sm mb-3"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={histSearch} onChange={(e) => setHistSearch(e.target.value)} placeholder="Order no, customer, mobile…" className="h-8 pl-8 text-sm" /></div>
+              <div className="relative w-full max-w-sm mb-3"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={histSearch} onChange={(e) => setHistSearch(e.target.value)} placeholder={`Order no, ${noun.toLowerCase()} no, customer, mobile…`} className="h-8 pl-8 text-sm" /></div>
               {histLoading ? <div className="py-10 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : hist.length === 0 ? (
                 <p className="py-10 text-center text-sm text-slate-400">No packed orders found.</p>
               ) : (
                 <div className="divide-y divide-slate-50">
-                  {hist.filter((o) => o.packet).map((o) => (
+                  {hist.filter((o) => o.transport?.code).map((o) => (
                     <button key={o.id} onClick={() => setHistSel(o)} className="flex w-full items-center justify-between py-2.5 text-left hover:bg-slate-50 rounded px-1">
                       <div>
                         <p className="font-mono text-sm font-semibold text-slate-800">{o.orderNumber} <span className="font-sans font-normal text-slate-400">· {o.customer?.name || o.customerName || "—"}</span></p>
-                        <p className="text-[11px] text-slate-400">{o.packet?.packetNumber} · {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}{o.store?.storeName ? ` · ${o.store.storeName}` : ""}</p>
+                        <p className="text-[11px] text-slate-400">{o.transport?.code} · {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}{o.store?.storeName ? ` · ${o.store.storeName}` : ""}</p>
                       </div>
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600"><Printer className="h-3.5 w-3.5" /> View / Print</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600"><Printer className="h-3.5 w-3.5" /> View{o.transport?.kind === "PACKET" ? " / Print" : ""}</span>
                     </button>
                   ))}
                 </div>
@@ -446,7 +450,7 @@ export function LaundryPacking() {
 
   return (
     <div>{Tabs}
-    <QueueShell status="READY_FOR_PROCESSING" title="Packing & QR" subtitle="Pack the audited order and generate its package QR"
+    <QueueShell status="READY_FOR_PROCESSING" title="Packing & QR" subtitle={mode === "BAG" ? "Pack the audited order and scan its laundry bag" : "Pack the audited order and generate its package QR"}
       icon={QrCode} selected={selected} onSelect={openOrder} queue={queue}>
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
@@ -462,31 +466,40 @@ export function LaundryPacking() {
                 <Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
               </div>
             </div>
-          ) : !packet ? (
+          ) : !result ? (
             <>
-              <p className="text-sm text-slate-500">Confirm the audited garments are packed into one package. A persistent packet identity (PKT-…) with a QR label is created — the Processing Center receives by scanning it.</p>
-              {transportMode !== "BAG" && (
-                <Button onClick={pack} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white w-full">
+              <p className="text-sm text-slate-500">
+                {mode === "BAG"
+                  ? "Confirm the audited garments are packed into one laundry bag, then scan that bag. Its permanent QR identifies the package — the Processing Center receives by scanning the same bag."
+                  : mode === "PACKET"
+                    ? "Confirm the audited garments are packed into one package. A persistent packet identity (PKT-…) with a QR label is created — the Processing Center receives by scanning it."
+                    : "Confirm the audited garments are packed into one package. Generate a packet QR, or scan the laundry bag — either identifier is accepted at the Processing Center."}
+              </p>
+              {usesPacket(mode) && (
+                <Button onClick={() => runPack()} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white w-full">
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />} Generate Packet QR
                 </Button>
               )}
-              {transportMode !== "PACKET" && (
+              {usesBag(mode) && (
                 <div className="space-y-2 mt-2">
-                  <p className="text-sm text-slate-500">Scan a reusable bag to assign it to this order for transit. The bag QR serves as the package identifier.</p>
+                  <p className="text-sm text-slate-500">Scan the reusable bag holding this order{mode === "BOTH" ? " — the bag QR is an equally valid package identifier." : "."}</p>
                   <div className="flex gap-2">
-                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) assignBagAndPack(v) } }} /></div>
-                    <BagScanButton label="Scan" size="sm" onScan={(c) => assignBagAndPack(c)} disabled={busy} closeOnScan className="h-10" />
+                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) runPack(v) } }} /></div>
+                    <BagScanButton label="Scan" size="sm" onScan={(c) => runPack(c)} disabled={busy} closeOnScan className="h-10" />
                   </div>
                 </div>
               )}
             </>
           ) : (
             <div className="flex flex-col items-center gap-3 py-2">
-              <QrImage value={packet.qrValue} />
-              <p className="font-mono text-sm font-bold">{packet.packetNumber}</p>
-              <p className="text-xs text-slate-400">{packet.itemCount} garment(s) · packed by {packet.packedBy || "—"} · {fmt(packet.packedAt)}</p>
+              <QrImage value={result.transport.qrValue || result.transport.code || ""} />
+              <p className="font-mono text-sm font-bold">{result.transport.code}</p>
+              <p className="text-xs text-slate-400">{result.transport.kind === "BAG" ? "Laundry bag" : "Processing packet"} · {result.itemCount} garment(s) · packed by {result.packedBy || "—"} · {fmt(result.packedAt)}</p>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => printPacketLabel(packet, selected.orderNumber, selected.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Print QR Label</Button>
+                {/* Bags carry a permanent printed QR — nothing to print here. */}
+                {result.transport.kind === "PACKET" && result.transport.code && (
+                  <Button variant="outline" size="sm" className="gap-1" onClick={() => printPacketLabel({ code: result.transport.code!, qrValue: result.transport.qrValue || result.transport.code!, itemCount: result.itemCount }, selected.orderNumber, selected.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Print QR Label</Button>
+                )}
                 <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setSelected(null); queue.load() }}><CheckCircle2 className="h-3.5 w-3.5" /> Done — Next Order</Button>
               </div>
             </div>
@@ -503,83 +516,72 @@ export function LaundryDispatch() {
   const { currentBusinessId, user } = useAuthStore()
   const queue = useQueue("PACKED")
   const [selected, setSelected] = useState<OrderRow | null>(null)
-  const [packet, setPacket] = useState<Packet | null>(null)
   const [transportBy, setTransportBy] = useState("")
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
-  const [transportMode, setTransportMode] = useState<string>("PACKET")
+  const { storeToProcessing: mode } = useTransportModes(currentBusinessId)
+  const noun = transportNoun(mode)
+  // The identifier comes with the order row (resolved server-side via Transport Setup).
+  const ref = selected?.transport || null
 
-  useEffect(() => {
+  const openOrder = (o: OrderRow | null) => { setSelected(o); setTransportBy(""); setNote("") }
+
+  const dispatchOrder = async (orderId: string) => {
     if (!currentBusinessId) return
-    fetch(`/api/laundry/transport-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) setTransportMode(j.data.storeToProcessingTransportMode) }).catch(() => {})
-  }, [currentBusinessId])
-
-  const openOrder = async (o: OrderRow | null) => {
-    setSelected(o); setPacket(null); setTransportBy(""); setNote("")
-    if (!o || !currentBusinessId) return
-    const j = await fetch(`/api/laundry/packets?businessId=${currentBusinessId}&code=${encodeURIComponent(o.orderNumber)}`).then((r) => r.json()).catch(() => null)
-    if (j?.success && j.data[0]) setPacket(j.data[0])
-  }
-
-  const dispatch = async () => {
-    if (!selected || !currentBusinessId) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/laundry/orders/${selected.id}/dispatch`, {
+      const res = await fetch(`/api/laundry/orders/${orderId}/dispatch`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, transportBy: transportBy || undefined, note: note || undefined }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Dispatch failed")
-      toast.success(`${j.data.packetNumber} dispatched to Processing Center`)
+      toast.success(`${j.data.transportCode || j.data.orderNumber} dispatched to Processing Center`)
       setSelected(null); queue.load()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Dispatch failed") } finally { setBusy(false) }
   }
 
-  const dispatchByBag = async (code: string) => {
-    if (!selected || !currentBusinessId || busy) return
+  // Scan-to-dispatch: the scanned code is resolved to its order through the
+  // configured transport mode — never through a bag-only or packet-only lookup.
+  const dispatchByScan = async (code: string) => {
+    if (!currentBusinessId || busy) return
     const q = code.trim()
     if (!q) return
     setBusy(true)
     try {
-      const bj = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
-      const bag = (bj.data || []).find((b: { bagNumber: string; qrValue: string; currentOrderId?: string }) => b.bagNumber === q || b.qrValue === q)
-      if (bag?.currentOrderId) {
-        const res = await fetch(`/api/laundry/orders/${bag.currentOrderId}/dispatch`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name, transportBy: transportBy || undefined, note: note || undefined }),
-        })
-        const j = await res.json()
-        if (!res.ok || !j.success) throw new Error(j.error || "Dispatch failed")
-        toast.success(`${j.data.packetNumber} dispatched to Processing Center`)
-      } else {
-        toast.error("No order linked to this bag")
-      }
-      setSelected(null); queue.load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Dispatch failed") } finally { setBusy(false) }
+      const j = await fetch(`/api/laundry/transport/resolve?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}&direction=STORE_TO_PROCESSING`).then((r) => r.json())
+      if (!j.success) throw new Error(j.error || `No order matches "${q}"`)
+      setBusy(false)
+      await dispatchOrder(j.data.orderId)
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Dispatch failed"); setBusy(false) }
   }
 
   return (
-    <QueueShell status="PACKED" title="Transit to Processing" subtitle="Dispatch packed packets to the Processing Center"
+    <QueueShell status="PACKED" title="Transit to Processing" subtitle={`Dispatch packed ${mode === "BAG" ? "bags" : "packages"} to the Processing Center`}
       icon={Truck} selected={selected} onSelect={openOrder} queue={queue}>
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
           <OrderHeader o={selected} />
-          {transportMode !== "BAG" && packet && (
+          {ref?.code && (
             <div className="flex items-center gap-4 rounded-lg border p-3">
-              <QrImage value={packet.qrValue} size={72} />
+              <QrImage value={ref.qrValue || ref.code} size={72} />
               <div>
-                <p className="font-mono text-sm font-bold">{packet.packetNumber}</p>
-                <p className="text-xs text-slate-400">{packet.itemCount} garment(s) · packed {fmt(packet.packedAt)}</p>
+                <p className="font-mono text-sm font-bold">{ref.code}</p>
+                <p className="text-xs text-slate-400">{ref.kind === "BAG" ? "Laundry bag" : "Processing packet"} · {selected.itemCount} garment(s)</p>
               </div>
             </div>
           )}
-          {transportMode !== "PACKET" && (
+          {!ref?.code && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+              No {noun.toLowerCase()} on this order yet — complete Packing &amp; QR first.
+            </p>
+          )}
+          {usesBag(mode) && (
             <div className="space-y-2">
-              <p className="text-sm text-slate-500">Scan the reusable bag assigned to this order to dispatch it.</p>
+              <p className="text-sm text-slate-500">Scan the bag assigned to this order to dispatch it.</p>
               <div className="flex gap-2">
-                <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) dispatchByBag(v) } }} /></div>
-                <BagScanButton label="Scan" size="sm" onScan={(c) => dispatchByBag(c)} disabled={busy} closeOnScan className="h-10" />
+                <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) dispatchByScan(v) } }} /></div>
+                <BagScanButton label="Scan" size="sm" onScan={(c) => dispatchByScan(c)} disabled={busy} closeOnScan className="h-10" />
               </div>
             </div>
           )}
@@ -587,12 +589,11 @@ export function LaundryDispatch() {
             <div className="space-y-1.5"><Label className="text-xs">Transport / Runner (optional)</Label><Input className="h-9" value={transportBy} onChange={(e) => setTransportBy(e.target.value)} placeholder="e.g. Ravi — bike" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Dispatch Note (optional)</Label><Input className="h-9" value={note} onChange={(e) => setNote(e.target.value)} /></div>
           </div>
-          {transportMode !== "BAG" && (
-            <Button onClick={dispatch} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white w-full">
+          {usesPacket(mode) ? (
+            <Button onClick={() => dispatchOrder(selected.id)} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white w-full">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Dispatch to Processing Center
             </Button>
-          )}
-          {transportMode === "BAG" && (
+          ) : (
             <p className="text-xs text-slate-400 text-center pt-2">Scan the assigned bag QR above to dispatch this order.</p>
           )}
         </CardContent></Card>
@@ -609,6 +610,8 @@ export function LaundryStoreReceive() {
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
   const [code, setCode] = useState("")
+  // Return leg → Processing Center → Store mode.
+  const { processingToStore: returnMode } = useTransportModes(currentBusinessId)
 
   const receiveOrder = async (orderId: string, noteOverride?: string): Promise<boolean> => {
     if (!currentBusinessId) return false
@@ -627,23 +630,16 @@ export function LaundryStoreReceive() {
   }
   const receive = () => { if (selected) receiveOrder(selected.id) }
 
-  // Scan-first receive: a returning package carries the SAME packet QR (PKT-…) it
-  // went out with, and any bag it came back in is still linked to the order — so a
-  // scan of EITHER resolves the order, and the server confirms it's in return transit.
+  // Scan-first receive: the returning package carries the identifier configured
+  // for the Processing Center → Store leg (bag QR or the same packet QR it went
+  // out with). One resolver, one mode — the server confirms it's in return transit.
   const resolveAndReceive = async (raw?: string) => {
     const q = (raw ?? code).trim()
     if (!q || !currentBusinessId || busy) return
     let orderId: string | null = null
     try {
-      const pj = await fetch(`/api/laundry/packets?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
-      const p = (pj.data || [])[0]
-      if (p?.order?.id) orderId = p.order.id
-      if (!orderId) {
-        const bj = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({}))
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bag = (bj.data || []).find((b: any) => (b.bagNumber || "").toUpperCase() === q.toUpperCase() || (b.qrValue || "") === q) || (bj.data || [])[0]
-        if (bag?.currentOrderId) orderId = bag.currentOrderId
-      }
+      const j = await fetch(`/api/laundry/transport/resolve?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}&direction=PROCESSING_TO_STORE`).then((r) => r.json())
+      if (j?.success) orderId = j.data.orderId
     } catch { /* fall through */ }
     if (!orderId) { toast.error(`No returning order matches "${q}"`); setCode(""); return }
     await receiveOrder(orderId)
@@ -652,15 +648,21 @@ export function LaundryStoreReceive() {
   return (
     <QueueShell status="RETURN_IN_TRANSIT" title="Store Receive" subtitle="Confirm processed orders returned from the Processing Center"
       icon={PackageCheck} selected={selected} onSelect={setSelected} queue={queue}>
-      {/* Scan-to-receive: packet QR or any bag QR → confirms the returned order. */}
+      {/* Scan-to-receive: the configured return identifier → the returned order. */}
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4 space-y-2">
           <div className="flex items-center gap-3 max-w-2xl">
-            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resolveAndReceive()} placeholder="Scan packet QR or bag — or enter packet / order code…" className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
+            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resolveAndReceive()} placeholder={transportScanPlaceholder(returnMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
             <BagScanButton label="Camera" onScan={(c) => resolveAndReceive(c)} disabled={busy} closeOnScan className="h-11" />
             <Button onClick={() => resolveAndReceive()} disabled={busy || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
           </div>
-          <p className="text-[11px] text-slate-400">Scan the packet QR (same one it was sent with) or any bag it returned in. Or pick an order below to confirm manually.</p>
+          <p className="text-[11px] text-slate-400">
+            {returnMode === "BAG"
+              ? "Scan the bag the order returned in. Or pick an order below to confirm manually."
+              : returnMode === "PACKET"
+                ? "Scan the packet QR (same one it was sent with). Or pick an order below to confirm manually."
+                : "Scan the packet QR (same one it was sent with) or any bag it returned in. Or pick an order below to confirm manually."}
+          </p>
         </CardContent>
       </Card>
       {selected && (

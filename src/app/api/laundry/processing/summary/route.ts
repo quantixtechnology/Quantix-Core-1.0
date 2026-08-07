@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const stageCount = (s: string) => grouped.find((g) => g.processingStage === s)?._count._all ?? 0
 
     const [inTransit, completedToday] = await Promise.all([
-      // Order-level: packets physically moving to the Processing Center.
+      // Order-level: packages physically moving to the Processing Center.
       prisma.laundryOrder.count({ where: { businessId: biz.id, status: "IN_TRANSIT_TO_PROCESSING" } }),
       // Orders actually delivered today (deliveredAt within today).
       prisma.laundryOrder.count({ where: { businessId: biz.id, status: "DELIVERED", deliveredAt: { gte: startOfToday } } }),
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       inProgress: WORKING_STAGES.reduce((n, s) => n + stageCount(s), 0),            // garments on the floor
       qcPending: stageCount("QC"),                                                  // garments at Quality Check
       completedToday,                                                               // orders delivered today
-      inTransit,                                                                    // packets in transit to PC
+      inTransit,                                                                    // packages in transit to PC
     })
   } catch (error) {
     console.error("Error fetching processing summary:", error)

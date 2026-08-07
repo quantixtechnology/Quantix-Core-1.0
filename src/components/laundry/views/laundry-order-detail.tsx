@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
+import type { TransportRef } from "@/lib/laundry-transport"
 import { LaundryInvoicePanel } from "@/components/laundry/invoice/laundry-invoice-panel"
 import { toast } from "sonner"
 
@@ -36,7 +37,10 @@ interface Detail {
   store?: { storeName: string | null; storeCode: string | null } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   items: Item[]; events: OrderEvent[]
-  packet?: { packetNumber: string; status: string } | null
+  // Transport identity resolved by the API through Transport Setup (bag QR or
+  // packet QR) — the detail panel never reads a packet directly.
+  transport?: TransportRef | null
+  transportCode?: string | null
   pickupRequired: boolean; pickupDate: string | null; pickupTimeSlot: string | null
   pickupExecutiveId: string | null; pickupAssignedAt: string | null
   pickupAcceptance: string | null; pickupAcceptedAt: string | null
@@ -247,7 +251,14 @@ export function LaundryOrderDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold tracking-tight font-mono">{order.orderNumber}</h2>
               <Badge className={STATUS_STYLE[order.status] || "bg-blue-100 text-blue-700"}>{statusLabel(order.status)}</Badge>
-              {order.packet && <Badge variant="outline" className="font-mono text-[10px]">{order.packet.packetNumber}</Badge>}
+              {/* Whatever Transport Setup uses. In BOTH mode the order can carry
+                  a packet AND a bag — show each one it actually has. */}
+              {order.transport?.packetNumber && (
+                <Badge variant="outline" className="font-mono text-[10px]" title="Processing packet">{order.transport.packetNumber}</Badge>
+              )}
+              {order.transport?.bagNumber && (
+                <Badge variant="outline" className="font-mono text-[10px]" title="Laundry bag">{order.transport.bagNumber}</Badge>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1"><User className="h-3 w-3" />{order.customer?.name || "—"}</span>

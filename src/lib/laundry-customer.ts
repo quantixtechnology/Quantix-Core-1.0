@@ -5,6 +5,8 @@
 // engines — it never mutates their logic.
 // ============================================================================
 import { prisma } from "@/lib/prisma"
+import { getTransportModes, transportRefsForOrders } from "@/lib/laundry-transport-server"
+import type { TransportRef } from "@/lib/laundry-transport"
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
@@ -83,17 +85,21 @@ export async function customerStats(customerId: string) {
 // ── Timeline (Part 3) — orders + payments + subscriptions + activities. ──────
 export interface TimelineEntry { at: Date; type: string; title: string; detail?: string | null; amount?: number | null; ref?: string | null }
 export async function customerTimeline(customerId: string, limit = 100): Promise<TimelineEntry[]> {
-  const orders = await prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: limit })
+  const orders = await prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, subscriptionCoveredAmount: true, businessId: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: limit })
   const orderIds = orders.map((o) => o.id)
-  const [payments, subs, activities, events, packets] = await Promise.all([
+  const [payments, subs, activities, events] = await Promise.all([
     orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds } }, select: { amount: true, method: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { amount: number; method: string; createdAt: Date; orderId: string }[]),
     prisma.customerSubscription.findMany({ where: { customerId }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.customerActivity.findMany({ where: { customerId }, orderBy: { createdAt: "desc" }, take: limit }),
     orderIds.length ? prisma.laundryOrderEvent.findMany({ where: { orderId: { in: orderIds } }, select: { action: true, actorName: true, note: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { action: string; actorName: string | null; note: string | null; createdAt: Date; orderId: string }[]),
-    orderIds.length ? prisma.laundryPacket.findMany({ where: { orderId: { in: orderIds } }, select: { packetNumber: true, orderId: true, createdAt: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([] as { packetNumber: string; orderId: string; createdAt: Date }[]),
   ])
   const orderNo = new Map(orders.map((o) => [o.id, o.orderNumber]))
-  const packetMap = new Map(packets.map((p) => [p.orderId, p.packetNumber]))
+  // Transport reference for dispatch entries — bag or packet, per Transport
+  // Setup, so a BAG-mode business never sees a PKT number in the timeline.
+  const lbId = orders[0]?.businessId || null
+  const transportMap: Map<string, TransportRef> = lbId
+    ? await transportRefsForOrders(lbId, orderIds, (await getTransportModes(lbId)).storeToProcessing).catch(() => new Map<string, TransportRef>())
+    : new Map<string, TransportRef>()
   const actionLabel = (a: string) => ({ PICKUP_REQUESTED: "Pickup Requested", PICKUP_ASSIGNED: "Pickup Assigned", PICKUP_ACCEPTED: "Pickup Accepted", PICKUP_COMPLETED: "Pickup Completed", PICKUP_CANCELLED: "Pickup Cancelled", DELIVERY_REQUESTED: "Delivery Requested", DELIVERY_ASSIGNED: "Delivery Assigned", DELIVERY_ACCEPTED: "Delivery Accepted", DELIVERY_CANCELLED: "Delivery Cancelled", MARK_DELIVERED: "Delivered", OUT_FOR_DELIVERY: "Out for Delivery" }[a] || a.replace(/_/g, " "))
   const entries: TimelineEntry[] = [
     ...orders.map((o) => ({ at: o.createdAt, type: "ORDER", title: `Order ${o.orderNumber}`, detail: o.status, amount: o.grandTotal, ref: o.orderNumber })),
@@ -102,8 +108,7 @@ export async function customerTimeline(customerId: string, limit = 100): Promise
     ...activities.map((a) => ({ at: a.createdAt, type: a.type, title: a.title, detail: a.body, amount: null, ref: a.id })),
     ...events.map((e) => {
       const on = orderNo.get(e.orderId) || ""
-      const pkt = packetMap.get(e.orderId)
-      const ref = pkt ? `${pkt}` : on
+      const ref = transportMap.get(e.orderId)?.code || on
       return { at: e.createdAt, type: "DISPATCH", title: `${ref ? `${ref} — ` : ""}${actionLabel(e.action)}`, detail: [e.note, e.actorName].filter(Boolean).join(" · "), amount: null, ref: ref || e.orderId }
     }),
   ]

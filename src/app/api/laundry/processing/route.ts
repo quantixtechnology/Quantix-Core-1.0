@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { WORKSTATIONS, stageLabel, departmentFor, isProcessingTerminal, TERMINAL_STAGE } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getTransportModes, transportRefsForOrders } from "@/lib/laundry-transport-server"
 
 export const runtime = "nodejs"
 
@@ -23,31 +24,53 @@ export async function GET(request: Request) {
     if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
     const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true } })
 
-    // Incoming = DISPATCHED packets only (order IN_TRANSIT_TO_PROCESSING).
+    // Transport Setup decides which identifier the console shows and scans:
+    // inbound packages use the Store → Processing mode, returns the reverse.
+    const transportModes = await getTransportModes(biz.id)
+
+    // Incoming = DISPATCHED packages only (order IN_TRANSIT_TO_PROCESSING).
     // An undispatched order is NOT receivable — work-queue integrity.
     const incomingOrders = await prisma.laundryOrder.findMany({
       where: { businessId: biz.id, status: "IN_TRANSIT_TO_PROCESSING" },
-      select: { id: true, orderNumber: true, status: true, storeId: true, customerId: true, createdAt: true, _count: { select: { items: true } }, packet: { select: { packetNumber: true, dispatchedAt: true, dispatchedBy: true } }, store: { select: { storeName: true } } },
+      select: { id: true, orderNumber: true, status: true, storeId: true, customerId: true, createdAt: true, _count: { select: { items: true } }, store: { select: { storeName: true } } },
       orderBy: { createdAt: "desc" }, take: 50,
     })
     const custIds = [...new Set(incomingOrders.map((o) => o.customerId).filter(Boolean) as string[])]
     const custs = custIds.length ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } }) : []
     const cmap = new Map(custs.map((c) => [c.id, c.name]))
-    const incoming = incomingOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt, packetNumber: o.packet?.packetNumber || null, dispatchedAt: o.packet?.dispatchedAt || null, fromStore: o.store?.storeName || null }))
+    const inRefs = await transportRefsForOrders(biz.id, incomingOrders.map((o) => o.id), transportModes.storeToProcessing)
+    // Dispatch time comes from the audit log when there is no packet row to
+    // carry it (BAG mode) — the event exists in every transport mode.
+    const dispatchEvents = incomingOrders.length
+      ? await prisma.laundryOrderEvent.findMany({
+          where: { businessId: biz.id, action: "DISPATCH_TO_PROCESSING", orderId: { in: incomingOrders.map((o) => o.id) } },
+          orderBy: { createdAt: "desc" }, select: { orderId: true, createdAt: true },
+        })
+      : []
+    const dispatchedAtMap = new Map<string, Date>()
+    for (const e of dispatchEvents) if (!dispatchedAtMap.has(e.orderId)) dispatchedAtMap.set(e.orderId, e.createdAt)
+    const incoming = incomingOrders.map((o) => {
+      const transport = inRefs.get(o.id) || null
+      return { id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt, transport, transportCode: transport?.code || null, dispatchedAt: dispatchedAtMap.get(o.id) || null, fromStore: o.store?.storeName || null }
+    })
 
     // Ready to Return = every garment finished its route (Transit terminal /
     // legacy Packed) but the order is still at the Processing Center.
     const processingOrders = await prisma.laundryOrder.findMany({
       where: { businessId: biz.id, status: "PROCESSING" },
-      select: { id: true, orderNumber: true, customerId: true, store: { select: { storeName: true } }, packet: { select: { packetNumber: true } }, items: { select: { processingStage: true, processingStatus: true } } },
+      select: { id: true, orderNumber: true, customerId: true, store: { select: { storeName: true } }, items: { select: { processingStage: true, processingStatus: true } } },
       orderBy: { createdAt: "asc" }, take: 100,
     })
     const rtCustIds = [...new Set(processingOrders.map((o) => o.customerId).filter(Boolean) as string[])]
     const rtCusts = rtCustIds.length ? await prisma.customer.findMany({ where: { id: { in: rtCustIds } }, select: { id: true, name: true } }) : []
     const rtMap = new Map(rtCusts.map((c) => [c.id, c.name]))
-    const readyToReturn = processingOrders
-      .filter((o) => o.items.length > 0 && o.items.every((i) => isProcessingTerminal(i.processingStage) && i.processingStatus === "DONE"))
-      .map((o) => ({ id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? rtMap.get(o.customerId) || null : null, items: o.items.length, toStore: o.store?.storeName || null, packetNumber: o.packet?.packetNumber || null }))
+    const returnable = processingOrders.filter((o) => o.items.length > 0 && o.items.every((i) => isProcessingTerminal(i.processingStage) && i.processingStatus === "DONE"))
+    // Return leg → Processing Center → Store mode.
+    const outRefs = await transportRefsForOrders(biz.id, returnable.map((o) => o.id), transportModes.processingToStore)
+    const readyToReturn = returnable.map((o) => {
+      const transport = outRefs.get(o.id) || null
+      return { id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? rtMap.get(o.customerId) || null : null, items: o.items.length, toStore: o.store?.storeName || null, transport, transportCode: transport?.code || null }
+    })
 
     // Awaiting Barcode Generation — received, not yet moved to processing.
     const abOrders = await prisma.laundryOrder.findMany({
@@ -134,7 +157,7 @@ export async function GET(request: Request) {
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, soundEnabled: bizSettings?.workstationScanSound ?? true })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

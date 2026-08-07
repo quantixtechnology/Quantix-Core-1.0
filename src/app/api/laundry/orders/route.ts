@@ -6,6 +6,8 @@ import { generateOrderNumber } from "@/lib/laundry-codes"
 import { createLaundryOrder, defaultOrderSource } from "@/lib/laundry-order-engine"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } from "@/lib/laundry-transport-server"
+import { usesPacket } from "@/lib/laundry-transport"
 
 export const runtime = "nodejs"
 
@@ -183,7 +185,7 @@ export async function GET(request: Request) {
     // Stage-completion filters (used by the Barcode / Packing History tabs) —
     // based on STORED completion data, never on order status.
     const barcoded = searchParams.get("barcoded") // "1" → Barcode Generation completed (Moved to Processing)
-    const packed = searchParams.get("packed")     // "1" → a packet was created
+    const packed = searchParams.get("packed")     // "1" → Packing & QR completed
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100)
     const offset = parseInt(searchParams.get("offset") || "0")
 
@@ -209,23 +211,41 @@ export async function GET(request: Request) {
     // garment's route into `processFlow`. `barcodeGenerated` alone flips on
     // "Generate All", one step earlier, so it is NOT the completion marker.
     if (barcoded === "1") where.items = { some: { processFlow: { not: null } } }
-    if (packed === "1") where.packet = { isNot: null }
+    // Packing completion is a WORKFLOW fact, not a packet fact: in BAG transport
+    // mode no packet row is ever created, so the PACK_ORDER audit event is the
+    // portable marker. Legacy rows are matched by either.
+    if (packed === "1") {
+      where.AND = [
+        ...((where.AND as unknown[]) || []),
+        { OR: [{ packet: { isNot: null } }, { events: { some: { action: "PACK_ORDER" } } }] },
+      ]
+    }
     if (from || to) {
       const createdAt: Record<string, Date> = {}
       if (from) createdAt.gte = new Date(from)
       if (to) createdAt.lte = new Date(to)
       where.createdAt = createdAt
     }
+    // Transport Setup decides which identifier is searchable / displayed — a
+    // BAG-mode business searches and shows bag numbers, never PKT numbers.
+    const transportModes = await getTransportModes(resolved.id)
+    const listMode = transportModes.storeToProcessing
+
     if (search) {
-      // Search by order number, or by customer name / mobile (resolve matching
-      // platform customers, then filter orders by their id).
-      const matched = await prisma.customer.findMany({
-        where: { businessId: resolved.platformBusinessId || resolved.id, OR: [{ name: { contains: search } }, { phone: { contains: search } }] },
-        select: { id: true },
-      })
+      // Search by order number, transport identifier (bag / packet, per mode),
+      // or by customer name / mobile (resolve matching platform customers, then
+      // filter orders by their id).
+      const [matched, transportOrderIds] = await Promise.all([
+        prisma.customer.findMany({
+          where: { businessId: resolved.platformBusinessId || resolved.id, OR: [{ name: { contains: search } }, { phone: { contains: search } }] },
+          select: { id: true },
+        }),
+        orderIdsByTransportSearch(resolved.id, search, listMode),
+      ])
       where.OR = [
         { orderNumber: { contains: search } },
         ...(matched.length ? [{ customerId: { in: matched.map((c) => c.id) } }] : []),
+        ...(transportOrderIds.length ? [{ id: { in: transportOrderIds } }] : []),
       ]
     }
 
@@ -239,8 +259,9 @@ export async function GET(request: Request) {
           // Un-inspected garments only — used to derive Store Audit completeness
           // (auditComplete) without loading every item. Usually empty. Additive.
           items: { where: { inspectedAt: null }, select: { id: true } },
-          // Stored packet (for the Packing History read-only view). Additive.
-          packet: { select: { packetNumber: true, qrValue: true, status: true, itemCount: true, packedBy: true, packedAt: true } },
+          // NOTE: the packet is deliberately NOT included. Every consumer reads
+          // the resolved `transport` below, so no screen can reach a PKT number
+          // in a business whose Transport Setup does not use packets.
           // Customer rating & feedback (submitted once per delivered order).
           feedback: { select: { rating: true, comment: true } },
         },
@@ -257,15 +278,25 @@ export async function GET(request: Request) {
       ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, phone: true, customerCode: true } })
       : []
     const custMap = new Map(customers.map((c) => [c.id, c]))
+    // Transport identifier per order, resolved through Transport Setup.
+    const transportRefs = await transportRefsForOrders(resolved.id, orders.map((o) => o.id), listMode)
     // auditComplete: has garments AND none left un-inspected (Store Audit done).
     // Drives the Packing queue filter so incomplete orders never appear there.
     const data = orders.map((o) => {
       const { items, ...rest } = o
       const auditComplete = o._count.items > 0 && (items?.length ?? 0) === 0
-      return { ...rest, customer: o.customerId ? custMap.get(o.customerId) || null : null, itemCount: o._count.items, auditComplete }
+      const transport = transportRefs.get(o.id) || null
+      return {
+        ...rest,
+        transport,
+        transportCode: transport?.code || null,
+        customer: o.customerId ? custMap.get(o.customerId) || null : null,
+        itemCount: o._count.items,
+        auditComplete,
+      }
     })
 
-    return NextResponse.json({ success: true, data, total, limit, offset })
+    return NextResponse.json({ success: true, data, total, limit, offset, transportModes })
   } catch (error) {
     console.error("[laundry-orders] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

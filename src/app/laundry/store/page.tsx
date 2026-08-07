@@ -400,7 +400,9 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
           {order.pickupRequired && <Field label="Pickup Exec" value={order.pickupExecutiveId ? "Assigned" : "Unassigned"} />}
           {order.deliveryRequired && <Field label="Delivery Slot" value={[fmtDay(order.deliveryDate), order.deliveryTimeSlot].filter(Boolean).join(" ") || "—"} />}
           {order.deliveryRequired && <Field label="Delivery Exec" value={order.deliveryExecutiveId ? "Assigned" : "Unassigned"} />}
-          {order.packet?.packetNumber && <Field label="Package" value={order.packet.packetNumber} />}
+          {/* Transport identity per Transport Setup — both when the mode is BOTH. */}
+          {order.transport?.packetNumber && <Field label="Packet" value={order.transport.packetNumber} />}
+          {order.transport?.bagNumber && <Field label="Bag" value={order.transport.bagNumber} />}
         </div>
         {Array.isArray(order.items) && order.items.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-3">

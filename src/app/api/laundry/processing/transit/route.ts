@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       where: { id: pkg.orderId },
       select: {
         id: true, orderNumber: true, status: true,
-        packet: { select: { id: true, packetNumber: true } },
+        packet: { select: { id: true } },
         items: { select: { id: true, processingStage: true, processingStatus: true } },
       },
     })
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
 
     await syncPackageLifecycle(order.id, biz.id).catch(() => null)
 
-    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, items: order.items.length, packetNumber: order.packet?.packetNumber || null, bagCode: pkg.code } })
+    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, items: order.items.length, bagCode: pkg.code } })
   } catch (e) {
     console.error("[laundry-transit] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

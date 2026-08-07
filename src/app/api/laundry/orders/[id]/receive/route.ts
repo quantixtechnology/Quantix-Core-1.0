@@ -1,14 +1,17 @@
 // POST /api/laundry/orders/[id]/receive — Received at Processing Center.
-// STRICT: only a DISPATCHED packet (order IN_TRANSIT_TO_PROCESSING) can be
+// STRICT: only a DISPATCHED package (order IN_TRANSIT_TO_PROCESSING) can be
 // received — an undispatched order is rejected. Records who received it and
 // any package condition note, moves every garment to the Barcode Generation
 // queue, and advances the order to PROCESSING. Duplicate receipt is blocked
-// by the atomic status guard.
+// by the atomic status guard. The package is named by Transport Setup (bag or
+// packet) in every message and audit note.
 //
 // Body: { businessId?, actorId?, actorName?, note? }
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
+import { transportNoun, transportRefLabel } from "@/lib/laundry-transport"
 
 export const runtime = "nodejs"
 
@@ -18,18 +21,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const b = await request.json().catch(() => ({}))
     const order = await prisma.laundryOrder.findUnique({
       where: { id },
-      select: { id: true, orderNumber: true, businessId: true, status: true, packet: { select: { id: true, packetNumber: true, status: true } }, items: { select: { id: true, receivedAt: true } } },
+      select: { id: true, orderNumber: true, businessId: true, status: true, packet: { select: { id: true } }, items: { select: { id: true, receivedAt: true } } },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     const guard = await requireLaundryPermission(request, order.businessId, "processing.console_receive.operate")
     if (!guard.ok) return guard.res
 
+    const mode = await getTransportMode(order.businessId, "STORE_TO_PROCESSING")
+    const noun = transportNoun(mode)
     if (order.status !== "IN_TRANSIT_TO_PROCESSING") {
       const msg = order.status === "PROCESSING"
-        ? "Packet already received at the Processing Center"
-        : `Packet has not been dispatched — cannot receive (order is ${order.status})`
+        ? `${noun} already received at the Processing Center`
+        : `${noun} has not been dispatched — cannot receive (order is ${order.status})`
       return NextResponse.json({ error: msg }, { status: 409 })
     }
+    const ref = await transportRefForOrder(order.businessId, order.id, mode)
 
     const now = new Date()
     // Atomic: first receive wins.
@@ -37,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       where: { id: order.id, status: "IN_TRANSIT_TO_PROCESSING" },
       data: { status: "PROCESSING" },
     })
-    if (advanced.count === 0) return NextResponse.json({ error: "Packet already received" }, { status: 409 })
+    if (advanced.count === 0) return NextResponse.json({ error: `${noun} already received` }, { status: 409 })
 
     if (order.packet) {
       await prisma.laundryPacket.update({
@@ -62,11 +68,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         orderId: order.id, businessId: order.businessId,
         fromStatus: "IN_TRANSIT_TO_PROCESSING", toStatus: "PROCESSING", action: "RECEIVE_AT_PROCESSING",
         actorId: b.actorId || null, actorName: b.actorName || null,
-        note: b.note || (order.packet ? `Packet ${order.packet.packetNumber} received` : null),
+        note: b.note || (transportRefLabel(ref) ? `${transportRefLabel(ref)} received` : null),
       },
     }).catch(() => null)
 
-    return NextResponse.json({ success: true, data: { received, totalItems: order.items.length, packetNumber: order.packet?.packetNumber || null } })
+    return NextResponse.json({ success: true, mode, data: { received, totalItems: order.items.length, transport: ref, transportCode: ref.code } })
   } catch (e) {
     console.error("[laundry-order-receive] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

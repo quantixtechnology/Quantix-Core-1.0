@@ -1,13 +1,16 @@
 // POST /api/laundry/orders/[id]/dispatch — Transit to Processing Center.
-// Creates the persistent transit state on the packet (dispatched by/at/note)
-// and advances PACKED → IN_TRANSIT_TO_PROCESSING. Duplicate dispatch is
-// blocked by the status guard.
+// Records the transit state (dispatched by/at/note) against the order's
+// transport identity — the packet or the bag, per Transport Setup — and
+// advances PACKED → IN_TRANSIT_TO_PROCESSING. Duplicate dispatch is blocked by
+// the status guard.
 //
 // Body: { businessId, actorId?, actorName?, note?, transportBy? }
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
+import { transportNoun, transportRefLabel } from "@/lib/laundry-transport"
 
 export const runtime = "nodejs"
 
@@ -22,12 +25,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id, businessId: biz.id },
-      select: { id: true, orderNumber: true, status: true, packet: true },
+      select: { id: true, orderNumber: true, status: true, packet: { select: { id: true } } },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
-    if (!order.packet) return NextResponse.json({ error: "Order has not been packed yet — create the packet first" }, { status: 409 })
+
+    const mode = await getTransportMode(biz.id, "STORE_TO_PROCESSING")
+    const noun = transportNoun(mode)
+    const ref = await transportRefForOrder(biz.id, order.id, mode)
+    if (!ref.code) {
+      return NextResponse.json({
+        error: mode === "BAG"
+          ? "No bag on this order — scan the laundry bag at Packing before dispatch."
+          : "Order has not been packed yet — create the packet first",
+      }, { status: 409 })
+    }
     if (order.status !== "PACKED") {
-      return NextResponse.json({ error: order.status === "IN_TRANSIT_TO_PROCESSING" ? "Packet already dispatched" : `Order is not packed (current: ${order.status})` }, { status: 409 })
+      return NextResponse.json({ error: order.status === "IN_TRANSIT_TO_PROCESSING" ? `${noun} already dispatched` : `Order is not packed (current: ${order.status})` }, { status: 409 })
     }
 
     const note = [b.transportBy ? `Transport: ${b.transportBy}` : null, b.note || null].filter(Boolean).join(" · ") || null
@@ -37,22 +50,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       where: { id: order.id, status: "PACKED" },
       data: { status: "IN_TRANSIT_TO_PROCESSING" },
     })
-    if (advanced.count === 0) return NextResponse.json({ error: "Packet already dispatched" }, { status: 409 })
+    if (advanced.count === 0) return NextResponse.json({ error: `${noun} already dispatched` }, { status: 409 })
 
-    await prisma.laundryPacket.update({
-      where: { orderId: order.id },
-      data: { status: "IN_TRANSIT_TO_PC", dispatchedBy: b.actorName || null, dispatchedAt: now, dispatchNote: note },
-    })
+    // Packet transit state is kept in step whenever the order carries a packet
+    // (packet mode, or an order packed before the business switched to BAG).
+    if (order.packet) {
+      await prisma.laundryPacket.update({
+        where: { orderId: order.id },
+        data: { status: "IN_TRANSIT_TO_PC", dispatchedBy: b.actorName || null, dispatchedAt: now, dispatchNote: note },
+      })
+    }
     await prisma.laundryOrderEvent.create({
       data: {
         orderId: order.id, businessId: biz.id,
         fromStatus: "PACKED", toStatus: "IN_TRANSIT_TO_PROCESSING", action: "DISPATCH_TO_PROCESSING",
         actorId: b.actorId || null, actorName: b.actorName || null,
-        note: note || `Packet ${order.packet.packetNumber} in transit`,
+        note: note || `${transportRefLabel(ref)} in transit`,
       },
     }).catch(() => null)
 
-    return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber, packetNumber: order.packet.packetNumber, dispatchedAt: now } })
+    return NextResponse.json({ success: true, mode, data: { orderNumber: order.orderNumber, transport: ref, transportCode: ref.code, dispatchedAt: now } })
   } catch (e) {
     console.error("[laundry-order-dispatch] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
