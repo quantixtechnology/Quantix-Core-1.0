@@ -18,7 +18,10 @@ interface GoogleAddressPickerProps {
   onClose: () => void
 }
 
-const DEFAULT_CENTER = { lat: 19.076, lng: 72.8777 }
+// Bengaluru fallback. The picker must NEVER center on a hardcoded out-of-region
+// city (e.g. Mumbai): it only lands here when there is no customer address, no
+// browser position and no resolvable business store location.
+const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }
 const LABELS = ["Home", "Office", "Other"]
 
 /**
@@ -45,6 +48,56 @@ export function GoogleAddressPicker({
   // search performed while the map is still loading is never lost (fixes the
   // "searched Hegde Nagar but the marker stayed in Mumbai" bug).
   const pendingCoordsRef = useRef<{ lat: number | null; lng: number | null; placeId?: string | null } | null>(null)
+
+  /**
+   * Resolve an initial map center in priority order:
+   *   1. Customer's existing address (or a pending user selection)
+   *   2. Browser geolocation, when the user consents
+   *   3. The business store location (from /store-context)
+   *   4. Bengaluru default (never Mumbai)
+   */
+  async function resolveInitialCenter(
+    init: DeliveryAddress | null,
+    pending: { lat: number | null; lng: number | null } | null,
+  ): Promise<{ lat: number; lng: number }> {
+    const fromUser = pending?.lat != null && pending?.lng != null
+      ? { lat: pending.lat, lng: pending.lng }
+      : init?.latitude != null && init?.longitude != null
+        ? { lat: init.latitude, lng: init.longitude }
+        : null
+    if (fromUser) return fromUser
+
+    // Browser geolocation is a best-effort hint; never block the map on it and
+    // never use it when the user already has a saved address.
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((ok, bad) =>
+          navigator.geolocation.getCurrentPosition(ok, bad, { timeout: 6000, enableHighAccuracy: false }),
+        )
+        return { lat: pos.coords.latitude, lng: pos.coords.longitude }
+      } catch {
+        // browser denied / timed out — try the business store next
+      }
+    }
+
+    // Fetch the active main store location for this business and await it so the
+    // map never flashes a hardcoded point before settling on the real store.
+    try {
+      if (businessId) {
+        const res = await fetch(`/api/core/storefront/store-context?businessId=${encodeURIComponent(businessId)}`)
+        if (res.ok) {
+          const json = await res.json()
+          const store = json?.data?.store ?? json?.store
+          if (store && typeof store.latitude === "number" && typeof store.longitude === "number") {
+            return { lat: store.latitude, lng: store.longitude }
+          }
+        }
+      }
+    } catch {
+      // ignore — fall through to default
+    }
+    return DEFAULT_CENTER
+  }
 
   const [mapsReady, setMapsReady] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
@@ -123,11 +176,15 @@ export function GoogleAddressPicker({
         if (!mounted || !mapRef.current) return
         const init = initialRef.current
         const pending = pendingCoordsRef.current
-        // Prefer the last user selection over the initial address so the marker
-        // never reverts to a stale default.
-        const startLat = pending?.lat ?? init?.latitude ?? DEFAULT_CENTER.lat
-        const startLng = pending?.lng ?? init?.longitude ?? DEFAULT_CENTER.lng
-        const center = { lat: startLat, lng: startLng }
+        // Resolve default center asynchronously (browser location / store /
+        // Bengaluru) but never block the map bootstrap on it — if the resolve
+        // finishes later the map is re-centered by setCenter below.
+        const guessed = pending?.lat != null && pending?.lng != null
+          ? { lat: pending.lat, lng: pending.lng }
+          : init?.latitude != null && init?.longitude != null
+            ? { lat: init.latitude, lng: init.longitude }
+            : DEFAULT_CENTER
+        const center = { lat: guessed.lat, lng: guessed.lng }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const map = new google.maps.Map(mapRef.current as HTMLElement, {
@@ -162,6 +219,28 @@ export function GoogleAddressPicker({
         })
 
         setMapsReady(true)
+
+        // Async best-effort re-center: when the picker opened with no saved
+        // address we guessed a default so the map booted immediately. Resolve the
+        // "true" initial center now and move the map + marker if it differs, so
+        // we never sit on a hardcoded out-of-region point for long.
+        if (pending?.lat == null && init?.latitude == null) {
+          void resolveInitialCenter(init, pending)
+            .then((resolved) => {
+              if (!mounted) return
+              const isDefault =
+                Math.abs(resolved.lat - DEFAULT_CENTER.lat) < 1e-9 &&
+                Math.abs(resolved.lng - DEFAULT_CENTER.lng) < 1e-9
+              const isGuess =
+                Math.abs(resolved.lat - guessed.lat) < 1e-9 &&
+                Math.abs(resolved.lng - guessed.lng) < 1e-9
+              if (isDefault || isGuess) return
+              mapInstance.current?.setCenter(resolved)
+              markerInstance.current?.setPosition(resolved)
+              syncLocation(google, resolved.lat, resolved.lng)
+            })
+            .catch(() => {})
+        }
       })
       .catch(() => {
         if (mounted) setError("Could not load the map. Please try again.")
