@@ -132,6 +132,8 @@ export async function POST(request: Request) {
           distance: (nearestLocation as { distanceKm?: number | null }).distanceKm ?? null,
           distanceKm: (nearestLocation as { distanceKm?: number | null }).distanceKm ?? null,
           serviceable: (nearestLocation as { serviceable?: boolean }).serviceable ?? null,
+          statusOverride: nearestLocation.statusOverride ?? null,
+          businessHoursOverride: nearestLocation.businessHoursOverride ?? null,
         }
       : null
 

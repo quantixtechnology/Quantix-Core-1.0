@@ -229,6 +229,7 @@ export async function GET(request: Request) {
               preparationTime: resolvedStore.preparationTime,
               isMainStore: resolvedStore.isMainStore,
               status: resolvedStore.status,
+              statusOverride: resolvedStore.statusOverride,
               closedReason: resolvedStore.closedReason,
               closedUntil: resolvedStore.closedUntil ? resolvedStore.closedUntil.toISOString() : null,
               operatingHours: JSON.parse(resolvedStore.operatingHours || '{}'),

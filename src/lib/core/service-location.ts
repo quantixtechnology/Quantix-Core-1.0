@@ -76,6 +76,10 @@ export interface ServiceLocation {
   freeDeliveryAbove?: number | null
   minOrderAmount?: number | null
   preparationTime?: number | null
+  /** Open/closed override: "AUTOMATIC" | "FORCE_OPEN" | "FORCE_CLOSED". */
+  statusOverride?: "AUTOMATIC" | "FORCE_OPEN" | "FORCE_CLOSED" | null
+  /** Per-location weekly schedule override: { day, openTime, closeTime, isClosed }[]. */
+  businessHoursOverride?: string | null
 }
 
 /** Business rules applied by the engine — all optional, workspace-agnostic. */

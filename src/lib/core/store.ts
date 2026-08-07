@@ -495,6 +495,97 @@ export async function updateStoreTimings(
 }
 
 // ============================================================================
+// STANDARD / DEFAULT STORE SCHEDULE
+// A single reusable weekly schedule stored at the Business level (inside the
+// Business.settings JSON under `standardStoreSchedule`). It is the baseline for
+// every store/branch in the business; individual stores may override it with
+// their own StoreTiming rows.
+// ============================================================================
+
+export interface StandardStoreSchedule {
+  timings: { day: number; openTime: string; closeTime: string; isClosed: boolean }[];
+  updatedAt?: string | null;
+}
+
+const STANDARD_SCHEDULE_KEY = 'standardStoreSchedule';
+
+function readScheduleSettings(settings: string | null): Record<string, unknown> {
+  try {
+    return JSON.parse(settings || '{}') as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Read the business-wide standard schedule from Business.settings JSON.
+ * Falls back to the built-in default (9am–9pm) when none is configured.
+ */
+export async function getStandardStoreSchedule(businessId: string): Promise<StandardStoreSchedule> {
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    select: { settings: true },
+  });
+  const parsed = readScheduleSettings(business?.settings ?? null);
+  const stored = (parsed[STANDARD_SCHEDULE_KEY] as StandardStoreSchedule | undefined) ?? null;
+
+  if (stored && Array.isArray(stored.timings) && stored.timings.length > 0) {
+    return stored;
+  }
+
+  const fallback = getDefaultStoreTimings().map((t) => ({
+    day: t.day, openTime: t.openTime, closeTime: t.closeTime, isClosed: t.isClosed,
+  }));
+  return { timings: fallback, updatedAt: null };
+}
+
+/**
+ * Persist the standard weekly schedule to Business.settings JSON, preserving all
+ * other settings keys.
+ */
+export async function setStandardStoreSchedule(
+  businessId: string,
+  timings: { day: number; openTime: string; closeTime: string; isClosed: boolean }[],
+): Promise<StandardStoreSchedule> {
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    select: { settings: true },
+  });
+  const parsed = readScheduleSettings(business?.settings ?? null);
+  const next: StandardStoreSchedule = {
+    timings: timings.map((t) => ({
+      day: t.day, openTime: t.openTime, closeTime: t.closeTime,
+      isClosed: t.isClosed ?? false,
+    })),
+    updatedAt: new Date().toISOString(),
+  };
+  parsed[STANDARD_SCHEDULE_KEY] = next;
+
+  await db.business.update({
+    where: { id: businessId },
+    data: { settings: JSON.stringify(parsed) },
+  });
+  return next;
+}
+
+/**
+ * Apply the business standard schedule to a store's StoreTiming rows (their
+ * baseline). Stores keep their own rows afterwards — this overwrites them to the
+ * standard values so "standard = default for all stores" holds.
+ */
+export async function applyStandardScheduleToStore(
+  businessId: string,
+  storeId: string,
+): Promise<StoreTimingInput[]> {
+  const std = await getStandardStoreSchedule(businessId);
+  const upsertTimings: StoreTimingInput[] = std.timings.map((t) => ({
+    day: t.day, openTime: t.openTime, closeTime: t.closeTime, isClosed: t.isClosed ?? false,
+  }));
+  await updateStoreTimings(storeId, upsertTimings);
+  return upsertTimings;
+}
+
+// ============================================================================
 // STORE OPEN/CLOSE ENFORCEMENT
 // ============================================================================
 
@@ -629,6 +720,8 @@ export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> 
     select: {
       id: true,
       status: true,
+      statusOverride: true,
+      overrideExpiresAt: true,
       businessId: true,
       closedReason: true,
       closedUntil: true,
@@ -638,6 +731,18 @@ export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> 
 
   if (!store) {
     return { isOpen: false, reason: 'Store not found' };
+  }
+
+  // Administrator override — takes precedence over every automatic check.
+  // FORCE_OPEN ignores offline/timings/closure; FORCE_CLOSED closes regardless.
+  // The override auto-expires once `overrideExpiresAt` passes (falls back to
+  // automatic evaluation and clears the stale override).
+  const override = resolveStatusOverride(store.statusOverride, store.overrideExpiresAt);
+  if (override === 'FORCE_OPEN') {
+    return { isOpen: true };
+  }
+  if (override === 'FORCE_CLOSED') {
+    return { isOpen: false, reason: 'Store is temporarily closed by the operator' };
   }
 
   if (store.status !== 'ACTIVE') {
@@ -731,4 +836,27 @@ function _findNextOpenDay(
     }
   }
   return undefined;
+}
+
+// ============================================================================
+// STATUS OVERRIDE RESOLUTION (single source of truth for FORCE_OPEN/CLOSED)
+// ============================================================================
+
+export type StatusOverrideType = 'AUTOMATIC' | 'FORCE_OPEN' | 'FORCE_CLOSED';
+
+/**
+ * Resolve the effective override for a store/branch, honoring auto-expiry.
+ * If `overrideExpiresAt` is set and now past, the override is treated as
+ * AUTOMATIC (expired). Callers remain free to clear the stale column.
+ */
+export function resolveStatusOverride(
+  statusOverride: StatusOverrideType | string | null | undefined,
+  overrideExpiresAt?: Date | string | null,
+): StatusOverrideType {
+  if (statusOverride !== 'FORCE_OPEN' && statusOverride !== 'FORCE_CLOSED') return 'AUTOMATIC';
+  if (overrideExpiresAt) {
+    const exp = new Date(overrideExpiresAt);
+    if (!isNaN(exp.getTime()) && exp.getTime() <= Date.now()) return 'AUTOMATIC';
+  }
+  return statusOverride;
 }

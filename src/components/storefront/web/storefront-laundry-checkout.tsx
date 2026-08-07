@@ -140,7 +140,8 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
   // working hours, so we refetch whenever the pickup date changes.
   useEffect(() => {
     if (!currentBusinessId) return
-    const q = pickupDate ? `&date=${encodeURIComponent(pickupDate)}` : ""
+    const store = assignedStore?.kind === "laundryStore" ? assignedStore.id : null
+    const q = `${pickupDate ? `&date=${encodeURIComponent(pickupDate)}` : ""}${store ? `&storeId=${encodeURIComponent(store)}` : ""}`
     fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(currentBusinessId)}${q}`).then((r) => r.json())
       .then((j) => {
         if (j.success && j.dateAvailable === false) {
@@ -154,7 +155,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
         if (!slots.includes(pickupSlot)) setPickupSlot("")
       })
       .catch(() => { /* keep fallback */ })
-  }, [currentBusinessId, pickupDate])
+  }, [currentBusinessId, pickupDate, assignedStore?.kind, assignedStore?.id])
   const [paymentMethod, setPaymentMethod] = useState("COD")
   const [payMethods, setPayMethods] = useState<{ cod: boolean; online: { gateway: string; keyId: string; environment: string } | null }>({ cod: true, online: null })
   // Which payment options this business offers (COD switch + active online gateway).

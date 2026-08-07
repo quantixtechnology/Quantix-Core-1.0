@@ -783,6 +783,8 @@ model Store {
   phone                String?
   email                String?
   status               StoreStatus           @default(ACTIVE)
+  statusOverride       StoreStatusOverride   @default(AUTOMATIC)
+  overrideExpiresAt    DateTime?
   closedReason         String?
   closedUntil          DateTime?
   isMainStore          Boolean               @default(false)
@@ -2837,6 +2839,12 @@ enum StoreStatus {
   MAINTENANCE
 }
 
+enum StoreStatusOverride {
+  AUTOMATIC
+  FORCE_OPEN
+  FORCE_CLOSED
+}
+
 enum AuthProvider {
   EMAIL_OTP
   WHATSAPP_OTP
@@ -4452,6 +4460,9 @@ model LaundryStore {
   serviceRadiusKm   Float?
   dailyCapacityKg   Float?
   isActive          Boolean  @default(true)
+  statusOverride    StoreStatusOverride @default(AUTOMATIC)
+  overrideExpiresAt DateTime?
+  businessHoursOverride String @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

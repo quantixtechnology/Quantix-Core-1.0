@@ -25,6 +25,7 @@ import {
   slotsWithinWorkingHours,
   formatTimeLabel,
   formatReopenAt,
+  resolveStatusOverride,
   DAY_NAMES_SHORT,
 } from "@/lib/core/store"
 import type { StoreDayTiming, StoreOpenResult } from "@/lib/core/store"
@@ -127,8 +128,98 @@ export async function getLaundryAvailability(
   }
 }
 
+// ============================================================================
+// PER-BRANCH SCHEDULE + OVERRIDE (LaundryStore)
+// Each LaundryStore branch carries its own optional weekly schedule
+// (`businessHoursOverride` JSON) and an open/closed override
+// (`statusOverride`). These drive the storefront once an order is assigned to
+// a branch, while the business's standard schedule remains the global default.
+// A 7-day override shape: { day, openTime, closeTime, isClosed }[].
+// ============================================================================
+
+export interface BranchOverride {
+  type: "override" | "automatic"
+  isForceClosed?: boolean
+  isForceOpen?: boolean
+}
+
+/** Parse a LaundryStore.businessHoursOverride JSON string into timing rows. */
+export function parseBranchHoursOverride(raw: string | null | undefined): StoreDayTiming[] {
+  try {
+    const parsed = JSON.parse(raw || "{}")
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((t: { day?: number }) => typeof t.day === "number")
+        .map((t: { day: number; openTime?: string; closeTime?: string; isClosed?: boolean }) => ({
+          day: t.day,
+          openTime: t.openTime || "09:00",
+          closeTime: t.closeTime || "21:00",
+          isClosed: !!t.isClosed,
+        }))
+    }
+    if (parsed && Array.isArray(parsed.timings)) {
+      return parsed.timings
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+/** Serialize timings back to the LaundryStore.businessHoursOverride JSON shape. */
+export function serializeBranchHoursOverride(timings: StoreDayTiming[]): string {
+  return JSON.stringify(timings.map((t) => ({ day: t.day, openTime: t.openTime, closeTime: t.closeTime, isClosed: t.isClosed })))
+}
+
+/** Resolve the effective schedule for a branch: override rows if set, else the platform store's timings. */
+export async function resolveBranchSchedule(
+  laundryStoreId: string,
+  timings: StoreDayTiming[],
+): Promise<StoreDayTiming[]> {
+  if (!laundryStoreId) return timings
+  const ls = await prisma.laundryStore.findUnique({
+    where: { id: laundryStoreId },
+    select: { businessHoursOverride: true },
+  })
+  if (!ls) return timings
+  const override = parseBranchHoursOverride(ls.businessHoursOverride)
+  return override.length > 0 ? override : timings
+}
+
+/** Whether a branch is currently accepting orders, honoring its own override first. */
+export async function checkBranchOpen(
+  laundryStoreId: string,
+  fallback: StoreOpenResult,
+): Promise<StoreOpenResult> {
+  if (!laundryStoreId) return fallback
+  const ls = await prisma.laundryStore.findUnique({
+    where: { id: laundryStoreId },
+    select: { statusOverride: true, overrideExpiresAt: true, businessHoursOverride: true },
+  })
+  if (!ls) return fallback
+  // Single engine — use the same expiry-aware override resolver as platform stores.
+  const overrideApplied = resolveStatusOverride(ls.statusOverride, ls.overrideExpiresAt)
+  if (overrideApplied === "FORCE_OPEN") return { isOpen: true }
+  if (overrideApplied === "FORCE_CLOSED") return { isOpen: false, reason: "Store is temporarily closed by the operator" }
+  if (fallback.isOpen) return fallback
+
+  const branchHours = parseBranchHoursOverride(ls.businessHoursOverride)
+  if (branchHours.length === 0) return fallback
+
+  const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+  const day = ist.getUTCDay()
+  const nowMin = ist.getUTCHours() * 60 + ist.getUTCMinutes()
+  const row = branchHours.find((t) => t.day === day)
+  if (!row || row.isClosed) return { isOpen: false, reason: "Store is closed today" }
+  const openMin = Number(row.openTime.slice(0, 2)) * 60 + Number(row.openTime.slice(3, 5))
+  const closeMin = Number(row.closeTime.slice(0, 2)) * 60 + Number(row.closeTime.slice(3, 5))
+  if (nowMin < openMin) return { isOpen: false, reason: `Store is not open yet. Opens at ${row.openTime}`, opensAt: row.openTime }
+  if (nowMin >= closeMin) return { isOpen: false, reason: "Store is closed" }
+  return { isOpen: true }
+}
+
 // Is a specific pickup/delivery date bookable? Respects weekly off-days
-// (StoreTiming), holidays/temporary closures (closedUntil) — never a past date.
+// (StoreTiming) holidays/temporary closures (closedUntil) — never a past date.
 export function isLaundryDateAvailable(
   timings: StoreDayTiming[],
   dateISO: string | null | undefined,

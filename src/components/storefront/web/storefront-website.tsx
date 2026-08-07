@@ -102,10 +102,20 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
     const json = await res.json()
     if (!json.success) return { isOnline: false, isOpen: false, message: "Store unavailable", opensAt: null, closedReason: null, closedUntil: null, businessHours: null }
 
-    const biz   = json.data?.business ?? {}
+    const biz = json.data?.business ?? {}
     const store = json.data?.store ?? {}
 
     const isOnline = biz.isOnline !== false
+
+    // Administrator override (FORCE_OPEN / FORCE_CLOSED — testing control set by
+    // the business owner / super admin). Takes precedence over every automatic check.
+    const statusOverride = store.statusOverride || "AUTOMATIC"
+    if (statusOverride === "FORCE_OPEN") {
+      return { isOnline: true, isOpen: true, message: "Store is open (operator override)", opensAt: null, closedReason: null, closedUntil: null, businessHours: store.businessHours || null }
+    }
+    if (statusOverride === "FORCE_CLOSED") {
+      return { isOnline: true, isOpen: false, message: "Store is closed by the operator (testing)", opensAt: null, closedReason: null, closedUntil: null, businessHours: store.businessHours || null }
+    }
 
     // Client-side hours check (mirrors backend logic)
     let isOpen = isOnline

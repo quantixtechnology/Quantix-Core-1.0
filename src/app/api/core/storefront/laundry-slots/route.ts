@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { generateSlots, slotConfigsFrom, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { deliveryMaxPerSlot, deliverySlotCapacity } from "@/lib/laundry-slot-capacity"
-import { getLaundryAvailability, isLaundryDateAvailable, laundrySlotsForDate } from "@/lib/laundry-availability"
+import { getLaundryAvailability, isLaundryDateAvailable, laundrySlotsForDate, resolveBranchSchedule } from "@/lib/laundry-availability"
 
 export const runtime = "nodejs"
 
@@ -20,6 +20,7 @@ export async function GET(request: Request) {
   try {
     const u = new URL(request.url)
     const businessId = u.searchParams.get("businessId")
+    const storeId = u.searchParams.get("storeId")
     const deliveryDate = u.searchParams.get("deliveryDate")
     const date = u.searchParams.get("date")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
@@ -27,11 +28,12 @@ export async function GET(request: Request) {
     if (!biz) return NextResponse.json({ error: "Not found" }, { status: 404 })
     const [cfg, availability] = await Promise.all([
       prisma.laundryOperationalConfig.findUnique({ where: { businessId: biz.id } }),
-      getLaundryAvailability(biz.id),
+      getLaundryAvailability(biz.id, storeId),
     ])
+    const branchTiming = storeId ? await resolveBranchSchedule(storeId, availability.timings) : availability.timings
     const { pickup, delivery } = slotConfigsFrom(cfg)
-    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), availability.timings, date, availability.closedUntil) : generateSlots(pickup)
-    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), availability.timings, date, availability.closedUntil) : generateSlots(delivery)
+    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), branchTiming, date, availability.closedUntil) : generateSlots(pickup)
+    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), branchTiming, date, availability.closedUntil) : generateSlots(delivery)
     const data: {
       pickup: Record<string, unknown>
       delivery: Record<string, unknown>
@@ -44,7 +46,7 @@ export async function GET(request: Request) {
       data.delivery.fullSlots = capacity.full
       data.delivery.usage = capacity.usage
     }
-    const dateAvailability = date ? isLaundryDateAvailable(availability.timings, date, availability.closedUntil) : null
+    const dateAvailability = date ? isLaundryDateAvailable(branchTiming, date, availability.closedUntil) : null
     return NextResponse.json({
       success: true,
       data,

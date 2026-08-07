@@ -51,6 +51,8 @@ export async function loadServiceLocations(businessId: string): Promise<ServiceL
       city: s.city,
       state: s.state,
       pincode: s.pincode,
+      statusOverride: s.statusOverride ?? null,
+      businessHoursOverride: s.businessHoursOverride ?? null,
     }))
   }
 
