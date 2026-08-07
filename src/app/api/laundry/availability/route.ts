@@ -34,15 +34,16 @@ const HHMM = (v: unknown, fallback: string): string => {
   return /^\d{1,2}:\d{2}$/.test(s) ? s.padStart(5, "0") : fallback
 }
 
-type TimingRow = { day: number; openTime: string; closeTime: string; isClosed: boolean }
-function cleanTimings(list: unknown): TimingRow[] {
+type TimingRow = { day: number; openTime?: string; closeTime?: string; open?: string; close?: string; isClosed?: boolean }
+type CleanedTiming = { day: number; openTime: string; closeTime: string; isClosed: boolean }
+function cleanTimings(list: unknown): CleanedTiming[] {
   if (!Array.isArray(list)) return []
   return list
     .filter((t) => typeof (t as TimingRow)?.day === "number" && (t as TimingRow).day >= 0 && (t as TimingRow).day <= 6)
-    .map((t) => ({
+    .map((t): CleanedTiming => ({
       day: (t as TimingRow).day,
-      openTime: HHMM((t as TimingRow).openTime, "09:00"),
-      closeTime: HHMM((t as TimingRow).closeTime, "21:00"),
+      openTime: HHMM((t as TimingRow).openTime ?? (t as TimingRow).open, "09:00"),
+      closeTime: HHMM((t as TimingRow).closeTime ?? (t as TimingRow).close, "21:00"),
       isClosed: !!((t as TimingRow).isClosed),
     }))
 }
