@@ -28,6 +28,9 @@ export function LaundryAuditBarcodePage() {
   const [loading, setLoading] = useState(true)
   const [historyId, setHistoryId] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryOrder[]>([])
+  // A failed request used to fall through to "No barcoded orders found", which
+  // reads as an empty result and hides the real reason (e.g. a 403).
+  const [histError, setHistError] = useState<string | null>(null)
   const [histLoading, setHistLoading] = useState(false)
   const [search, setSearch] = useState("")
 
@@ -50,9 +53,19 @@ export function LaundryAuditBarcodePage() {
       // search remains the way to reach anything beyond the window.
       const p = new URLSearchParams({ businessId: currentBusinessId, barcoded: "1", limit: "100" })
       if (search.trim()) p.set("search", search.trim())
-      const j = await fetch(`/api/laundry/orders?${p}`).then((r) => r.json())
+      const res = await fetch(`/api/laundry/orders?${p}`)
+      const j = await res.json()
+      if (!res.ok || !j.success) {
+        setHistory([])
+        setHistError(j.error || `Could not load history (${res.status})`)
+        return
+      }
+      setHistError(null)
       setHistory(j.data || [])
-    } catch { /* noop */ } finally { setHistLoading(false) }
+    } catch (e) {
+      setHistory([])
+      setHistError(e instanceof Error ? e.message : "Could not load history")
+    } finally { setHistLoading(false) }
   }, [currentBusinessId, search])
   useEffect(() => { if (tab === "history") loadHistory() }, [tab, loadHistory])
 
@@ -111,7 +124,9 @@ export function LaundryAuditBarcodePage() {
           </CardHeader>
           <CardContent className="p-0">
             {histLoading ? <div className="py-10 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : history.length === 0 ? (
-              <p className="py-10 text-center text-sm text-slate-400">No barcoded orders found.</p>
+              histError
+                ? <p className="py-10 text-center text-sm text-rose-600">{histError}</p>
+                : <p className="py-10 text-center text-sm text-slate-400">No barcoded orders found.</p>
             ) : (
               <Table>
                 <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead>Store</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>

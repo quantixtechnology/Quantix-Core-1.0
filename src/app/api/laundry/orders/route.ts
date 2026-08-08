@@ -192,7 +192,17 @@ export async function GET(request: Request) {
     if (!businessId) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
-    const guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    // The stage-completion feeds belong to the screen that asks for them, not to
+    // the Orders module. Barcode Generation → History (barcoded=1) is a
+    // Processing Center screen, and Processing Staff hold
+    // `processing.audit_barcode` WITHOUT `laundry.orders` — so gating this feed
+    // on the Orders permission alone returned 403 and the tab rendered empty.
+    // Fall back to the owning screen's permission; every other orders query
+    // keeps the Orders gate exactly as before.
+    let guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    if (!guard.ok && barcoded === "1") {
+      guard = await requireLaundryPermission(request, businessId, "processing.audit_barcode.view")
+    }
     if (!guard.ok) return guard.res
 
     const resolved = await resolveLaundryBusiness(businessId)
