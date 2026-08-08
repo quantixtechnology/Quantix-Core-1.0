@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import {
   requireCrmBusiness, crmEvent, buildLeadValues, promoteSystemFields, CrmValidationError,
+  recordLeadStatusChange, normalizeChangeSource, movementLabel,
 } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
@@ -22,6 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       include: {
         status: true, source: true, priority: true,
         opportunity: { include: { stage: true, lostReason: true } },
+        statusHistory: { orderBy: { createdAt: "desc" }, take: 100 },
         activities: { orderBy: { activityAt: "desc" }, take: 100 },
         tasks: { orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 100, include: { taskType: true } },
         events: { orderBy: { createdAt: "desc" }, take: 200 },
@@ -39,9 +41,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const guard = await requireLaundryPermission(request, body.businessId, "crm.leads.edit")
     if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
-    const lead = await prisma.laundryCrmLead.findFirst({ where: { id, businessId: biz.id } })
+    const lead = await prisma.laundryCrmLead.findFirst({ where: { id, businessId: biz.id }, include: { status: true } })
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 })
     const actor = { id: body.actorId, name: body.actorName }
+    const source = normalizeChangeSource(body.source)
 
     const data: Record<string, unknown> = {}
     const events: { kind: string; label: string; meta?: unknown }[] = []
@@ -61,11 +64,23 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       events.push({ kind: "LEAD_UPDATED", label: "Lead details updated" })
     }
 
+    // Lead status change — audited with the SAME mechanism as opportunity
+    // stages: an append-only row capturing both ends, who, when and from where.
+    let statusAudit: { from: { id: string | null; name: string | null }; to: { id: string; name: string } } | null = null
     if (body.statusId && body.statusId !== lead.statusId) {
       const st = await prisma.laundryCrmLeadStatus.findFirst({ where: { id: body.statusId, businessId: biz.id, active: true } })
       if (!st) return NextResponse.json({ error: "Invalid lead status" }, { status: 400 })
       data.statusId = st.id
-      events.push({ kind: "STATUS_CHANGED", label: `Status changed to ${st.name}`, meta: { from: lead.statusId, to: st.id } })
+      statusAudit = {
+        from: { id: lead.statusId, name: lead.status?.name || null },
+        to: { id: st.id, name: st.name },
+      }
+      // Timeline names BOTH ends — never just the destination.
+      events.push({
+        kind: "STATUS_CHANGED",
+        label: movementLabel("Lead", lead.status?.name, st.name),
+        meta: { from: lead.status?.name, to: st.name, source },
+      })
     }
 
     if ("sourceId" in body && body.sourceId !== lead.sourceId) {
@@ -99,8 +114,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     if (!Object.keys(data).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
-    const updated = await prisma.laundryCrmLead.update({
-      where: { id }, data, include: { status: true, source: true, priority: true },
+    // The status change and its audit row commit together — a lead can never
+    // change status without a permanent entry.
+    const updated = await prisma.$transaction(async (tx) => {
+      if (statusAudit) {
+        await recordLeadStatusChange({
+          businessId: biz.id, leadId: id,
+          fromStatusId: statusAudit.from.id, fromStatusName: statusAudit.from.name,
+          toStatusId: statusAudit.to.id, toStatusName: statusAudit.to.name,
+          reason: body.reason ? String(body.reason) : null,
+          comments: body.comments ? String(body.comments) : null,
+          source, actor,
+        }, tx)
+      }
+      return tx.laundryCrmLead.update({
+        where: { id }, data, include: { status: true, source: true, priority: true },
+      })
     })
     for (const ev of events) await crmEvent(biz.id, ev.kind, ev.label, { leadId: id, meta: ev.meta, actor })
     return NextResponse.json({ success: true, data: updated })

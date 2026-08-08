@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Loader2, ChevronLeft, Pencil, ArrowRightCircle, Phone, Mail, User,
-  Clock, CheckCircle2, Circle, Plus,
+  Clock, CheckCircle2, Circle, Plus, ArrowDown,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -59,7 +59,7 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
   const changeStatus = async (statusId: string) => {
     const res = await fetch(`/api/laundry/crm/leads/${leadId}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessId, statusId, ...actor }),
+      body: JSON.stringify({ businessId, statusId, source: "DETAIL", ...actor }),
     })
     const j = await res.json()
     if (!res.ok || !j.success) return toast.error(j.error || "Update failed")
@@ -172,8 +172,33 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
           </Card>
         </div>
 
-        {/* Right: tasks + activities summary */}
+        {/* Right: status history + tasks + activities summary */}
         <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Status History</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {(lead.statusHistory?.length ?? 0) === 0 && <p className="text-xs text-slate-400">No status changes yet.</p>}
+              {/* Append-only: past entries are never rewritten, and the status
+                  names are snapshots from the moment of the change. */}
+              {(lead.statusHistory || []).map((h) => (
+                <div key={h.id} className="rounded-lg border p-2.5 space-y-1">
+                  <div className="flex items-center gap-1.5 text-sm text-slate-700 flex-wrap">
+                    <span className="text-slate-500">{h.fromStatusName || "None"}</span>
+                    <ArrowDown className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span className="font-medium">{h.toStatusName}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">{fmtDateTime(h.createdAt)}</p>
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
+                    {h.changedByName && <span>Changed by <span className="font-medium text-slate-600">{h.changedByName}</span></span>}
+                    {h.source && <Badge variant="outline" className="h-4 px-1 text-[10px] text-slate-400 border-slate-200">{h.source}</Badge>}
+                  </div>
+                  {(h.reason || h.comments) && (
+                    <p className="text-[11px] text-slate-500">{[h.reason, h.comments].filter(Boolean).join(" · ")}</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-sm">Tasks</CardTitle>

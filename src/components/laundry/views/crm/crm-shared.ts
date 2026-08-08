@@ -43,6 +43,12 @@ export interface CrmLead {
   converted: boolean; convertedAt: string | null; archived: boolean
   createdByName: string | null; createdAt: string; updatedAt: string
   opportunity?: { id: string; oppCode: string; state: string } | null
+  // Append-only status audit — same mechanism as opportunity stage history.
+  statusHistory?: {
+    id: string; fromStatusName: string | null; toStatusName: string
+    changedByName: string | null; createdAt: string
+    reason: string | null; comments: string | null; source: string | null
+  }[]
 }
 
 export interface CrmOpportunity {

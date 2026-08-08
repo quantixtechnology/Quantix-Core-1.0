@@ -78,6 +78,112 @@ export async function crmEvent(businessId: string, kind: string, label: string, 
   })
 }
 
+// ─── Stage / status audit trail ─────────────────────────────────────────────
+// Every opportunity stage move and every lead status change writes ONE
+// append-only audit row. Rows are never updated or deleted, so a movement stays
+// visible forever even if the stage is later renamed, retuned or deactivated —
+// names and probability are snapshotted at the moment of the change.
+//
+// Both recorders live here so the two entities share one mechanism rather than
+// two lookalike implementations that drift apart.
+
+/** Where a change was triggered from. Recorded on every audit row. */
+export const CHANGE_SOURCES = ["GRID", "DETAIL", "KANBAN", "API", "AUTOMATION"] as const
+export type ChangeSource = (typeof CHANGE_SOURCES)[number]
+
+export function normalizeChangeSource(v: unknown): ChangeSource {
+  const s = String(v || "").toUpperCase()
+  return (CHANGE_SOURCES as readonly string[]).includes(s) ? (s as ChangeSource) : "API"
+}
+
+/** Milliseconds spent in the previous stage/status — null when there was none. */
+export function durationSince(since: Date | string | null | undefined, now: Date): number | null {
+  if (!since) return null
+  const t = new Date(since).getTime()
+  return Number.isFinite(t) ? now.getTime() - t : null
+}
+
+export interface StageAuditInput {
+  businessId: string
+  opportunityId: string
+  fromStageId: string | null
+  fromStageName: string | null
+  toStageId: string
+  toStageName: string
+  durationMs: number | null
+  probability: number | null
+  reason?: string | null
+  comments?: string | null
+  source: ChangeSource
+  actor?: CrmActor
+}
+
+/**
+ * Record an opportunity stage movement. Takes an optional transaction client so
+ * the audit row is written atomically with the stage change itself — an
+ * opportunity can never move without its audit entry.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function recordStageChange(input: StageAuditInput, tx: any = prisma) {
+  return tx.laundryCrmStageHistory.create({
+    data: {
+      businessId: input.businessId,
+      opportunityId: input.opportunityId,
+      fromStageId: input.fromStageId,
+      fromStageName: input.fromStageName,
+      toStageId: input.toStageId,
+      toStageName: input.toStageName,
+      durationMs: input.durationMs,
+      probability: input.probability,
+      reason: input.reason || null,
+      comments: input.comments || null,
+      source: input.source,
+      changedById: input.actor?.id || null,
+      changedByName: input.actor?.name || null,
+    },
+  })
+}
+
+export interface LeadStatusAuditInput {
+  businessId: string
+  leadId: string
+  fromStatusId: string | null
+  fromStatusName: string | null
+  toStatusId: string
+  toStatusName: string
+  durationMs?: number | null
+  reason?: string | null
+  comments?: string | null
+  source: ChangeSource
+  actor?: CrmActor
+}
+
+/** The same mechanism for leads — one append-only row per status change. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function recordLeadStatusChange(input: LeadStatusAuditInput, tx: any = prisma) {
+  return tx.laundryCrmLeadStatusHistory.create({
+    data: {
+      businessId: input.businessId,
+      leadId: input.leadId,
+      fromStatusId: input.fromStatusId,
+      fromStatusName: input.fromStatusName,
+      toStatusId: input.toStatusId,
+      toStatusName: input.toStatusName,
+      durationMs: input.durationMs ?? null,
+      reason: input.reason || null,
+      comments: input.comments || null,
+      source: input.source,
+      changedById: input.actor?.id || null,
+      changedByName: input.actor?.name || null,
+    },
+  })
+}
+
+/** Timeline label that always names BOTH ends of a move, never the destination alone. */
+export function movementLabel(noun: string, from: string | null | undefined, to: string): string {
+  return `${noun} moved: ${from || "None"} → ${to}`
+}
+
 // ─── Opportunity ownership ──────────────────────────────────────────────────
 // PHASE 1: there is exactly ONE owner concept. The Lead Owner owns the deal;
 // an Opportunity inherits it at conversion and has no separately editable

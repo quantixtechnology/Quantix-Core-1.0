@@ -5583,10 +5583,11 @@ model LaundryCrmLead {
   status      LaundryCrmLeadStatus?  @relation(fields: [statusId], references: [id], onDelete: SetNull)
   source      LaundryCrmLeadSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   priority    LaundryCrmPriority?    @relation(fields: [priorityId], references: [id], onDelete: SetNull)
-  opportunity LaundryCrmOpportunity?
-  activities  LaundryCrmActivity[]
-  tasks       LaundryCrmTask[]
-  events      LaundryCrmEvent[]
+  opportunity   LaundryCrmOpportunity?
+  activities    LaundryCrmActivity[]
+  tasks         LaundryCrmTask[]
+  events        LaundryCrmEvent[]
+  statusHistory LaundryCrmLeadStatusHistory[]
 
   @@index([businessId])
   @@index([businessId, statusId])
@@ -5648,6 +5649,9 @@ model LaundryCrmOpportunity {
   @@index([businessId, createdAt])
 }
 
+// Permanent, append-only audit of every opportunity stage movement. Nothing
+// bypasses it: the single /opportunities/[id]/stage endpoint writes one row per
+// move, whichever surface triggered it. Rows are never updated or deleted.
 model LaundryCrmStageHistory {
   id            String   @id @default(cuid())
   businessId    String
@@ -5657,6 +5661,14 @@ model LaundryCrmStageHistory {
   toStageId     String
   toStageName   String
   durationMs    Float? // time spent in the previous stage
+  // Probability the opportunity carried AFTER landing on the new stage —
+  // snapshotted so history stays true even if the stage's % is later retuned.
+  probability   Int?
+  // Why it moved (e.g. the lost reason) and any free-text note from the operator.
+  reason        String?
+  comments      String?
+  // Where the change came from: GRID | DETAIL | KANBAN | API | AUTOMATION.
+  source        String?
   changedById   String?
   changedByName String?
   createdAt     DateTime @default(now())
@@ -5665,6 +5677,32 @@ model LaundryCrmStageHistory {
 
   @@index([businessId])
   @@index([opportunityId])
+  @@index([createdAt])
+}
+
+// The same audit mechanism applied to Leads. Separate table (append-only, never
+// updated) so opportunity history queries are untouched; both are written by the
+// one shared recorder in laundry-crm.ts.
+model LaundryCrmLeadStatusHistory {
+  id             String   @id @default(cuid())
+  businessId     String
+  leadId         String
+  fromStatusId   String?
+  fromStatusName String?
+  toStatusId     String
+  toStatusName   String
+  durationMs     Float? // time spent in the previous status
+  reason         String?
+  comments       String?
+  source         String? // GRID | DETAIL | KANBAN | API | AUTOMATION
+  changedById    String?
+  changedByName  String?
+  createdAt      DateTime @default(now())
+
+  lead LaundryCrmLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([leadId])
   @@index([createdAt])
 }
 

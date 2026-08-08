@@ -28,15 +28,140 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Target, Search, ChevronLeft, Trophy, XCircle, KanbanSquare,
-  List, User, CalendarDays, Plus, Pencil, Phone, Mail, Building2,
+  List, User, CalendarDays, Plus, Pencil, Phone, Mail, Building2, ArrowDown,
+  MessageSquare, Mic, Eye,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
   type CrmOpportunity, type CrmStage, type CrmActivity, type CrmTask, type CrmEventRow,
   useCrmMeta, useCrmActor, inr, fmtDate, fmtDateTime, parseValues,
 } from "./crm-shared"
+import type { ChangeSource } from "@/lib/laundry-crm"
+import {
+  type CommSettings, useCommSettings, useCommContext, telHref, openDeepLink,
+} from "./crm-comms"
+import { SendDialog, RecordingDialog } from "./crm-communication-center"
 import { Timeline } from "./crm-lead-detail"
 import { LogActivityDialog, NewTaskDialog } from "./crm-activity-task-dialogs"
+
+/** Business Name lives on the lead's dynamic fields — read through, never copied. */
+function businessNameOf(o: CrmOpportunity): string {
+  const v = parseValues(o.lead?.fieldValues || "{}")
+  return typeof v.business_name === "string" ? v.business_name : ""
+}
+
+/**
+ * Quick Actions — the grid's day-to-day toolbar. Every action reuses an existing
+ * CRM surface (Communication Center send flow, recording dialog, activity
+ * dialog); nothing here re-implements comms.
+ *
+ * PERFORMANCE: these are plain buttons. No hooks, no fetches per row — at 200
+ * rows a per-row useCommTemplates/useCommContext would fire hundreds of
+ * requests. The dialogs live ONCE at grid level and are targeted by state.
+ */
+function QuickActions({ opp, settings, onWhatsApp, onEmail, onActivity, onRecording, onView }: {
+  opp: CrmOpportunity
+  settings: CommSettings
+  onWhatsApp: () => void; onEmail: () => void
+  onActivity: () => void; onRecording: () => void; onView: () => void
+}) {
+  const phone = opp.lead?.phone || ""
+  const email = opp.lead?.email || ""
+  const btn = "h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-30 disabled:pointer-events-none"
+
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" className={btn} disabled={!settings.enableCalls || !phone}
+        title={phone ? `Call ${phone}` : "No phone number"}
+        onClick={() => openDeepLink(telHref(phone))}>
+        <Phone className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={`${btn} hover:text-green-600`} disabled={!settings.enableWhatsApp || !phone}
+        title={phone ? "WhatsApp" : "No phone number"} onClick={onWhatsApp}>
+        <MessageSquare className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={`${btn} hover:text-blue-600`} disabled={!settings.enableEmail || !email}
+        title={email || "No email address"} onClick={onEmail}>
+        <Mail className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={`${btn} hover:text-amber-600`} title="Log activity" onClick={onActivity}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={`${btn} hover:text-rose-600`} disabled={!settings.enableRecordingUpload || !opp.lead}
+        title="Call recording" onClick={onRecording}>
+        <Mic className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={`${btn} hover:text-slate-900`} title="Open opportunity" onClick={onView}>
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Wrapper that builds the placeholder context for the ONE targeted lead. Exists
+ * so `useCommContext` runs for a single selected row rather than every row.
+ */
+function GridSendDialog({ target, onClose }: {
+  target: { opp: CrmOpportunity; channel: "WHATSAPP" | "EMAIL" }; onClose: () => void
+}) {
+  const comm = useCommContext({
+    displayName: target.opp.lead?.displayName,
+    phone: target.opp.lead?.phone,
+    email: target.opp.lead?.email,
+    leadCode: target.opp.lead?.leadCode,
+  })
+  if (!target.opp.lead) return null
+  return <SendDialog channel={target.channel} comm={comm} leadId={target.opp.lead.id} onClose={onClose} />
+}
+
+/**
+ * The Stage cell IS the editor — no row open, no modal, no save button. Options
+ * come from CRM Settings; picking one calls the same stage endpoint every other
+ * surface uses. A closed (Won/Lost) opportunity is shown read-only here; it is
+ * reopened from the kanban or the detail screen.
+ */
+function InlineStageCell({ opp, stages, busy, onPick }: {
+  opp: CrmOpportunity; stages: CrmStage[]; busy: boolean; onPick: (stage: CrmStage) => void
+}) {
+  const options = useMemo(() => stages.filter((s) => s.active), [stages])
+  const current = opp.stage
+  if (opp.state !== "OPEN") {
+    return (
+      <div className="flex items-center gap-1.5">
+        {current
+          ? <Badge style={{ backgroundColor: `${current.color}18`, color: current.color }} className="text-[11px] border-0">{current.name}</Badge>
+          : <span className="text-slate-400 text-sm">—</span>}
+        <span className="text-[10px] text-slate-400">closed</span>
+      </div>
+    )
+  }
+  return (
+    <Select value={opp.stageId || ""} disabled={busy} onValueChange={(id) => {
+      const s = options.find((x) => x.id === id)
+      if (s) onPick(s)
+    }}>
+      <SelectTrigger className="h-8 text-[12px] border-slate-200 hover:border-blue-300 focus:ring-1">
+        {busy ? <span className="flex items-center gap-1.5 text-slate-400"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span> : (
+          <span className="flex items-center gap-1.5 min-w-0">
+            {current && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: current.color }} />}
+            <span className="truncate">{current?.name || "Set stage…"}</span>
+          </span>
+        )}
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+              {s.name} <span className="text-slate-400">· {s.probability}%</span>
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
 
 export function CrmOpportunities({ businessId }: { businessId: string }) {
   const meta = useCrmMeta(businessId)
@@ -46,8 +171,15 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
   const [q, setQ] = useState("")
   const [detailId, setDetailId] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
+  // Row currently saving a stage change — disables just that cell, not the grid.
+  const [movingId, setMovingId] = useState<string | null>(null)
   // Terminal-stage confirmation (Won capture / Lost reason)
-  const [terminal, setTerminal] = useState<{ opp: CrmOpportunity; stage: CrmStage } | null>(null)
+  const [terminal, setTerminal] = useState<{ opp: CrmOpportunity; stage: CrmStage; source: ChangeSource } | null>(null)
+  // Quick Actions — ONE dialog instance each, targeted by the row that opened it.
+  const { settings: commSettings } = useCommSettings(businessId)
+  const [sendTarget, setSendTarget] = useState<{ opp: CrmOpportunity; channel: "WHATSAPP" | "EMAIL" } | null>(null)
+  const [activityTarget, setActivityTarget] = useState<CrmOpportunity | null>(null)
+  const [recordingTarget, setRecordingTarget] = useState<CrmOpportunity | null>(null)
 
   const load = useCallback(async () => {
     if (!businessId) return
@@ -65,22 +197,36 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
   const wonStage = useMemo(() => meta.stages.find((s) => s.active && s.stageType === "WON"), [meta.stages])
   const lostStage = useMemo(() => meta.stages.find((s) => s.active && s.stageType === "LOST"), [meta.stages])
 
-  const moveStage = async (opp: CrmOpportunity, stage: CrmStage, extra: Record<string, unknown> = {}) => {
-    const res = await fetch(`/api/laundry/crm/opportunities/${opp.id}/stage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessId, stageId: stage.id, ...extra, ...actor }),
-    })
-    const j = await res.json()
-    if (!res.ok || !j.success) { toast.error(j.error || "Stage change failed"); return false }
-    toast.success(`Moved to ${stage.name}`)
-    load()
-    return true
+  // THE single stage call for this screen. Grid dropdown, kanban drag and the
+  // terminal dialog all funnel through here, and it hits the one server
+  // endpoint — no surface carries its own stage logic. `source` is recorded on
+  // the audit row so history shows where each move came from.
+  const moveStage = async (opp: CrmOpportunity, stage: CrmStage, source: ChangeSource, extra: Record<string, unknown> = {}) => {
+    setMovingId(opp.id)
+    try {
+      const res = await fetch(`/api/laundry/crm/opportunities/${opp.id}/stage`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, stageId: stage.id, source, ...extra, ...actor }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast.error(j.error || "Stage change failed"); return false }
+      // Optimistic patch keeps the grid responsive at volume; the background
+      // reload reconciles derived fields (state, probability, updatedAt).
+      setRows((prev) => prev.map((r) => (r.id === opp.id
+        ? { ...r, stageId: stage.id, stage, probability: j.data?.probability ?? r.probability, state: j.data?.state ?? r.state, updatedAt: j.data?.updatedAt ?? r.updatedAt }
+        : r)))
+      toast.success(`${opp.name} → ${stage.name}`)
+      load()
+      return true
+    } finally { setMovingId(null) }
   }
 
-  const requestMove = (opp: CrmOpportunity, stage: CrmStage) => {
+  const requestMove = (opp: CrmOpportunity, stage: CrmStage, source: ChangeSource) => {
     if (stage.id === opp.stageId) return
-    if (stage.stageType === "WON" || stage.stageType === "LOST") setTerminal({ opp, stage })
-    else moveStage(opp, stage)
+    // Won/Lost need their capture (final value / required lost reason) before
+    // the server will accept the move — the one place a dialog is unavoidable.
+    if (stage.stageType === "WON" || stage.stageType === "LOST") setTerminal({ opp, stage, source })
+    else moveStage(opp, stage, source)
   }
 
   if (detailId) {
@@ -147,7 +293,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                         onDrop={() => {
                           const o = rows.find((r) => r.id === dragging)
                           setDragging(null)
-                          if (o) requestMove(o, stage)
+                          if (o) requestMove(o, stage, "KANBAN")
                         }}
                         className="w-[250px] shrink-0 rounded-xl border bg-slate-50/70 flex flex-col max-h-[65vh]">
                         <div className="px-3 py-2.5 border-b bg-white rounded-t-xl">
@@ -175,7 +321,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                         onDrop={() => {
                           const o = rows.find((r) => r.id === dragging)
                           setDragging(null)
-                          if (o) requestMove(o, stage)
+                          if (o) requestMove(o, stage, "KANBAN")
                         }}
                         className={`rounded-xl border ${cls} p-3 min-h-[120px]`}>
                         <div className={`flex items-center gap-1.5 text-xs font-bold ${head}`}>
@@ -219,38 +365,51 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                     <TableRow>
                       <TableHead>Opportunity</TableHead>
                       <TableHead>Lead</TableHead>
-                      <TableHead>Stage</TableHead>
-                      {meta.priorities.length > 0 && <TableHead>Priority</TableHead>}
-                      <TableHead>Value</TableHead>
-                      <TableHead>Probability</TableHead>
-                      <TableHead>Expected Close</TableHead>
+                      <TableHead>Business Name</TableHead>
                       <TableHead>Lead Owner</TableHead>
-                      <TableHead>State</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="text-right">Prob.</TableHead>
+                      <TableHead className="w-[210px]">Stage</TableHead>
+                      {meta.priorities.length > 0 && <TableHead>Priority</TableHead>}
+                      <TableHead>Last Updated</TableHead>
+                      <TableHead>Created By</TableHead>
+                      <TableHead className="text-right">Quick Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rows.map((o) => (
+                      // The row opens the detail, but the Stage cell stops
+                      // propagation so changing stage never navigates away.
                       <TableRow key={o.id} className="cursor-pointer" onClick={() => setDetailId(o.id)}>
                         <TableCell>
                           <p className="font-medium text-slate-800">{o.name}</p>
                           <p className="text-[11px] text-slate-400">{o.oppCode}</p>
                         </TableCell>
                         <TableCell className="text-sm text-slate-600">{o.lead?.displayName || "—"}</TableCell>
-                        <TableCell>{o.stage ? <Badge style={{ backgroundColor: `${o.stage.color}18`, color: o.stage.color }} className="text-[11px] border-0">{o.stage.name}</Badge> : "—"}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{businessNameOf(o) || "—"}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{o.assignedToName || "—"}</TableCell>
+                        <TableCell className="text-right font-semibold text-slate-700">{inr(o.state === "WON" ? (o.wonValue ?? o.value) : o.value)}</TableCell>
+                        <TableCell className="text-right text-sm text-slate-600">{o.probability != null ? `${o.probability}%` : "—"}</TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <InlineStageCell opp={o} stages={meta.stages} busy={movingId === o.id} onPick={(stage) => requestMove(o, stage, "GRID")} />
+                        </TableCell>
                         {meta.priorities.length > 0 && (
                           <TableCell>{o.priority ? <Badge style={{ backgroundColor: `${o.priority.color}18`, color: o.priority.color }} className="text-[11px] border-0">{o.priority.name}</Badge> : "—"}</TableCell>
                         )}
-                        <TableCell className="font-semibold text-slate-700">{inr(o.value)}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{o.probability != null ? `${o.probability}%` : "—"}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{fmtDate(o.expectedCloseDate)}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{o.assignedToName || "—"}</TableCell>
-                        <TableCell>
-                          <Badge className={`text-[11px] border-0 ${o.state === "WON" ? "bg-green-100 text-green-700" : o.state === "LOST" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-700"}`}>{o.state}</Badge>
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap">{fmtDateTime(o.updatedAt)}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{o.createdByName || "—"}</TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <QuickActions opp={o} settings={commSettings}
+                            onWhatsApp={() => setSendTarget({ opp: o, channel: "WHATSAPP" })}
+                            onEmail={() => setSendTarget({ opp: o, channel: "EMAIL" })}
+                            onActivity={() => setActivityTarget(o)}
+                            onRecording={() => setRecordingTarget(o)}
+                            onView={() => setDetailId(o.id)} />
                         </TableCell>
                       </TableRow>
                     ))}
                     {rows.length === 0 && !loading && (
-                      <TableRow><TableCell colSpan={8} className="text-center text-sm text-slate-400 py-10">No opportunities yet — convert a lead to get started.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={11} className="text-center text-sm text-slate-400 py-10">No opportunities yet — convert a lead to get started.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -267,10 +426,23 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
           stage={terminal.stage}
           onClose={() => setTerminal(null)}
           onConfirm={async (extra) => {
-            const ok = await moveStage(terminal.opp, terminal.stage, extra)
+            const ok = await moveStage(terminal.opp, terminal.stage, terminal.source, extra)
             if (ok) setTerminal(null)
           }}
         />
+      )}
+
+      {/* Quick Actions dialogs — ONE instance each, shared by every row. All
+          three are the existing CRM components; nothing is re-implemented. */}
+      {sendTarget && <GridSendDialog target={sendTarget} onClose={() => setSendTarget(null)} />}
+      {activityTarget && (
+        <LogActivityDialog businessId={businessId} opportunityId={activityTarget.id} activityTypes={meta.activityTypes}
+          onClose={() => setActivityTarget(null)} onSaved={() => { setActivityTarget(null); load() }} />
+      )}
+      {recordingTarget?.lead && (
+        <RecordingDialog businessId={businessId}
+          lead={{ id: recordingTarget.lead.id, displayName: recordingTarget.lead.displayName }}
+          onClose={() => setRecordingTarget(null)} />
       )}
     </div>
   )
@@ -346,7 +518,11 @@ type OppFull = CrmOpportunity & {
   activities: CrmActivity[]
   tasks: CrmTask[]
   events: CrmEventRow[]
-  stageHistory: { id: string; fromStageName: string | null; toStageName: string; durationMs: number | null; changedByName: string | null; createdAt: string }[]
+  stageHistory: {
+    id: string; fromStageName: string | null; toStageName: string; durationMs: number | null
+    changedByName: string | null; createdAt: string
+    probability: number | null; reason: string | null; comments: string | null; source: string | null
+  }[]
 }
 
 function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; oppId: string; onBack: () => void }) {
@@ -449,14 +625,27 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Stage History</CardTitle></CardHeader>
             <CardContent className="space-y-2">
+              {opp.stageHistory.length === 0 && <p className="text-xs text-slate-400">No stage movements yet.</p>}
+              {/* Append-only audit — every movement stays visible forever. */}
               {opp.stageHistory.map((h) => (
-                <div key={h.id} className="rounded-lg border p-2.5">
-                  <p className="text-sm text-slate-700">{h.fromStageName ? `${h.fromStageName} → ` : "Entered "}{h.toStageName}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {fmtDateTime(h.createdAt)}
-                    {h.durationMs != null && h.fromStageName && <> · {fmtDur(h.durationMs)} in {h.fromStageName}</>}
-                    {h.changedByName && <> · {h.changedByName}</>}
-                  </p>
+                <div key={h.id} className="rounded-lg border p-2.5 space-y-1">
+                  <div className="flex items-center gap-1.5 text-sm text-slate-700 flex-wrap">
+                    <span className="text-slate-500">{h.fromStageName || "None"}</span>
+                    <ArrowDown className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span className="font-medium">{h.toStageName}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">{fmtDateTime(h.createdAt)}</p>
+                  <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
+                    {h.changedByName && <span>Changed by <span className="font-medium text-slate-600">{h.changedByName}</span></span>}
+                    {h.probability != null && <Badge variant="outline" className="h-4 px-1 text-[10px]">{h.probability}%</Badge>}
+                    {h.source && <Badge variant="outline" className="h-4 px-1 text-[10px] text-slate-400 border-slate-200">{h.source}</Badge>}
+                  </div>
+                  {(h.reason || h.comments) && (
+                    <p className="text-[11px] text-slate-500">{[h.reason, h.comments].filter(Boolean).join(" · ")}</p>
+                  )}
+                  {h.durationMs != null && h.fromStageName && (
+                    <p className="text-[10px] text-slate-400">{fmtDur(h.durationMs)} in {h.fromStageName}</p>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -555,7 +744,7 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
           const sres = await fetch(`/api/laundry/crm/opportunities/${opp.id}/stage`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              businessId, stageId: targetStage.id,
+              businessId, stageId: targetStage.id, source: "DETAIL",
               ...(needsWon ? { finalValue: Number(finalValue) || 0 } : {}),
               ...(needsLost ? { lostReasonId, lostNotes: lostNotes || null } : {}),
               ...actor,

@@ -4,7 +4,10 @@
 // (reason required). Behaviour comes from stageType, never the stage label.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCrmBusiness, crmEvent, getCrmConfig, probabilityForStage } from "@/lib/laundry-crm"
+import {
+  requireCrmBusiness, crmEvent, getCrmConfig, probabilityForStage,
+  recordStageChange, normalizeChangeSource, durationSince, movementLabel,
+} from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -34,6 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // AUTO_FROM_STAGE mode; MANUAL keeps whatever was typed.
     const { probabilityMode } = await getCrmConfig(biz.id)
 
+    // Where this came from — GRID / DETAIL / KANBAN / API / AUTOMATION. Every
+    // surface reports itself; anything unrecognised is recorded as API.
+    const source = normalizeChangeSource(body.source)
+    // Reason captured on the audit row (the lost reason when there is one).
+    let auditReason: string | null = null
+
     const now = new Date()
     const data: Record<string, unknown> = {
       stageId: stage.id, stageEnteredAt: now, state: stage.stageType,
@@ -49,6 +58,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         where: { id: String(body.lostReasonId || ""), businessId: biz.id },
       })
       if (!reason) return NextResponse.json({ error: "A lost reason is required" }, { status: 400 })
+      auditReason = reason.name
       data.lostAt = now
       data.lostReasonId = reason.id
       data.lostNotes = body.lostNotes ? String(body.lostNotes) : null
@@ -59,16 +69,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       data.lostAt = null; data.lostReasonId = null; data.lostNotes = null
     }
 
+    // Audit row and stage change land in ONE transaction — an opportunity can
+    // never move without its permanent audit entry.
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.laundryCrmStageHistory.create({
-        data: {
-          businessId: biz.id, opportunityId: opp.id,
-          fromStageId: opp.stageId, fromStageName: opp.stage?.name || null,
-          toStageId: stage.id, toStageName: stage.name,
-          durationMs: now.getTime() - new Date(opp.stageEnteredAt).getTime(),
-          changedById: body.actorId || null, changedByName: body.actorName || null,
-        },
-      })
+      await recordStageChange({
+        businessId: biz.id, opportunityId: opp.id,
+        fromStageId: opp.stageId, fromStageName: opp.stage?.name || null,
+        toStageId: stage.id, toStageName: stage.name,
+        durationMs: durationSince(opp.stageEnteredAt, now),
+        probability: (data.probability as number | null) ?? null,
+        reason: auditReason,
+        comments: body.comments ? String(body.comments) : null,
+        source, actor,
+      }, tx)
       return tx.laundryCrmOpportunity.update({
         where: { id: opp.id }, data, include: { stage: true, lostReason: true, lead: true },
       })
@@ -78,10 +91,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Timeline ALWAYS names both ends of the move — never the destination
     // alone. An opportunity with no prior stage (legacy / repaired row) reads
     // "No stage → X" rather than losing where it came from.
-    const label = `Opportunity moved: ${opp.stage?.name || "No stage"} → ${stage.name}`
+    const label = movementLabel("Opportunity", opp.stage?.name, stage.name)
     await crmEvent(biz.id, kind, label, {
       opportunityId: opp.id, actor,
-      meta: { from: opp.stage?.name, to: stage.name, stageType: stage.stageType },
+      meta: { from: opp.stage?.name, to: stage.name, stageType: stage.stageType, source },
     })
     if (opp.leadId && (kind === "WON" || kind === "LOST")) {
       await crmEvent(biz.id, `OPP_${kind}`, `Opportunity ${updated.oppCode} marked ${stage.stageType === "WON" ? "won" : "lost"}`, { leadId: opp.leadId, actor })

@@ -36,7 +36,8 @@ export async function GET(request: Request) {
         where: where as never,
         include: {
           stage: true, lostReason: true, priority: true,
-          lead: { select: { id: true, leadCode: true, displayName: true, phone: true } },
+          // fieldValues carries Business Name; read through the lead, never duplicated.
+          lead: { select: { id: true, leadCode: true, displayName: true, phone: true, email: true, fieldValues: true, source: true } },
         },
         orderBy: { updatedAt: "desc" },
         skip: (page - 1) * pageSize,

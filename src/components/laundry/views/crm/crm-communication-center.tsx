@@ -82,7 +82,9 @@ function QuickAction({ disabled, onClick, icon, label, hint }: {
 }
 
 // ─── Send via WhatsApp / Email ──────────────────────────────────────────────
-function SendDialog({ channel, comm, leadId, onClose }: {
+// Exported so every CRM surface (lead detail, opportunity grid) shares ONE
+// send flow — templates, placeholder substitution and activity logging included.
+export function SendDialog({ channel, comm, leadId, onClose }: {
   channel: "WHATSAPP" | "EMAIL"
   comm: CommContext
   leadId: string
@@ -187,7 +189,9 @@ export function ChannelSelect({ nope }: { nope?: boolean }) { return null }
 
 // ─── Recording upload + list ────────────────────────────────────────────────
 export function RecordingDialog({ businessId, lead, onClose }: {
-  businessId: string; lead: CrmLead; onClose: () => void
+  // Structural: only id + displayName are used, so an opportunity's linked lead
+  // works here without materialising a full CrmLead.
+  businessId: string; lead: { id: string; displayName: string }; onClose: () => void
 }) {
   const [recordings, setRecordings] = useState<CallRecording[]>([])
   const [file, setFile] = useState<File | null>(null)
