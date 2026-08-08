@@ -3,7 +3,7 @@
 // No Contact/Company entities are created — by design.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCrmBusiness, generateOpportunityCode, crmEvent } from "@/lib/laundry-crm"
+import { requireCrmBusiness, generateOpportunityCode, crmEvent, getCrmConfig, ownerForNewOpportunity } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -67,17 +67,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       orderBy: { displayOrder: "asc" },
     })
 
+    // Probability: AUTO_FROM_STAGE always takes the initial stage's value;
+    // MANUAL accepts an explicit one and otherwise still seeds from the stage.
+    const { probabilityMode } = await getCrmConfig(biz.id)
+    const probability = probabilityMode === "MANUAL" && body.probability != null
+      ? Math.min(100, Math.max(0, Number(body.probability) || 0))
+      : stage.probability
+
     const oppCode = await generateOpportunityCode()
     const opp = await prisma.$transaction(async (tx) => {
       const created = await tx.laundryCrmOpportunity.create({
         data: {
           oppCode, businessId: biz.id, leadId: lead.id, name, value,
-          stageId: stage.id, probability: body.probability != null ? Math.min(100, Math.max(0, Number(body.probability) || 0)) : stage.probability,
+          stageId: stage.id, probability,
           expectedCloseDate: body.expectedCloseDate ? new Date(body.expectedCloseDate) : null,
           notes: body.notes ? String(body.notes) : null,
           priorityId,
-          assignedToId: body.assignedToId || lead.assignedToId,
-          assignedToName: body.assignedToName || lead.assignedToName,
+          // Ownership ALWAYS inherits the Lead Owner — resolved in one place so
+          // Phase 2 (a dedicated opportunity owner) changes only that helper.
+          // Anything the client sent for the owner is ignored.
+          ...ownerForNewOpportunity(lead),
+          // Created By is the user performing the conversion — never the owner.
           createdById: body.actorId || null,
           createdByName: body.actorName || null,
         },

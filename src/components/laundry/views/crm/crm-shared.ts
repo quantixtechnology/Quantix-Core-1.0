@@ -52,9 +52,22 @@ export interface CrmOpportunity {
   priorityId: string | null; priority?: CrmPriority | null
   wonAt: string | null; wonValue: number | null; lostAt: string | null
   lostReasonId: string | null; lostReason?: CrmLostReason | null; lostNotes: string | null
-  notes: string | null; assignedToId: string | null; assignedToName: string | null
+  notes: string | null
+  // Owner — the LEAD OWNER, inherited at conversion. Phase 1 has no separate
+  // opportunity assignment; displayed read-only as "Lead Owner (Inherited)".
+  assignedToId: string | null; assignedToName: string | null
+  // How the owner got here: INHERITED | EXPLICIT (future) | null (legacy row).
+  ownerSource?: string | null
+  // The user who performed the conversion. Read-only, never the owner.
+  createdById?: string | null; createdByName?: string | null
   createdAt: string; updatedAt: string
-  lead?: { id: string; leadCode: string; displayName: string; phone?: string | null } | null
+  // Contact data is READ THROUGH the linked lead — never duplicated onto the
+  // opportunity, so editing the lead keeps the opportunity in step.
+  lead?: {
+    id: string; leadCode: string; displayName: string
+    phone?: string | null; email?: string | null; fieldValues?: string
+    sourceId?: string | null; source?: CrmSource | null
+  } | null
 }
 
 export interface CrmActivity {

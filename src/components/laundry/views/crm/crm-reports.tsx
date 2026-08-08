@@ -144,7 +144,7 @@ function columnsFor(type: string): { label: string; get: (r: AnyRow) => unknown;
         { label: "Phone", get: (r) => r.phone || "—" },
         { label: "Status", get: (r) => r.status?.name || "—" },
         { label: "Source", get: (r) => r.source?.name || "—" },
-        { label: "Assigned", get: (r) => r.assignedToName || "—" },
+        { label: "Lead Owner", get: (r) => r.assignedToName || "—" },
         { label: "Converted", get: (r) => (r.converted ? "Yes" : "No") },
         { label: "Opportunity", get: (r) => r.opportunity?.oppCode || "—" },
         { label: "Created", get: (r) => fmtDate(r.createdAt) },
@@ -170,7 +170,7 @@ function columnsFor(type: string): { label: string; get: (r: AnyRow) => unknown;
         { label: "Value", get: (r) => r.value, render: (r) => inr(r.value) },
         { label: "Probability", get: (r) => (r.probability != null ? `${r.probability}%` : "—") },
         { label: "Expected Close", get: (r) => fmtDate(r.expectedCloseDate) },
-        { label: "Assigned", get: (r) => r.assignedToName || "—" },
+        { label: "Lead Owner", get: (r) => r.assignedToName || "—" },
       ]
     case "won":
       return [
@@ -178,7 +178,7 @@ function columnsFor(type: string): { label: string; get: (r: AnyRow) => unknown;
         { label: "Lead", get: (r) => r.lead?.displayName || "—" },
         { label: "Final Value", get: (r) => r.wonValue ?? r.value, render: (r) => inr(r.wonValue ?? r.value) },
         { label: "Won Date", get: (r) => fmtDate(r.wonAt) },
-        { label: "Assigned", get: (r) => r.assignedToName || "—" },
+        { label: "Lead Owner", get: (r) => r.assignedToName || "—" },
       ]
     case "lost":
       return [

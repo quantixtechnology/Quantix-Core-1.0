@@ -80,7 +80,10 @@ export function CrmSettings({ businessId }: { businessId: string }) {
           <SimpleConfig businessId={businessId} rows={meta.sources} reload={meta.reload} endpoint="lead-sources"
             title="Lead Sources" description="Where leads come from (Walk-in, Website, Referral…). Historical leads keep inactive sources." hasColor />
         </TabsContent>
-        <TabsContent value="stages"><StageConfig businessId={businessId} rows={meta.stages} reload={meta.reload} /></TabsContent>
+        <TabsContent value="stages" className="space-y-3">
+          <ProbabilityModeConfig businessId={businessId} />
+          <StageConfig businessId={businessId} rows={meta.stages} reload={meta.reload} />
+        </TabsContent>
         <TabsContent value="lost-reasons">
           <SimpleConfig businessId={businessId} rows={meta.lostReasons} reload={meta.reload} endpoint="lost-reasons"
             title="Lost Reasons" description="Required when an opportunity is marked lost. Deactivate instead of deleting — history stays intact." />
@@ -352,6 +355,62 @@ function StatusConfig({ businessId, rows, reload }: { businessId: string; rows: 
           </Select>
           <Button onClick={add} disabled={busy || !newName.trim()} className="h-9 gap-1 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add</Button>
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Probability mode ────────────────────────────────────────────────────────
+// Whether an opportunity's probability is owned by its sales stage or typed by
+// hand. Sits with Sales Stages because that is where the percentages live.
+
+function ProbabilityModeConfig({ businessId }: { businessId: string }) {
+  const [mode, setMode] = useState<"AUTO_FROM_STAGE" | "MANUAL">("AUTO_FROM_STAGE")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/laundry/crm/settings/config?businessId=${encodeURIComponent(businessId)}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.success) setMode(j.data.probabilityMode) })
+      .catch(() => { /* keep default */ })
+      .finally(() => setLoading(false))
+  }, [businessId])
+
+  const save = async (next: "AUTO_FROM_STAGE" | "MANUAL") => {
+    setSaving(true)
+    const r = await putJson(`/api/laundry/crm/settings/config`, { businessId, probabilityMode: next })
+    setSaving(false)
+    if (!r.ok) return toast.error(r.error || "Update failed")
+    setMode(next)
+    toast.success(next === "AUTO_FROM_STAGE" ? "Probability now follows the stage" : "Probability is now entered manually")
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">Probability</CardTitle>
+        <CardDescription className="text-xs">
+          Decide whether an opportunity&apos;s probability is driven by the stage it sits in, or typed by your team.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-xs text-slate-400">Loading…</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              { v: "AUTO_FROM_STAGE" as const, t: "Automatic from Stage", d: "Moving to a stage applies that stage's percentage. Operators never type it." },
+              { v: "MANUAL" as const, t: "Manual", d: "Your team types the percentage. A stage move never overwrites it." },
+            ]).map((o) => (
+              <button key={o.v} onClick={() => !saving && mode !== o.v && save(o.v)} disabled={saving}
+                className={`text-left rounded-lg border p-3 transition-colors ${mode === o.v ? "border-blue-400 bg-blue-50/60" : "border-slate-200 hover:bg-slate-50"}`}>
+                <p className={`text-sm font-semibold ${mode === o.v ? "text-blue-700" : "text-slate-700"}`}>{o.t}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{o.d}</p>
+              </button>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

@@ -78,6 +78,90 @@ export async function crmEvent(businessId: string, kind: string, label: string, 
   })
 }
 
+// ─── Opportunity ownership ──────────────────────────────────────────────────
+// PHASE 1: there is exactly ONE owner concept. The Lead Owner owns the deal;
+// an Opportunity inherits it at conversion and has no separately editable
+// owner. The server is the enforcement point — an owner sent by a client is
+// dropped, never trusted.
+//
+// FUTURE-PROOFING (deliberately not exposed in the UI today):
+//   · The Opportunity already stores assignedToId/assignedToName, so giving it
+//     a dedicated owner later needs NO schema redesign — only lifting the
+//     write-block in the PUT route and rendering an editable control.
+//   · `ownerSource` records HOW the current owner got there:
+//       "INHERITED" — copied from the Lead Owner at conversion (Phase 1)
+//       "EXPLICIT"  — deliberately set on the opportunity (future)
+//       null        — pre-dates this field; provenance unknown. Existing rows
+//                     are left null on purpose; nothing is backfilled.
+//     A future "the Lead Owner changed — apply to open opportunities?" prompt
+//     can then safely target only INHERITED rows and leave EXPLICIT ones alone,
+//     which is impossible to derive after the fact by comparing names.
+//
+// Everything that decides an opportunity's owner goes through here, so there is
+// one place to change when Phase 2 arrives.
+
+export const OWNER_SOURCE_INHERITED = "INHERITED"
+export const OWNER_SOURCE_EXPLICIT = "EXPLICIT"
+
+export interface CrmOwner {
+  assignedToId: string | null
+  assignedToName: string | null
+  ownerSource: string | null
+}
+
+/** The owner a NEW opportunity takes: always the Lead Owner in Phase 1. */
+export function ownerForNewOpportunity(lead: { assignedToId: string | null; assignedToName: string | null }): CrmOwner {
+  return {
+    assignedToId: lead.assignedToId,
+    assignedToName: lead.assignedToName,
+    ownerSource: OWNER_SOURCE_INHERITED,
+  }
+}
+
+/**
+ * Strip any owner a client tried to send. Phase 1 has no editable opportunity
+ * owner, so this always returns nothing to write. When Phase 2 lands, this is
+ * the single function that starts returning an owner patch (plus
+ * ownerSource: EXPLICIT) instead of an empty object.
+ */
+export function ownerPatchFromRequest(_body: unknown): Partial<CrmOwner> {
+  return {}
+}
+
+// ─── Per-tenant CRM behaviour config ────────────────────────────────────────
+// Settings that are a SWITCH rather than a list. Read-through with a default,
+// so a tenant that has never opened CRM Settings still behaves sensibly and no
+// row has to exist up front.
+
+export type CrmProbabilityMode = "AUTO_FROM_STAGE" | "MANUAL"
+
+export interface CrmConfig { probabilityMode: CrmProbabilityMode }
+
+export const DEFAULT_CRM_CONFIG: CrmConfig = { probabilityMode: "AUTO_FROM_STAGE" }
+
+export function normalizeProbabilityMode(v: unknown): CrmProbabilityMode {
+  return v === "MANUAL" ? "MANUAL" : "AUTO_FROM_STAGE"
+}
+
+export async function getCrmConfig(businessId: string): Promise<CrmConfig> {
+  const row = await prisma.laundryCrmConfig.findUnique({
+    where: { businessId }, select: { probabilityMode: true },
+  }).catch(() => null)
+  if (!row) return { ...DEFAULT_CRM_CONFIG }
+  return { probabilityMode: normalizeProbabilityMode(row.probabilityMode) }
+}
+
+/**
+ * The probability an opportunity should carry after landing on `stage`.
+ * AUTO_FROM_STAGE → always the stage's configured probability.
+ * MANUAL          → whatever it already had (never overwritten by a stage move).
+ */
+export function probabilityForStage(
+  mode: CrmProbabilityMode, stageProbability: number, current: number | null,
+): number | null {
+  return mode === "MANUAL" ? current : stageProbability
+}
+
 // ─── Tenant defaults (idempotent) ───────────────────────────────────────────
 // Called when the Super Admin enables CRM and lazily from the entitlement/
 // settings endpoints, so an already-enabled tenant self-initializes.

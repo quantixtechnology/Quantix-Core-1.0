@@ -4,7 +4,7 @@
 // (reason required). Behaviour comes from stageType, never the stage label.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCrmBusiness, crmEvent } from "@/lib/laundry-crm"
+import { requireCrmBusiness, crmEvent, getCrmConfig, probabilityForStage } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -30,9 +30,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!stage) return NextResponse.json({ error: "Invalid sales stage" }, { status: 400 })
     if (stage.id === opp.stageId) return NextResponse.json({ error: "Opportunity is already in this stage" }, { status: 400 })
 
+    // Probability follows the stage only when the tenant runs in
+    // AUTO_FROM_STAGE mode; MANUAL keeps whatever was typed.
+    const { probabilityMode } = await getCrmConfig(biz.id)
+
     const now = new Date()
     const data: Record<string, unknown> = {
-      stageId: stage.id, stageEnteredAt: now, state: stage.stageType, probability: stage.probability,
+      stageId: stage.id, stageEnteredAt: now, state: stage.stageType,
+      probability: probabilityForStage(probabilityMode, stage.probability, opp.probability),
     }
     if (stage.stageType === "WON") {
       data.wonAt = now
@@ -70,7 +75,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
 
     const kind = stage.stageType === "WON" ? "WON" : stage.stageType === "LOST" ? "LOST" : "STAGE_CHANGED"
-    await crmEvent(biz.id, kind, `Moved to ${stage.name}`, {
+    // Timeline ALWAYS names both ends of the move — never the destination
+    // alone. An opportunity with no prior stage (legacy / repaired row) reads
+    // "No stage → X" rather than losing where it came from.
+    const label = `Opportunity moved: ${opp.stage?.name || "No stage"} → ${stage.name}`
+    await crmEvent(biz.id, kind, label, {
       opportunityId: opp.id, actor,
       meta: { from: opp.stage?.name, to: stage.name, stageType: stage.stageType },
     })

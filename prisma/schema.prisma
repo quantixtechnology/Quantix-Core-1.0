@@ -5542,6 +5542,22 @@ model LaundryCrmTaskType {
   @@index([businessId])
 }
 
+// Per-tenant CRM behaviour switches (one row per business, created on demand).
+// Configurable settings that are NOT a list live here rather than becoming
+// hardcoded behaviour.
+model LaundryCrmConfig {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  // AUTO_FROM_STAGE → an opportunity's probability always follows its sales
+  // stage's configured probability (operators never type it).
+  // MANUAL          → probability is entered by hand and never overwritten.
+  probabilityMode String @default("AUTO_FROM_STAGE") // AUTO_FROM_STAGE | MANUAL
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([businessId])
+}
+
 model LaundryCrmLead {
   id             String    @id @default(cuid())
   leadCode       String    @unique // LED-CRM-YYYYMM-NNNNNN
@@ -5599,8 +5615,15 @@ model LaundryCrmOpportunity {
   lostReasonId      String?
   lostNotes         String?
   notes             String?
+  // Owner. Phase 1: always inherited from the Lead Owner at conversion and not
+  // editable on the opportunity. The columns already exist, so introducing a
+  // dedicated Opportunity Owner later needs no schema redesign.
   assignedToId      String?
   assignedToName    String?
+  // How the current owner got here: INHERITED (from the Lead Owner) | EXPLICIT
+  // (set on the opportunity — future). NULL on rows that pre-date this field;
+  // existing data is deliberately NOT backfilled.
+  ownerSource       String?
   priorityId        String?
   createdById       String?
   createdByName     String?

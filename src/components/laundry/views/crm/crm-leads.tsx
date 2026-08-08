@@ -446,7 +446,9 @@ export function LeadFormDialog({ businessId, fields, sources, priorities, lead, 
             </Select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-600">Assigned Employee</label>
+            {/* The single source of truth for deal ownership — an Opportunity
+                created from this lead inherits this person. */}
+            <label className="text-xs font-medium text-slate-600">Lead Owner</label>
             <Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} placeholder="Employee name" className="h-9" />
           </div>
           {(priorities && priorities.filter((p) => p.active).length > 0) && (

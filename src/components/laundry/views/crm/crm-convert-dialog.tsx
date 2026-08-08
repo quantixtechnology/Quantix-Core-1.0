@@ -7,6 +7,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
@@ -35,7 +36,6 @@ export function ConvertLeadDialog({ businessId, lead, priorities, onClose, onCon
     if (lead.priorityId) return lead.priorityId
     return priorities?.find((p) => p.active && p.isDefault)?.id || priorities?.find((p) => p.active)?.id || ""
   })
-  const [assignedToName, setAssignedToName] = useState(lead.assignedToName || "")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -50,7 +50,7 @@ export function ConvertLeadDialog({ businessId, lead, priorities, onClose, onCon
           expectedCloseDate: expectedCloseDate || null,
           stageId: stageId || null,
           priorityId: priorityId || null,
-          assignedToId: assignedToName || null, assignedToName: assignedToName || null,
+          // Owner is NOT sent — the server always inherits the Lead Owner.
           notes: notes || null, ...actor,
         }),
       })
@@ -99,7 +99,17 @@ export function ConvertLeadDialog({ businessId, lead, priorities, onClose, onCon
                 </Select>
               </div>
             )}
-            <div className="space-y-1.5"><Label className="text-xs">Assigned Employee</Label><Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} className="h-9" /></div>
+            {/* Ownership is inherited, never chosen here — one owner concept. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500 flex items-center gap-1.5">
+                Lead Owner
+                <Badge variant="outline" className="text-[9px] h-4 px-1 border-slate-300 text-slate-500 font-normal">Inherited</Badge>
+              </Label>
+              <div className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center text-sm text-slate-600">
+                {lead.assignedToName || "Unassigned"}
+              </div>
+              <p className="text-[10px] text-slate-400">The opportunity is owned by the Lead Owner.</p>
+            </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm" /></div>
         </div>

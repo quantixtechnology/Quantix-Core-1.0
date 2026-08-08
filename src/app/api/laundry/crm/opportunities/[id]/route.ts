@@ -3,7 +3,7 @@
 // transition is validated and recorded in stage history.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireCrmBusiness, crmEvent } from "@/lib/laundry-crm"
+import { requireCrmBusiness, crmEvent, getCrmConfig, ownerPatchFromRequest } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -44,13 +44,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const data: Record<string, unknown> = {}
     if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim()
     if (body.value != null) data.value = Math.max(0, Number(body.value) || 0)
-    if (body.probability != null) data.probability = Math.min(100, Math.max(0, Number(body.probability) || 0))
+    // Probability is only writable in MANUAL mode. Under AUTO_FROM_STAGE it is
+    // owned by the sales stage, so an edit can never desync it from the stage.
+    if (body.probability != null) {
+      const { probabilityMode } = await getCrmConfig(biz.id)
+      if (probabilityMode === "MANUAL") data.probability = Math.min(100, Math.max(0, Number(body.probability) || 0))
+    }
     if ("expectedCloseDate" in body) data.expectedCloseDate = body.expectedCloseDate ? new Date(body.expectedCloseDate) : null
     if ("notes" in body) data.notes = body.notes ? String(body.notes) : null
-    if ("assignedToId" in body) {
-      data.assignedToId = body.assignedToId || null
-      data.assignedToName = body.assignedToName || null
-    }
+    // Ownership: the client may send anything; the resolver decides what (if
+    // anything) is writable. In Phase 1 that is always nothing — the owner
+    // mirrors the Lead Owner. This is the single seam Phase 2 opens.
+    Object.assign(data, ownerPatchFromRequest(body))
     if ("priorityId" in body) {
       if (body.priorityId) {
         const pri = await prisma.laundryCrmPriority.findFirst({ where: { id: body.priorityId, businessId: biz.id, active: true } })

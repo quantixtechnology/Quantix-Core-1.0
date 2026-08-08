@@ -1,8 +1,17 @@
 "use client"
 
-// Opportunities — Kanban pipeline (active OPEN stages as columns, HTML5
-// drag & drop with server-validated transitions) + list tab + Won/Lost lanes
-// + opportunity detail with timeline & stage history.
+// Opportunities — Kanban pipeline (active OPEN stages as columns) + list tab +
+// Won/Lost lanes + opportunity detail with timeline & stage history.
+//
+// Stage is changed in TWO places, both hitting the same server endpoint
+// (/opportunities/[id]/stage) so history, timeline, probability and Won/Lost
+// capture are identical either way:
+//   · the Stage dropdown in Edit — the primary, always-available control
+//   · kanban drag & drop        — an optional convenience
+// Ownership is a SINGLE concept: the deal is owned by the LEAD OWNER, inherited
+// at conversion and shown read-only as "Lead Owner (Inherited)". "Created By" is
+// the user who performed the conversion — provenance, never ownership. The two
+// are distinct and are never merged.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,12 +28,12 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Target, Search, ChevronLeft, Trophy, XCircle, KanbanSquare,
-  List, User, CalendarDays, Plus, Pencil,
+  List, User, CalendarDays, Plus, Pencil, Phone, Mail, Building2,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
   type CrmOpportunity, type CrmStage, type CrmActivity, type CrmTask, type CrmEventRow,
-  useCrmMeta, useCrmActor, inr, fmtDate, fmtDateTime,
+  useCrmMeta, useCrmActor, inr, fmtDate, fmtDateTime, parseValues,
 } from "./crm-shared"
 import { Timeline } from "./crm-lead-detail"
 import { LogActivityDialog, NewTaskDialog } from "./crm-activity-task-dialogs"
@@ -108,7 +117,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><Target className="h-5 w-5 text-blue-600" /> Opportunities</h2>
-          <p className="text-sm text-muted-foreground">Move deals through your pipeline to Won. Drag cards between stages.</p>
+          <p className="text-sm text-muted-foreground">Move deals through your pipeline to Won. Use the Stage dropdown in Edit, or drag cards between stages.</p>
         </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -215,7 +224,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                       <TableHead>Value</TableHead>
                       <TableHead>Probability</TableHead>
                       <TableHead>Expected Close</TableHead>
-                      <TableHead>Assigned</TableHead>
+                      <TableHead>Lead Owner</TableHead>
                       <TableHead>State</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -382,8 +391,31 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {opp.oppCode} · From lead {opp.lead?.leadCode} ({opp.lead?.displayName})
-              {opp.assignedToName && <> · <User className="inline h-3 w-3" /> {opp.assignedToName}</>}
+              {opp.lead?.source && <> · Source: {opp.lead.source.name}</>}
+              {" · "}Created {fmtDate(opp.createdAt)}{opp.createdByName ? ` by ${opp.createdByName}` : ""}
             </p>
+            {/* Ownership: ONE concept. The deal is owned by the Lead Owner;
+                "Created By" above is provenance, not ownership. */}
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <User className="h-3 w-3" /> Lead Owner: <span className="font-medium text-slate-700">{opp.assignedToName || "Unassigned"}</span>
+              <Badge variant="outline" className="text-[9px] h-4 px-1 border-slate-300 text-slate-500">Inherited</Badge>
+            </p>
+            {/* Contact details read through the linked lead — single source of truth. */}
+            {(() => {
+              const lv = parseValues(opp.lead?.fieldValues || "{}")
+              const businessName = typeof lv.business_name === "string" ? lv.business_name : ""
+              const bits = [
+                opp.lead?.phone ? { icon: Phone, text: opp.lead.phone } : null,
+                opp.lead?.email ? { icon: Mail, text: opp.lead.email } : null,
+                businessName ? { icon: Building2, text: businessName } : null,
+              ].filter(Boolean) as { icon: typeof Phone; text: string }[]
+              if (!bits.length) return null
+              return (
+                <div className="flex items-center gap-3 mt-1 text-sm text-slate-600 flex-wrap">
+                  {bits.map((b, i) => <span key={i} className="flex items-center gap-1"><b.icon className="h-3.5 w-3.5 text-blue-600" /> {b.text}</span>)}
+                </div>
+              )
+            })()}
             <div className="flex items-center gap-4 mt-1 text-sm">
               <span className="font-bold text-blue-700 text-base">{inr(opp.state === "WON" ? (opp.wonValue ?? opp.value) : opp.value)}</span>
               {opp.probability != null && <span className="text-slate-500">{opp.probability}% probability</span>}
@@ -444,7 +476,10 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
         </div>
       </div>
 
-      {editing && <EditOpportunityDialog businessId={businessId} opp={opp} metas={meta.priorities} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {editing && (
+        <EditOpportunityDialog businessId={businessId} opp={opp} metas={meta.priorities} stages={meta.stages}
+          onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />
+      )}
       {loggingActivity && (
         <LogActivityDialog businessId={businessId} opportunityId={opp.id} activityTypes={meta.activityTypes}
           onClose={() => setLoggingActivity(false)} onSaved={() => { setLoggingActivity(false); load() }} />
@@ -456,35 +491,82 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
     </div>
   )
 
-  function EditOpportunityDialog({ businessId, opp, metas, onClose, onSaved }: {
-    businessId: string; opp: OppFull; metas: { id: string; name: string; isDefault: boolean; active: boolean }[]; onClose: () => void; onSaved: () => void
+  function EditOpportunityDialog({ businessId, opp, metas, stages, onClose, onSaved }: {
+    businessId: string; opp: OppFull
+    metas: { id: string; name: string; isDefault: boolean; active: boolean }[]
+    stages: CrmStage[]; onClose: () => void; onSaved: () => void
   }) {
     const [name, setName] = useState(opp.name)
     const [value, setValue] = useState(String(opp.value))
     const [probability, setProbability] = useState(opp.probability != null ? String(opp.probability) : "")
     const [expectedCloseDate, setExpectedCloseDate] = useState(opp.expectedCloseDate ? opp.expectedCloseDate.slice(0, 10) : "")
     const [priorityId, setPriorityId] = useState(opp.priorityId || metas.find((p) => p.active && p.isDefault)?.id || metas.find((p) => p.active)?.id || "")
-    const [assignedToName, setAssignedToName] = useState(opp.assignedToName || "")
     const [notes, setNotes] = useState(opp.notes || "")
     const [saving, setSaving] = useState(false)
 
+    // Stage — the primary way to move an opportunity (drag & drop is optional).
+    // Options come from CRM Settings → Sales Stages; nothing is hardcoded.
+    const stageOptions = useMemo(() => stages.filter((s) => s.active), [stages])
+    const [stageId, setStageId] = useState(opp.stageId || "")
+    const targetStage = stageOptions.find((s) => s.id === stageId) || null
+    const stageChanged = !!stageId && stageId !== opp.stageId
+    // A terminal move needs its capture up front, exactly like the kanban does.
+    const needsWon = stageChanged && targetStage?.stageType === "WON"
+    const needsLost = stageChanged && targetStage?.stageType === "LOST"
+    const [finalValue, setFinalValue] = useState(String(opp.value))
+    const [lostReasonId, setLostReasonId] = useState("")
+    const [lostNotes, setLostNotes] = useState("")
+
+    // Probability follows the stage unless the tenant runs in MANUAL mode.
+    const [probabilityMode, setProbabilityMode] = useState<"AUTO_FROM_STAGE" | "MANUAL">("AUTO_FROM_STAGE")
+    useEffect(() => {
+      fetch(`/api/laundry/crm/settings/config?businessId=${encodeURIComponent(businessId)}`)
+        .then((r) => r.json())
+        .then((j) => { if (j.success) setProbabilityMode(j.data.probabilityMode) })
+        .catch(() => { /* keep the default */ })
+    }, [businessId])
+    const autoProbability = probabilityMode === "AUTO_FROM_STAGE"
+    // In auto mode the field previews what the chosen stage will apply.
+    const shownProbability = autoProbability ? String(targetStage?.probability ?? opp.probability ?? "") : probability
+
     const save = async () => {
+      if (needsLost && !lostReasonId) { toast.error("A lost reason is required"); return }
       setSaving(true)
       try {
+        // 1. Core fields. Probability is only sent in MANUAL mode — under
+        //    AUTO_FROM_STAGE the stage owns it and the server ignores it anyway.
         const res = await fetch(`/api/laundry/crm/opportunities/${opp.id}`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             businessId, name, value: Number(value) || 0,
-            probability: probability === "" ? null : Number(probability),
+            ...(autoProbability ? {} : { probability: probability === "" ? null : Number(probability) }),
             expectedCloseDate: expectedCloseDate || null,
             priorityId: priorityId || null,
-            assignedToId: assignedToName || null, assignedToName: assignedToName || null,
             notes: notes || null, ...actor,
           }),
         })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
-        toast.success("Opportunity updated")
+
+        // 2. Stage move goes through the dedicated endpoint so stage history,
+        //    the timeline event, probability and Won/Lost capture all happen
+        //    exactly as they do for a kanban drag. One code path.
+        if (stageChanged && targetStage) {
+          const sres = await fetch(`/api/laundry/crm/opportunities/${opp.id}/stage`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              businessId, stageId: targetStage.id,
+              ...(needsWon ? { finalValue: Number(finalValue) || 0 } : {}),
+              ...(needsLost ? { lostReasonId, lostNotes: lostNotes || null } : {}),
+              ...actor,
+            }),
+          })
+          const sj = await sres.json()
+          if (!sres.ok || !sj.success) throw new Error(sj.error || "Stage change failed")
+          toast.success(`Opportunity updated · moved to ${targetStage.name}`)
+        } else {
+          toast.success("Opportunity updated")
+        }
         onSaved()
       } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
     }
@@ -503,21 +585,86 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
                   <Input type="number" min={0} value={value} onChange={(e) => setValue(e.target.value)} className="h-9 pl-6" />
                 </div>
               </div>
-              <div className="space-y-1.5"><Label className="text-xs">Probability %</Label><Input type="number" min={0} max={100} value={probability} onChange={(e) => setProbability(e.target.value)} className="h-9" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Expected Close</Label><Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} className="h-9" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Assigned Employee</Label><Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} className="h-9" /></div>
-            </div>
-            {metas.filter((p) => p.active).length > 0 && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Priority</Label>
-                <Select value={priorityId} onValueChange={setPriorityId}>
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Select priority…" /></SelectTrigger>
-                  <SelectContent>{metas.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <Label className="text-xs">Probability %{autoProbability && <span className="text-slate-400 font-normal"> · from stage</span>}</Label>
+                <Input type="number" min={0} max={100} value={shownProbability}
+                  onChange={(e) => setProbability(e.target.value)}
+                  readOnly={autoProbability} disabled={autoProbability}
+                  className={`h-9 ${autoProbability ? "bg-slate-50 text-slate-500" : ""}`} />
+              </div>
+            </div>
+            {/* Stage — the primary way to move an opportunity. Sourced from
+                CRM Settings → Sales Stages. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Stage</Label>
+              <Select value={stageId} onValueChange={setStageId}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select stage…" /></SelectTrigger>
+                <SelectContent>
+                  {stageOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+                        {s.name} <span className="text-slate-400">· {s.probability}%</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {stageChanged && (
+                <p className="text-[11px] text-blue-600">
+                  Moves from {opp.stage?.name || "—"} → {targetStage?.name}. Stage history and timeline are recorded.
+                </p>
+              )}
+            </div>
+            {needsWon && (
+              <div className="space-y-1.5 rounded-lg border border-green-200 bg-green-50/60 p-2.5">
+                <Label className="text-xs text-green-800">Final Won Value</Label>
+                <Input type="number" min={0} value={finalValue} onChange={(e) => setFinalValue(e.target.value)} className="h-9 bg-white" />
               </div>
             )}
+            {needsLost && (
+              <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/60 p-2.5">
+                <Label className="text-xs text-red-800">Lost Reason <span className="text-red-500">*</span></Label>
+                <Select value={lostReasonId} onValueChange={setLostReasonId}>
+                  <SelectTrigger className="h-9 bg-white"><SelectValue placeholder="Select a reason…" /></SelectTrigger>
+                  <SelectContent>{meta.lostReasons.filter((r) => r.active).map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+                </Select>
+                <Textarea value={lostNotes} onChange={(e) => setLostNotes(e.target.value)} rows={2} placeholder="Notes (optional)" className="text-sm bg-white" />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs">Expected Close</Label><Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} className="h-9" /></div>
+              {metas.filter((p) => p.active).length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Priority</Label>
+                  <Select value={priorityId} onValueChange={setPriorityId}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Select priority…" /></SelectTrigger>
+                    <SelectContent>{metas.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            {/* Ownership is read-only here: the Owner comes from the Lead Owner
+                and Created By is whoever converted the lead. Neither is editable. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500 flex items-center gap-1.5">
+                  Lead Owner
+                  <Badge variant="outline" className="text-[9px] h-4 px-1 border-slate-300 text-slate-500 font-normal">Inherited</Badge>
+                </Label>
+                <div className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center text-sm text-slate-600">
+                  {opp.assignedToName || "Unassigned"}
+                </div>
+                <p className="text-[10px] text-slate-400">Owned by the Lead. Not editable here.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-500">Created By</Label>
+                <div className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center text-sm text-slate-600">
+                  {opp.createdByName || "—"}
+                </div>
+                <p className="text-[10px] text-slate-400">Read-only.</p>
+              </div>
+            </div>
             <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm" /></div>
           </div>
           <DialogFooter>
