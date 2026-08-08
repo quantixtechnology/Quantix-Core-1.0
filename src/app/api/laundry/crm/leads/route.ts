@@ -23,6 +23,7 @@ export async function GET(request: Request) {
     const q = (sp.get("q") || "").trim()
     const statusId = sp.get("statusId")
     const sourceId = sp.get("sourceId")
+    const priorityId = sp.get("priorityId")
     const assignedToId = sp.get("assignedToId")
     const from = sp.get("from")
     const to = sp.get("to")
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
     const where: Record<string, unknown> = { businessId: biz.id, archived: sp.get("archived") === "1" }
     if (statusId) where.statusId = statusId
     if (sourceId) where.sourceId = sourceId
+    if (priorityId) where.priorityId = priorityId
     if (assignedToId) where.assignedToId = assignedToId
     if (converted === "1") where.converted = true
     if (converted === "0") where.converted = false
@@ -64,7 +66,7 @@ export async function GET(request: Request) {
     const [rows, total] = await Promise.all([
       prisma.laundryCrmLead.findMany({
         where: where as never,
-        include: { status: true, source: true, opportunity: { select: { id: true, oppCode: true, state: true } } },
+        include: { status: true, source: true, priority: true, opportunity: { select: { id: true, oppCode: true, state: true } } },
         orderBy: { [sortBy]: sortDir },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -109,12 +111,25 @@ export async function POST(request: Request) {
       if (!src) return NextResponse.json({ error: "Invalid lead source" }, { status: 400 })
     }
 
+    let priorityId: string | null = body.priorityId || null
+    if (priorityId) {
+      const pri = await prisma.laundryCrmPriority.findFirst({ where: { id: priorityId, businessId: biz.id, active: true } })
+      if (!pri) return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
+    } else {
+      const def = await prisma.laundryCrmPriority.findFirst({
+        where: { businessId: biz.id, active: true },
+        orderBy: [{ isDefault: "desc" }, { displayOrder: "asc" }],
+      })
+      priorityId = def?.id || null
+    }
+
     const lead = await prisma.laundryCrmLead.create({
       data: {
         leadCode: await generateLeadCode(),
         businessId: biz.id,
         statusId,
         sourceId: body.sourceId || null,
+        priorityId,
         fieldValues: JSON.stringify(values),
         ...promoted,
         assignedToId: body.assignedToId || null,
@@ -122,7 +137,7 @@ export async function POST(request: Request) {
         createdById: body.actorId || null,
         createdByName: body.actorName || null,
       },
-      include: { status: true, source: true },
+      include: { status: true, source: true, priority: true },
     })
     await crmEvent(biz.id, "LEAD_CREATED", `Lead created (${lead.leadCode})`, {
       leadId: lead.id, actor: { id: body.actorId, name: body.actorName },

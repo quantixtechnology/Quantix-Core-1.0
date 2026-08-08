@@ -5435,6 +5435,7 @@ model LaundryCrmLeadStatus {
   businessId      String
   name            String
   color           String           @default("#64748B")
+  icon            String? // lucide icon name, optional
   displayOrder    Int              @default(0)
   active          Boolean          @default(true)
   isDefault       Boolean          @default(false)
@@ -5467,11 +5468,13 @@ model LaundryCrmSalesStage {
   businessId              String
   name                    String
   color                   String                  @default("#2563EB")
+  icon                    String? // lucide icon name, optional
   displayOrder            Int                     @default(0)
   active                  Boolean                 @default(true)
   probability             Int                     @default(0) // 0-100
   stageType               String                  @default("OPEN") // OPEN | WON | LOST — behaviour key (never match on name)
   isInitial               Boolean                 @default(false)
+  locked                  Boolean                 @default(false) // optional lock flag for the stage
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
   laundryCrmOpportunities LaundryCrmOpportunity[]
@@ -5504,6 +5507,41 @@ model LaundryCrmActivityType {
   @@index([businessId])
 }
 
+// Lead / Opportunity priority — fully configurable, no hardcoding.
+// businessId-scoped (workspace tenant id). Order via displayOrder, default via isDefault.
+model LaundryCrmPriority {
+  id            String                    @id @default(cuid())
+  businessId    String
+  name          String
+  color         String                    @default("#64748B")
+  displayOrder  Int                       @default(0)
+  active        Boolean                   @default(true)
+  isDefault     Boolean                   @default(false)
+  isSystem      Boolean                   @default(false)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  leads         LaundryCrmLead[]
+  opportunities LaundryCrmOpportunity[]
+
+  @@index([businessId])
+}
+
+// Task type — user-configurable task categories, no hardcoding.
+model LaundryCrmTaskType {
+  id        String         @id @default(cuid())
+  businessId String
+  name       String
+  color      String         @default("#64748B")
+  displayOrder Int          @default(0)
+  active     Boolean        @default(true)
+  isSystem   Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  tasks      LaundryCrmTask[]
+
+  @@index([businessId])
+}
+
 model LaundryCrmLead {
   id             String    @id @default(cuid())
   leadCode       String    @unique // LED-CRM-YYYYMM-NNNNNN
@@ -5517,6 +5555,7 @@ model LaundryCrmLead {
   fieldValues    String    @default("{}") // JSON { fieldKey: value }
   assignedToId   String?
   assignedToName String?
+  priorityId     String?
   converted      Boolean   @default(false)
   convertedAt    DateTime?
   archived       Boolean   @default(false)
@@ -5527,6 +5566,7 @@ model LaundryCrmLead {
 
   status      LaundryCrmLeadStatus?  @relation(fields: [statusId], references: [id], onDelete: SetNull)
   source      LaundryCrmLeadSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  priority    LaundryCrmPriority?    @relation(fields: [priorityId], references: [id], onDelete: SetNull)
   opportunity LaundryCrmOpportunity?
   activities  LaundryCrmActivity[]
   tasks       LaundryCrmTask[]
@@ -5536,6 +5576,7 @@ model LaundryCrmLead {
   @@index([businessId, statusId])
   @@index([businessId, sourceId])
   @@index([businessId, assignedToId])
+  @@index([businessId, priorityId])
   @@index([businessId, createdAt])
   @@index([businessId, archived])
 }
@@ -5560,6 +5601,7 @@ model LaundryCrmOpportunity {
   notes             String?
   assignedToId      String?
   assignedToName    String?
+  priorityId        String?
   createdById       String?
   createdByName     String?
   createdAt         DateTime  @default(now())
@@ -5568,6 +5610,7 @@ model LaundryCrmOpportunity {
   lead         LaundryCrmLead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
   stage        LaundryCrmSalesStage?    @relation(fields: [stageId], references: [id], onDelete: SetNull)
   lostReason   LaundryCrmLostReason?    @relation(fields: [lostReasonId], references: [id], onDelete: SetNull)
+  priority     LaundryCrmPriority?      @relation(fields: [priorityId], references: [id], onDelete: SetNull)
   stageHistory LaundryCrmStageHistory[]
   activities   LaundryCrmActivity[]
   tasks        LaundryCrmTask[]
@@ -5577,6 +5620,7 @@ model LaundryCrmOpportunity {
   @@index([businessId, stageId])
   @@index([businessId, state])
   @@index([businessId, assignedToId])
+  @@index([businessId, priorityId])
   @@index([businessId, expectedCloseDate])
   @@index([businessId, createdAt])
 }
@@ -5635,6 +5679,7 @@ model LaundryCrmTask {
   opportunityId  String?
   title          String
   description    String?
+  taskTypeId     String?
   priority       String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
   status         String    @default("OPEN") // OPEN | COMPLETED | CANCELLED
   dueAt          DateTime?
@@ -5648,6 +5693,7 @@ model LaundryCrmTask {
 
   lead        LaundryCrmLead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
   opportunity LaundryCrmOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  taskType    LaundryCrmTaskType?    @relation(fields: [taskTypeId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
   @@index([businessId, status])

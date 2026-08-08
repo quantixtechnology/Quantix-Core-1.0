@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { type CrmActivityType, useCrmActor } from "./crm-shared"
+import { type CrmActivityType, type CrmTaskType, useCrmActor } from "./crm-shared"
 
 // datetime-local expects LOCAL wall-clock time — toISOString() would shift to UTC.
 const localDatetimeValue = () => {
@@ -31,7 +31,7 @@ export function LogActivityDialog({ businessId, leadId, opportunityId, activityT
   onSaved: () => void
 }) {
   const actor = useCrmActor()
-  const [type, setType] = useState(activityTypes[0]?.name || "General")
+  const [type, setType] = useState(activityTypes.find((t) => t.active !== false)?.name || "General")
   const [subject, setSubject] = useState("")
   const [description, setDescription] = useState("")
   const [outcome, setOutcome] = useState("")
@@ -88,17 +88,20 @@ export function LogActivityDialog({ businessId, leadId, opportunityId, activityT
   )
 }
 
-export function NewTaskDialog({ businessId, leadId, opportunityId, onClose, onSaved }: {
+export function NewTaskDialog({ businessId, leadId, opportunityId, taskTypes, onClose, onSaved }: {
   businessId: string
   leadId?: string
   opportunityId?: string
+  taskTypes?: CrmTaskType[]
   onClose: () => void
   onSaved: () => void
 }) {
   const actor = useCrmActor()
+  const active = taskTypes?.filter((t) => t.active !== false) ?? []
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [priority, setPriority] = useState("MEDIUM")
+  const [taskTypeId, setTaskTypeId] = useState(active[0]?.id || "")
   const [dueAt, setDueAt] = useState("")
   const [assignedToName, setAssignedToName] = useState(actor.actorName || "")
   const [saving, setSaving] = useState(false)
@@ -112,6 +115,7 @@ export function NewTaskDialog({ businessId, leadId, opportunityId, onClose, onSa
         body: JSON.stringify({
           businessId, leadId, opportunityId, title: title.trim(),
           description: description || null, priority,
+          taskTypeId: taskTypeId || null,
           dueAt: dueAt ? new Date(dueAt).toISOString() : null,
           assignedToId: assignedToName || null, assignedToName: assignedToName || null, ...actor,
         }),
@@ -144,6 +148,15 @@ export function NewTaskDialog({ businessId, leadId, opportunityId, onClose, onSa
             </div>
             <div className="space-y-1.5"><Label className="text-xs">Due Date &amp; Time</Label><Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="h-9" /></div>
           </div>
+          {(active.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Task Type</Label>
+              <Select value={taskTypeId} onValueChange={setTaskTypeId}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>{active.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          ))}
           <div className="space-y-1.5"><Label className="text-xs">Assigned Employee</Label><Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} className="h-9" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="text-sm" /></div>
         </div>

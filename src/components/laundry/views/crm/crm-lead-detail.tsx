@@ -66,6 +66,16 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
     toast.success("Status updated"); load()
   }
 
+  const changePriority = async (priorityId: string) => {
+    const res = await fetch(`/api/laundry/crm/leads/${leadId}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessId, priorityId: priorityId || null, ...actor }),
+    })
+    const j = await res.json()
+    if (!res.ok || !j.success) return toast.error(j.error || "Update failed")
+    toast.success("Priority updated"); load()
+  }
+
   const completeTask = async (task: CrmTask) => {
     await fetch(`/api/laundry/crm/tasks/${task.id}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -94,6 +104,7 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold tracking-tight">{lead.displayName}</h2>
               {lead.status && <Badge style={{ backgroundColor: `${lead.status.color}18`, color: lead.status.color }} className="border-0">{lead.status.name}</Badge>}
+              {lead.priority && <Badge style={{ backgroundColor: `${lead.priority.color}18`, color: lead.priority.color }} className="border-0">{lead.priority.name}</Badge>}
               {lead.converted && <Badge className="bg-green-100 text-green-700 border-0">Converted{lead.opportunity ? ` · ${lead.opportunity.oppCode}` : ""}</Badge>}
               {lead.archived && <Badge variant="outline" className="text-slate-400">Archived</Badge>}
             </div>
@@ -114,6 +125,14 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
             <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Status…" /></SelectTrigger>
             <SelectContent>{meta.statuses.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
           </Select>
+          {meta.priorities.length > 0 && (
+            <Select value={lead.priorityId || ""} onValueChange={changePriority}>
+              <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Priority…" /></SelectTrigger>
+              <SelectContent>
+                {meta.priorities.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           <Button variant="outline" size="sm" className="h-9 gap-1" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
           {!lead.converted && (
             <Button size="sm" className="h-9 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => setConverting(true)}>
@@ -169,6 +188,7 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
                     <p className={`text-sm font-medium ${t.status === "COMPLETED" ? "line-through text-slate-400" : "text-slate-700"}`}>{t.title}</p>
                     <p className="text-[11px] text-slate-400">
                       {t.priority !== "MEDIUM" && <span className={t.priority === "HIGH" || t.priority === "URGENT" ? "text-red-500" : ""}>{t.priority} · </span>}
+                      {t.taskType && <>{t.taskType.name} · </>}
                       {t.dueAt ? <>Due {fmtDateTime(t.dueAt)}</> : "No due date"}
                       {t.assignedToName && <> · {t.assignedToName}</>}
                     </p>
@@ -199,13 +219,13 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
 
       {editing && (
         <LeadFormDialog
-          businessId={businessId} fields={meta.fields} sources={meta.sources}
+          businessId={businessId} fields={meta.fields} sources={meta.sources} priorities={meta.priorities}
           lead={lead} onClose={() => setEditing(false)}
           onSaved={() => { setEditing(false); load() }}
         />
       )}
       {converting && (
-        <ConvertLeadDialog businessId={businessId} lead={lead} onClose={() => setConverting(false)}
+        <ConvertLeadDialog businessId={businessId} lead={lead} priorities={meta.priorities} onClose={() => setConverting(false)}
           onConverted={() => { setConverting(false); load() }} />
       )}
       {loggingActivity && (
@@ -213,7 +233,7 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
           onClose={() => setLoggingActivity(false)} onSaved={() => { setLoggingActivity(false); load() }} />
       )}
       {addingTask && (
-        <NewTaskDialog businessId={businessId} leadId={lead.id}
+        <NewTaskDialog businessId={businessId} leadId={lead.id} taskTypes={meta.taskTypes}
           onClose={() => setAddingTask(false)} onSaved={() => { setAddingTask(false); load() }} />
       )}
     </div>

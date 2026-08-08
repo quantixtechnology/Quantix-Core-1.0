@@ -16,9 +16,10 @@ import { Loader2, ArrowRightCircle } from "lucide-react"
 import { toast } from "sonner"
 import { type CrmLead, useCrmMeta, useCrmActor } from "./crm-shared"
 
-export function ConvertLeadDialog({ businessId, lead, onClose, onConverted }: {
+export function ConvertLeadDialog({ businessId, lead, priorities, onClose, onConverted }: {
   businessId: string
-  lead: Pick<CrmLead, "id" | "leadCode" | "displayName" | "assignedToName">
+  lead: Pick<CrmLead, "id" | "leadCode" | "displayName" | "assignedToName" | "priorityId">
+  priorities?: { id: string; name: string; color: string; isDefault: boolean; active: boolean }[]
   onClose: () => void
   onConverted: () => void
 }) {
@@ -30,6 +31,10 @@ export function ConvertLeadDialog({ businessId, lead, onClose, onConverted }: {
   const [value, setValue] = useState("")
   const [expectedCloseDate, setExpectedCloseDate] = useState("")
   const [stageId, setStageId] = useState("")
+  const [priorityId, setPriorityId] = useState(() => {
+    if (lead.priorityId) return lead.priorityId
+    return priorities?.find((p) => p.active && p.isDefault)?.id || priorities?.find((p) => p.active)?.id || ""
+  })
   const [assignedToName, setAssignedToName] = useState(lead.assignedToName || "")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
@@ -44,6 +49,7 @@ export function ConvertLeadDialog({ businessId, lead, onClose, onConverted }: {
           businessId, name: name.trim(), value: Number(value) || 0,
           expectedCloseDate: expectedCloseDate || null,
           stageId: stageId || null,
+          priorityId: priorityId || null,
           assignedToId: assignedToName || null, assignedToName: assignedToName || null,
           notes: notes || null, ...actor,
         }),
@@ -77,13 +83,22 @@ export function ConvertLeadDialog({ businessId, lead, onClose, onConverted }: {
             <div className="space-y-1.5"><Label className="text-xs">Expected Closing Date</Label><Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} className="h-9" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+<div className="space-y-1.5">
               <Label className="text-xs">Initial Sales Stage</Label>
               <Select value={stageId} onValueChange={setStageId}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Default (initial stage)" /></SelectTrigger>
                 <SelectContent>{openStages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.probability}%)</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            {(priorities && priorities.filter((p) => p.active).length > 0) && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Priority</Label>
+                <Select value={priorityId} onValueChange={setPriorityId}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Select priority…" /></SelectTrigger>
+                  <SelectContent>{priorities.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5"><Label className="text-xs">Assigned Employee</Label><Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} className="h-9" /></div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm" /></div>

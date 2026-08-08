@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     if (sp.get("leadId")) where.leadId = sp.get("leadId")
     if (sp.get("opportunityId")) where.opportunityId = sp.get("opportunityId")
     if (sp.get("status")) where.status = sp.get("status")
+    if (sp.get("taskTypeId")) where.taskTypeId = sp.get("taskTypeId")
     if (sp.get("assignedToId")) where.assignedToId = sp.get("assignedToId")
     // due=today | overdue | upcoming
     const due = sp.get("due")
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
       prisma.laundryCrmTask.findMany({
         where: where as never,
         include: {
+          taskType: true,
           lead: { select: { id: true, leadCode: true, displayName: true } },
           opportunity: { select: { id: true, oppCode: true, name: true } },
         },
@@ -63,6 +65,18 @@ export async function POST(request: Request) {
       if (!opp) return NextResponse.json({ error: "Opportunity not found" }, { status: 404 })
     }
 
+    let taskTypeId: string | null = body.taskTypeId || null
+    if (taskTypeId) {
+      const tt = await prisma.laundryCrmTaskType.findFirst({ where: { id: taskTypeId, businessId: biz.id, active: true } })
+      if (!tt) return NextResponse.json({ error: "Invalid task type" }, { status: 400 })
+    } else {
+      const def = await prisma.laundryCrmTaskType.findFirst({
+        where: { businessId: biz.id, active: true },
+        orderBy: [{ displayOrder: "asc" }],
+      })
+      taskTypeId = def?.id || null
+    }
+
     const row = await prisma.laundryCrmTask.create({
       data: {
         taskCode: await generateTaskCode(),
@@ -71,6 +85,7 @@ export async function POST(request: Request) {
         opportunityId: body.opportunityId || null,
         title,
         description: body.description ? String(body.description) : null,
+        taskTypeId,
         priority: ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(body.priority) ? body.priority : "MEDIUM",
         dueAt: body.dueAt ? new Date(body.dueAt) : null,
         assignedToId: body.assignedToId || null,
@@ -78,6 +93,7 @@ export async function POST(request: Request) {
         createdById: body.actorId || null,
         createdByName: body.actorName || null,
       },
+      include: { taskType: true },
     })
     if (body.leadId || body.opportunityId) {
       await crmEvent(biz.id, "TASK_CREATED", `Task created: ${title}`, {

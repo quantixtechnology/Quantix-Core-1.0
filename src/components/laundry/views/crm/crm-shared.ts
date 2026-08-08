@@ -13,24 +13,32 @@ export interface CrmField {
 }
 
 export interface CrmStatus {
-  id: string; name: string; color: string; displayOrder: number; active: boolean
+  id: string; name: string; color: string; icon: string | null; displayOrder: number; active: boolean
   isDefault: boolean; kind: string; allowConversion: boolean; isSystem: boolean
 }
 
 export interface CrmSource { id: string; name: string; color: string; displayOrder: number; active: boolean }
 
 export interface CrmStage {
-  id: string; name: string; color: string; displayOrder: number; active: boolean
-  probability: number; stageType: string; isInitial: boolean
+  id: string; name: string; color: string; icon: string | null; displayOrder: number; active: boolean
+  probability: number; stageType: string; isInitial: boolean; locked: boolean
 }
 
 export interface CrmLostReason { id: string; name: string; displayOrder: number; active: boolean }
 export interface CrmActivityType { id: string; name: string; displayOrder: number; active: boolean }
 
+export interface CrmPriority {
+  id: string; name: string; color: string; displayOrder: number; active: boolean
+  isDefault: boolean; isSystem: boolean
+}
+export interface CrmTaskType {
+  id: string; name: string; color: string; displayOrder: number; active: boolean; isSystem: boolean
+}
+
 export interface CrmLead {
   id: string; leadCode: string; displayName: string; phone: string | null; email: string | null
-  fieldValues: string; statusId: string | null; sourceId: string | null
-  status?: CrmStatus | null; source?: CrmSource | null
+  fieldValues: string; statusId: string | null; sourceId: string | null; priorityId: string | null
+  status?: CrmStatus | null; source?: CrmSource | null; priority?: CrmPriority | null
   assignedToId: string | null; assignedToName: string | null
   converted: boolean; convertedAt: string | null; archived: boolean
   createdByName: string | null; createdAt: string; updatedAt: string
@@ -41,6 +49,7 @@ export interface CrmOpportunity {
   id: string; oppCode: string; leadId: string; name: string; value: number
   probability: number | null; expectedCloseDate: string | null; state: string
   stageId: string | null; stage?: CrmStage | null; stageEnteredAt: string
+  priorityId: string | null; priority?: CrmPriority | null
   wonAt: string | null; wonValue: number | null; lostAt: string | null
   lostReasonId: string | null; lostReason?: CrmLostReason | null; lostNotes: string | null
   notes: string | null; assignedToId: string | null; assignedToName: string | null
@@ -58,6 +67,7 @@ export interface CrmActivity {
 
 export interface CrmTask {
   id: string; taskCode: string; title: string; description: string | null
+  taskTypeId: string | null; taskType?: CrmTaskType | null
   priority: string; status: string; dueAt: string | null
   assignedToId: string | null; assignedToName: string | null
   completedAt: string | null; createdAt: string
@@ -126,6 +136,8 @@ export function useCrmMeta(businessId: string | null, opts: { includeInactive?: 
   const [stages, setStages] = useState<CrmStage[]>([])
   const [lostReasons, setLostReasons] = useState<CrmLostReason[]>([])
   const [activityTypes, setActivityTypes] = useState<CrmActivityType[]>([])
+  const [priorities, setPriorities] = useState<CrmPriority[]>([])
+  const [taskTypes, setTaskTypes] = useState<CrmTaskType[]>([])
   const [loading, setLoading] = useState(true)
   const inactive = opts.includeInactive ? "&includeInactive=1" : ""
 
@@ -134,9 +146,10 @@ export function useCrmMeta(businessId: string | null, opts: { includeInactive?: 
     setLoading(true)
     const qs = `businessId=${encodeURIComponent(businessId)}${inactive}`
     const get = (path: string) => fetch(`/api/laundry/crm/settings/${path}?${qs}`).then((r) => r.json()).catch(() => ({}))
-    const [f, st, so, sg, lr, at] = await Promise.all([
+    const [f, st, so, sg, lr, at, pr, tt] = await Promise.all([
       get("lead-fields"), get("lead-statuses"), get("lead-sources"),
       get("sales-stages"), get("lost-reasons"), get("activity-types"),
+      get("priorities"), get("task-types"),
     ])
     setFields(f.success ? f.data : [])
     setStatuses(st.success ? st.data : [])
@@ -144,11 +157,13 @@ export function useCrmMeta(businessId: string | null, opts: { includeInactive?: 
     setStages(sg.success ? sg.data : [])
     setLostReasons(lr.success ? lr.data : [])
     setActivityTypes(at.success ? at.data : [])
+    setPriorities(pr.success ? pr.data : [])
+    setTaskTypes(tt.success ? tt.data : [])
     setLoading(false)
   }, [businessId, inactive])
 
   useEffect(() => { reload() }, [reload])
-  return { fields, statuses, sources, stages, lostReasons, activityTypes, loading, reload }
+  return { fields, statuses, sources, stages, lostReasons, activityTypes, priorities, taskTypes, loading, reload }
 }
 
 // Whether CRM is enabled for the current tenant (drives the sidebar section

@@ -18,10 +18,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const opp = await prisma.laundryCrmOpportunity.findFirst({
       where: { id, businessId: biz.id },
       include: {
-        stage: true, lostReason: true, lead: { include: { status: true, source: true } },
+        stage: true, lostReason: true, priority: true, lead: { include: { status: true, source: true } },
         stageHistory: { orderBy: { createdAt: "desc" } },
         activities: { orderBy: { activityAt: "desc" }, take: 100 },
-        tasks: { orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 100 },
+        tasks: { orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 100, include: { taskType: true } },
         events: { orderBy: { createdAt: "desc" }, take: 200 },
       },
     })
@@ -50,6 +50,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if ("assignedToId" in body) {
       data.assignedToId = body.assignedToId || null
       data.assignedToName = body.assignedToName || null
+    }
+    if ("priorityId" in body) {
+      if (body.priorityId) {
+        const pri = await prisma.laundryCrmPriority.findFirst({ where: { id: body.priorityId, businessId: biz.id, active: true } })
+        if (!pri) return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
+      }
+      data.priorityId = body.priorityId || null
     }
     if (!Object.keys(data).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
 

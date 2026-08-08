@@ -20,10 +20,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const lead = await prisma.laundryCrmLead.findFirst({
       where: { id, businessId: biz.id },
       include: {
-        status: true, source: true,
+        status: true, source: true, priority: true,
         opportunity: { include: { stage: true, lostReason: true } },
         activities: { orderBy: { activityAt: "desc" }, take: 100 },
-        tasks: { orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 100 },
+        tasks: { orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 100, include: { taskType: true } },
         events: { orderBy: { createdAt: "desc" }, take: 200 },
       },
     })
@@ -76,6 +76,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       data.sourceId = body.sourceId || null
     }
 
+    if ("priorityId" in body && body.priorityId !== lead.priorityId) {
+      if (body.priorityId) {
+        const pri = await prisma.laundryCrmPriority.findFirst({ where: { id: body.priorityId, businessId: biz.id, active: true } })
+        if (!pri) return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
+      }
+      data.priorityId = body.priorityId || null
+    }
+
     if ("assignedToId" in body && body.assignedToId !== lead.assignedToId) {
       data.assignedToId = body.assignedToId || null
       data.assignedToName = body.assignedToName || null
@@ -92,7 +100,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (!Object.keys(data).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
     const updated = await prisma.laundryCrmLead.update({
-      where: { id }, data, include: { status: true, source: true },
+      where: { id }, data, include: { status: true, source: true, priority: true },
     })
     for (const ev of events) await crmEvent(biz.id, ev.kind, ev.label, { leadId: id, meta: ev.meta, actor })
     return NextResponse.json({ success: true, data: updated })

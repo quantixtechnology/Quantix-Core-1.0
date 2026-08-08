@@ -123,6 +123,14 @@ const DEFAULT_LOST_REASONS = ["Price", "No Response", "Competitor", "Requirement
 
 const DEFAULT_ACTIVITY_TYPES = ["Call", "Meeting", "WhatsApp", "Email", "Follow-up", "General"]
 
+const DEFAULT_PRIORITIES: { name: string; color: string }[] = [
+  { name: "High", color: "#EF4444" },
+  { name: "Medium", color: "#F59E0B" },
+  { name: "Low", color: "#94A3B8" },
+]
+
+const DEFAULT_TASK_TYPES = ["Follow-up", "Call", "Meeting", "Admin", "Other"]
+
 type FieldSeed = {
   fieldKey: string; label: string; type: string; required?: boolean; isSystem?: boolean
   showInList?: boolean; searchable?: boolean; filterable?: boolean; placeholder?: string
@@ -145,26 +153,20 @@ const DEFAULT_FIELDS: FieldSeed[] = [
   { fieldKey: "city", label: "City", type: "TEXT", filterable: true },
   { fieldKey: "state", label: "State", type: "TEXT" },
   { fieldKey: "pin_code", label: "PIN Code", type: "TEXT" },
-  {
-    fieldKey: "priority", label: "Lead Priority", type: "SELECT", showInList: true, filterable: true,
-    options: [
-      { value: "HIGH", label: "High", order: 0, active: true },
-      { value: "MEDIUM", label: "Medium", order: 1, active: true },
-      { value: "LOW", label: "Low", order: 2, active: true },
-    ],
-  },
   { fieldKey: "expected_closing_date", label: "Expected Closing Date", type: "DATE" },
   { fieldKey: "notes", label: "Notes", type: "TEXTAREA" },
 ]
 
 export async function ensureCrmDefaults(businessId: string): Promise<void> {
-  const [statusCount, sourceCount, stageCount, reasonCount, typeCount, fieldCount] = await Promise.all([
+  const [statusCount, sourceCount, stageCount, reasonCount, typeCount, fieldCount, priorityCount, taskTypeCount] = await Promise.all([
     prisma.laundryCrmLeadStatus.count({ where: { businessId } }),
     prisma.laundryCrmLeadSource.count({ where: { businessId } }),
     prisma.laundryCrmSalesStage.count({ where: { businessId } }),
     prisma.laundryCrmLostReason.count({ where: { businessId } }),
     prisma.laundryCrmActivityType.count({ where: { businessId } }),
     prisma.laundryCrmLeadField.count({ where: { businessId } }),
+    prisma.laundryCrmPriority.count({ where: { businessId } }),
+    prisma.laundryCrmTaskType.count({ where: { businessId } }),
   ])
 
   const work: Promise<unknown>[] = []
@@ -191,6 +193,12 @@ export async function ensureCrmDefaults(businessId: string): Promise<void> {
       placeholder: f.placeholder || null,
       options: f.options ? JSON.stringify(f.options) : null,
     })),
+  }))
+  if (priorityCount === 0) work.push(prisma.laundryCrmPriority.createMany({
+    data: DEFAULT_PRIORITIES.map((p, i) => ({ businessId, name: p.name, color: p.color, displayOrder: i, isDefault: i === 1 })),
+  }))
+  if (taskTypeCount === 0) work.push(prisma.laundryCrmTaskType.createMany({
+    data: DEFAULT_TASK_TYPES.map((name, i) => ({ businessId, name, displayOrder: i })),
   }))
   if (work.length) await Promise.all(work)
 }

@@ -49,6 +49,7 @@ export function CrmLeads({ businessId }: { businessId: string }) {
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusId, setStatusId] = useState("ALL")
   const [sourceId, setSourceId] = useState("ALL")
+  const [priorityId, setPriorityId] = useState("ALL")
   const [fieldFilters, setFieldFilters] = useState<Record<string, string>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [visibleCols, setVisibleCols] = useState<Set<string> | null>(null)
@@ -71,13 +72,14 @@ export function CrmLeads({ businessId }: { businessId: string }) {
       const params = new URLSearchParams({ businessId, q, page: String(page), pageSize: String(PAGE_SIZE) })
       if (statusId !== "ALL") params.set("statusId", statusId)
       if (sourceId !== "ALL") params.set("sourceId", sourceId)
+      if (priorityId !== "ALL") params.set("priorityId", priorityId)
       for (const [k, v] of Object.entries(fieldFilters)) if (v && v !== "ALL") params.set(`f_${k}`, v)
       const j = await fetch(`/api/laundry/crm/leads?${params}`).then((r) => r.json())
       setRows(j.success ? j.data : [])
       setTotal(j.total || 0)
       setSelected(new Set())
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [businessId, q, page, statusId, sourceId, fieldFilters])
+  }, [businessId, q, page, statusId, sourceId, priorityId, fieldFilters])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -154,6 +156,15 @@ export function CrmLeads({ businessId }: { businessId: string }) {
             {meta.sources.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        {meta.priorities.length > 0 && (
+          <Select value={priorityId} onValueChange={(v) => { setPage(1); setPriorityId(v) }}>
+            <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Priorities</SelectItem>
+              {meta.priorities.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         {filterableFields.map((f) => (
           <Select key={f.id} value={fieldFilters[f.fieldKey] || "ALL"} onValueChange={(v) => { setPage(1); setFieldFilters((ff) => ({ ...ff, [f.fieldKey]: v })) }}>
             <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder={f.label} /></SelectTrigger>
@@ -223,6 +234,7 @@ export function CrmLeads({ businessId }: { businessId: string }) {
                     <TableHead>Lead</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Source</TableHead>
+                    {meta.priorities.length > 0 && <TableHead>Priority</TableHead>}
                     {listFields.filter((f) => cols.has(f.fieldKey)).map((f) => <TableHead key={f.fieldKey} className="whitespace-nowrap">{f.label}</TableHead>)}
                     <TableHead>Assigned</TableHead>
                     <TableHead>Created</TableHead>
@@ -246,6 +258,9 @@ export function CrmLeads({ businessId }: { businessId: string }) {
                           {l.converted && <Badge className="ml-1 bg-green-100 text-green-700 text-[10px] border-0">Converted</Badge>}
                         </TableCell>
                         <TableCell className="text-sm text-slate-600">{l.source?.name || "—"}</TableCell>
+                        {meta.priorities.length > 0 && (
+                          <TableCell>{l.priority ? <Badge style={{ backgroundColor: `${l.priority.color}18`, color: l.priority.color }} className="text-[11px] border-0">{l.priority.name}</Badge> : "—"}</TableCell>
+                        )}
                         {listFields.filter((f) => cols.has(f.fieldKey)).map((f) => (
                           <TableCell key={f.fieldKey} className="text-sm text-slate-600 whitespace-nowrap max-w-[180px] truncate">{displayValue(f, values)}</TableCell>
                         ))}
@@ -291,6 +306,7 @@ export function CrmLeads({ businessId }: { businessId: string }) {
           businessId={businessId}
           fields={meta.fields}
           sources={meta.sources}
+          priorities={meta.priorities}
           lead={editorLead}
           onClose={() => { setCreating(false); setEditorLead(null) }}
           onSaved={() => { setCreating(false); setEditorLead(null); load() }}
@@ -300,6 +316,7 @@ export function CrmLeads({ businessId }: { businessId: string }) {
         <ConvertLeadDialog
           businessId={businessId}
           lead={convertLead}
+          priorities={meta.priorities}
           onClose={() => setConvertLead(null)}
           onConverted={() => { setConvertLead(null); load() }}
         />
@@ -354,10 +371,11 @@ function BulkAssign({ onAssign }: { onAssign: (name: string) => void }) {
 
 // ─── Dynamic Lead Create / Edit ──────────────────────────────────────────────
 
-export function LeadFormDialog({ businessId, fields, sources, lead, onClose, onSaved }: {
+export function LeadFormDialog({ businessId, fields, sources, priorities, lead, onClose, onSaved }: {
   businessId: string
   fields: CrmField[]
   sources: { id: string; name: string }[]
+  priorities?: { id: string; name: string; color: string; isDefault: boolean; active: boolean }[]
   lead: CrmLead | null
   onClose: () => void
   onSaved: () => void
@@ -376,6 +394,10 @@ export function LeadFormDialog({ businessId, fields, sources, lead, onClose, onS
     return init
   })
   const [sourceId, setSourceId] = useState(lead?.sourceId || "")
+  const [priorityId, setPriorityId] = useState(() => {
+    if (lead?.priorityId) return lead.priorityId
+    return priorities?.find((p) => p.active && p.isDefault)?.id || priorities?.find((p) => p.active)?.id || ""
+  })
   const [assignedToName, setAssignedToName] = useState(lead?.assignedToName || user?.name || "")
   const [saving, setSaving] = useState(false)
 
@@ -389,7 +411,7 @@ export function LeadFormDialog({ businessId, fields, sources, lead, onClose, onS
     setSaving(true)
     try {
       const payload = {
-        businessId, values, sourceId: sourceId || null,
+        businessId, values, sourceId: sourceId || null, priorityId: priorityId || null,
         assignedToId: assignedToName || null, assignedToName: assignedToName || null,
         ...actor,
       }
@@ -427,6 +449,15 @@ export function LeadFormDialog({ businessId, fields, sources, lead, onClose, onS
             <label className="text-xs font-medium text-slate-600">Assigned Employee</label>
             <Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} placeholder="Employee name" className="h-9" />
           </div>
+          {(priorities && priorities.filter((p) => p.active).length > 0) && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Priority</label>
+              <Select value={priorityId} onValueChange={setPriorityId}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select priority…" /></SelectTrigger>
+                <SelectContent>{priorities.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
           {formFields.map((f) => (
             <div key={f.fieldKey} className={["TEXTAREA", "ADDRESS"].includes(f.type) ? "sm:col-span-2" : undefined}>
               <DynamicCrmFieldRenderer field={f} value={values[f.fieldKey]} onChange={(v) => setValues((vv) => ({ ...vv, [f.fieldKey]: v }))} />

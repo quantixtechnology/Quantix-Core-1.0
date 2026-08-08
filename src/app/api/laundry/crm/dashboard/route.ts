@@ -46,7 +46,7 @@ export async function GET(request: Request) {
       prisma.laundryCrmTask.count({ where: { businessId: bId, status: "OPEN", dueAt: { lt: startOfDay } } }),
       prisma.laundryCrmTask.findMany({
         where: { businessId: bId, status: "OPEN", dueAt: { gte: startOfDay } },
-        include: { lead: { select: { displayName: true } }, opportunity: { select: { name: true } } },
+        include: { taskType: true, lead: { select: { displayName: true } }, opportunity: { select: { name: true } } },
         orderBy: { dueAt: "asc" }, take: 8,
       }),
       prisma.laundryCrmTask.count({ where: { businessId: bId, status: "OPEN" } }),

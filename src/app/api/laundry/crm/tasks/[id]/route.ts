@@ -21,6 +21,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (typeof body.title === "string" && body.title.trim()) data.title = body.title.trim()
     if ("description" in body) data.description = body.description ? String(body.description) : null
     if (["LOW", "MEDIUM", "HIGH", "URGENT"].includes(body.priority)) data.priority = body.priority
+    if ("taskTypeId" in body) {
+      if (body.taskTypeId) {
+        const tt = await prisma.laundryCrmTaskType.findFirst({ where: { id: body.taskTypeId, businessId: biz.id, active: true } })
+        if (!tt) return NextResponse.json({ error: "Invalid task type" }, { status: 400 })
+      }
+      data.taskTypeId = body.taskTypeId || null
+    }
     if ("dueAt" in body) data.dueAt = body.dueAt ? new Date(body.dueAt) : null
     if ("assignedToId" in body) { data.assignedToId = body.assignedToId || null; data.assignedToName = body.assignedToName || null }
     if (["OPEN", "COMPLETED", "CANCELLED"].includes(body.status) && body.status !== task.status) {

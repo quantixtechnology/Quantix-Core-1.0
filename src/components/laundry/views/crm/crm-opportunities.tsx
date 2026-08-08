@@ -94,6 +94,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
         <span className="text-sm font-bold text-blue-700">{inr(o.value)}</span>
         {o.probability != null && <Badge variant="outline" className="text-[10px] h-4 px-1">{o.probability}%</Badge>}
       </div>
+      {o.priority && <div className="mt-1"><Badge style={{ backgroundColor: `${o.priority.color}18`, color: o.priority.color }} className="text-[10px] h-4 border-0">{o.priority.name}</Badge></div>}
       <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
         {o.assignedToName && <span className="flex items-center gap-0.5"><User className="h-2.5 w-2.5" /> {o.assignedToName}</span>}
         {o.expectedCloseDate && <span className="flex items-center gap-0.5"><CalendarDays className="h-2.5 w-2.5" /> {fmtDate(o.expectedCloseDate)}</span>}
@@ -210,6 +211,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                       <TableHead>Opportunity</TableHead>
                       <TableHead>Lead</TableHead>
                       <TableHead>Stage</TableHead>
+                      {meta.priorities.length > 0 && <TableHead>Priority</TableHead>}
                       <TableHead>Value</TableHead>
                       <TableHead>Probability</TableHead>
                       <TableHead>Expected Close</TableHead>
@@ -226,6 +228,9 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                         </TableCell>
                         <TableCell className="text-sm text-slate-600">{o.lead?.displayName || "—"}</TableCell>
                         <TableCell>{o.stage ? <Badge style={{ backgroundColor: `${o.stage.color}18`, color: o.stage.color }} className="text-[11px] border-0">{o.stage.name}</Badge> : "—"}</TableCell>
+                        {meta.priorities.length > 0 && (
+                          <TableCell>{o.priority ? <Badge style={{ backgroundColor: `${o.priority.color}18`, color: o.priority.color }} className="text-[11px] border-0">{o.priority.name}</Badge> : "—"}</TableCell>
+                        )}
                         <TableCell className="font-semibold text-slate-700">{inr(o.value)}</TableCell>
                         <TableCell className="text-sm text-slate-600">{o.probability != null ? `${o.probability}%` : "—"}</TableCell>
                         <TableCell className="text-sm text-slate-600">{fmtDate(o.expectedCloseDate)}</TableCell>
@@ -372,6 +377,7 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold tracking-tight">{opp.name}</h2>
               {opp.stage && <Badge style={{ backgroundColor: `${opp.stage.color}18`, color: opp.stage.color }} className="border-0">{opp.stage.name}</Badge>}
+              {opp.priority && <Badge style={{ backgroundColor: `${opp.priority.color}18`, color: opp.priority.color }} className="border-0">{opp.priority.name}</Badge>}
               <Badge className={`border-0 ${opp.state === "WON" ? "bg-green-100 text-green-700" : opp.state === "LOST" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-700"}`}>{opp.state}</Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -430,7 +436,7 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
               {opp.tasks.map((t) => (
                 <div key={t.id} className="rounded-lg border p-2.5">
                   <p className={`text-sm font-medium ${t.status === "COMPLETED" ? "line-through text-slate-400" : "text-slate-700"}`}>{t.title}</p>
-                  <p className="text-[11px] text-slate-400">{t.dueAt ? `Due ${fmtDateTime(t.dueAt)}` : "No due date"}{t.assignedToName && ` · ${t.assignedToName}`}</p>
+                  <p className="text-[11px] text-slate-400">{t.dueAt ? `Due ${fmtDateTime(t.dueAt)}` : "No due date"}{t.assignedToName && ` · ${t.assignedToName}`}{t.taskType && ` · ${t.taskType.name}`}</p>
                 </div>
               ))}
             </CardContent>
@@ -438,25 +444,26 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
         </div>
       </div>
 
-      {editing && <EditOpportunityDialog businessId={businessId} opp={opp} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {editing && <EditOpportunityDialog businessId={businessId} opp={opp} metas={meta.priorities} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
       {loggingActivity && (
         <LogActivityDialog businessId={businessId} opportunityId={opp.id} activityTypes={meta.activityTypes}
           onClose={() => setLoggingActivity(false)} onSaved={() => { setLoggingActivity(false); load() }} />
       )}
       {addingTask && (
-        <NewTaskDialog businessId={businessId} opportunityId={opp.id}
+        <NewTaskDialog businessId={businessId} opportunityId={opp.id} taskTypes={meta.taskTypes}
           onClose={() => setAddingTask(false)} onSaved={() => { setAddingTask(false); load() }} />
       )}
     </div>
   )
 
-  function EditOpportunityDialog({ businessId, opp, onClose, onSaved }: {
-    businessId: string; opp: OppFull; onClose: () => void; onSaved: () => void
+  function EditOpportunityDialog({ businessId, opp, metas, onClose, onSaved }: {
+    businessId: string; opp: OppFull; metas: { id: string; name: string; isDefault: boolean; active: boolean }[]; onClose: () => void; onSaved: () => void
   }) {
     const [name, setName] = useState(opp.name)
     const [value, setValue] = useState(String(opp.value))
     const [probability, setProbability] = useState(opp.probability != null ? String(opp.probability) : "")
     const [expectedCloseDate, setExpectedCloseDate] = useState(opp.expectedCloseDate ? opp.expectedCloseDate.slice(0, 10) : "")
+    const [priorityId, setPriorityId] = useState(opp.priorityId || metas.find((p) => p.active && p.isDefault)?.id || metas.find((p) => p.active)?.id || "")
     const [assignedToName, setAssignedToName] = useState(opp.assignedToName || "")
     const [notes, setNotes] = useState(opp.notes || "")
     const [saving, setSaving] = useState(false)
@@ -470,6 +477,7 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
             businessId, name, value: Number(value) || 0,
             probability: probability === "" ? null : Number(probability),
             expectedCloseDate: expectedCloseDate || null,
+            priorityId: priorityId || null,
             assignedToId: assignedToName || null, assignedToName: assignedToName || null,
             notes: notes || null, ...actor,
           }),
@@ -501,6 +509,15 @@ function OpportunityDetail({ businessId, oppId, onBack }: { businessId: string; 
               <div className="space-y-1.5"><Label className="text-xs">Expected Close</Label><Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} className="h-9" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Assigned Employee</Label><Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} className="h-9" /></div>
             </div>
+            {metas.filter((p) => p.active).length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Priority</Label>
+                <Select value={priorityId} onValueChange={setPriorityId}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Select priority…" /></SelectTrigger>
+                  <SelectContent>{metas.filter((p) => p.active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm" /></div>
           </div>
           <DialogFooter>

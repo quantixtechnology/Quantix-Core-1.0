@@ -48,6 +48,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     if (!stage) return NextResponse.json({ error: "No active open sales stage is configured" }, { status: 400 })
 
+    // Opportunity priority: explicit → validated; otherwise inherit the lead's priority.
+    let priorityId: string | null = body.priorityId || lead.priorityId || null
+    if (priorityId) {
+      const pri = await prisma.laundryCrmPriority.findFirst({ where: { id: priorityId, businessId: biz.id, active: true } })
+      if (!pri) return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
+    } else {
+      const def = await prisma.laundryCrmPriority.findFirst({
+        where: { businessId: biz.id, active: true },
+        orderBy: [{ isDefault: "desc" }, { displayOrder: "asc" }],
+      })
+      priorityId = def?.id || null
+    }
+
     // Lead status flips to the tenant's CONVERTED-kind status when one exists.
     const convertedStatus = await prisma.laundryCrmLeadStatus.findFirst({
       where: { businessId: biz.id, kind: "CONVERTED" },
@@ -62,6 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           stageId: stage.id, probability: body.probability != null ? Math.min(100, Math.max(0, Number(body.probability) || 0)) : stage.probability,
           expectedCloseDate: body.expectedCloseDate ? new Date(body.expectedCloseDate) : null,
           notes: body.notes ? String(body.notes) : null,
+          priorityId,
           assignedToId: body.assignedToId || lead.assignedToId,
           assignedToName: body.assignedToName || lead.assignedToName,
           createdById: body.actorId || null,

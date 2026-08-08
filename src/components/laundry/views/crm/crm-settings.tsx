@@ -19,12 +19,13 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Plus, Settings, ChevronUp, ChevronDown, Pencil, ListChecks,
-  Tags, Waypoints, XCircle, ClipboardList, FormInput, MessagesSquare,
+  Tags, Waypoints, XCircle, ClipboardList, FormInput, MessagesSquare, Trash2, Flag, CheckSquare,
+  Circle, Phone, Mail, User, Target, TrendingUp, CheckCircle2, XSquare, Clock, Star, Hourglass,
 } from "lucide-react"
 import { toast } from "sonner"
 import { CrmCommunicationSettings } from "./crm-communication-settings"
 import {
-  type CrmField, type CrmFieldOption, useCrmMeta, parseOptions,
+  type CrmField, type CrmFieldOption, type CrmPriority, type CrmTaskType, useCrmMeta, parseOptions,
 } from "./crm-shared"
 
 const FIELD_TYPES: { value: string; label: string; hasOptions?: boolean }[] = [
@@ -68,6 +69,8 @@ export function CrmSettings({ businessId }: { businessId: string }) {
           <TabsTrigger value="stages" className="gap-1.5"><Waypoints className="h-3.5 w-3.5" /> Sales Stages</TabsTrigger>
           <TabsTrigger value="lost-reasons" className="gap-1.5"><XCircle className="h-3.5 w-3.5" /> Lost Reasons</TabsTrigger>
           <TabsTrigger value="activity-types" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Activity Types</TabsTrigger>
+          <TabsTrigger value="priorities" className="gap-1.5"><Flag className="h-3.5 w-3.5" /> Priorities</TabsTrigger>
+          <TabsTrigger value="task-types" className="gap-1.5"><CheckSquare className="h-3.5 w-3.5" /> Task Types</TabsTrigger>
           <TabsTrigger value="communication" className="gap-1.5"><MessagesSquare className="h-3.5 w-3.5" /> Communication</TabsTrigger>
         </TabsList>
 
@@ -85,6 +88,16 @@ export function CrmSettings({ businessId }: { businessId: string }) {
         <TabsContent value="activity-types">
           <SimpleConfig businessId={businessId} rows={meta.activityTypes} reload={meta.reload} endpoint="activity-types"
             title="Activity Types" description="Types available when logging CRM activities (Call, Meeting, WhatsApp…)." />
+        </TabsContent>
+        <TabsContent value="task-types">
+          <SimpleConfig businessId={businessId} rows={meta.taskTypes} reload={meta.reload} endpoint="task-types"
+            title="Task Types" description="Categories for CRM tasks (Follow-up, Call, Meeting…). System types are protected." hasColor
+            onDelete safetyNote="Tasks using this type are moved to the target type." />
+        </TabsContent>
+        <TabsContent value="priorities">
+          <SimpleConfig businessId={businessId} rows={meta.priorities} reload={meta.reload} endpoint="priorities"
+            title="Priorities" description="Lead & opportunity priority levels (Low / Medium / High…). The default applies to new records." hasColor
+            onDelete safetyNote="Leads & opportunities using this priority are moved to the target." defaultable />
         </TabsContent>
         <TabsContent value="communication"><CrmCommunicationSettings businessId={businessId} /></TabsContent>
       </Tabs>
@@ -137,12 +150,18 @@ function OrderButtons({ onUp, onDown, upDisabled, downDisabled }: { onUp: () => 
 
 interface SimpleRow { id: string; name: string; color?: string; displayOrder: number; active: boolean }
 
-function SimpleConfig({ businessId, rows, reload, endpoint, title, description, hasColor }: {
+interface SimpleRow { id: string; name: string; color?: string; displayOrder: number; active: boolean; isDefault?: boolean; isSystem?: boolean }
+
+function SimpleConfig({ businessId, rows, reload, endpoint, title, description, hasColor, onDelete, safetyNote, defaultable }: {
   businessId: string; rows: SimpleRow[]; reload: () => void
   endpoint: string; title: string; description: string; hasColor?: boolean
+  onDelete?: boolean; safetyNote?: string; defaultable?: boolean
 }) {
   const [newName, setNewName] = useState("")
   const [busy, setBusy] = useState(false)
+  const [delTarget, setDelTarget] = useState<SimpleRow | null>(null)
+  const [delReassign, setDelReassign] = useState("")
+  const [deleting, setDeleting] = useState(false)
   const reorder = useReorder(businessId, endpoint, reload)
 
   const add = async () => {
@@ -157,6 +176,22 @@ function SimpleConfig({ businessId, rows, reload, endpoint, title, description, 
     const r = await putJson(`/api/laundry/crm/settings/${endpoint}/${id}`, { businessId, ...patch })
     if (!r.ok) return toast.error(r.error || "Update failed")
     reload()
+  }
+
+  const otherRows = delTarget ? rows.filter((r) => r.id !== delTarget.id) : []
+  const reassignKey = endpoint === "priorities" ? "reassignPriorityId" : endpoint === "task-types" ? "reassignTaskTypeId" : "reassignId"
+
+  const doDelete = async () => {
+    if (!delTarget) return
+    setDeleting(true)
+    const r = await fetch(`/api/laundry/crm/settings/${endpoint}/${delTarget.id}?businessId=${encodeURIComponent(businessId)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [reassignKey]: delReassign || null }),
+    }).then((res) => res.json().catch(() => ({})))
+    setDeleting(false)
+    if (r.success !== true) return toast.error(r.error || "Delete failed")
+    setDelTarget(null); setDelReassign(""); toast.success(`${title.slice(0, -1)} deleted`); reload()
   }
 
   return (
@@ -174,9 +209,17 @@ function SimpleConfig({ businessId, rows, reload, endpoint, title, description, 
                 className="h-6 w-6 rounded border border-slate-200 cursor-pointer shrink-0" />
             )}
             <InlineRename name={row.name} onSave={(name) => update(row.id, { name })} />
+            {row.isDefault && <Badge className="bg-blue-100 text-blue-700 text-[10px] shrink-0">Default</Badge>}
+            {row.isSystem && <Badge variant="outline" className="text-[10px] text-slate-400 shrink-0">System</Badge>}
             <div className="ml-auto flex items-center gap-2">
               {!row.active && <Badge variant="outline" className="text-[10px]">Inactive</Badge>}
+              {defaultable && !row.isDefault && row.active && !row.isSystem && (
+                <button className="text-[11px] text-slate-400 hover:text-blue-600 shrink-0" onClick={() => update(row.id, { isDefault: true })}>Set default</button>
+              )}
               <Switch checked={row.active} onCheckedChange={(v) => update(row.id, { active: v })} className="data-[state=checked]:bg-blue-600" />
+              {onDelete && !row.isSystem && (
+                <Button variant="ghost" size="sm" className="h-8 w-8 px-0 text-slate-400 hover:text-red-600" disabled={row.isDefault && defaultable} onClick={() => setDelTarget(row)} title="Delete">  <Trash2 className="h-4 w-4" /></Button>
+              )}
             </div>
           </RowShell>
         ))}
@@ -185,8 +228,44 @@ function SimpleConfig({ businessId, rows, reload, endpoint, title, description, 
           <Button onClick={add} disabled={busy || !newName.trim()} className="h-9 gap-1 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add</Button>
         </div>
       </CardContent>
+
+      {delTarget && (
+        <Dialog open onOpenChange={(o) => !o && setDelTarget(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete “{delTarget.name}”</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">{safetyNote || "Move existing records first or choose a target."}</DialogDescription>
+            </DialogHeader>
+            {otherRows.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Move existing records to…</Label>
+                <Select value={delReassign} onValueChange={setDelReassign}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Select a target…" /></SelectTrigger>
+                  <SelectContent>
+                    {otherRows.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No other {title.slice(0, -1).toLowerCase()}s exist to move records to.</p>
+            )}
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setDelTarget(null)}>Cancel</Button>
+              <Button disabled={deleting || otherRows.length === 0 || !delReassign} onClick={doDelete} className="gap-1 bg-red-600 hover:bg-red-700 text-white">
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   )
+}
+
+const iconMap: Record<string, typeof Circle> = { Circle, Phone, Mail, User, Target, TrendingUp, CheckCircle2, XSquare, Clock, Star, Hourglass, Flag }
+function IconChip({ icon }: { icon: string | null }) {
+  const Icon = icon ? iconMap[icon] : null
+  return <span className="shrink-0 text-slate-400">{Icon ? <Icon className="h-4 w-4" /> : <Circle className="h-4 w-4 text-slate-200" />}</span>
 }
 
 function InlineRename({ name, onSave }: { name: string; onSave: (name: string) => void }) {
@@ -213,7 +292,7 @@ const STATUS_KINDS = [
   { value: "LOST", label: "Lost" },
 ]
 
-interface StatusRow { id: string; name: string; color: string; displayOrder: number; active: boolean; isDefault: boolean; kind: string; allowConversion: boolean; isSystem: boolean }
+interface StatusRow { id: string; name: string; color: string; icon: string | null; displayOrder: number; active: boolean; isDefault: boolean; kind: string; allowConversion: boolean; isSystem: boolean }
 
 function StatusConfig({ businessId, rows, reload }: { businessId: string; rows: StatusRow[]; reload: () => void }) {
   const [newName, setNewName] = useState("")
@@ -249,6 +328,7 @@ function StatusConfig({ businessId, rows, reload }: { businessId: string; rows: 
           <RowShell key={row.id} inactive={!row.active}>
             <OrderButtons onUp={() => reorder(rows, i, -1)} onDown={() => reorder(rows, i, 1)} upDisabled={i === 0} downDisabled={i === rows.length - 1} />
             <input type="color" value={row.color} onChange={(e) => update(row.id, { color: e.target.value })} className="h-6 w-6 rounded border border-slate-200 cursor-pointer shrink-0" />
+            <IconChip icon={row.icon} />
             <InlineRename name={row.name} onSave={(name) => update(row.id, { name })} />
             <Badge variant="outline" className="text-[10px] shrink-0">{STATUS_KINDS.find((k) => k.value === row.kind)?.label || row.kind}</Badge>
             {row.isDefault && <Badge className="bg-blue-100 text-blue-700 text-[10px] shrink-0">Default</Badge>}
@@ -285,7 +365,7 @@ const STAGE_TYPES = [
   { value: "LOST", label: "Lost", cls: "bg-red-100 text-red-700" },
 ]
 
-interface StageRow { id: string; name: string; color: string; displayOrder: number; active: boolean; probability: number; stageType: string; isInitial: boolean }
+interface StageRow { id: string; name: string; color: string; icon: string | null; displayOrder: number; active: boolean; probability: number; stageType: string; isInitial: boolean; locked: boolean }
 
 function StageConfig({ businessId, rows, reload }: { businessId: string; rows: StageRow[]; reload: () => void }) {
   const [newName, setNewName] = useState("")
@@ -323,9 +403,11 @@ function StageConfig({ businessId, rows, reload }: { businessId: string; rows: S
             <RowShell key={row.id} inactive={!row.active}>
               <OrderButtons onUp={() => reorder(rows, i, -1)} onDown={() => reorder(rows, i, 1)} upDisabled={i === 0} downDisabled={i === rows.length - 1} />
               <input type="color" value={row.color} onChange={(e) => update(row.id, { color: e.target.value })} className="h-6 w-6 rounded border border-slate-200 cursor-pointer shrink-0" />
+              <IconChip icon={row.icon} />
               <InlineRename name={row.name} onSave={(name) => update(row.id, { name })} />
               <Badge className={`text-[10px] shrink-0 ${t?.cls || ""}`}>{t?.label || row.stageType}</Badge>
               {row.isInitial && <Badge className="bg-blue-100 text-blue-700 text-[10px] shrink-0">Initial</Badge>}
+              {row.locked && <Badge variant="outline" className="text-[10px] text-amber-600 shrink-0">Locked</Badge>}
               <div className="ml-auto flex items-center gap-3 shrink-0">
                 <label className="flex items-center gap-1 text-[11px] text-slate-500">
                   <Input type="number" min={0} max={100} value={row.probability}

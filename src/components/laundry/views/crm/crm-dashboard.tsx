@@ -20,7 +20,7 @@ interface Dist { id: string | null; name: string; color: string; count: number; 
 interface DashboardData {
   leads: { total: number; newThisMonth: number; open: number; converted: number; conversionRate: number; byStatus: Dist[]; bySource: Dist[] }
   opportunities: { open: number; won: number; lost: number; pipelineValue: number; wonRevenue: number; byStage: Dist[] }
-  tasks: { today: number; overdue: number; pending: number; upcoming: { id: string; title: string; dueAt: string | null; lead?: { displayName: string } | null; opportunity?: { name: string } | null }[] }
+  tasks: { today: number; overdue: number; pending: number; upcoming: { id: string; title: string; dueAt: string | null; taskType?: { name: string; color: string } | null; lead?: { displayName: string } | null; opportunity?: { name: string } | null }[] }
   followUpsToday: number
   recentActivities: { id: string; type: string; subject: string; activityAt: string; lead?: { displayName: string } | null; opportunity?: { name: string } | null }[]
   expectedClosures: { id: string; name: string; value: number; expectedCloseDate: string | null; stage?: { name: string; color: string } | null; lead?: { displayName: string } | null }[]
@@ -176,6 +176,7 @@ export function CrmDashboard({ businessId }: { businessId: string }) {
                 <p className="text-sm font-medium text-slate-700 truncate">{t.title}</p>
                 <p className="text-[11px] text-slate-400">
                   {t.dueAt ? fmtDateTime(t.dueAt) : "No due date"}
+                  {t.taskType?.name && <span> · {t.taskType.name}</span>}
                   {t.lead && <> · {t.lead.displayName}</>}
                   {t.opportunity && <> · {t.opportunity.name}</>}
                 </p>

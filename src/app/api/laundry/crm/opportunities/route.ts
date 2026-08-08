@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     const q = (sp.get("q") || "").trim()
     const where: Record<string, unknown> = { businessId: biz.id }
     if (sp.get("stageId")) where.stageId = sp.get("stageId")
+    if (sp.get("priorityId")) where.priorityId = sp.get("priorityId")
     if (sp.get("state")) where.state = sp.get("state")
     if (sp.get("assignedToId")) where.assignedToId = sp.get("assignedToId")
     const from = sp.get("from"); const to = sp.get("to")
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
       prisma.laundryCrmOpportunity.findMany({
         where: where as never,
         include: {
-          stage: true, lostReason: true,
+          stage: true, lostReason: true, priority: true,
           lead: { select: { id: true, leadCode: true, displayName: true, phone: true } },
         },
         orderBy: { updatedAt: "desc" },
