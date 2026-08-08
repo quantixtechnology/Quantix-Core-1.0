@@ -213,7 +213,16 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
       // Optimistic patch keeps the grid responsive at volume; the background
       // reload reconciles derived fields (state, probability, updatedAt).
       setRows((prev) => prev.map((r) => (r.id === opp.id
-        ? { ...r, stageId: stage.id, stage, probability: j.data?.probability ?? r.probability, state: j.data?.state ?? r.state, updatedAt: j.data?.updatedAt ?? r.updatedAt }
+        ? (() => {
+            const prob = j.data?.probability ?? r.probability
+            return {
+              ...r, stageId: stage.id, stage, probability: prob,
+              // Same formula the server uses, so the column does not lag the
+              // probability during the optimistic window; the reload confirms it.
+              expectedRevenue: r.value ? (r.value * (prob ?? 0)) / 100 : null,
+              state: j.data?.state ?? r.state, updatedAt: j.data?.updatedAt ?? r.updatedAt,
+            }
+          })()
         : r)))
       toast.success(`${opp.name} → ${stage.name}`)
       load()
@@ -369,6 +378,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                       <TableHead>Lead Owner</TableHead>
                       <TableHead className="text-right">Value</TableHead>
                       <TableHead className="text-right">Prob.</TableHead>
+                      <TableHead className="text-right">Expected Revenue</TableHead>
                       <TableHead className="w-[210px]">Stage</TableHead>
                       {meta.priorities.length > 0 && <TableHead>Priority</TableHead>}
                       <TableHead>Last Updated</TableHead>
@@ -390,6 +400,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                         <TableCell className="text-sm text-slate-600">{o.assignedToName || "—"}</TableCell>
                         <TableCell className="text-right font-semibold text-slate-700">{inr(o.state === "WON" ? (o.wonValue ?? o.value) : o.value)}</TableCell>
                         <TableCell className="text-right text-sm text-slate-600">{o.probability != null ? `${o.probability}%` : "—"}</TableCell>
+                        <TableCell className="text-right text-sm font-medium text-slate-700">{o.expectedRevenue != null ? inr(o.expectedRevenue) : "—"}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <InlineStageCell opp={o} stages={meta.stages} busy={movingId === o.id} onPick={(stage) => requestMove(o, stage, "GRID")} />
                         </TableCell>
@@ -409,7 +420,7 @@ export function CrmOpportunities({ businessId }: { businessId: string }) {
                       </TableRow>
                     ))}
                     {rows.length === 0 && !loading && (
-                      <TableRow><TableCell colSpan={11} className="text-center text-sm text-slate-400 py-10">No opportunities yet — convert a lead to get started.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={12} className="text-center text-sm text-slate-400 py-10">No opportunities yet — convert a lead to get started.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

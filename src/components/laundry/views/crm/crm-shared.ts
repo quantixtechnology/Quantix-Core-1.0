@@ -59,6 +59,9 @@ export interface CrmOpportunity {
   wonAt: string | null; wonValue: number | null; lostAt: string | null
   lostReasonId: string | null; lostReason?: CrmLostReason | null; lostNotes: string | null
   notes: string | null
+  // Server-computed, never stored: Deal Value × Probability ÷ 100.
+  // null when the opportunity has no deal value.
+  expectedRevenue?: number | null
   // Owner — the LEAD OWNER, inherited at conversion. Phase 1 has no separate
   // opportunity assignment; displayed read-only as "Lead Owner (Inherited)".
   assignedToId: string | null; assignedToName: string | null

@@ -45,6 +45,14 @@ export async function GET(request: Request) {
       }),
       prisma.laundryCrmOpportunity.count({ where: where as never }),
     ])
-    return NextResponse.json({ success: true, data: rows, total })
+    // Expected Revenue = Deal Value × Probability ÷ 100. Computed here from the
+    // stored value/probability — nothing is persisted, so it always reflects the
+    // current figures (a stage move updates probability and this follows).
+    // null when there is no deal value, so the grid can show "—".
+    const data = rows.map((o) => ({
+      ...o,
+      expectedRevenue: o.value ? (o.value * (o.probability ?? 0)) / 100 : null,
+    }))
+    return NextResponse.json({ success: true, data, total })
   } catch (e) { return crmError(e) }
 }
