@@ -45,7 +45,10 @@ export function LaundryAuditBarcodePage() {
     if (!currentBusinessId) return
     setHistLoading(true)
     try {
-      const p = new URLSearchParams({ businessId: currentBusinessId, barcoded: "1", limit: "50" })
+      // 100 is the API maximum. History has no pagination, so a 50-row window
+      // silently hid older orders once a business passed 50 barcoded orders —
+      // search remains the way to reach anything beyond the window.
+      const p = new URLSearchParams({ businessId: currentBusinessId, barcoded: "1", limit: "100" })
       if (search.trim()) p.set("search", search.trim())
       const j = await fetch(`/api/laundry/orders?${p}`).then((r) => r.json())
       setHistory(j.data || [])

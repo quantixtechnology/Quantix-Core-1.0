@@ -206,11 +206,16 @@ export async function GET(request: Request) {
     if (customerId) where.customerId = customerId
     // Stage-completion (stored data, NOT order status): keeps an order visible in
     // the stage where it was completed even after it moves to later stages.
-    // Barcode Generation is "complete" the moment the operator clicks "Move to
-    // Processing Queue" — that action (and only that action) freezes each
-    // garment's route into `processFlow`. `barcodeGenerated` alone flips on
-    // "Generate All", one step earlier, so it is NOT the completion marker.
-    if (barcoded === "1") where.items = { some: { processFlow: { not: null } } }
+    //
+    // Barcode Generation History matches an order that has EITHER had barcodes
+    // generated OR had its route frozen by "Move to Processing Queue".
+    // Previously it required processFlow alone, so an order whose garments were
+    // barcoded but not yet moved matched nothing and vanished from History —
+    // the operator had no way to reprint its labels. Both markers are stored
+    // facts, so an order stays visible once it reaches either.
+    if (barcoded === "1") {
+      where.items = { some: { OR: [{ processFlow: { not: null } }, { barcodeGenerated: true }] } }
+    }
     // Packing completion is a WORKFLOW fact, not a packet fact: in BAG transport
     // mode no packet row is ever created, so the PACK_ORDER audit event is the
     // portable marker. Legacy rows are matched by either.
