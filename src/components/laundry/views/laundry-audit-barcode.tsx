@@ -24,7 +24,7 @@ import { printLabels, loadLabelConfig, saveLabelConfig, scannerQuality, type Lab
 interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
 interface Data { order: { id: string; orderNumber: string; status: string; grandTotal: number }; store?: { storeName: string } | null; customer?: { name: string; phone: string | null } | null; items: Item[]; totalItems: number; barcoded: number; allBarcoded: boolean }
 
-const WIDTHS = [20, 25, 30, 40, 50], HEIGHTS = [20, 30, 40], DPIS = [203, 300, 600]
+const HEIGHTS = [30, 40, 50], DPIS = [203, 300, 600]
 const PROFILES: { value: string; label: string }[] = [
   { value: "compact", label: "Compact (58mm)" },
   { value: "standard", label: "Standard (Current)" },
@@ -89,7 +89,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
         <LaundryPaymentBanner orderId={orderId} />
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.widthMm}mm</Button>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.heightMm}mm</Button>
         <Button variant="outline" className="gap-1" onClick={printAll}><Printer className="h-4 w-4" /> Print All</Button>
       </div>
 
@@ -155,7 +155,12 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Printer className="h-5 w-5 text-blue-600" /> Thermal Label Settings</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1"><Label className="text-xs">Width (mm)</Label><Select value={String(cfg.widthMm)} onValueChange={(v) => setCfg({ ...cfg, widthMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{WIDTHS.map((w) => <SelectItem key={w} value={String(w)}>{w} mm</SelectItem>)}</SelectContent></Select></div>
+              {/* Width is AUTO: computed from the barcode so it is never
+                  compressed. Height is the fixed dimension. */}
+              <div className="space-y-1">
+                <Label className="text-xs">Width (mm)</Label>
+                <div className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center text-sm text-slate-600">Auto</div>
+              </div>
               <div className="space-y-1"><Label className="text-xs">Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label className="text-xs">Printer DPI</Label><Select value={String(cfg.dpi)} onValueChange={(v) => setCfg({ ...cfg, dpi: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DPIS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent></Select></div>
             </div>
