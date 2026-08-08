@@ -116,17 +116,37 @@ export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 // Both are fixed, but the WIDTH is a floor rather than a ceiling: if a code
 // needs more than 60mm at full module width the label grows instead of the
 // barcode being compressed. Nothing is ever squeezed to fit.
-export const TARGET_MODULE_DOTS = 2   // narrow bar = 2 printer dots @203dpi = 0.25mm
+// 2 dots is the FLOOR, not the target. The module GROWS to whatever the label
+// can carry — a wider bar is easier to scan — and only ever drops below 2 when a
+// code is too long to fit even at the maximum label width.
+export const TARGET_MODULE_DOTS = 2   // minimum narrow bar: 2 dots @203dpi = 0.25mm
+export const MAX_MODULE_DOTS = 6      // sanity cap (0.75mm bars)
 export const FIXED_LABEL_HEIGHT_MM = 40
 export const FIXED_LABEL_WIDTH_MM = 60
-export const MIN_QUIET_MM = 3         // per the drawing: ≥3mm left and right
+export const MIN_QUIET_MM = 2.5       // Code 128 standard; leaves the width for bars
 export const MIN_BARCODE_MM = 18
 export const MAX_LABEL_WIDTH_MM = 108 // TE244 maximum printable width
 
 /**
- * The width a code needs at FULL module width, including both quiet zones.
- * This is the whole point of the auto width: the module never shrinks, so a
- * longer code produces a longer label rather than a denser barcode.
+ * The LARGEST whole-dot module a code can use on a given label while keeping the
+ * minimum quiet zone. Bars are grown to fill the label, because a wider bar is
+ * what a scanner reads most reliably — width is never left unused.
+ *
+ * Returns 0 when the code will not fit even at one dot.
+ */
+export function bestModuleDots(modules: number, widthMm: number, dpi: number): number {
+  if (modules <= 0) return 0
+  const dotsPerMm = dpi / 25.4
+  const labelDots = Math.floor(widthMm * dotsPerMm)
+  const quietDots = Math.ceil(MIN_QUIET_MM * dotsPerMm)
+  const usable = labelDots - quietDots * 2
+  return Math.max(0, Math.min(MAX_MODULE_DOTS, Math.floor(usable / modules)))
+}
+
+/**
+ * The width a code needs at a given module width, including both quiet zones.
+ * Used when a code is too long for the configured label: the label widens rather
+ * than the barcode being compressed.
  */
 export function autoWidthMm(modules: number, dpi: number, moduleDots = TARGET_MODULE_DOTS): number {
   const dotsPerMm = dpi / 25.4
@@ -191,8 +211,8 @@ export function fitBarcode(modules: number, widthMm: number, dpi: number, target
 
   const barDots = modules * moduleDots
   const quietDots = Math.max(0, Math.floor((labelDots - barDots) / 2))
-  // fits = full module width AND the drawing's ≥3mm quiet zone both honoured.
-  const fits = modules > 0 && moduleDots >= Math.round(targetModuleDots) && quietDots >= Math.ceil(MIN_QUIET_MM * dotsPerMm)
+  // fits = at least the floor module width AND the minimum quiet zone.
+  const fits = modules > 0 && moduleDots >= TARGET_MODULE_DOTS && quietDots >= Math.ceil(MIN_QUIET_MM * dotsPerMm)
   const imageDots = barDots + quietDots * 2
   // Never wider than the label — the label clips overflow, and a clipped symbol
   // is unscannable 100% of the time.
@@ -242,22 +262,27 @@ export function computeLabelGeometry(value: string, cfg: LabelConfig, widthMm?: 
  */
 export function computeJobLayout(values: string[], cfg: LabelConfig) {
   const dpi = cfg.dpi || 203
-  const target = Math.max(1, Math.round(cfg.moduleWidth ?? TARGET_MODULE_DOTS))
+  const labelWidth = cfg.widthMm || FIXED_LABEL_WIDTH_MM
   const maxModules = values.reduce((m, v) => Math.max(m, code128Modules(v)), 0)
 
-  // Widest code decides the size. Normally that is the full module width; only a
-  // code too long for the TE244's 108mm head forces a narrower module — and then
-  // the label is sized to what THAT module needs, not padded out to the cap.
-  let moduleDots = target
-  let widest = autoWidthMm(maxModules, dpi, moduleDots)
-  while (moduleDots > 1 && widest > MAX_LABEL_WIDTH_MM) {
-    moduleDots--
-    widest = autoWidthMm(maxModules, dpi, moduleDots)
+  // MAXIMISE THE BARS FIRST. Grow the module to the widest whole dot the label
+  // can carry — a 15-char GAR on a 60mm label reaches 3 dots (0.375mm bars,
+  // ~54mm, ~91% of the label). Only when even the 2-dot floor will not fit does
+  // the label widen, and only when THAT hits the printer's 108mm head does the
+  // module finally drop below the floor.
+  let moduleDots = cfg.moduleWidth ?? bestModuleDots(maxModules, labelWidth, dpi)
+  let widthMm = labelWidth
+
+  if (moduleDots < TARGET_MODULE_DOTS) {
+    moduleDots = TARGET_MODULE_DOTS
+    let needed = autoWidthMm(maxModules, dpi, moduleDots)
+    while (moduleDots > 1 && needed > MAX_LABEL_WIDTH_MM) {
+      moduleDots--
+      needed = autoWidthMm(maxModules, dpi, moduleDots)
+    }
+    widthMm = Math.min(MAX_LABEL_WIDTH_MM, Math.max(labelWidth, needed, 25))
   }
 
-  // 60mm is the configured size and acts as a FLOOR — a longer code widens the
-  // label rather than compressing the barcode.
-  const widthMm = Math.min(MAX_LABEL_WIDTH_MM, Math.max(cfg.widthMm || FIXED_LABEL_WIDTH_MM, widest, 25))
   const heightMm = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
   const geos = values.map((v) => computeLabelGeometry(v, { ...cfg, moduleWidth: moduleDots }, widthMm))
   return {

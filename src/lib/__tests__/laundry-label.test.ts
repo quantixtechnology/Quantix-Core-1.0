@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  fitBarcode, autoWidthMm, garFontPt, textBlockMm,
+  fitBarcode, autoWidthMm, garFontPt, textBlockMm, bestModuleDots,
   TARGET_MODULE_DOTS, MIN_QUIET_MM, MIN_BARCODE_MM,
   FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM,
 } from '@/lib/laundry-label'
@@ -81,12 +81,39 @@ describe('fixed 60 x 40mm label', () => {
     expect(FIXED_LABEL_HEIGHT_MM).toBe(40)
   })
 
-  it('a GAR barcode fits at full module width with room to spare', () => {
-    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
-    expect(f.moduleDots).toBe(TARGET_MODULE_DOTS)
+  // The bars are GROWN to fill the label — width is never left unused, because a
+  // wider bar is what a scanner reads most reliably.
+  it('grows the module to 3 dots on a 60mm label', () => {
+    const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    expect(md).toBe(3)
+    expect(md).toBeGreaterThanOrEqual(TARGET_MODULE_DOTS) // 2 dots is the FLOOR
+    expect(md / DOTS_PER_MM).toBeCloseTo(0.375, 3)
+  })
+
+  it('fills 90-92% of the label with bars', () => {
+    const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md)
+    const pct = (f.barDots / Math.floor(FIXED_LABEL_WIDTH_MM * DOTS_PER_MM)) * 100
+    expect(pct).toBeGreaterThanOrEqual(90)
+    expect(pct).toBeLessThanOrEqual(92)
+    expect(f.barsMm).toBeGreaterThanOrEqual(54)
+    expect(f.barsMm).toBeLessThanOrEqual(55)
+  })
+
+  it('keeps quiet zones in the 2.5-3mm Code 128 band', () => {
+    const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md)
+    expect(f.quietMm).toBeGreaterThanOrEqual(2.5)
+    expect(f.quietMm).toBeLessThanOrEqual(3)
     expect(f.fits).toBe(true)
-    expect(f.quietMm).toBeGreaterThan(MIN_QUIET_MM)
     expect(f.imageWidthMm).toBeLessThanOrEqual(FIXED_LABEL_WIDTH_MM)
+  })
+
+  it('never grows the module past the point where the quiet zone would break', () => {
+    const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    const tooBig = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md + 1)
+    // One dot wider would overflow, so fitBarcode steps it back down.
+    expect(tooBig.moduleDots).toBeLessThanOrEqual(md)
   })
 
   it('leaves well over the minimum bar height after the GAR line', () => {
