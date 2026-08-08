@@ -112,12 +112,13 @@ export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 // assumed, so a longer code (legacy ORD-…-G1 garments) degrades predictably
 // instead of running off the edge of the label.
 
-// LAYOUT (per the approved drawing):
-//   Height 40mm — FIXED.  Width — AUTO, extends until the barcode fits at full
-//   module width. The barcode is NEVER compressed to fit a width; the width is
-//   whatever the barcode needs, plus a quiet zone each side.
+// LAYOUT: 60mm (W) x 40mm (H).
+// Both are fixed, but the WIDTH is a floor rather than a ceiling: if a code
+// needs more than 60mm at full module width the label grows instead of the
+// barcode being compressed. Nothing is ever squeezed to fit.
 export const TARGET_MODULE_DOTS = 2   // narrow bar = 2 printer dots @203dpi = 0.25mm
 export const FIXED_LABEL_HEIGHT_MM = 40
+export const FIXED_LABEL_WIDTH_MM = 60
 export const MIN_QUIET_MM = 3         // per the drawing: ≥3mm left and right
 export const MIN_BARCODE_MM = 18
 export const MAX_LABEL_WIDTH_MM = 108 // TE244 maximum printable width
@@ -254,7 +255,9 @@ export function computeJobLayout(values: string[], cfg: LabelConfig) {
     widest = autoWidthMm(maxModules, dpi, moduleDots)
   }
 
-  const widthMm = Math.min(MAX_LABEL_WIDTH_MM, Math.max(widest, 25))
+  // 60mm is the configured size and acts as a FLOOR — a longer code widens the
+  // label rather than compressing the barcode.
+  const widthMm = Math.min(MAX_LABEL_WIDTH_MM, Math.max(cfg.widthMm || FIXED_LABEL_WIDTH_MM, widest, 25))
   const heightMm = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
   const geos = values.map((v) => computeLabelGeometry(v, { ...cfg, moduleWidth: moduleDots }, widthMm))
   return {
@@ -265,13 +268,13 @@ export function computeJobLayout(values: string[], cfg: LabelConfig) {
 }
 
 // 40 × 30 mm landscape on the TE244 at 203 DPI.
-// Height 40mm FIXED. widthMm is informational only — computeJobLayout computes
-// the real width from the barcode so it is never compressed.
-export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: 0, heightMm: FIXED_LABEL_HEIGHT_MM, dpi: 203 }
+// 60mm (W) x 40mm (H). Width is a floor: computeJobLayout widens it if a code
+// needs more room, so the barcode is never compressed.
+export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: FIXED_LABEL_WIDTH_MM, heightMm: FIXED_LABEL_HEIGHT_MM, dpi: 203 }
 // Versioned: earlier keys hold sizes from the previous layouts (v1 fixed 20mm,
 // v2 fixed 40mm WIDTH). This layout inverts that — 40mm HEIGHT, auto width — so
 // v3 starts every workstation on the current defaults. Old keys are left alone.
-const KEY = "qx-laundry-label-config-v3"
+const KEY = "qx-laundry-label-config-v4"
 export function loadLabelConfig(): LabelConfig {
   if (typeof window === "undefined") return DEFAULT_LABEL_CONFIG
   try { return { ...DEFAULT_LABEL_CONFIG, ...JSON.parse(localStorage.getItem(KEY) || "{}") } } catch { return DEFAULT_LABEL_CONFIG }

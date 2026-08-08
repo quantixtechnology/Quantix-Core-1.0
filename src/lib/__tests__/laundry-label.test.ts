@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   fitBarcode, autoWidthMm, garFontPt, textBlockMm,
   TARGET_MODULE_DOTS, MIN_QUIET_MM, MIN_BARCODE_MM,
-  FIXED_LABEL_HEIGHT_MM, MAX_LABEL_WIDTH_MM,
+  FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM,
 } from '@/lib/laundry-label'
 
 // ============================================================================
@@ -75,13 +75,22 @@ describe('fitBarcode at the auto width', () => {
   })
 })
 
-describe('fixed 40mm height', () => {
-  it('the height constant matches the drawing', () => {
+describe('fixed 60 x 40mm label', () => {
+  it('the size constants match the requested label', () => {
+    expect(FIXED_LABEL_WIDTH_MM).toBe(60)
     expect(FIXED_LABEL_HEIGHT_MM).toBe(40)
   })
 
+  it('a GAR barcode fits at full module width with room to spare', () => {
+    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    expect(f.moduleDots).toBe(TARGET_MODULE_DOTS)
+    expect(f.fits).toBe(true)
+    expect(f.quietMm).toBeGreaterThan(MIN_QUIET_MM)
+    expect(f.imageWidthMm).toBeLessThanOrEqual(FIXED_LABEL_WIDTH_MM)
+  })
+
   it('leaves well over the minimum bar height after the GAR line', () => {
-    const w = autoWidthMm(GAR_MODULES, DPI)
+    const w = FIXED_LABEL_WIDTH_MM
     const pt = garFontPt(w, 15)
     const bars = FIXED_LABEL_HEIGHT_MM - 0.4 - 0.4 - textBlockMm(pt) - 1.2
     expect(bars).toBeGreaterThan(MIN_BARCODE_MM)
