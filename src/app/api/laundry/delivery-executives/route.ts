@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
+import { eligibleExecutiveWhere } from "@/lib/laundry-eligible-executives"
 
 export const runtime = "nodejs"
 
@@ -23,18 +24,28 @@ async function nextEmployeeCode(businessId: string): Promise<string> {
 
 export async function GET(request: Request) {
   try {
-    const businessId = new URL(request.url).searchParams.get("businessId")
+    const sp = new URL(request.url).searchParams
+    const businessId = sp.get("businessId")
     const guard = await requireLaundryPermission(request, businessId, "laundry.staff.view")
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId!)
     if (!biz) return NextResponse.json({ success: true, data: [], stores: [] })
     const lbId = biz.id
 
+    // Dispatch screens pass ?assignable=1&storeId= to get only the executives
+    // who may take an order from that store (see laundry-eligible-executives).
+    // Filtering here rather than in the dropdown keeps a business with hundreds
+    // of executives from shipping the whole master list to pick one name.
+    // Without the flag this stays the unfiltered admin master.
+    const assignable = sp.get("assignable") === "1"
+    const scopeStoreId = sp.get("storeId")
+    const where = assignable ? eligibleExecutiveWhere(lbId, scopeStoreId) : { businessId: lbId }
+
     const start = new Date(); start.setHours(0, 0, 0, 0)
     const end = new Date(start); end.setDate(end.getDate() + 1)
 
     const [execs, stores, pickupGroups, deliveryGroups] = await Promise.all([
-      prisma.laundryDeliveryExecutive.findMany({ where: { businessId: lbId }, orderBy: { createdAt: "asc" }, include: { store: { select: { storeName: true } } } }),
+      prisma.laundryDeliveryExecutive.findMany({ where, orderBy: assignable ? { name: "asc" } : { createdAt: "asc" }, include: { store: { select: { storeName: true } } } }),
       prisma.laundryStore.findMany({ where: { laundryBusinessId: lbId }, select: { id: true, storeName: true } }),
       prisma.laundryOrder.groupBy({ by: ["pickupExecutiveId"], where: { businessId: lbId, pickupDate: { gte: start, lt: end }, pickupExecutiveId: { not: null } }, _count: true }),
       prisma.laundryOrder.groupBy({ by: ["deliveryExecutiveId"], where: { businessId: lbId, status: "READY_FOR_DELIVERY", deliveryExecutiveId: { not: null } }, _count: true }),

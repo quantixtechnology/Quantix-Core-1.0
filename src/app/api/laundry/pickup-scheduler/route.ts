@@ -156,7 +156,9 @@ export async function GET(request: Request) {
         // Mode-aware schedule: the same Order fields, surfaced per queue. No new data.
         timeSlot: type === "delivery" ? o.deliveryTimeSlot : o.pickupTimeSlot,
         amountDue: o.balanceDue ?? 0,
-        storeName: o.store?.storeName ?? null, address: o.pickupAddress,
+        // storeId travels with the job so a dispatch board holding one executive
+        // list can narrow it to the executives who serve THIS job's store.
+        storeId: o.storeId, storeName: o.store?.storeName ?? null, address: o.pickupAddress,
         landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
         area,
         services: o.services.map((s) => s.serviceName), bagCount: o.services.length,

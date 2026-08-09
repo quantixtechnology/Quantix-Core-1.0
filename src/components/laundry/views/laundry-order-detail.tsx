@@ -16,6 +16,7 @@ import {
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
 import type { TransportRef } from "@/lib/laundry-transport"
+import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
 import { LaundryInvoicePanel } from "@/components/laundry/invoice/laundry-invoice-panel"
 import { toast } from "sonner"
 
@@ -34,6 +35,7 @@ interface Detail {
   grandTotal: number; amountPaid: number; balanceDue: number; subscriptionCoveredAmount?: number; createdAt: string
   deliveredAt: string | null; deliveredBy: string | null; recipientName: string | null
   expectedDeliveryDate: string | null
+  storeId?: string | null
   store?: { storeName: string | null; storeCode: string | null } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   items: Item[]; events: OrderEvent[]
@@ -130,14 +132,19 @@ export function LaundryOrderDetail() {
     if (!selectedOrderId) return
     setLoading(true)
     try {
-      const [ord, disp, ex] = await Promise.all([
+      const [ord, disp] = await Promise.all([
         fetch(`/api/laundry/orders/${selectedOrderId}`).then((r) => r.json()),
         fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&orderId=${selectedOrderId}`).then((r) => r.json()),
-        fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()),
       ])
       if (ord.success) setOrder(ord.data)
       if (disp.success && disp.data?.[0]) setDispatchStatus(disp.data[0])
-      if (ex.success) setExecs(ex.data)
+      // Executives are loaded after the order, because eligibility depends on
+      // the order's store — only that store's executives (plus All Stores) may
+      // be assigned here.
+      const execQs = new URLSearchParams({ businessId: currentBusinessId || "", assignable: "1" })
+      if (ord.success && ord.data?.storeId) execQs.set("storeId", ord.data.storeId)
+      const ex = await fetch(`/api/laundry/delivery-executives?${execQs.toString()}`).then((r) => r.json())
+      setExecs(ex.success ? ex.data : [])
     } catch { setOrder(null) } finally { setLoading(false) }
   }, [selectedOrderId, currentBusinessId])
   useEffect(() => { load() }, [load])
@@ -307,6 +314,9 @@ export function LaundryOrderDetail() {
               ) : (
                 <div className="col-span-2 flex items-center gap-2 flex-wrap">
                   <span className="text-slate-400 shrink-0">Assign Executive</span>
+                  {execs.length === 0 ? (
+                    <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">{NO_EXECUTIVES_FOR_STORE}</span>
+                  ) : (
                   <select
                     value={pickExecId || ""}
                     onChange={(e) => handleAssign("pickup", e.target.value || null)}
@@ -317,6 +327,7 @@ export function LaundryOrderDetail() {
                       <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysPickups > 0 ? `(${ex.todaysPickups})` : ""}</option>
                     ))}
                   </select>
+                  )}
                 </div>
               )}
             </div>
@@ -378,6 +389,9 @@ export function LaundryOrderDetail() {
               ) : (
                 <div className="col-span-2 flex items-center gap-2 flex-wrap">
                   <span className="text-slate-400 shrink-0">Assign Executive</span>
+                  {execs.length === 0 ? (
+                    <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">{NO_EXECUTIVES_FOR_STORE}</span>
+                  ) : (
                   <select
                     value={delExecId || ""}
                     onChange={(e) => handleAssign("delivery", e.target.value || null)}
@@ -388,6 +402,7 @@ export function LaundryOrderDetail() {
                       <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysDeliveries > 0 ? `(${ex.todaysDeliveries})` : ""}</option>
                     ))}
                   </select>
+                  )}
                 </div>
               )}
             </div>

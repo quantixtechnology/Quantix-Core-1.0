@@ -16,6 +16,7 @@ import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { PwaInstallButton } from "@/components/laundry/pwa-install-button"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
 
 const TOKEN_KEY = "qx_store_token"
 
@@ -601,7 +602,9 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
     setLoading(true)
     Promise.all([
       api(`/api/laundry/pickup-scheduler?businessId=${staff.businessId}&storeId=${staff.storeId}&type=${mode}&scope=active`),
-      api(`/api/laundry/delivery-executives?businessId=${staff.businessId}`),
+      // This PWA is already isolated to one store, so the assignable list is
+      // that store's executives (plus All Stores) — never the whole chain.
+      api(`/api/laundry/delivery-executives?businessId=${staff.businessId}&storeId=${staff.storeId}&assignable=1`),
     ]).then(([s, e]) => { if (s.success) setJobs(s.data); if (e.success) setExecs(e.data) }).finally(() => setLoading(false))
   }, [api, staff, mode])
   useEffect(() => { setSel(new Set()); load() }, [load])
@@ -630,8 +633,8 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
         {sel.size > 0 && (
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
             <span className="text-[12px] font-medium text-blue-800">{sel.size} selected</span>
-            <select defaultValue="" onChange={(e) => { if (e.target.value) { bulk(e.target.value); e.currentTarget.value = "" } }} className="h-9 text-[12px] rounded-lg border border-blue-200 px-2 bg-white flex-1">
-              <option value="" disabled>Assign to…</option>{execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+            <select defaultValue="" disabled={execs.length === 0} onChange={(e) => { if (e.target.value) { bulk(e.target.value); e.currentTarget.value = "" } }} className="h-9 text-[12px] rounded-lg border border-blue-200 px-2 bg-white flex-1 disabled:bg-slate-50 disabled:text-slate-400">
+              <option value="" disabled>{execs.length === 0 ? "None for this store" : "Assign to…"}</option>{execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
             </select>
             <button onClick={() => bulk(null)} className="h-9 px-3 rounded-lg border border-blue-200 text-blue-700 text-[12px]">Unassign</button>
           </div>
@@ -662,6 +665,9 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
                     <Lock className="h-3.5 w-3.5 mr-1.5" />{j.executiveName || "Store / Counter"} — completed
                   </div>
                 ) : (
+                  execs.length === 0 ? (
+                  <div className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-[12px] text-amber-700">{NO_EXECUTIVES_FOR_STORE}</div>
+                ) : (
                   <select value={j.executiveId || ""} onChange={(e) => assign(j.id, e.target.value || null)} className="mt-2 w-full h-9 rounded-lg border border-slate-200 px-2 text-[12px] bg-white">
                     <option value="">{j.executiveId ? "Reassign / Unassign…" : "— Unassigned —"}</option>
                     {execs.map((ex) => (
@@ -670,7 +676,7 @@ function Dispatch({ staff, api, onOpen }: { staff: Staff; api: Api; onOpen: (id:
                       </option>
                     ))}
                   </select>
-                )}
+                ))}
               </div>
               )})}</div>}
       </div>

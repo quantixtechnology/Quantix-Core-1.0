@@ -33,6 +33,7 @@ import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { useTransportModes } from "@/hooks/use-transport-modes"
+import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
@@ -51,6 +52,7 @@ interface OrderRow {
   auditComplete?: boolean
   deliveryOtp?: string | null; deliveryVerificationMethod?: string | null
   pickupOtp?: string | null; pickupVerificationMethod?: string | null
+  storeId?: string | null
   store?: { storeName: string | null } | null
   customer?: { name: string; phone: string | null } | null
   // Transport identity resolved by the API through Transport Setup.
@@ -726,8 +728,13 @@ export function LaundryReadyForDelivery() {
     setDelForm({ address: "", date: new Date().toISOString().split("T")[0], timeSlot: "", assignNow: false, executiveId: "" })
     setDelAddresses([])
     if (o && currentBusinessId) {
-      const j = await fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => null)
-      if (j?.success) setExecs(j.data)
+      // Only the executives who serve THIS order's store (plus All-Stores
+      // executives) — the business-wide list is unusable once a chain has more
+      // than a handful of stores.
+      const execQs = new URLSearchParams({ businessId: currentBusinessId, assignable: "1" })
+      if (o.storeId) execQs.set("storeId", o.storeId)
+      const j = await fetch(`/api/laundry/delivery-executives?${execQs.toString()}`).then((r) => r.json()).catch(() => null)
+      setExecs(j?.success ? j.data : [])
       if (o.customerId) {
         setDelAddrLoading(true)
         const addrRes = await fetch(`/api/laundry/customers/${o.customerId}/addresses?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => null)
@@ -844,15 +851,18 @@ export function LaundryReadyForDelivery() {
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={delForm.assignNow} onChange={(e) => setDelForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
-                    {delForm.assignNow && (
+                    {delForm.assignNow && (execs.length === 0 ? (
+                      <p className="flex-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">{NO_EXECUTIVES_FOR_STORE}</p>
+                    ) : (
                       <select value={delForm.executiveId} onChange={(e) => setDelForm((f) => ({ ...f, executiveId: e.target.value }))} className="h-7 text-[10px] rounded border border-slate-200 px-1 bg-white flex-1">
                         <option value="">Select executive</option>
                         {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
                       </select>
-                    )}
+                    ))}
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={scheduleBusy} onClick={async () => {
+                    {/* Assigning is blocked while this store has nobody to assign to. */}
+                    <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={scheduleBusy || (delForm.assignNow && execs.length === 0)} onClick={async () => {
                       if (!selected || !currentBusinessId) return
                       setScheduleBusy(true)
                       try {

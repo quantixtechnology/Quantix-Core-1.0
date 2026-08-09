@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Truck, PackageCheck, Navigation, ShoppingBag, Clock, Search, RefreshCw, Users, X, Lock } from "lucide-react"
 import { toast } from "sonner"
+import { filterEligibleExecutives, filterEligibleForStores, NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
 
 type Kind = "pickup" | "delivery"
 
@@ -25,6 +26,7 @@ interface Job {
   id: string; orderNumber: string; status: string; fieldStatus: string | null; priority: string
   customerName: string; customerPhone: string | null; timeSlot: string | null
   amountDue: number
+  storeId: string | null; storeName?: string | null
   address: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   bagCount: number
   executiveId: string | null; executiveName: string | null
@@ -33,7 +35,12 @@ interface Job {
   bucket: string
 }
 interface DispatchJob extends Job { kind: Kind }
-interface Exec { id: string; name: string; todaysPickups?: number; todaysDeliveries?: number }
+interface Exec {
+  id: string; name: string; todaysPickups?: number; todaysDeliveries?: number
+  // Eligibility inputs — this board holds ONE list covering every store, so the
+  // assignment dropdowns narrow it per job (see laundry-eligible-executives).
+  storeId?: string | null; isActive?: boolean; availability?: string | null; archivedAt?: string | null
+}
 
 const WORK_TYPES = [
   { key: "all", label: "All Work" },
@@ -176,6 +183,20 @@ export function LaundryDispatchCenter() {
       return true
     })
   }, [byWorkType, status, execFilter, search])
+
+  // ── Who may take this job ─────────────────────────────────────────────────
+  // The board deliberately keeps ONE executive list (the "Executive focus"
+  // filter above still spans the whole business, so you can look at anyone's
+  // work). Only the ASSIGNMENT dropdowns narrow, and they narrow to the job's
+  // own store — a rider from another store must never be selectable.
+  const execsFor = useCallback((storeId: string | null) => filterEligibleExecutives(execs, storeId), [execs])
+  // Bulk targets several jobs at once, so only executives eligible for EVERY
+  // selected job's store are offered; a mixed-store selection leaves the
+  // All-Stores executives.
+  const bulkExecs = useMemo(
+    () => filterEligibleForStores(execs, filtered.filter((j) => selected.has(j.id) && !isFrozen(j)).map((j) => j.storeId)),
+    [execs, filtered, selected],
+  )
 
   // ── Assignment (row-level) — uses the job's OWN kind ──────────────────────
   const assign = async (job: DispatchJob, executiveId: string | null) => {
@@ -324,9 +345,11 @@ export function LaundryDispatchCenter() {
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5 flex-wrap">
           <span className="text-[11px] font-medium text-blue-800">{selected.size} selected</span>
           <select defaultValue="" onChange={(e) => { if (e.target.value) { bulkAssign(e.target.value); e.target.value = "" } }}
-            className="h-7 text-[11px] rounded border border-blue-200 px-1 bg-white">
-            <option value="" disabled>Assign to…</option>
-            {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+            disabled={bulkExecs.length === 0}
+            title={bulkExecs.length === 0 ? "No delivery executive serves every selected store." : undefined}
+            className="h-7 text-[11px] rounded border border-blue-200 px-1 bg-white disabled:bg-slate-50 disabled:text-slate-400">
+            <option value="" disabled>{bulkExecs.length === 0 ? "None for these stores" : "Assign to…"}</option>
+            {bulkExecs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
           </select>
           <Button variant="outline" size="sm" className="h-7 text-[11px] px-2 border-blue-200 text-blue-700" onClick={() => bulkAssign(null)}>Unassign</Button>
           <Button variant="ghost" size="sm" className="h-7 text-[11px] px-2 text-slate-500" onClick={() => setSelected(new Set())}><X className="h-3 w-3 mr-0.5" />Clear</Button>
@@ -378,9 +401,11 @@ export function LaundryDispatchCenter() {
                       </span>
                     ) : (
                       <select value={job.executiveId || ""} onChange={(e) => assign(job, e.target.value || null)} onClick={(e) => e.stopPropagation()}
-                        className="h-6 text-[10px] w-20 lg:w-28 rounded border border-slate-200 px-1 bg-white">
-                        <option value="">—</option>
-                        {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                        title={execsFor(job.storeId).length === 0 ? NO_EXECUTIVES_FOR_STORE : undefined}
+                        disabled={execsFor(job.storeId).length === 0 && !job.executiveId}
+                        className="h-6 text-[10px] w-20 lg:w-28 rounded border border-slate-200 px-1 bg-white disabled:bg-slate-50 disabled:text-slate-400">
+                        <option value="">{execsFor(job.storeId).length === 0 ? "None for store" : "—"}</option>
+                        {execsFor(job.storeId).map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
                       </select>
                     )}
                     <Badge variant="outline" className={`text-[9px] leading-none px-1 h-4 shrink-0 ${BUCKET_STYLES[job.bucket] || "border-slate-200 text-slate-400"}`}>
