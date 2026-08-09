@@ -70,7 +70,14 @@ export default function StoreAdminApp() {
     const j = await api("/api/laundry/store-admin/me", {}, tk)
     if (!j.success) { localStorage.removeItem(TOKEN_KEY); return false }
     setToken(tk)
-    if (j.data.isSuperAdmin) { setSa({ name: j.data.name, businesses: j.data.businesses || [] }); setStaff(null) }
+    // The picker is driven by the presence of a business list, NOT by
+    // isSuperAdmin. /me returns a list in two cases: a platform admin on a host
+    // that names no tenant (every business), and a session scoped to ONE
+    // business — a manager assigned business-wide, or a platform admin on
+    // store.<tenant>. Both pick a store; only the width of the list differs,
+    // and the server decides that width.
+    const businesses = j.data.businesses as SuperAdmin["businesses"] | undefined
+    if (businesses?.length) { setSa({ name: j.data.name ?? "Store Admin", businesses }); setStaff(null) }
     else { setSa(null); setStaff(j.data) }
     return true
   }, [api])
@@ -91,9 +98,11 @@ export default function StoreAdminApp() {
       await loadSession(j.data.token)
     } catch (e) { setError(e instanceof Error ? e.message : "Login failed") } finally { setLoggingIn(false) }
   }
-  // Super Admin picks a business + store to operate as.
+  // Choosing a store from the picker. The chosen store is only a UI selection:
+  // every request still carries the session token, and the server re-checks
+  // that the store is inside the session's scope before answering.
   const pickStore = (b: SuperAdmin["businesses"][number], st: { id: string; storeName: string; storeCode: string | null }) =>
-    setStaff({ name: sa?.name ?? "Super Admin", isSuperAdmin: true, roleName: "Super Admin", businessId: b.businessId, businessName: b.businessName, businessLogo: null, storeId: st.id, storeName: st.storeName, storeCode: st.storeCode })
+    setStaff({ name: sa?.name ?? "Store Admin", isSuperAdmin: sa?.businesses.length !== 1, roleName: "Store Admin", businessId: b.businessId, businessName: b.businessName, businessLogo: null, storeId: st.id, storeName: st.storeName, storeCode: st.storeCode })
   const logout = async () => {
     try { await api("/api/laundry/store-admin/auth/logout", { method: "POST" }) } catch { /* noop */ }
     localStorage.removeItem(TOKEN_KEY); setToken(null); setStaff(null); setSa(null)

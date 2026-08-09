@@ -43,22 +43,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: { token, staff: { name: user.name, isSuperAdmin: true, roleName: "Super Admin" } } })
     }
 
-    // Must hold an active store-operational role bound to a store.
-    const assign = await prisma.laundryAccessAssignment.findFirst({
-      where: { userId: user.id, active: true, storeId: { not: null } },
+    // Must hold an active store-operational role. The assignment either names a
+    // store or covers the business; the narrower grant wins when both exist.
+    const assignments = await prisma.laundryAccessAssignment.findMany({
+      where: { userId: user.id, active: true },
       include: { role: { select: { code: true, name: true, isActive: true } } },
     })
-    // Only store-operational staff bound to a store may enter. Super Admins,
-    // Business Owners and every other role are rejected with a clear redirect —
-    // never auto-converted into a store account.
-    if (!assign?.storeId || !assign.role.isActive || !STORE_ADMIN_ROLES.has(assign.role.code)) {
+    const usable = assignments.filter((a) => a.role.isActive && STORE_ADMIN_ROLES.has(a.role.code))
+    const assign = usable.find((a) => a.storeId) ?? usable[0]
+    // Only store-operational staff may enter. Super Admins, Business Owners and
+    // every other role are rejected with a clear redirect — never auto-converted
+    // into a store account.
+    if (!assign) {
       return NextResponse.json({ error: "This application is for Store Staff only. Please log in to the Admin Dashboard.", code: "NOT_STORE_STAFF" }, { status: 403 })
     }
 
     const biz = await resolveLaundryBusiness(assign.businessId)
     if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
-    const store = await prisma.laundryStore.findFirst({ where: { id: assign.storeId, laundryBusinessId: biz.id, isActive: true }, select: { id: true, storeName: true, storeCode: true } })
-    if (!store) return NextResponse.json({ error: "Your assigned store is inactive. Contact your admin." }, { status: 403 })
+    // Business-wide assignment: no fixed store, so the app opens on a picker
+    // showing THIS business's stores only.
+    const store = assign.storeId
+      ? await prisma.laundryStore.findFirst({ where: { id: assign.storeId, laundryBusinessId: biz.id, isActive: true }, select: { id: true, storeName: true, storeCode: true } })
+      : null
+    if (assign.storeId && !store) return NextResponse.json({ error: "Your assigned store is inactive. Contact your admin." }, { status: 403 })
 
     const token = createAccessToken()
     const expiresAt = new Date(); expiresAt.setHours(expiresAt.getHours() + 24)
@@ -74,7 +81,10 @@ export async function POST(request: Request) {
         staff: {
           name: user.name, businessId: biz.id,
           businessName: business?.name ?? null, businessLogo: business?.logo ? resolveImageUrl(business.logo) : null,
-          roleCode: assign.role.code, roleName: assign.role.name, storeId: store.id, storeName: store.storeName, storeCode: store.storeCode,
+          roleCode: assign.role.code, roleName: assign.role.name,
+          // Null for a business-wide manager — the client then calls /me and
+          // shows this business's store picker.
+          storeId: store?.id ?? null, storeName: store?.storeName ?? null, storeCode: store?.storeCode ?? null,
         },
       },
     })
