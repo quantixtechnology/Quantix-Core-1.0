@@ -9,10 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, Copy, Printer, ExternalLink, ScanLine } from "lucide-react"
+import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, Copy, ScanLine } from "lucide-react"
 import { Barcode } from "./barcode"
-import { printLabels, loadLabelConfig, saveLabelConfig, type LabelConfig, type LabelData } from "@/lib/laundry-label"
-import { useAuthStore } from "@/stores/auth-store"
 
 interface ScanResult {
   item: {
@@ -96,7 +94,6 @@ function CameraScanner({ onDetected, onClose }: { onDetected: (code: string) => 
 
 export function LaundryGarmentLookup() {
   const { toast } = useToast()
-  const { user } = useAuthStore()
   const { setLaundryPage } = useAdminStore()
   const garCode = (r: ScanResult | null) => r?.item.garmentScanCode || r?.item.barcode || ""
   const [code, setCode] = useState("")
@@ -106,7 +103,6 @@ export function LaundryGarmentLookup() {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [scanMode, setScanMode] = useState(false)
   const scanInputRef = useRef<HTMLInputElement>(null)
-  const [cfg] = useState<LabelConfig>(loadLabelConfig())
 
   const search = useCallback(async (q: string) => {
     const query = q.trim()
@@ -183,38 +179,8 @@ export function LaundryGarmentLookup() {
     return map[stage] || "bg-slate-100 text-slate-600"
   }
 
-  const toLabel = (): LabelData | null => {
-    if (!result) return null
-    return {
-      itemNumber: result.item.itemNumber || garCode(result) || "",
-      garment: result.item.garmentName,
-      service: result.item.serviceName,
-      garScanCode: garCode(result),
-      orderNumber: result.order.orderNumber,
-      storeName: result.store?.storeName,
-    }
-  }
-
-  const printOne = async () => {
-    const ld = toLabel(); if (!ld) return
-    await printLabels([ld], cfg, true)
-  }
-
-  const previewOne = async () => {
-    const ld = toLabel(); if (!ld) return
-    await printLabels([ld], cfg, false)
-  }
-
   const copyToClipboard = async (text: string, label: string) => {
-    try { await navigator.clipboard.writeText(text); toast({ title: `Copied ${label}`, description: text }) } catch { toast({ title: "Failed to copy", variant: "destructive" }) }
-  }
-
-  const reprintBarcode = async () => {
-    if (!result) return
-    try {
-      await fetch(`/api/laundry/items/${result.item.id}/barcode`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "REPRINT", actorName: user?.name }) })
-      toast({ title: "Barcode reprinted" })
-    } catch { toast({ title: "Reprint failed", variant: "destructive" }) }
+    try { await navigator.clipboard.writeText(text); toast({ title: `✓ ${label} copied`, description: text }) } catch { toast({ title: "Failed to copy", variant: "destructive" }) }
   }
 
   return (
@@ -291,14 +257,14 @@ export function LaundryGarmentLookup() {
 
       {result && !loading && (
         <div className="space-y-4">
-          {/* Quick Actions */}
+          {/* Quick Actions — Lookup is for finding a garment and carrying its
+              identifiers somewhere else, so it offers only the two copies.
+              Printing still lives where labels are generated (Barcode
+              Generation) and the order still opens from the Orders module;
+              nothing was removed from the system, only these shortcuts. */}
           <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={printOne}><Printer className="h-3.5 w-3.5" /> Print Label</Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={previewOne}><BarcodeIcon className="h-3.5 w-3.5" /> Preview Label</Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={reprintBarcode}><Printer className="h-3.5 w-3.5" /> Reprint Barcode</Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => window.open(`/admin#laundryPage=order-detail&orderId=${result.order.id}`, "_blank")}><ExternalLink className="h-3.5 w-3.5" /> View Order</Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => copyToClipboard(garCode(result), "GAR")}><Copy className="h-3.5 w-3.5" /> Copy GAR</Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => copyToClipboard(result.item.itemNumber, "Item Number")}><Copy className="h-3.5 w-3.5" /> Copy ITM</Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copyToClipboard(result.order.orderNumber, "Order Number")}><Copy className="h-3.5 w-3.5" /> Copy Order</Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copyToClipboard(result.item.itemNumber, "Item Number")}><Copy className="h-3.5 w-3.5" /> Copy Item</Button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
