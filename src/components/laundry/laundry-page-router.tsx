@@ -49,6 +49,7 @@ const LaundryTransitWorkstation = dynamic(() => import("@/components/laundry/vie
 const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryNavigationManager = dynamic(() => import("@/components/laundry/views/laundry-navigation-settings").then(m => ({ default: m.LaundryNavigationManager })), { loading: () => <PageLoader /> })
+const LaundryHardwareManager = dynamic(() => import("@/components/laundry/views/laundry-hardware-manager").then(m => ({ default: m.LaundryHardwareManager })), { loading: () => <PageLoader /> })
 const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
 const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
 const CrmLeads = dynamic(() => import("@/components/laundry/views/crm/crm-leads").then(m => ({ default: m.CrmLeads })), { loading: () => <PageLoader /> })
@@ -97,6 +98,7 @@ export function LaundryPageRouter() {
     case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
     case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
     case "navigation": return <LaundryNavigationManager businessId={wsBusinessId} />
+    case "hardware-manager": return <LaundryHardwareManager />
     case "categories": return <LaundryCategoriesMaster />
     case "garments": return <LaundryGarmentsMaster />
     case "services": return <LaundryServicesMaster />

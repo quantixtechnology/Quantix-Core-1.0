@@ -171,7 +171,7 @@ describe("defaultNavigationConfig integrity", () => {
       "Package", "Shield", "Megaphone", "Ticket", "BadgePercent", "Gift", "Crown",
       "UserPlus", "Coins", "ShoppingCart", "WashingMachine", "Calculator", "Tags",
       "ChevronDown", "Bike", "Smartphone", "Search", "Menu", "Circle", "Folder",
-      "Calendar", "ListChecks",
+      "Calendar", "ListChecks", "Usb",
     ])
     for (const sec of defaults) {
       expect(knownIcons.has(sec.icon)).toBe(true)

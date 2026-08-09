@@ -174,8 +174,8 @@ describe("Gate 3: Registry audit", () => {
     const expected: string[] = []
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
-    // 24 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
-    expect(allScreens.length).toBe(66)
+    // 25 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
+    expect(allScreens.length).toBe(67)
   })
 
   it("every screen key validates correctly", () => {

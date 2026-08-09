@@ -122,6 +122,7 @@ export type LaundryBusinessPage =
   | "processing-centers"
   | "reports"
   | "settings"
+  | "hardware-manager"
   | "categories"
   | "garments"
   | "services"

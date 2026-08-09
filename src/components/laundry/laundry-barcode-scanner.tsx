@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ScanLine, Camera, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ScanEngine } from "@/lib/hardware"
+import type { ScanSource, ScanStatus } from "@/lib/hardware"
 
 type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> }
 type DetectorCtor = new (o?: { formats?: string[] }) => Detector
@@ -27,15 +29,37 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
     return false
   }
 
-  const submit = useCallback((code: string) => {
-    const c = code.trim().toUpperCase()
-    if (!c || handling || guard(c)) return
-    setHandling(true)
-    Promise.resolve(onDetect(c)).finally(() => {
-      setHandling(false)
-      if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus() }
+  // This component is the one barcode surface every workstation renders, so
+  // routing it through the shared ScanEngine puts every screen on the engine
+  // without touching a single workflow. The engine classifies the input
+  // (USB / Bluetooth wedge, camera, manual), dedupes and records diagnostics,
+  // then hands the code back through the attachment below — which runs the
+  // exact same submit pipeline as before.
+  const onDetectRef = useRef(onDetect)
+  onDetectRef.current = onDetect
+  const handlingRef = useRef(false)
+  const [scanStatus, setScanStatus] = useState<ScanStatus>("MANUAL_ENTRY")
+
+  useEffect(() => {
+    const detach = ScanEngine.attach((e) => {
+      handlingRef.current = true
+      setHandling(true)
+      Promise.resolve(onDetectRef.current(e.code)).finally(() => {
+        handlingRef.current = false
+        setHandling(false)
+        if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus() }
+      })
     })
-  }, [onDetect, handling])
+    setScanStatus(ScanEngine.status())
+    const unsub = ScanEngine.subscribe(setScanStatus)
+    return () => { detach(); unsub() }
+  }, [])
+
+  const submit = useCallback((code: string, source?: ScanSource) => {
+    const c = code.trim().toUpperCase()
+    if (!c || handlingRef.current || guard(c)) return
+    ScanEngine.submit(c, source)
+  }, [])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -106,13 +130,14 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
 
       {cameraOpen && (
         <CameraScanner
-          onDetected={(code: string) => { setCameraOpen(false); submit(code) }}
+          onDetected={(code: string) => { setCameraOpen(false); submit(code, "CAMERA") }}
           onClose={() => setCameraOpen(false)}
         />
       )}
 
-      <p className="text-[11px] text-slate-400 mt-1.5">
-        Scan a garment barcode to auto-start — scan again to complete. USB/Bluetooth scanners supported.
+      <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5">
+        <span className={`inline-block h-1.5 w-1.5 rounded-full ${scanStatus === "SCANNER_READY" ? "bg-emerald-500" : scanStatus === "CAMERA_READY" ? "bg-amber-400" : "bg-rose-400"}`} />
+        {ScanEngine.statusLabel()} — scan a garment barcode to auto-start, scan again to complete. USB/Bluetooth scanners supported.
       </p>
     </div>
   )

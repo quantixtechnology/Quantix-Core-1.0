@@ -23,7 +23,7 @@ import {
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
   WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone, Search,
-  Menu, Calendar, type LucideIcon,
+  Menu, Calendar, Usb, type LucideIcon,
 } from "lucide-react"
 
 type NavCfg = {
@@ -78,7 +78,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "ShoppingCart": ShoppingCart, "WashingMachine": WashingMachine,
   "Calculator": Calculator, "Tags": Tags, "ChevronDown": ChevronDown,
   "Bike": Bike, "Smartphone": Smartphone, "Search": Search, "Menu": Menu,
-  "Circle": ShoppingBag, "Calendar": Calendar,
+  "Circle": ShoppingBag, "Calendar": Calendar, "Usb": Usb,
 }
 
 // PAGE_MAP is imported as SCREEN_PAGE_MAP from @/lib/laundry-nav-config and the

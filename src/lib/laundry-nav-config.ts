@@ -39,6 +39,7 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "laundry.bags": "bag-management",
   "laundry.reports": "reports",
   "laundry.settings": "settings",
+  "laundry.hardware": "hardware-manager",
   "laundry.navigation": "navigation",
   "laundry.order_detail": "order-detail",
   "laundry.inbox": "inbox",
@@ -99,6 +100,7 @@ const SCREEN_ICONS: Record<string, string> = {
   "laundry.bags": "Package",
   "laundry.reports": "BarChart3",
   "laundry.settings": "Settings",
+  "laundry.hardware": "Usb",
   "laundry.navigation": "Menu",
   "crm.dashboard": "Gauge",
   "crm.leads": "UsersRound",
@@ -337,6 +339,7 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "laundry.roles", displayName: "Roles & Permissions", icon: "Shield" },
         { screenKey: "laundry.mobile_apps", displayName: "Mobile Apps", icon: "Smartphone" },
         { screenKey: "laundry.settings", displayName: "Workspace Settings" },
+        { screenKey: "laundry.hardware", displayName: "Hardware Manager", icon: "Usb" },
         { screenKey: "laundry.navigation", displayName: "Navigation Manager" },
       ],
     },
@@ -375,10 +378,40 @@ async function migrateDeliveryExecutivesToOperations(navigationId: string): Prom
   }).catch(() => null)
 }
 
+/**
+ * Add Hardware Manager to a tenant seeded before it existed. Same reason as the
+ * migration above: ensureNavigationConfig returns early once a nav row exists,
+ * so changing the defaults alone would only ever reach NEW businesses.
+ *
+ * Additive and idempotent — it appends to Administration and does nothing if
+ * the item is already there or the section has been renamed away.
+ */
+async function ensureHardwareManagerNavItem(navigationId: string): Promise<void> {
+  const already = await db.laundryNavItem.findFirst({
+    where: { navigationId, screenKey: "laundry.hardware" }, select: { id: true },
+  }).catch(() => null)
+  if (already) return
+
+  const admin = await db.laundryNavSection.findFirst({
+    where: { navigationId, name: "Administration" }, select: { id: true },
+  }).catch(() => null)
+  if (!admin) return
+
+  const last = await db.laundryNavItem.aggregate({ where: { sectionId: admin.id }, _max: { order: true } })
+  await db.laundryNavItem.create({
+    data: {
+      navigationId, sectionId: admin.id, screenKey: "laundry.hardware",
+      displayName: "Hardware Manager", icon: "Usb",
+      order: (last._max.order ?? -1) + 1, active: true, hidden: false,
+    },
+  }).catch(() => null)
+}
+
 export async function ensureNavigationConfig(businessId: string): Promise<void> {
   const existing = await db.laundryNavigation.findUnique({ where: { businessId } })
   if (existing) {
     await migrateDeliveryExecutivesToOperations(existing.id)
+    await ensureHardwareManagerNavItem(existing.id)
     return
   }
 
