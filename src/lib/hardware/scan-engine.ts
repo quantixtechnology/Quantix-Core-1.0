@@ -17,6 +17,7 @@
 
 import type { ScanEvent, ScanSource, ScanStatus } from "./types"
 import { diagnostics } from "./diagnostics"
+import { eventLog } from "./event-log"
 
 /** A hardware wedge types far faster than a person; 35ms/char is a wide margin. */
 const MAX_WEDGE_GAP_MS = 35
@@ -41,6 +42,9 @@ class ScanEngineImpl {
   private cameraAvailable = false
   private started = false
   private detachKeys: (() => void) | null = null
+  // Administrator preferences from the store's hardware profile.
+  private autoDetect = true
+  private fallback: "CAMERA" | "MANUAL" = "CAMERA"
 
   // Keystroke buffer used only to classify input speed.
   private buf = ""
@@ -79,7 +83,9 @@ class ScanEngineImpl {
   private observeKey(e: KeyboardEvent) {
     const now = Date.now()
     if (e.key === "Enter") {
-      if (this.buf.length >= MIN_WEDGE_LENGTH && this.isFastBurst()) this.noteWedgeSeen(now)
+      // autoDetect off pins the ladder to whatever the administrator chose —
+      // timing is still measured for diagnostics, but never promotes a rung.
+      if (this.autoDetect && this.buf.length >= MIN_WEDGE_LENGTH && this.isFastBurst()) this.noteWedgeSeen(now)
       this.resetBuffer()
       return
     }
@@ -106,7 +112,11 @@ class ScanEngineImpl {
   private noteWedgeSeen(at: number) {
     const was = this.status()
     this.wedgeLastSeenAt = at
-    if (was !== this.status()) this.emitStatus()
+    const now = this.status()
+    if (was !== now) {
+      if (now === "SCANNER_READY") eventLog.record("SCANNER_CONNECTED", "Scanner detected", this.knownScannerConnection === "BLUETOOTH" ? "Bluetooth keyboard emulation" : "Keyboard emulation")
+      this.emitStatus()
+    }
   }
 
   /** Duration of the burst that produced the current buffer, for diagnostics. */
@@ -117,11 +127,26 @@ class ScanEngineImpl {
 
   // ── status ────────────────────────────────────────────────────────────────
 
-  /** Where input is expected to come from right now. */
+  /** Where input is expected to come from right now — the ladder, in order. */
   status(): ScanStatus {
     if (this.wedgeLastSeenAt && Date.now() - this.wedgeLastSeenAt < SCANNER_IDLE_MS) return "SCANNER_READY"
-    if (this.cameraAvailable) return "CAMERA_READY"
+    // An administrator can pin the fallback to manual, e.g. on a counter where
+    // pointing a camera at a customer's clothing is unwelcome.
+    if (this.cameraAvailable && this.fallback === "CAMERA") return "CAMERA_READY"
     return "MANUAL_ENTRY"
+  }
+
+  /** Apply the store's saved scanner preferences. */
+  applyPreferences(p: { autoDetect?: boolean; fallback?: "CAMERA" | "MANUAL" }) {
+    const was = this.status()
+    if (typeof p.autoDetect === "boolean") this.autoDetect = p.autoDetect
+    if (p.fallback) this.fallback = p.fallback
+    if (was !== this.status()) this.emitStatus()
+  }
+
+  /** True while a scanner is considered present. */
+  scannerPresent(): boolean {
+    return !!this.wedgeLastSeenAt && Date.now() - this.wedgeLastSeenAt < SCANNER_IDLE_MS
   }
 
   statusLabel(): string {
@@ -226,6 +251,8 @@ class ScanEngineImpl {
     this.wedgeLastSeenAt = null
     this.knownScannerConnection = null
     this.cameraAvailable = false
+    this.autoDetect = true
+    this.fallback = "CAMERA"
     this.lastDispatch = { code: "", at: 0 }
     this.resetBuffer()
   }

@@ -8,18 +8,25 @@
 
 export { ScanEngine } from "./scan-engine"
 export { PrintEngine, renderAndPrint } from "./print-engine"
-export type { PrintJob, QueuedJob, PrinterConnectivity } from "./print-engine"
+export type { PrintJob, TrackedJob, PrintJobStatus, PrinterConnectivity } from "./print-engine"
 export { diagnostics } from "./diagnostics"
 export type { DiagnosticsSnapshot, ScannerDiagnostics, PrinterDiagnostics } from "./diagnostics"
-export { probeCapabilities, capabilityLabel, isSecureContext } from "./capabilities"
+export { probeCapabilities, capabilityLabel, isSecureContext, CAPABILITY_NOTES } from "./capabilities"
+export { eventLog } from "./event-log"
+export type { HardwareEvent, HardwareEventType, HardwareEventLevel } from "./event-log"
+export { probeCamera, testCamera, EMPTY_CAMERA } from "./camera"
+export type { CameraInfo } from "./camera"
+export { hardwareHealth } from "./health"
+export type { HardwareHealth, HealthLevel } from "./health"
 export {
   discoverDevices, browserPrintDevice, deviceSummary, watchDeviceChanges,
   requestUsbDevice, requestHidDevice, requestSerialPort,
 } from "./registry"
 export {
   loadProfile, saveProfile, setRole, deviceForRole, listProfiles, subscribeProfile,
+  setScannerPreferences, DEFAULT_SCANNER_PREFERENCES,
 } from "./profiles"
-export type { DeviceProfile } from "./profiles"
+export type { DeviceProfile, ScannerPreferences } from "./profiles"
 export * from "./types"
 
 // Sample documents for the Hardware Manager's test buttons. Kept here so a

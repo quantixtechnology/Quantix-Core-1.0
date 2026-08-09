@@ -441,7 +441,13 @@ describe("Gate 5: Default business roles", () => {
     expect(screens.length).toBe(3)
   })
 
-  it("VIEWER role has VIEW on every screen", () => {
+  // Owner-only screens are the single exception to "Viewer sees everything".
+  // Hardware Manager pairs devices, rebinds default printers and clears print
+  // queues — administration of the terminal, not something a read-only role
+  // should reach — so it stays with the Business Owner and the Super Admin.
+  const OWNER_ONLY = ["laundry.hardware"]
+
+  it("VIEWER role has VIEW on every screen except the owner-only ones", () => {
     const role = SYSTEM_ROLES.find((r) => r.code === "VIEWER")
     expect(role).toBeDefined()
     const screens = role!.screens()
@@ -449,7 +455,20 @@ describe("Gate 5: Default business roles", () => {
       expect(s.level).toBe(Level.VIEW)
       expect(allScreens).toContain(s.screenKey)
     }
-    expect(screens.length).toBe(allScreens.length)
+    expect(screens.length).toBe(allScreens.length - OWNER_ONLY.length)
+  })
+
+  it("no non-owner system role can reach an owner-only screen", () => {
+    for (const role of SYSTEM_ROLES) {
+      if (role.isOwner) continue
+      for (const s of role.screens()) expect(OWNER_ONLY).not.toContain(s.screenKey)
+    }
+  })
+
+  it("the Business Owner still reaches the owner-only screens", () => {
+    const owner = SYSTEM_ROLES.find((r) => r.isOwner)
+    const keys = owner!.screens().map((s) => s.screenKey)
+    for (const k of OWNER_ONLY) expect(keys).toContain(k)
   })
 
   it("every system role has valid screen keys and levels", () => {

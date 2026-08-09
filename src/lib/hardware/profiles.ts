@@ -14,6 +14,21 @@ import type { PrinterRole } from "./types"
 
 const KEY_PREFIX = "qx-hardware-profile-v1"
 
+export interface ScannerPreferences {
+  /** Off means the ladder is pinned to `preferredScannerId` / manual. */
+  autoDetect: boolean
+  /** Device id to favour when several scanners are paired. Null = Auto. */
+  preferredScannerId: string | null
+  /** Rung to fall back to when no scanner is heard from. */
+  fallback: "CAMERA" | "MANUAL"
+  /** Lets an operator type a code. Turning this off is a deliberate lockdown. */
+  manualEntryEnabled: boolean
+}
+
+export const DEFAULT_SCANNER_PREFERENCES: ScannerPreferences = {
+  autoDetect: true, preferredScannerId: null, fallback: "CAMERA", manualEntryEnabled: true,
+}
+
 export interface DeviceProfile {
   storeId: string | null
   storeName?: string | null
@@ -21,12 +36,19 @@ export interface DeviceProfile {
   printers: Partial<Record<PrinterRole, string>>
   /** Free-text label stock note for the barcode printer, e.g. "60 × 40 mm". */
   labelSize?: string | null
+  /** Printer resolution note, e.g. "203 DPI". Declared by the operator — a
+   *  browser is never told a printer's DPI. */
+  printerDpi?: string | null
+  scanner: ScannerPreferences
   updatedAt?: string
 }
 
 const key = (storeId: string | null) => `${KEY_PREFIX}:${storeId || "default"}`
 
-const empty = (storeId: string | null): DeviceProfile => ({ storeId, printers: {}, labelSize: null })
+const empty = (storeId: string | null): DeviceProfile => ({
+  storeId, printers: {}, labelSize: null, printerDpi: null,
+  scanner: { ...DEFAULT_SCANNER_PREFERENCES },
+})
 
 export function loadProfile(storeId: string | null): DeviceProfile {
   if (typeof window === "undefined") return empty(storeId)
@@ -34,7 +56,13 @@ export function loadProfile(storeId: string | null): DeviceProfile {
     const raw = window.localStorage.getItem(key(storeId))
     if (!raw) return empty(storeId)
     const p = JSON.parse(raw) as DeviceProfile
-    return { ...empty(storeId), ...p, printers: p.printers || {} }
+    // Merge over the defaults so a profile saved before a field existed still
+    // loads — this store is written by older builds of the app.
+    return {
+      ...empty(storeId), ...p,
+      printers: p.printers || {},
+      scanner: { ...DEFAULT_SCANNER_PREFERENCES, ...(p.scanner || {}) },
+    }
   } catch {
     return empty(storeId)
   }
@@ -71,6 +99,11 @@ export function setRole(storeId: string | null, role: PrinterRole, deviceId: str
  */
 export function deviceForRole(storeId: string | null, role: PrinterRole): string | null {
   return loadProfile(storeId).printers[role] ?? null
+}
+
+export function setScannerPreferences(storeId: string | null, patch: Partial<ScannerPreferences>): DeviceProfile {
+  const p = loadProfile(storeId)
+  return saveProfile({ ...p, scanner: { ...p.scanner, ...patch } })
 }
 
 /** Every profile this browser holds, for the Hardware Manager's profile list. */

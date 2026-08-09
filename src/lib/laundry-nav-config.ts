@@ -338,8 +338,11 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "laundry.staff", displayName: "Staff" },
         { screenKey: "laundry.roles", displayName: "Roles & Permissions", icon: "Shield" },
         { screenKey: "laundry.mobile_apps", displayName: "Mobile Apps", icon: "Smartphone" },
-        { screenKey: "laundry.settings", displayName: "Workspace Settings" },
+        // Hardware Manager sits directly above Workspace Settings: it is
+        // terminal configuration, so it belongs beside the other settings
+        // rather than among the people-and-roles items above it.
         { screenKey: "laundry.hardware", displayName: "Hardware Manager", icon: "Usb" },
+        { screenKey: "laundry.settings", displayName: "Workspace Settings" },
         { screenKey: "laundry.navigation", displayName: "Navigation Manager" },
       ],
     },
@@ -397,12 +400,27 @@ async function ensureHardwareManagerNavItem(navigationId: string): Promise<void>
   }).catch(() => null)
   if (!admin) return
 
+  // Land it directly above Workspace Settings, matching the defaults, rather
+  // than tacking it on the end where it would read as unrelated.
+  const settings = await db.laundryNavItem.findFirst({
+    where: { sectionId: admin.id, screenKey: "laundry.settings" }, select: { order: true },
+  }).catch(() => null)
+
+  if (settings) {
+    // Make room: everything from Workspace Settings down shifts by one.
+    await db.laundryNavItem.updateMany({
+      where: { sectionId: admin.id, order: { gte: settings.order } },
+      data: { order: { increment: 1 } },
+    }).catch(() => null)
+  }
   const last = await db.laundryNavItem.aggregate({ where: { sectionId: admin.id }, _max: { order: true } })
+
   await db.laundryNavItem.create({
     data: {
       navigationId, sectionId: admin.id, screenKey: "laundry.hardware",
       displayName: "Hardware Manager", icon: "Usb",
-      order: (last._max.order ?? -1) + 1, active: true, hidden: false,
+      order: settings ? settings.order : (last._max.order ?? -1) + 1,
+      active: true, hidden: false,
     },
   }).catch(() => null)
 }

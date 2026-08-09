@@ -18,6 +18,14 @@ export function moduleKeys(moduleKey: string): string[] {
 }
 
 const keys = () => allScreenKeys()
+/**
+ * Screens that stay with the Business Owner (and the unrestricted Super Admin)
+ * even for roles defined as "everything". Hardware Manager pairs devices,
+ * rebinds default printers and clears queues — administration of the terminal
+ * itself, not something a read-only role should reach.
+ */
+const OWNER_ONLY_SCREENS = new Set(["laundry.hardware"])
+const keysExceptOwnerOnly = () => keys().filter((k) => !OWNER_ONLY_SCREENS.has(k))
 const moduleKeysAll = (mod: string) => keys().filter((k) => k.startsWith(`${mod}.`))
 const screenKey = (mod: string, screen: string) => `${mod}.${screen}`
 
@@ -129,5 +137,5 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     { screenKey: "store_ops.dispatch_center", level: Level.VIEW },
     { screenKey: "store_ops.delivery_assignments", level: Level.VIEW },
   ]},
-  { code: "VIEWER", name: "Viewer", description: "Read-only access.", screens: () => keys().map((sk) => ({ screenKey: sk, level: Level.VIEW })) },
+  { code: "VIEWER", name: "Viewer", description: "Read-only access.", screens: () => keysExceptOwnerOnly().map((sk) => ({ screenKey: sk, level: Level.VIEW })) },
 ]

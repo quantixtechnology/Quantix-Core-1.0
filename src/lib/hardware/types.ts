@@ -13,8 +13,15 @@ export type DeviceKind =
   | "DOCUMENT_PRINTER"
   | "RECEIPT_PRINTER"
   | "CAMERA"
-  | "WEIGHT_SCALE" // not discovered yet — reserved so profiles stay valid
+  // Reserved so a profile saved today stays valid when these arrive. Adding
+  // one means teaching the registry to discover it — no workflow changes.
+  | "WEIGHT_SCALE"
   | "RFID_READER"
+  | "NFC_READER"
+  | "SIGNATURE_PAD"
+  | "CASH_DRAWER"
+  | "PAYMENT_TERMINAL"
+  | "FINGERPRINT_READER"
 
 export type ConnectionType = "USB" | "BLUETOOTH" | "NETWORK" | "SERIAL" | "BROWSER" | "CAMERA" | "UNKNOWN"
 
@@ -73,6 +80,8 @@ export interface BrowserCapabilities {
   bluetooth: boolean
   camera: boolean
   barcodeDetector: boolean
+  clipboard: boolean
+  wakeLock: boolean
 }
 
 /** Where a scan came from. The ladder in priority order. */

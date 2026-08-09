@@ -25,6 +25,11 @@ export interface PrinterDiagnostics {
   lastPrintRole: string | null
   lastError: string | null
   lastErrorAt: string | null
+  /** Wall-clock from dispatch to the print dialog returning, averaged. */
+  averagePrintMs: number | null
+  printSamples: number
+  errorsToday: number
+  lastDisconnectAt: string | null
 }
 
 export interface DiagnosticsSnapshot {
@@ -38,7 +43,11 @@ const today = () => new Date().toISOString().slice(0, 10)
 const empty = (): DiagnosticsSnapshot => ({
   day: today(),
   scanner: { totalScansToday: 0, lastBarcode: null, lastScanAt: null, lastSource: null, averageScanMs: null, scanSamples: 0 },
-  printer: { labelsPrintedToday: 0, documentsPrintedToday: 0, lastPrintAt: null, lastPrintRole: null, lastError: null, lastErrorAt: null },
+  printer: {
+    labelsPrintedToday: 0, documentsPrintedToday: 0, lastPrintAt: null, lastPrintRole: null,
+    lastError: null, lastErrorAt: null, averagePrintMs: null, printSamples: 0,
+    errorsToday: 0, lastDisconnectAt: null,
+  },
 })
 
 function read(): DiagnosticsSnapshot {
@@ -58,6 +67,7 @@ function read(): DiagnosticsSnapshot {
       fresh.printer.lastPrintRole = parsed.printer?.lastPrintRole ?? null
       fresh.printer.lastError = parsed.printer?.lastError ?? null
       fresh.printer.lastErrorAt = parsed.printer?.lastErrorAt ?? null
+      fresh.printer.lastDisconnectAt = parsed.printer?.lastDisconnectAt ?? null
       return fresh
     }
     return { ...empty(), ...parsed, scanner: { ...empty().scanner, ...parsed.scanner }, printer: { ...empty().printer, ...parsed.printer } }
@@ -98,12 +108,18 @@ export const diagnostics = {
     write(s)
   },
 
-  recordPrint(role: string, kind: "LABEL" | "DOCUMENT", count = 1) {
+  recordPrint(role: string, kind: "LABEL" | "DOCUMENT", count = 1, durationMs?: number) {
     const s = read()
     if (kind === "LABEL") s.printer.labelsPrintedToday += count
     else s.printer.documentsPrintedToday += count
     s.printer.lastPrintAt = new Date().toISOString()
     s.printer.lastPrintRole = role
+    if (typeof durationMs === "number" && durationMs >= 0) {
+      const n = s.printer.printSamples
+      const mean = s.printer.averagePrintMs ?? 0
+      s.printer.averagePrintMs = Math.round((mean * n + durationMs) / (n + 1))
+      s.printer.printSamples = n + 1
+    }
     write(s)
   },
 
@@ -111,6 +127,13 @@ export const diagnostics = {
     const s = read()
     s.printer.lastError = message
     s.printer.lastErrorAt = new Date().toISOString()
+    s.printer.errorsToday += 1
+    write(s)
+  },
+
+  recordDisconnect() {
+    const s = read()
+    s.printer.lastDisconnectAt = new Date().toISOString()
     write(s)
   },
 

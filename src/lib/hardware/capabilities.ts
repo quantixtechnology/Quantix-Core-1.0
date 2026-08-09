@@ -21,7 +21,7 @@ type Nav = Navigator & {
 
 export function probeCapabilities(): BrowserCapabilities {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return { browserPrint: false, webUsb: false, webHid: false, webSerial: false, bluetooth: false, camera: false, barcodeDetector: false }
+    return { browserPrint: false, webUsb: false, webHid: false, webSerial: false, bluetooth: false, camera: false, barcodeDetector: false, clipboard: false, wakeLock: false }
   }
   const n = navigator as Nav
   return {
@@ -34,7 +34,23 @@ export function probeCapabilities(): BrowserCapabilities {
     bluetooth: !!n.bluetooth,
     camera: !!n.mediaDevices?.getUserMedia,
     barcodeDetector: "BarcodeDetector" in window,
+    clipboard: !!navigator.clipboard?.writeText,
+    // Keeps a counter terminal awake during a long sorting run.
+    wakeLock: "wakeLock" in navigator,
   }
+}
+
+/** Per-capability explanation shown in the Hardware Manager support table. */
+export const CAPABILITY_NOTES: Record<keyof BrowserCapabilities, string> = {
+  browserPrint: "Always available. The guaranteed fallback every print path uses.",
+  webUsb: "Chromium only, HTTPS only. Lists devices the operator has paired through the browser's picker — it cannot enumerate what is plugged in.",
+  webHid: "Chromium only, HTTPS only. Most barcode scanners present as keyboards and work without it.",
+  webSerial: "Chromium only, HTTPS only. Used for serial and some network label printers.",
+  bluetooth: "Chromium only, HTTPS only. A Bluetooth scanner paired at the operating system already types like a USB one and needs no permission here.",
+  camera: "Widely available, HTTPS only. Device labels and resolution stay hidden until the operator grants access.",
+  barcodeDetector: "Chromium and Safari. When missing, camera scanning falls back to the bundled ZXing decoder.",
+  clipboard: "Used to copy diagnostics into a support ticket.",
+  wakeLock: "Keeps a counter terminal awake during a long scanning run.",
 }
 
 export function capabilityLabel(c: BrowserCapabilities): string {

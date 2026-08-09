@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { ScanEngine } from '@/lib/hardware/scan-engine'
 import { PrintEngine } from '@/lib/hardware/print-engine'
 import { diagnostics } from '@/lib/hardware/diagnostics'
-import { loadProfile, saveProfile, setRole, deviceForRole } from '@/lib/hardware/profiles'
+import { loadProfile, saveProfile, setRole, deviceForRole, setScannerPreferences, DEFAULT_SCANNER_PREFERENCES } from '@/lib/hardware/profiles'
+import { eventLog } from '@/lib/hardware/event-log'
+import { hardwareHealth } from '@/lib/hardware/health'
 import { probeCapabilities } from '@/lib/hardware/capabilities'
 import { browserPrintDevice, deviceSummary } from '@/lib/hardware/registry'
 import { BROWSER_PRINT_ID } from '@/lib/hardware/types'
@@ -165,18 +167,31 @@ describe('PrintEngine — offline queue', () => {
     expect(diagnostics.snapshot().printer.lastError).toBe('cable unplugged')
   })
 
-  it('a queued job can be discarded', async () => {
+  it('a queued job can be cancelled', async () => {
     PrintEngine.setOffline()
     await PrintEngine.print({ role: 'BARCODE', html: '<p>a</p>' })
-    PrintEngine.discard(PrintEngine.pending()[0].id)
+    PrintEngine.cancel(PrintEngine.pending()[0].id)
     expect(PrintEngine.pending()).toHaveLength(0)
+    expect(PrintEngine.allJobs()[0].status).toBe('CANCELLED')
   })
 
-  it('queues in submission order', async () => {
+  it('keeps every job visible with its status, not just the pending ones', async () => {
     PrintEngine.setOffline()
     await PrintEngine.print({ role: 'BARCODE', html: '<p>1</p>', title: 'first' })
     await PrintEngine.print({ role: 'BARCODE', html: '<p>2</p>', title: 'second' })
-    expect(PrintEngine.pending().map((j) => j.title)).toEqual(['first', 'second'])
+    expect(PrintEngine.allJobs().map((j) => j.title)).toEqual(['second', 'first'])
+    expect(PrintEngine.allJobs().every((j) => j.status === 'PENDING')).toBe(true)
+    expect(PrintEngine.queueLength()).toBe(2)
+  })
+
+  it('a cancelled job can be retried', async () => {
+    PrintEngine.setOffline()
+    await PrintEngine.print({ role: 'BARCODE', html: '<p>a</p>', title: 'retry-me' })
+    const id = PrintEngine.pending()[0].id
+    PrintEngine.cancel(id)
+    await PrintEngine.retry(id)
+    // Still offline, so it goes back to PENDING rather than printing.
+    expect(PrintEngine.allJobs()[0].status).toBe('PENDING')
   })
 
   it('reports offline status to subscribers', () => {
@@ -230,8 +245,21 @@ describe('profiles', () => {
   })
 
   it('round-trips a saved profile', () => {
-    saveProfile({ storeId: 's1', printers: { QR: 'q1' }, labelSize: '60 × 40 mm' })
+    saveProfile({ storeId: 's1', printers: { QR: 'q1' }, labelSize: '60 × 40 mm', scanner: DEFAULT_SCANNER_PREFERENCES })
     expect(loadProfile('s1').labelSize).toBe('60 × 40 mm')
+  })
+
+  // Older builds wrote profiles without a scanner block; they must still load.
+  it('fills in preferences missing from a profile saved by an older build', () => {
+    window.localStorage.setItem('qx-hardware-profile-v1:legacy', JSON.stringify({ storeId: 'legacy', printers: {} }))
+    expect(loadProfile('legacy').scanner).toEqual(DEFAULT_SCANNER_PREFERENCES)
+  })
+
+  it('stores scanner preferences per store', () => {
+    setScannerPreferences('store-a', { fallback: 'MANUAL', autoDetect: false })
+    expect(loadProfile('store-a').scanner.fallback).toBe('MANUAL')
+    expect(loadProfile('store-a').scanner.autoDetect).toBe(false)
+    expect(loadProfile('store-b').scanner).toEqual(DEFAULT_SCANNER_PREFERENCES)
   })
 })
 
@@ -259,6 +287,105 @@ describe('honesty about what the browser exposes', () => {
     const c = probeCapabilities()
     expect(typeof c.webUsb).toBe('boolean')
     expect(typeof c.browserPrint).toBe('boolean')
+  })
+})
+
+describe('scanner preferences steer the ladder', () => {
+  it('pins the fallback to manual entry when the administrator chooses it', () => {
+    ScanEngine.setCameraAvailable(true)
+    ScanEngine.applyPreferences({ fallback: 'MANUAL' })
+    expect(ScanEngine.status()).toBe('MANUAL_ENTRY')
+  })
+
+  it('a present scanner still outranks a manual fallback', () => {
+    ScanEngine.applyPreferences({ fallback: 'MANUAL' })
+    ScanEngine.submit('X', 'USB_SCANNER')
+    expect(ScanEngine.status()).toBe('SCANNER_READY')
+  })
+
+  it('reports whether a scanner is currently present', () => {
+    expect(ScanEngine.scannerPresent()).toBe(false)
+    ScanEngine.submit('X', 'USB_SCANNER')
+    expect(ScanEngine.scannerPresent()).toBe(true)
+  })
+})
+
+describe('event log', () => {
+  it('records newest first', () => {
+    eventLog.record('SCANNER_CONNECTED', 'first')
+    eventLog.record('PRINT_OK', 'second')
+    expect(eventLog.all().map((e) => e.message)).toEqual(['second', 'first'])
+    expect(eventLog.latest()?.message).toBe('second')
+  })
+
+  it('classifies severity so a failure stands out', () => {
+    eventLog.record('PRINT_FAILED', 'boom')
+    eventLog.record('PRINTER_OFFLINE', 'gone')
+    eventLog.record('SCAN', 'ok')
+    expect(eventLog.all().find((e) => e.message === 'boom')?.level).toBe('ERROR')
+    expect(eventLog.all().find((e) => e.message === 'gone')?.level).toBe('WARN')
+    expect(eventLog.all().find((e) => e.message === 'ok')?.level).toBe('INFO')
+  })
+
+  it('counts only today’s errors', () => {
+    eventLog.record('PRINT_FAILED', 'a')
+    eventLog.record('SCAN', 'b')
+    expect(eventLog.errorCount()).toBe(1)
+  })
+
+  it('searches message, type and detail', () => {
+    eventLog.record('PRINT_OK', 'Label printed', 'TSC TE244')
+    expect(eventLog.search('te244')).toHaveLength(1)
+    expect(eventLog.search('print_ok')).toHaveLength(1)
+    expect(eventLog.search('nothing')).toHaveLength(0)
+  })
+
+  it('filters by level', () => {
+    eventLog.record('PRINT_FAILED', 'bad')
+    eventLog.record('SCAN', 'good')
+    expect(eventLog.search('', 'ERROR')).toHaveLength(1)
+    expect(eventLog.search('', 'ALL')).toHaveLength(2)
+  })
+
+  it('exports CSV with a header and escaped quotes', () => {
+    eventLog.record('PRINT_OK', 'He said "go"')
+    const csv = eventLog.toCsv()
+    expect(csv.split('\n')[0]).toBe('Timestamp,Level,Type,Message,Detail')
+    expect(csv).toContain('""go""')
+  })
+
+  it('stays bounded so it can never grow without limit', () => {
+    for (let i = 0; i < 520; i++) eventLog.record('SCAN', `s${i}`)
+    expect(eventLog.all().length).toBe(500)
+    expect(eventLog.latest()?.message).toBe('s519')
+  })
+})
+
+describe('health rollup — one verdict for the header and the dashboard', () => {
+  it('is healthy with a scanner present and nothing queued', () => {
+    ScanEngine.submit('X', 'USB_SCANNER')
+    expect(hardwareHealth().level).toBe('HEALTHY')
+  })
+
+  it('is critical when the printer is offline, because that blocks the counter', () => {
+    ScanEngine.submit('X', 'USB_SCANNER')
+    PrintEngine.setOffline('unplugged')
+    const h = hardwareHealth()
+    expect(h.level).toBe('CRITICAL')
+    expect(h.label).toBe('Printer Offline')
+  })
+
+  it('is only degraded when the scanner is missing, because typing still works', () => {
+    ScanEngine.setCameraAvailable(false)
+    const h = hardwareHealth()
+    expect(h.level).toBe('DEGRADED')
+    expect(h.issues).toContain('Scanner Missing')
+  })
+
+  it('reports the queue length it shares with the queue view', async () => {
+    PrintEngine.setOffline()
+    await PrintEngine.print({ role: 'BARCODE', html: '<p>x</p>' })
+    expect(hardwareHealth().queueLength).toBe(1)
   })
 })
 

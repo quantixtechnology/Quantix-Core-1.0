@@ -18,6 +18,7 @@ import {
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
+import { HardwareHealthChip } from "@/components/laundry/hardware-health-chip"
 import { clearRuntimeAuthCache } from "@/components/auth/runtime-auth-provider"
 import { laundryRoleLabel } from "@/lib/runtime-auth"
 
@@ -92,6 +93,8 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Hardware health — same rollup the Hardware Manager shows */}
+          <HardwareHealthChip />
           {/* Notifications */}
           <Popover>
             <PopoverTrigger asChild>
