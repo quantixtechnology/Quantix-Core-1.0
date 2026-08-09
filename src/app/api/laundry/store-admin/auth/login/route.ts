@@ -6,9 +6,9 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { STORE_ADMIN_ROLES } from "@/lib/laundry-store-admin-auth"
+import { STORE_ADMIN_ROLES, isCrossTenantRole } from "@/lib/laundry-store-admin-auth"
 import { resolveImageUrl } from "@/lib/image-url"
-import { isPlatformRole } from "@/lib/permissions"
+
 
 async function mintToken(userId: string) {
   const token = createAccessToken()
@@ -32,9 +32,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 })
     }
 
-    // Super Admin / Platform Admin — unrestricted access to every store, any time
+    // Platform administrators — unrestricted access to every store, any time
     // (mirrors their desktop access). They pick the store in the app.
-    if (user.platformRole && isPlatformRole(user.platformRole)) {
+    //
+    // Deliberately CROSS_TENANT_ROLES and not isPlatformRole(): the latter is
+    // true for thirteen roles, so a sales or support account signing in here
+    // was handed every business in the platform.
+    if (isCrossTenantRole(user.platformRole)) {
       const token = await mintToken(user.id)
       return NextResponse.json({ success: true, data: { token, staff: { name: user.name, isSuperAdmin: true, roleName: "Super Admin" } } })
     }

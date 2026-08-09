@@ -1084,19 +1084,30 @@ function StorePicker({ sa, onPick, onLogout }: { sa: SuperAdmin; onPick: (b: Sup
   const [q, setQ] = useState("")
   const rows = sa.businesses.flatMap((b) => b.stores.map((s) => ({ b, s })))
   const filtered = rows.filter(({ b, s }) => !q.trim() || `${b.businessName} ${s.storeName} ${s.storeCode || ""}`.toLowerCase().includes(q.trim().toLowerCase()))
+  // Only a platform administrator ever reaches this screen, and only they may
+  // span tenants. When their list holds a single business, name it and drop the
+  // business count entirely — "1 businesses" reads like a leak even when it is
+  // not one.
+  const single = sa.businesses.length === 1 ? sa.businesses[0] : null
+  const storeCount = `${rows.length} ${rows.length === 1 ? "Store" : "Stores"}`
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <header className="bg-blue-600 text-white px-4 pt-5 pb-5 flex items-center justify-between">
-        <div><p className="text-[15px] font-bold">Super Admin</p><p className="text-[12px] text-blue-100">Choose a store to manage — {rows.length} across {sa.businesses.length} businesses</p></div>
+        <div>
+          <p className="text-[15px] font-bold">{single ? single.businessName : "Super Admin"}</p>
+          <p className="text-[12px] text-blue-100">
+            {single ? `Choose a store — ${storeCount}` : `Choose a store to manage — ${storeCount} across ${sa.businesses.length} businesses`}
+          </p>
+        </div>
         <button onClick={onLogout} className="h-9 w-9 rounded-lg bg-white/10 flex items-center justify-center"><LogOut className="h-4 w-4" /></button>
       </header>
       <div className="p-3">
-        <div className="relative mb-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search business or store" className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
+        <div className="relative mb-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={single ? "Search store" : "Search business or store"} className="w-full h-11 pl-9 rounded-xl border border-slate-200 bg-white text-[15px]" /></div>
         {filtered.length === 0 ? <p className="py-16 text-center text-sm text-slate-400">No stores.</p> : (
           <div className="space-y-1.5">{filtered.map(({ b, s }) => (
             <button key={`${b.businessId}-${s.id}`} onClick={() => onPick(b, s)} className="w-full text-left bg-white rounded-xl border border-slate-200 p-3 active:scale-[0.99] transition-transform">
               <p className="font-medium text-[14px] text-slate-800">{s.storeName}</p>
-              <p className="text-[12px] text-slate-500">{b.businessName}{s.storeCode ? ` · ${s.storeCode}` : ""}</p>
+              <p className="text-[12px] text-slate-500">{single ? (s.storeCode || "") : `${b.businessName}${s.storeCode ? ` · ${s.storeCode}` : ""}`}</p>
             </button>
           ))}</div>
         )}

@@ -12,12 +12,28 @@ import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { bearerToken } from "@/lib/laundry-executive-auth"
-import { isPlatformRole } from "@/lib/permissions"
 
 export { bearerToken }
 
 // Only these operational store roles may use the Store Admin PWA as store staff.
 export const STORE_ADMIN_ROLES = new Set(["STORE_MANAGER", "COUNTER_EXECUTIVE", "STORE_SUPERVISOR"])
+
+/**
+ * Who may cross tenant boundaries in the Store Admin PWA.
+ *
+ * This used to be `isPlatformRole()`, which is true for THIRTEEN roles —
+ * sales, HR, finance, support, deployment, a read-only auditor. Any of them
+ * signing into the store app was handed every business and every store in the
+ * platform, which is a tenant-isolation breach, not a convenience.
+ *
+ * Cross-tenant access belongs to the platform administrators alone. Every
+ * other platform role falls through to the store-staff path below: they get a
+ * store only if they hold a real store assignment, and 401 otherwise.
+ */
+export const CROSS_TENANT_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
+
+export const isCrossTenantRole = (role: string | null | undefined): boolean =>
+  !!role && CROSS_TENANT_ROLES.has(role)
 
 export interface StoreAdminSession {
   userId: string
@@ -39,8 +55,8 @@ export async function resolveStoreAdmin(token: string | null): Promise<StoreAdmi
   const user = await prisma.user.findUnique({ where: { id: rt.userId }, select: { isActive: true, platformRole: true } })
   if (!user?.isActive) return null
 
-  // Super Admin / Platform Admin — unrestricted, no store binding required.
-  if (user.platformRole && isPlatformRole(user.platformRole)) {
+  // Platform administrators only — unrestricted, no store binding required.
+  if (isCrossTenantRole(user.platformRole)) {
     return { userId: rt.userId, isSuperAdmin: true }
   }
 
