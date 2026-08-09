@@ -51,17 +51,28 @@ export async function GET(request: Request) {
 
     const orderIds = orders.map((o) => o.id)
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
-    // Bags come from LaundryBagAssignment (append-only per-order history) so a
-    // completed/released order still shows the exact bags it carried, in scan
-    // order (Bag 1, Bag 2, …). A service may span multiple bags.
-    const [custs, assigns] = await Promise.all([
+
+    // LaundryBagAssignment is append-only, so an order accumulates a row for
+    // every bag it has ever travelled in — pickup, store↔processing transit,
+    // the return leg. On a LIVE job the executive must see only what they are
+    // physically holding right now, or a delivery that is in one bag reads as
+    // "2 bags" because a long-released pickup bag is still in the list.
+    //
+    // On the completed/history tabs the full record stays, so a finished job
+    // still shows the bags it actually carried.
+    const liveJob = type === "pickup" || type === "delivery"
+    const [custs, allAssigns] = await Promise.all([
       prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true } }),
       prisma.laundryBagAssignment.findMany({
-        where: { businessId: lbId, orderId: { in: orderIds } },
-        select: { orderId: true, serviceId: true, serviceName: true, bagId: true, assignedAt: true, bag: { select: { bagNumber: true } } },
+        where: { businessId: lbId, orderId: { in: orderIds }, ...(liveJob ? { status: "ASSIGNED" } : {}) },
+        select: { orderId: true, serviceId: true, serviceName: true, bagId: true, assignedAt: true, bag: { select: { bagNumber: true, currentOrderId: true } } },
         orderBy: { assignedAt: "asc" },
       }),
     ])
+    // Two independent signals of a live association, and a live job needs both:
+    // the assignment row is still open (above) AND the bag itself still names
+    // this order as its holder. Either one going stale drops the bag.
+    const assigns = liveJob ? allAssigns.filter((a) => a.bag.currentOrderId === a.orderId) : allAssigns
     const custMap = new Map(custs.map((c) => [c.id, c]))
     // orderId::serviceKey → bag numbers, deduped by physical bag (in case a bag
     // was released and re-scanned mid-cycle) and kept in assignment order.
