@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, Copy, ScanLine } from "lucide-react"
+import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, ScanLine } from "lucide-react"
 import { Barcode } from "./barcode"
+import { CopyButton } from "@/components/ui/copy-button"
 
 interface ScanResult {
   item: {
@@ -179,10 +180,6 @@ export function LaundryGarmentLookup() {
     return map[stage] || "bg-slate-100 text-slate-600"
   }
 
-  const copyToClipboard = async (text: string, label: string) => {
-    try { await navigator.clipboard.writeText(text); toast({ title: `✓ ${label} copied`, description: text }) } catch { toast({ title: "Failed to copy", variant: "destructive" }) }
-  }
-
   return (
     <div className="px-4 lg:px-6 py-6 space-y-5">
       {cameraOpen && <CameraScanner onDetected={(c) => { setCameraOpen(false); handleScanDetect(c) }} onClose={() => setCameraOpen(false)} />}
@@ -263,8 +260,8 @@ export function LaundryGarmentLookup() {
               Generation) and the order still opens from the Orders module;
               nothing was removed from the system, only these shortcuts. */}
           <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copyToClipboard(result.order.orderNumber, "Order Number")}><Copy className="h-3.5 w-3.5" /> Copy Order</Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copyToClipboard(result.item.itemNumber, "Item Number")}><Copy className="h-3.5 w-3.5" /> Copy Item</Button>
+            <CopyButton value={result.order.orderNumber} label="Order Number">Copy Order</CopyButton>
+            <CopyButton value={result.item.itemNumber} label="Item Number">Copy Item</CopyButton>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

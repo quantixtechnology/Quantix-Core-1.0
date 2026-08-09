@@ -20,6 +20,7 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { LaundryImageUpload } from "./pricing/laundry-image-upload"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
+import { CopyButton } from "@/components/ui/copy-button"
 
 interface Store { id: string; storeName: string }
 interface Exec {
@@ -301,7 +302,7 @@ function ResetPasswordDialog({ exec, businessId, businessName, appUrl, onCopyCre
               Shown once. Copy or send it now — after closing it cannot be retrieved, only replaced by generating a new one.
             </p>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-1" onClick={() => { navigator.clipboard.writeText(result).then(() => toast.success("Password copied")).catch(() => toast.error("Could not copy")) }}><Copy className="h-4 w-4" /> Copy Password</Button>
+              <CopyButton value={result} label="Password" variant="outline" size="default" className="flex-1">Copy Password</CopyButton>
               <Button variant="outline" className="flex-1 gap-1" onClick={() => onCopyCreds(exec, result)}><Copy className="h-4 w-4" /> Copy Credentials</Button>
             </div>
             <Button className="w-full gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onWhatsapp(exec, result)}><MessageCircle className="h-4 w-4" /> Send WhatsApp</Button>
