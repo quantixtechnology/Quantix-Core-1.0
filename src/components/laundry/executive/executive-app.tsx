@@ -52,7 +52,14 @@ function InstallCta({ color, variant = "light" }: { color: string; variant?: "li
   )
 }
 
-interface Exec { id: string; name: string; employeeCode: string; mobile: string; storeName: string | null; vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string }
+interface Exec {
+  id: string; name: string; employeeCode: string; mobile: string; storeName: string | null
+  vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string
+  // Assignment permission from DeliveryExecutive.canReject — the ONE source of
+  // truth for whether Reject is offered. Absent (older session payload) is
+  // treated as NOT allowed, matching the server, which also fails closed.
+  canReject?: boolean
+}
 interface Svc { serviceId: string | null; serviceName: string; bags: string[] }
 interface Job {
   id: string; orderNumber: string; status: string; fieldStatus: string | null; acceptance: string | null; priority: string
@@ -291,7 +298,12 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
+  // ONE permission read for this screen. The server re-checks on every reject,
+  // so hiding the control is convenience — not the enforcement.
+  const canReject = exec.canReject === true
+
   const respond = async (action: "accept" | "reject") => {
+    if (action === "reject" && !canReject) return
     setBusy(true)
     try {
       const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/respond`, token, { method: "POST", body: JSON.stringify({ action, type: kind, executiveName: exec.name }) })
@@ -424,10 +436,12 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <div>
               <p className="text-sm font-semibold text-slate-700">New {isDelivery ? "delivery" : "pickup"} assignment</p>
-              <p className="text-xs text-slate-500">Accept to start, or reject to send it back to your supervisor.</p>
+              <p className="text-xs text-slate-500">{canReject ? "Accept to start, or reject to send it back to your supervisor." : "Accept to start this job."}</p>
             </div>
             <div className="flex gap-2">
-              <button disabled={busy} onClick={() => respond("reject")} className="flex-1 h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-60">Reject</button>
+              {canReject && (
+                <button disabled={busy} onClick={() => respond("reject")} className="flex-1 h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-60">Reject</button>
+              )}
               <button disabled={busy} onClick={() => respond("accept")} className="flex-1 h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: brand.color }}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Accept</button>
             </div>
           </div>

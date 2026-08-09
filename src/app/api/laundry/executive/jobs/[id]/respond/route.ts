@@ -37,9 +37,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const assignedTo = type === "delivery" ? order.deliveryExecutiveId : order.pickupExecutiveId
     if (assignedTo !== session.executiveId) return NextResponse.json({ error: "This job is not assigned to you" }, { status: 403 })
 
+    // AUTHORITATIVE reject check. DeliveryExecutive.canReject is the single
+    // source of truth; the PWA hides the button from it, but this is what makes
+    // the rule real — a hand-rolled request is refused here.
+    // Fails CLOSED: an executive row that cannot be read denies the reject
+    // rather than letting it through.
     if (!accept) {
       const exec = await prisma.laundryDeliveryExecutive.findUnique({ where: { id: session.executiveId }, select: { canReject: true } })
-      if (exec && !exec.canReject) return NextResponse.json({ error: "You are not allowed to reject assignments" }, { status: 403 })
+      if (!exec?.canReject) return NextResponse.json({ error: "You are not allowed to reject assignments" }, { status: 403 })
     }
 
     const actor = { id: session.executiveId, name: b.executiveName ?? "Executive" }

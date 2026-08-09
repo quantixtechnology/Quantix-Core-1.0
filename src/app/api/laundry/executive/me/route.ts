@@ -18,6 +18,9 @@ export async function GET(request: Request) {
         storeId: e.storeId, storeName: e.store?.storeName ?? null,
         vehicleType: e.vehicleType, vehicleNumber: e.vehicleNumber, photo: e.photo,
         availability: e.availability,
+        // Assignment permission — the app hides Reject when this is false. The
+        // respond endpoint re-checks it; this is for rendering, not security.
+        canReject: e.canReject,
       },
     })
   } catch (e) {

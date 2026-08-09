@@ -82,6 +82,9 @@ export async function POST(request: Request) {
           storeId: matched.storeId, storeName: matched.store?.storeName ?? null,
           vehicleType: matched.vehicleType, vehicleNumber: matched.vehicleNumber, photo: matched.photo,
           availability: matched.availability,
+          // Assignment permission — see /me. Rendering only; the respond
+          // endpoint enforces it server-side on every reject.
+          canReject: matched.canReject,
         },
       },
     })
