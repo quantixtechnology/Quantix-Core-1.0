@@ -4,6 +4,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { logFieldEvent } from "@/lib/laundry-field-ops"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
+import { dayKey } from "@/lib/laundry-delivery-promise"
 
 export const runtime = "nodejs"
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id: orderId, businessId: biz.id },
-      select: { id: true, status: true, deliveryRequired: true, deliveryExecutiveId: true, deliveryCompletedAt: true, storeId: true },
+      select: { id: true, status: true, deliveryRequired: true, deliveryExecutiveId: true, deliveryCompletedAt: true, storeId: true, promisedDeliveryDate: true, promisedDeliveryTimeSlot: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     // Audit immutability: a completed delivery leg is permanent history — no
@@ -55,6 +56,14 @@ export async function POST(request: Request) {
     // Persist the scheduled date + slot (previously only stuffed into `notes`, so
     // the order and the Dispatch Center showed "—" and the job had no schedule).
     const parsedDate = deliveryDate ? new Date(deliveryDate) : null
+    const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null
+
+    // Moving the operational date off the customer's promise is a RESCHEDULE.
+    // The promise fields are never touched here — only when/who/why is stamped,
+    // so the order permanently shows both what was promised and what happened.
+    const promisedKey = dayKey(order.promisedDeliveryDate)
+    const movedOffPromise = !!(validDate && promisedKey && dayKey(validDate) !== promisedKey)
+
     await prisma.laundryOrder.update({
       where: { id: order.id },
       data: {
@@ -63,8 +72,13 @@ export async function POST(request: Request) {
         deliveryAssignedAt: execId ? new Date() : null,
         // Track the executive's response so "Awaiting response" is real state.
         deliveryAcceptance: execId ? "PENDING" : null,
-        ...(parsedDate && !isNaN(parsedDate.getTime()) ? { deliveryDate: parsedDate } : {}),
+        ...(validDate ? { deliveryDate: validDate } : {}),
         ...(deliveryTimeSlot ? { deliveryTimeSlot: String(deliveryTimeSlot) } : {}),
+        ...(movedOffPromise ? {
+          deliveryRescheduledAt: new Date(),
+          deliveryRescheduledBy: guard.ctx?.userName ?? "Staff",
+          deliveryRescheduleReason: notes ? String(notes) : null,
+        } : {}),
         notes: notes || null,
       },
     })
@@ -75,6 +89,17 @@ export async function POST(request: Request) {
       note: execId ? `Assigned to ${execName}` : "Delivery requested",
       actor: { id: guard.ctx?.userId ?? null, name: guard.ctx?.userName ?? "Staff" },
     })
+
+    // Append-only: the reschedule is its own timeline entry, beside the
+    // original promise rather than replacing it.
+    if (movedOffPromise) {
+      await logFieldEvent({
+        orderId: order.id, businessId: biz.id,
+        action: "DELIVERY_RESCHEDULED",
+        note: `Business rescheduled to ${validDate!.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}${deliveryTimeSlot ? ` · ${deliveryTimeSlot}` : ""} — customer was promised ${new Date(order.promisedDeliveryDate!).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}${order.promisedDeliveryTimeSlot ? ` · ${order.promisedDeliveryTimeSlot}` : ""}`,
+        actor: { id: guard.ctx?.userId ?? null, name: guard.ctx?.userName ?? "Staff" },
+      })
+    }
 
     return NextResponse.json({
       success: true,

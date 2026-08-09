@@ -15,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star } from "lucide-react"
 import { statusLabel } from "@/lib/laundry-workflow"
+import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
+import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
 interface OrderRow {
   id: string; orderNumber: string; status: string; grandTotal: number; paymentStatus: string
@@ -153,7 +155,7 @@ export function LaundryOrdersView() {
                   const act = STAGE_ACTION[o.status]
                   return (
                     <TableRow key={o.id}>
-                      <TableCell><button type="button" className="font-mono font-medium text-sm text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
+                      <TableCell><div className="flex items-center gap-1.5 flex-wrap"><button type="button" className="font-mono font-medium text-sm text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button><DeliveryPromiseBadge order={o as DeliveryPromiseInput} /></div></TableCell>
                       <TableCell><div className="text-sm font-medium text-slate-700">{o.customer?.name || "—"}</div><div className="text-[11px] text-slate-400">{o.customer?.phone || ""}</div></TableCell>
                       <TableCell className="text-sm text-slate-600">{o.store?.storeName || "—"}</TableCell>
                       <TableCell className="text-center text-sm tabular-nums">{o.itemCount}</TableCell>

@@ -19,6 +19,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Truck, PackageCheck, Navigation, ShoppingBag, Clock, Search, RefreshCw, Users, X, Lock } from "lucide-react"
 import { toast } from "sonner"
 import { filterEligibleExecutives, filterEligibleForStores, NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
+import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
+import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
 type Kind = "pickup" | "delivery"
 
@@ -382,6 +384,7 @@ export function LaundryDispatchCenter() {
                   </Badge>
                   <div className="flex items-center gap-1 text-[10px] min-w-0 flex-1 flex-wrap">
                     <span className="font-mono font-bold text-slate-800 shrink-0">{job.orderNumber}</span>
+                    <DeliveryPromiseBadge order={job as DeliveryPromiseInput} />
                     <span className="text-slate-700 truncate max-w-[100px] lg:max-w-[140px]">{job.customerName}</span>
                     {job.customerPhone && <span className="text-slate-400 shrink-0 hidden xs:inline">{job.customerPhone}</span>}
                     {/* Core dispatch fields — always visible so the dispatcher never opens the Order to assign. */}

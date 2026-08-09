@@ -4604,6 +4604,30 @@ model LaundryOrder {
   deliveryTimeSlot       String?
   backupDeliveryDate     DateTime?
   backupDeliveryTimeSlot String?
+
+  // ── Customer delivery promise — FROZEN at confirmation, never rewritten ──
+  // deliveryDate / deliveryTimeSlot above are the OPERATIONAL schedule: the
+  // dispatch desk rewrites them whenever the business reschedules, which is
+  // correct for running the floor but means they stop being what the customer
+  // was told. These four are a copy of the customer's own selection, written
+  // exactly once at creation, so the promise survives every reschedule.
+  //
+  // Null on orders created before this existed. That is a legitimate state —
+  // "not captured" — and nothing infers a promise from the operational dates,
+  // because a rescheduled legacy order would then show a promise the customer
+  // never made.
+  promisedDeliveryDate           DateTime?
+  promisedDeliveryTimeSlot       String?
+  promisedBackupDeliveryDate     DateTime?
+  promisedBackupDeliveryTimeSlot String?
+  promiseCapturedAt              DateTime?
+
+  // Business reschedule. The rescheduled date IS deliveryDate — keeping one
+  // operational source of truth avoids two fields drifting apart — so these
+  // record only when it moved, who moved it and why.
+  deliveryRescheduledAt          DateTime?
+  deliveryRescheduledBy          String?
+  deliveryRescheduleReason       String?
   pickupAddress          String?
   pickupInstructions     String?
   specialInstructions    String?

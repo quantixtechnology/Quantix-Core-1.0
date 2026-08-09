@@ -184,6 +184,7 @@ export async function GET(request: Request) {
     const search = searchParams.get("search")
     // Stage-completion filters (used by the Barcode / Packing History tabs) —
     // based on STORED completion data, never on order status.
+    const promise = searchParams.get("promise") // delivery-promise filter — see PROMISE_WHERE below
     const barcoded = searchParams.get("barcoded") // "1" → Barcode Generation completed (Moved to Processing)
     const packed = searchParams.get("packed")     // "1" → Packing & QR completed
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100)
@@ -214,6 +215,34 @@ export async function GET(request: Request) {
     if (status) where.status = status
     if (storeId) where.storeId = storeId
     if (customerId) where.customerId = customerId
+
+    // ── Customer delivery promise filters ────────────────────────────────────
+    // Evaluated in SQL against today so the page count and pagination stay
+    // correct. These cover the LIVE states, which are the ones a counter acts
+    // on; the delivered-versus-promise breakdown compares two columns to each
+    // other, which Prisma cannot express, and belongs with reporting.
+    if (promise) {
+      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
+      const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1)
+      const undelivered = { deliveredAt: null }
+      const missedPrimary = {
+        ...undelivered,
+        promisedDeliveryDate: { lt: startOfToday },
+        // Still recoverable while the backup day has not itself passed.
+        OR: [{ promisedBackupDeliveryDate: null }, { promisedBackupDeliveryDate: { gte: startOfToday } }],
+      }
+      const missedBackup = { ...undelivered, promisedBackupDeliveryDate: { lt: startOfToday } }
+
+      if (promise === "due_today") Object.assign(where, undelivered, { promisedDeliveryDate: { gte: startOfToday, lt: startOfTomorrow } })
+      else if (promise === "on_schedule") Object.assign(where, undelivered, { promisedDeliveryDate: { gte: startOfTomorrow } })
+      else if (promise === "missed_primary") Object.assign(where, missedPrimary)
+      else if (promise === "missed_backup") Object.assign(where, missedBackup)
+      else if (promise === "late") Object.assign(where, undelivered, { AND: [{ promisedDeliveryDate: { lt: startOfToday } }] })
+      else if (promise === "tomorrow") {
+        const dayAfter = new Date(startOfTomorrow); dayAfter.setDate(dayAfter.getDate() + 1)
+        Object.assign(where, undelivered, { promisedDeliveryDate: { gte: startOfTomorrow, lt: dayAfter } })
+      }
+    }
     // Stage-completion (stored data, NOT order status): keeps an order visible in
     // the stage where it was completed even after it moves to later stages.
     //

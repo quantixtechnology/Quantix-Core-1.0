@@ -119,6 +119,11 @@ export async function GET(request: Request) {
         deliveryStartedAt: true, deliveryCompletedAt: true, deliveredAt: true,
         expectedDeliveryDate: true, deliveryDate: true, deliveryTimeSlot: true, balanceDue: true,
         storeId: true, store: { select: { storeName: true, city: true } },
+        // Frozen customer promise — the dispatch board shows what was promised,
+        // not just the operational date it may have been rescheduled to.
+        promisedDeliveryDate: true, promisedDeliveryTimeSlot: true,
+        promisedBackupDeliveryDate: true, promisedBackupDeliveryTimeSlot: true,
+        deliveryRescheduledAt: true, deliveryRescheduleReason: true,
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
       },
@@ -159,6 +164,10 @@ export async function GET(request: Request) {
         // storeId travels with the job so a dispatch board holding one executive
         // list can narrow it to the executives who serve THIS job's store.
         storeId: o.storeId, storeName: o.store?.storeName ?? null, address: o.pickupAddress,
+        promisedDeliveryDate: o.promisedDeliveryDate, promisedDeliveryTimeSlot: o.promisedDeliveryTimeSlot,
+        promisedBackupDeliveryDate: o.promisedBackupDeliveryDate, promisedBackupDeliveryTimeSlot: o.promisedBackupDeliveryTimeSlot,
+        deliveryDate: o.deliveryDate, deliveryRescheduledAt: o.deliveryRescheduledAt,
+        deliveryRescheduleReason: o.deliveryRescheduleReason, deliveredAt: o.deliveredAt,
         landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
         area,
         services: o.services.map((s) => s.serviceName), bagCount: o.services.length,

@@ -17,6 +17,8 @@ import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
 import type { TransportRef } from "@/lib/laundry-transport"
 import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
+import { DeliveryPromiseCard } from "@/components/laundry/delivery-promise"
+import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { LaundryInvoicePanel } from "@/components/laundry/invoice/laundry-invoice-panel"
 import { toast } from "sonner"
 
@@ -356,6 +358,10 @@ export function LaundryOrderDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* What the customer was told — above the operational delivery card, so
+          the promise is read before the schedule that may have moved off it. */}
+      <DeliveryPromiseCard order={order as DeliveryPromiseInput} />
 
       {/* Delivery Operational Section */}
       <Card className="rounded-lg border-blue-200">

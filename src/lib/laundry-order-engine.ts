@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { initPickupVerification } from "@/lib/laundry-verification"
 import { notifyPickupOtpGenerated } from "@/lib/laundry-notify"
+import { freezePromise } from "@/lib/laundry-delivery-promise"
 
 export interface OrderEngineLine {
   serviceId: string | null
@@ -186,6 +187,16 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       deliveryTimeSlot: input.deliveryTimeSlot ?? null,
       backupDeliveryDate: input.backupDeliveryDate ?? null,
       backupDeliveryTimeSlot: input.backupDeliveryTimeSlot ?? null,
+      // Freeze what the customer was told, at the one point every order passes
+      // through. deliveryDate above is the operational schedule and the
+      // dispatch desk will rewrite it; this copy is written once and never
+      // again, so the promise survives every reschedule.
+      ...freezePromise({
+        deliveryDate: input.deliveryDate ?? null,
+        deliveryTimeSlot: input.deliveryTimeSlot ?? null,
+        backupDeliveryDate: input.backupDeliveryDate ?? null,
+        backupDeliveryTimeSlot: input.backupDeliveryTimeSlot ?? null,
+      }),
       pickupAddress: input.pickupAddress ?? null,
       pickupAddressId: input.pickupAddressId ?? null,
       pickupDistanceKm: input.pickupDistanceKm ?? null,

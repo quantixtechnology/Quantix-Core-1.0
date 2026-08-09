@@ -34,6 +34,8 @@ import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { useTransportModes } from "@/hooks/use-transport-modes"
 import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
+import { DeliveryPromiseBadge, DeliveryPromiseCard } from "@/components/laundry/delivery-promise"
+import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
@@ -123,7 +125,7 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
                 <Card key={o.id} className={`cursor-pointer transition-colors ${selected?.id === o.id ? "ring-2 ring-blue-500" : "hover:bg-accent/50"}`} onClick={() => onSelect(o)}>
                   <CardContent className="p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-semibold">{o.orderNumber}</span>
+                      <span className="font-mono text-xs font-semibold">{o.orderNumber}</span><DeliveryPromiseBadge order={o as DeliveryPromiseInput} />
                       <Badge variant="outline" className="text-[10px]">{o.orderType}</Badge>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground">

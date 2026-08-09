@@ -9,6 +9,8 @@ import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
+import { DeliveryPromiseCard, DeliveryPromiseUrgency, DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
+import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
 const TOKEN_KEY = "qx_exec_token"
 
@@ -69,6 +71,11 @@ interface Job {
   deliveryBagNumber: string | null
   pickupVerificationMethod: string; deliveryVerificationMethod: string
   balanceDue: number; paymentStatus: string | null
+  // Frozen customer promise — what the executive prioritises the round by.
+  promisedDeliveryDate?: string | null; promisedDeliveryTimeSlot?: string | null
+  promisedBackupDeliveryDate?: string | null; promisedBackupDeliveryTimeSlot?: string | null
+  deliveryDate?: string | null; deliveryRescheduledAt?: string | null
+  deliveryRescheduleReason?: string | null; deliveredAt?: string | null
 }
 
 const RANK: Record<string, number> = { ASSIGNED: 0, STARTED: 1, NAVIGATING: 2, REACHED: 3, PICKUP_STARTED: 4, PICKUP_COMPLETED: 5, OUT_FOR_DELIVERY: 6, DELIVERED: 7 }
@@ -247,6 +254,7 @@ function JobCard({ job, onOpen, tab }: { job: Job; onOpen: () => void; tab: stri
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-semibold text-slate-800">{job.orderNumber}</span>
             {job.priority === "EXPRESS" && <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 flex items-center gap-0.5"><Zap className="h-3 w-3" />Express</span>}
+            <DeliveryPromiseBadge order={job as DeliveryPromiseInput} />
           </div>
           <p className="text-sm text-slate-700 mt-0.5">{job.customerName}</p>
         </div>
@@ -405,6 +413,11 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       </header>
 
       <div className="px-4 py-4 space-y-4">
+        {/* What the customer was promised — first, and loudest when breached,
+            so the round is prioritised before anything else is read. */}
+        <DeliveryPromiseUrgency order={job as DeliveryPromiseInput} />
+        {isDelivery && <DeliveryPromiseCard order={job as DeliveryPromiseInput} compact />}
+
         {/* Customer + Call + Navigate */}
         <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
