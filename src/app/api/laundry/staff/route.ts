@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   const platformBusinessId = guard.platformBusinessId
   const laundryBusinessId = guard.ctx.laundryBusinessId
 
-  const [members, assignments, stores] = await Promise.all([
+  const [members, assignments, stores, execs] = await Promise.all([
     prisma.businessUser.findMany({
       where: { businessId: platformBusinessId, role: { not: "CUSTOMER" } },
       include: { user: { select: { id: true, email: true, name: true, phone: true, isActive: true, lastLoginAt: true, createdAt: true } } },
@@ -36,11 +36,31 @@ export async function GET(request: Request) {
     }),
     prisma.laundryAccessAssignment.findMany({ where: { businessId: platformBusinessId }, include: { role: { select: { id: true, code: true, name: true, isOwner: true } } } }),
     prisma.laundryStore.findMany({ where: { laundryBusinessId }, select: { id: true, storeName: true } }),
+    // The delivery workforce, so they can be kept out of the office-staff list.
+    prisma.laundryDeliveryExecutive.findMany({
+      where: { businessId: laundryBusinessId, userId: { not: null } },
+      select: { userId: true },
+    }),
   ])
   const aByUser = new Map(assignments.map((a) => [a.userId, a]))
   const storeName = new Map(stores.map((s) => [s.id, s.storeName]))
+  const execUserIds = new Set(execs.map((e) => e.userId).filter(Boolean) as string[])
 
-  const data = members.map((bu) => {
+  // This list is built from BusinessUser — every person who belongs to the
+  // business, not a dedicated Staff table. Creating a Delivery Executive
+  // provisions a login and therefore a BusinessUser row, so executives were
+  // showing up here as if they were office staff.
+  //
+  // A delivery executive is filtered out UNLESS an administrator has also given
+  // them a laundry role (a LaundryAccessAssignment). That is the deliberate
+  // "this person is both" case, and it stays visible.
+  //
+  // Filtering rather than deleting the BusinessUser row: that row is the
+  // person's membership of the business, nothing distinguishes an
+  // auto-provisioned one from an admin-created one with certainty, and removing
+  // it destroys data to fix a display problem. Executives never read it —
+  // their session resolves via RefreshToken -> LaundryDeliveryExecutive.
+  const data = members.filter((bu) => !execUserIds.has(bu.userId) || aByUser.has(bu.userId)).map((bu) => {
     const a = aByUser.get(bu.userId)
     return {
       userId: bu.userId,
