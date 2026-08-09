@@ -42,10 +42,18 @@ export function LaundrySortingWorkstation() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [offline, setOffline] = useState(false)
   const [bagTarget, setBagTarget] = useState<{ label: string; hint: string } | null>(null)
-  const [currentOrder, setCurrentOrder] = useState<{ orderId: string; orderNumber: string } | null>(null)
 
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
+  // Mirror of `scanned`, updated synchronously as each scan resolves.
+  //
+  // `scanned` is React state, so a render closure can still hold the previous
+  // value when the next scan lands. A camera scan can't hit that (the scanner
+  // closes after every detection, forcing a commit in between) but a USB /
+  // keyboard-wedge scanner fires back-to-back, which is why the completion
+  // count went wrong on desktop only. The ref is the counting source of truth;
+  // the state is purely what we render.
+  const scannedRef = useRef<Record<string, string[]>>({})
 
   const load = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
@@ -116,33 +124,32 @@ export function LaundrySortingWorkstation() {
     if (!j.success || !j.data) { showErr(j.error || "Garment not found"); return }
 
     const d = j.data
-    const already = (scanned[d.orderId] || []).includes(d.itemId)
+    const already = (scannedRef.current[d.orderId] || []).includes(d.itemId)
     if (already) { showErr(`"${d.garmentName}" is already scanned for ${d.orderNumber}.`); return }
 
-    setScanned((p) => {
-      const list = p[d.orderId] ? [...p[d.orderId], d.itemId] : [d.itemId]
-      return { ...p, [d.orderId]: list }
-    })
-    const scannedCount = scanned[d.orderId] ? scanned[d.orderId].length + 1 : 1
+    const list = [...(scannedRef.current[d.orderId] || []), d.itemId]
+    scannedRef.current = { ...scannedRef.current, [d.orderId]: list }
+    setScanned(scannedRef.current)
+    const scannedCount = list.length
     if (scannedCount >= d.expected) {
       playScanOk(soundEnabled)
-      setCurrentOrder({ orderId: d.orderId, orderNumber: d.orderNumber })
       toast({ title: "Order complete", description: `${d.orderNumber} — all ${d.expected} garments scanned. Scan the ${bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind this order.`, duration: 4000 })
     } else {
       playScanOk(soundEnabled)
       toast({ title: `Scanned ${scannedCount} / ${d.expected}`, description: `${d.garmentName} → ${d.orderNumber}`, duration: 1500 })
     }
-  }, [currentBusinessId, scanned, soundEnabled, bagTarget, toast])
+  }, [currentBusinessId, soundEnabled, bagTarget, toast])
 
-  const handleAssignBag = useCallback(async (code: string) => {
-    if (!currentOrder) return
+  // Bound to the order whose card was used, so every ready order can be bagged
+  // (and in any order) rather than only the most recently completed one.
+  const handleAssignBag = useCallback(async (code: string, order: { orderId: string; orderNumber: string }) => {
     setBusy(true); setScanErr(null); setOffline(false)
     try {
       const res = await fetch("/api/laundry/processing/sorting", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId: currentBusinessId, action: "assign_bag", code,
-          orderId: currentOrder.orderId, scanned: scanned[currentOrder.orderId] || [],
+          orderId: order.orderId, scanned: scannedRef.current[order.orderId] || [],
           actorName: user?.name || "operator",
         }),
       })
@@ -150,14 +157,14 @@ export function LaundrySortingWorkstation() {
       if (!res.ok || !j.success) { playScanError(soundEnabled); setScanErr(j.error || "Could not assign the bag."); return }
       playScanOk(soundEnabled)
       const label = bagTarget?.label?.replace(/^Scan /, "") || "container"
-      toast({ title: "Sorting complete — bag bound", description: `Order ${currentOrder.orderNumber} → ${label} ${code}; ${j.data?.retired || 0} garment barcodes retired.`, duration: 3500 })
-      setScanned((p) => { const n = { ...p }; delete n[currentOrder.orderId]; return n })
-      setCurrentOrder(null)
+      toast({ title: "Sorting complete — bag bound", description: `Order ${order.orderNumber} → ${label} ${code}; ${j.data?.retired || 0} garment barcodes retired.`, duration: 3500 })
+      const next = { ...scannedRef.current }; delete next[order.orderId]
+      scannedRef.current = next; setScanned(next)
       load(true)
     } catch {
       setOffline(true); setScanErr("Unable to reach the server. Try again.")
     } finally { setBusy(false) }
-  }, [currentOrder, currentBusinessId, scanned, user, bagTarget, soundEnabled, toast, load])
+  }, [currentBusinessId, user, bagTarget, soundEnabled, toast, load])
 
   const totalScanned = Object.values(scanned).reduce((n, l) => n + l.length, 0)
   const totalGarments = orders.reduce((n, o) => n + o.expected, 0)
@@ -247,11 +254,14 @@ export function LaundrySortingWorkstation() {
                   <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">All {o.expected} garments scanned. Scan ONE {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind the whole order{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null}.</p>
                   <div className="mt-2">
+                    {/* Enabled by the same `readyOrders` membership that renders
+                        this card — one source of truth, so a card can never
+                        appear with a dead button. */}
                     <BagScanButton
-                      onScan={handleAssignBag}
+                      onScan={(code) => handleAssignBag(code, o)}
                       label={bagTarget?.label || "Scan bag"}
                       closeOnScan={false}
-                      disabled={busy || !currentOrder || currentOrder.orderId !== o.orderId}
+                      disabled={busy}
                     />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-2">Assigning retires every garment barcode and advances the order to Ironing / Folding / Transit.</p>
