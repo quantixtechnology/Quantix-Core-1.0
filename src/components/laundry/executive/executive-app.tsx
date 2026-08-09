@@ -508,10 +508,15 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           </div>
         )}
 
-        {/* Bag assignment — editable from acceptance until pickup is completed.
+        {/* Bag assignment — revealed only once the executive is actually at the
+            customer and the pickup has been accepted (Start → Reached → Verify
+            moves fieldStatus to PICKUP_STARTED), and stays editable until the
+            pickup is confirmed. Bags are still assigned at the same point in the
+            workflow; this is only about when the card appears — showing it from
+            acceptance invited scanning before reaching the customer.
             Each service keeps its own bag list: Bag N + Scan, then + Add Bag for
             the next one. No fixed limit — a service may span many bags. */}
-        {!isDelivery && job.acceptance === "ACCEPTED" && !pickupDone && job.status !== "CANCELLED" && (
+        {!isDelivery && job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && !pickupDone && job.status !== "CANCELLED" && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags · one or more bags per service</p>
             {job.services.map((s, i) => (
