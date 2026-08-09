@@ -242,6 +242,8 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "laundry.pricing", displayName: "Pricing" },
         { screenKey: "laundry.stores", displayName: "Stores" },
         { screenKey: "laundry.bags", displayName: "Reusable Bags" },
+        // Field staff are an OPERATIONS concern, not back-office administration.
+        { screenKey: "laundry.delivery_executives", displayName: "Delivery Executives", icon: "Bike" },
         { screenKey: "laundry.reports", displayName: "Reports" },
       ],
     },
@@ -333,7 +335,6 @@ export function defaultNavigationConfig(): DefaultSection[] {
       items: [
         { screenKey: "laundry.staff", displayName: "Staff" },
         { screenKey: "laundry.roles", displayName: "Roles & Permissions", icon: "Shield" },
-        { screenKey: "laundry.delivery_executives", displayName: "Delivery Executives", icon: "Bike" },
         { screenKey: "laundry.mobile_apps", displayName: "Mobile Apps", icon: "Smartphone" },
         { screenKey: "laundry.settings", displayName: "Workspace Settings" },
         { screenKey: "laundry.navigation", displayName: "Navigation Manager" },
@@ -342,9 +343,44 @@ export function defaultNavigationConfig(): DefaultSection[] {
   ]
 }
 
+/**
+ * Move Delivery Executives out of Administration and into Operations for a
+ * tenant that was seeded before the change. `ensureNavigationConfig` returns
+ * early once a nav row exists, so a change to the defaults alone would only
+ * ever reach NEW businesses.
+ *
+ * Deliberately conservative: it moves the item ONLY while it is still sitting
+ * in the Administration section — i.e. untouched from the old default. If an
+ * admin has already placed it somewhere via Navigation Manager, that choice is
+ * left alone. Idempotent, so it is safe to run on every nav read.
+ */
+async function migrateDeliveryExecutivesToOperations(navigationId: string): Promise<void> {
+  const item = await db.laundryNavItem.findFirst({
+    where: { navigationId, screenKey: "laundry.delivery_executives" },
+    include: { section: { select: { id: true, name: true } } },
+  }).catch(() => null)
+  if (!item || item.section?.name !== "Administration") return
+
+  const operations = await db.laundryNavSection.findFirst({
+    where: { navigationId, name: "Operations" }, select: { id: true },
+  })
+  if (!operations) return
+
+  const last = await db.laundryNavItem.aggregate({
+    where: { sectionId: operations.id }, _max: { order: true },
+  })
+  await db.laundryNavItem.update({
+    where: { id: item.id },
+    data: { sectionId: operations.id, order: (last._max.order ?? -1) + 1 },
+  }).catch(() => null)
+}
+
 export async function ensureNavigationConfig(businessId: string): Promise<void> {
   const existing = await db.laundryNavigation.findUnique({ where: { businessId } })
-  if (existing) return
+  if (existing) {
+    await migrateDeliveryExecutivesToOperations(existing.id)
+    return
+  }
 
   await db.$transaction(async (tx) => {
     const recheck = await tx.laundryNavigation.findUnique({ where: { businessId } })

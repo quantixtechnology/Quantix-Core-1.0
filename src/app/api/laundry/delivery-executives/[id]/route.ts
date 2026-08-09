@@ -1,6 +1,6 @@
 // GET  /api/laundry/delivery-executives/[id] — full detail + reset history + login info
 // PUT  — edit / activate / assign store / availability
-// POST — { action: "reset-password" | "lock" | "unlock" | "force-logout" | "archive" | "restore" }
+// POST — { action: "reset-password" | "lock" | "unlock" | "force-logout" | "archive" | "restore" | "delete" }
 // The linked auth User is kept in sync. No change to the platform auth system —
 // these are operational admin controls on the executive model.
 import { NextResponse } from "next/server"
@@ -130,6 +130,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { isActive: true, archivedAt: null } })
         if (exec.userId) await prisma.user.update({ where: { id: exec.userId }, data: { isActive: true } }).catch(() => {})
         return NextResponse.json({ success: true })
+      case "delete": {
+        // Hard delete ONLY when the executive carries no operational history.
+        // Orders reference the executive by id for pickup/delivery attribution;
+        // removing one that appears on an order would blank that history and
+        // break the audit trail, so those must be archived instead.
+        const linked = await prisma.laundryOrder.count({
+          where: { businessId: exec.businessId, OR: [{ pickupExecutiveId: id }, { deliveryExecutiveId: id }] },
+        })
+        if (linked > 0) {
+          return NextResponse.json({
+            error: `${exec.name} appears on ${linked} order(s) and cannot be deleted — their pickup/delivery history would be lost. Deactivate or archive them instead.`,
+            code: "HAS_HISTORY", linked,
+          }, { status: 409 })
+        }
+        // No history: remove the executive and their login account for real.
+        await prisma.laundryDeliveryExecutive.delete({ where: { id } })
+        if (exec.userId) {
+          await prisma.refreshToken.deleteMany({ where: { userId: exec.userId } }).catch(() => {})
+          await prisma.user.delete({ where: { id: exec.userId } }).catch(() => {})
+        }
+        return NextResponse.json({ success: true })
+      }
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 })
     }

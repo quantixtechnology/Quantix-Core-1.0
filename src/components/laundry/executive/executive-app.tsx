@@ -110,7 +110,7 @@ function Login({ onLoggedIn, brand }: { onLoggedIn: (t: string, e: Exec) => void
     e.preventDefault()
     setBusy(true)
     try {
-      const res = await fetch("/api/laundry/executive/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mobile: mobile.trim(), password }) })
+      const res = await fetch("/api/laundry/executive/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: mobile.trim(), password }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Login failed")
       onLoggedIn(j.data.token, j.data.executive)
@@ -129,8 +129,10 @@ function Login({ onLoggedIn, brand }: { onLoggedIn: (t: string, e: Exec) => void
         </div>
         <form onSubmit={submit} className="bg-white rounded-2xl p-5 space-y-3 shadow-xl">
           <div>
-            <label className="text-xs font-medium text-slate-500">Mobile Number</label>
-            <input value={mobile} onChange={(e) => setMobile(e.target.value)} inputMode="numeric" placeholder="9876543210" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+            {/* Executives sign in with what they know — their mobile number or
+                their employee code. Internal user IDs are never shown or used. */}
+            <label className="text-xs font-medium text-slate-500">Mobile Number / Employee Code</label>
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} autoCapitalize="characters" placeholder="9876543210 or EMP-001" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Password</label>

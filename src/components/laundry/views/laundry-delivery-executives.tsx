@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Loader2, Plus, Pencil, Bike, Search, Copy, MoreHorizontal, KeyRound, MessageCircle, Lock, Unlock, LogOut, Archive, RotateCcw, ShieldAlert, History } from "lucide-react"
+import { Loader2, Plus, Pencil, Bike, Search, Copy, MoreHorizontal, KeyRound, MessageCircle, Lock, Unlock, LogOut, Archive, RotateCcw, ShieldAlert, History, Power, PowerOff, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { LaundryImageUpload } from "./pricing/laundry-image-upload"
@@ -34,8 +34,8 @@ interface Exec {
 const VEHICLES = ["BIKE", "SCOOTER", "CAR", "VAN", "CYCLE"]
 const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", vehicleNumber: "", photo: "", password: "", isActive: true, canReject: true }
 const fmtLogin = (s: string | null) => s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never"
-const waMessage = (business: string, code: string, mobile: string, appUrl: string, password?: string) =>
-  `Welcome to ${business}.\n\nEmployee Code:\n${code}\n\nMobile:\n${mobile}\n${password ? `\nPassword:\n${password}\n` : ""}\nExecutive App\n${appUrl}`
+const waMessage = (business: string, name: string, code: string, mobile: string, appUrl: string, password?: string) =>
+  `Welcome to ${business}, ${name}.\n\nUsername (Mobile Number):\n${mobile}\n\nEmployee Code:\n${code}\n${password ? `\nTemporary Password:\n${password}\n` : ""}\nLogin URL\n${appUrl}\n\nPlease change this password when you first sign in.`
 
 export function LaundryDeliveryExecutives() {
   const { currentBusinessId, user } = useAuthStore()
@@ -107,14 +107,33 @@ export function LaundryDeliveryExecutives() {
   const forceLogout = async (e: Exec) => { const j = await act(e, "force-logout"); if (j) toast.success(`Logged out of ${j.revoked || 0} device(s)`) }
   const archive = async (e: Exec) => { if (!confirm(`Archive ${e.name}? They keep all history and can be restored later.`)) return; if (await act(e, "archive")) { toast.success("Archived"); load() } }
   const restore = async (e: Exec) => { if (await act(e, "restore")) { toast.success("Restored"); load() } }
+  // Hard delete is refused server-side when the executive appears on any order,
+  // so their pickup/delivery history can never be silently lost.
+  const remove = async (e: Exec) => {
+    if (!confirm(`Delete ${e.name} permanently?\n\nThis removes the executive and their login. It is only possible when they have no pickup or delivery history — otherwise deactivate or archive them instead.`)) return
+    if (await act(e, "delete")) { toast.success(`${e.name} deleted`); load() }
+  }
+
+  // Everything an executive needs to sign in, in the order they need it. The
+  // username is their MOBILE NUMBER — internal user ids are never surfaced.
+  // Without a password in hand the admin is told to generate one rather than
+  // handing over a half-complete credential.
+  const credentialsText = (e: Exec, password?: string) => [
+    `Delivery Executive: ${e.name}`,
+    `Username (Mobile Number): ${e.mobile}`,
+    `Employee Code: ${e.employeeCode}`,
+    password ? `Temporary Password: ${password}` : "Temporary Password: use \u201CGenerate Temporary Password\u201D to create one",
+    `Login URL: ${appUrl}`,
+    "",
+    "Note: you must change this password when you first sign in.",
+  ].join("\n")
 
   const copyCreds = async (e: Exec, password?: string) => {
-    const text = `Employee Code: ${e.employeeCode}\nMobile: ${e.mobile}\n${password ? `Password: ${password}` : "Password: use Reset Password to set one"}\nApp: ${appUrl}`
-    try { await navigator.clipboard.writeText(text); toast.success("Credentials copied") } catch { toast.error("Could not copy") }
+    try { await navigator.clipboard.writeText(credentialsText(e, password)); toast.success("Credentials copied") } catch { toast.error("Could not copy") }
   }
   const whatsapp = (e: Exec, password?: string) => {
     const digits = e.mobile.replace(/\D/g, "")
-    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(waMessage(businessName, e.employeeCode, e.mobile, appUrl, password))}`, "_blank")
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(waMessage(businessName, e.name, e.employeeCode, e.mobile, appUrl, password))}`, "_blank")
   }
 
   const filtered = items.filter((e) => {
@@ -165,22 +184,26 @@ export function LaundryDeliveryExecutives() {
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setResetExec(e)}><KeyRound className="h-3.5 w-3.5" /> Reset Password</Button>
+                    <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setResetExec(e)}><KeyRound className="h-3.5 w-3.5" /> Generate Temp Password</Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuItem onClick={() => openEdit(e)}><Pencil className="h-4 w-4" /> Edit</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setResetExec(e)}><KeyRound className="h-4 w-4" /> Reset Password</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setResetExec(e)}><KeyRound className="h-4 w-4" /> Generate Temporary Password</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => copyCreds(e)}><Copy className="h-4 w-4" /> Copy Credentials</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleActive(e)}>
+                          {e.isActive ? <><PowerOff className="h-4 w-4" /> Deactivate</> : <><Power className="h-4 w-4" /> Activate</>}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-rose-600" onClick={() => remove(e)}><Trash2 className="h-4 w-4" /> Delete</DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => whatsapp(e)}><MessageCircle className="h-4 w-4" /> WhatsApp</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setDetailExec(e)}><History className="h-4 w-4" /> Login &amp; History</DropdownMenuItem>
-                        <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => lock(e)}>{e.isLocked ? <><Unlock className="h-4 w-4" /> Unlock</> : <><Lock className="h-4 w-4" /> Lock</>}</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => forceLogout(e)}><LogOut className="h-4 w-4" /> Force Logout</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {e.archivedAt
                           ? <DropdownMenuItem onClick={() => restore(e)}><RotateCcw className="h-4 w-4" /> Restore</DropdownMenuItem>
-                          : <DropdownMenuItem className="text-rose-600" onClick={() => archive(e)}><Archive className="h-4 w-4" /> Archive</DropdownMenuItem>}
+                          : <DropdownMenuItem onClick={() => archive(e)}><Archive className="h-4 w-4" /> Archive</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -226,7 +249,7 @@ export function LaundryDeliveryExecutives() {
   )
 }
 
-// ── Reset Password (random or manual + force-change + reason → result share) ──
+// ── Generate Temporary Password (random or manual; force-change ON by default) ──
 function ResetPasswordDialog({ exec, businessId, businessName, appUrl, onCopyCreds, onWhatsapp, onClose }: { exec: Exec; businessId: string; businessName: string; appUrl: string; onCopyCreds: (e: Exec, p?: string) => void; onWhatsapp: (e: Exec, p?: string) => void; onClose: () => void }) {
   const [mode, setMode] = useState<"random" | "manual">("random")
   const [pw, setPw] = useState("")
@@ -253,20 +276,36 @@ function ResetPasswordDialog({ exec, businessId, businessName, appUrl, onCopyCre
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-amber-600" /> Reset Password · {exec.name}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-amber-600" /> Generate Temporary Password · {exec.name}</DialogTitle></DialogHeader>
         {result ? (
+          /* ONE-TIME REVEAL. The password is held only in this component's state
+             and is never persisted or returned by any read endpoint — closing
+             the dialog discards it for good, so the admin has to hand it over
+             (or copy it) now. A forgotten password means generating a new one. */
           <div className="space-y-3">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-center">
-              <p className="text-xs text-emerald-700">New temporary password</p>
-              <p className="text-2xl font-mono font-bold text-emerald-800 tracking-wider mt-1">{result}</p>
-              {force && <p className="text-[11px] text-emerald-600 mt-1">Executive must change it on next login.</p>}
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-2.5">
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                <span className="text-emerald-700/80">Username (Mobile)</span>
+                <span className="font-mono font-semibold text-emerald-900">{exec.mobile}</span>
+                <span className="text-emerald-700/80">Employee Code</span>
+                <span className="font-mono font-semibold text-emerald-900">{exec.employeeCode}</span>
+              </div>
+              <div className="border-t border-emerald-200 pt-2.5 text-center">
+                <p className="text-xs text-emerald-700">Temporary password</p>
+                <p className="text-2xl font-mono font-bold text-emerald-800 tracking-wider mt-1">{result}</p>
+                {force && <p className="text-[11px] text-emerald-600 mt-1">Executive must change it on first login.</p>}
+              </div>
             </div>
+            <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-px" />
+              Shown once. Copy or send it now — after closing it cannot be retrieved, only replaced by generating a new one.
+            </p>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-1" onClick={() => { navigator.clipboard.writeText(result).then(() => toast.success("Password copied")).catch(() => {}) }}><Copy className="h-4 w-4" /> Copy Password</Button>
-              <Button variant="outline" className="flex-1 gap-1" onClick={() => onCopyCreds(exec, result)}><Copy className="h-4 w-4" /> Credentials</Button>
+              <Button variant="outline" className="flex-1 gap-1" onClick={() => { navigator.clipboard.writeText(result).then(() => toast.success("Password copied")).catch(() => toast.error("Could not copy")) }}><Copy className="h-4 w-4" /> Copy Password</Button>
+              <Button variant="outline" className="flex-1 gap-1" onClick={() => onCopyCreds(exec, result)}><Copy className="h-4 w-4" /> Copy Credentials</Button>
             </div>
-            <Button className="w-full gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onWhatsapp(exec, result)}><MessageCircle className="h-4 w-4" /> WhatsApp Credentials</Button>
-            <Button variant="ghost" className="w-full" onClick={onClose}>Done</Button>
+            <Button className="w-full gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onWhatsapp(exec, result)}><MessageCircle className="h-4 w-4" /> Send WhatsApp</Button>
+            <Button variant="ghost" className="w-full" onClick={onClose}>Close</Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -284,7 +323,7 @@ function ResetPasswordDialog({ exec, businessId, businessName, appUrl, onCopyCre
             <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm"><span>Force change on next login</span><Switch checked={force} onCheckedChange={setForce} /></label>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button onClick={submit} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Reset Password</Button>
+              <Button onClick={submit} disabled={busy} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Generate Temporary Password</Button>
             </DialogFooter>
           </div>
         )}

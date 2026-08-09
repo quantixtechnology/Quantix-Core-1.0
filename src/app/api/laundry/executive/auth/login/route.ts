@@ -1,5 +1,5 @@
-// POST /api/laundry/executive/auth/login — Delivery Executive login (mobile +
-// password). Validates: executive exists, ACTIVE, has an assigned store, and a
+// POST /api/laundry/executive/auth/login — Delivery Executive login
+// (mobile number OR employee code + password). Validates: executive exists, ACTIVE, has an assigned store, and a
 // linked auth User. Mints a platform access token (RefreshToken store — same
 // session system as everywhere else). No self-registration; accounts are made by
 // Admin. Only active Delivery Executives can log in.
@@ -13,20 +13,33 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const b = await request.json().catch(() => ({}))
-    const mobile = String(b.mobile || "").trim()
+    // Executives identify themselves by the two things they actually know:
+    // their mobile number or their employee code. `mobile` is still accepted so
+    // an older app build keeps working.
+    const identifier = String(b.identifier || b.mobile || "").trim()
     const password = String(b.password || "")
-    if (!mobile || !password) return NextResponse.json({ error: "Mobile and password are required" }, { status: 400 })
+    if (!identifier || !password) {
+      return NextResponse.json({ error: "Mobile number or employee code and password are required" }, { status: 400 })
+    }
 
     // The tenant is inferred from the host (white-label deployment). When it
     // resolves, scope the lookup to that business so mobile is per-tenant.
     const tenant = await resolveExecutiveTenant(request).catch(() => null)
 
-    // Active executives with this mobile + a linked login account.
+    // Active executives matching the identifier (mobile OR employee code) with
+    // a linked login account. Employee codes are matched case-insensitively
+    // because they are typed by hand on a phone.
     const execs = await prisma.laundryDeliveryExecutive.findMany({
-      where: { mobile, isActive: true, userId: { not: null }, ...(tenant ? { businessId: tenant.laundryBusinessId } : {}) },
+      where: {
+        isActive: true, userId: { not: null },
+        OR: [{ mobile: identifier }, { employeeCode: identifier }, { employeeCode: identifier.toUpperCase() }],
+        ...(tenant ? { businessId: tenant.laundryBusinessId } : {}),
+      },
       include: { store: { select: { storeName: true } } },
     })
-    if (execs.length === 0) return NextResponse.json({ error: "No active delivery executive found for this mobile" }, { status: 401 })
+    if (execs.length === 0) {
+      return NextResponse.json({ error: "No active delivery executive found for this mobile number or employee code" }, { status: 401 })
+    }
     const now = new Date()
 
     // Match the executive whose linked User password verifies.
@@ -42,7 +55,7 @@ export async function POST(request: Request) {
         const attempts = (e.failedAttempts || 0) + 1
         await prisma.laundryDeliveryExecutive.update({ where: { id: e.id }, data: { failedAttempts: attempts, ...(attempts >= 5 ? { lockedUntil: new Date(now.getTime() + 15 * 60 * 1000) } : {}) } }).catch(() => {})
       }
-      return NextResponse.json({ error: "Incorrect mobile or password" }, { status: 401 })
+      return NextResponse.json({ error: "Incorrect login or password" }, { status: 401 })
     }
     // Locked accounts cannot log in even with the right password.
     if (matched.isLocked) return NextResponse.json({ error: "Your account is locked. Contact your admin." }, { status: 403 })
