@@ -362,9 +362,18 @@ describe('event log', () => {
 })
 
 describe('health rollup — one verdict for the header and the dashboard', () => {
-  it('is healthy with a scanner present and nothing queued', () => {
+  // "Verified" means a scanner has actually typed. Capability is not proof.
+  it('is verified once a scanner has actually scanned', () => {
     ScanEngine.submit('X', 'USB_SCANNER')
-    expect(hardwareHealth().level).toBe('HEALTHY')
+    expect(hardwareHealth().level).toBe('VERIFIED')
+  })
+
+  it('is NOT verified before anything has been scanned, whatever the browser supports', () => {
+    ScanEngine.setCameraAvailable(true)   // camera API present
+    const h = hardwareHealth()
+    expect(h.level).toBe('NOT_VERIFIED')
+    expect(h.label).toBe('Hardware Not Verified')
+    expect(h.issues).toContain('Scanner not verified')
   })
 
   it('is critical when the printer is offline, because that blocks the counter', () => {
@@ -375,11 +384,9 @@ describe('health rollup — one verdict for the header and the dashboard', () =>
     expect(h.label).toBe('Printer Offline')
   })
 
-  it('is only degraded when the scanner is missing, because typing still works', () => {
-    ScanEngine.setCameraAvailable(false)
-    const h = hardwareHealth()
-    expect(h.level).toBe('DEGRADED')
-    expect(h.issues).toContain('Scanner Missing')
+  it('a camera being available never counts as a verified scanner', () => {
+    ScanEngine.setCameraAvailable(true)
+    expect(hardwareHealth().level).not.toBe('VERIFIED')
   })
 
   it('reports the queue length it shares with the queue view', async () => {

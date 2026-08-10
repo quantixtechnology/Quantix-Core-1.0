@@ -149,6 +149,22 @@ class ScanEngineImpl {
     return !!this.wedgeLastSeenAt && Date.now() - this.wedgeLastSeenAt < SCANNER_IDLE_MS
   }
 
+  /**
+   * Has a physical scanner ever PROVEN itself in this browser?
+   *
+   * A keyboard-emulation scanner cannot be enumerated — the browser sees a
+   * keyboard, not a barcode reader — so the only honest evidence it exists is
+   * that it has typed something. Until then the truthful answer is "not
+   * verified", never "connected".
+   *
+   * Distinct from status(), which answers "where would input come from next"
+   * and legitimately falls back to the camera. That is a routing decision, not
+   * a claim about hardware.
+   */
+  everScanned(): boolean {
+    return diagnostics.snapshot().scanner.lastScanAt !== null
+  }
+
   statusLabel(): string {
     switch (this.status()) {
       case "SCANNER_READY": return this.knownScannerConnection === "BLUETOOTH" ? "Bluetooth scanner ready" : "Scanner ready"

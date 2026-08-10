@@ -11,7 +11,7 @@ import { ScanEngine } from "./scan-engine"
 import { PrintEngine } from "./print-engine"
 import { eventLog } from "./event-log"
 
-export type HealthLevel = "HEALTHY" | "DEGRADED" | "CRITICAL"
+export type HealthLevel = "NOT_VERIFIED" | "VERIFIED" | "ATTENTION" | "CRITICAL"
 
 export interface HardwareHealth {
   level: HealthLevel
@@ -27,26 +27,28 @@ export function hardwareHealth(): HardwareHealth {
   const queueLength = PrintEngine.queueLength()
   const failed = PrintEngine.failed().length
   const errorsToday = eventLog.errorCount()
-  const scan = ScanEngine.status()
+  // Proof, not capability: a scanner counts as real only once it has typed.
+  const scannerVerified = ScanEngine.everScanned()
 
   if (PrintEngine.status() === "OFFLINE") issues.push("Printer Offline")
   if (failed > 0) issues.push(`${failed} failed print${failed === 1 ? "" : "s"}`)
   if (queueLength > 0) issues.push(`${queueLength} job${queueLength === 1 ? "" : "s"} queued`)
-  // Manual entry means neither a scanner nor a camera is available — the
-  // operator can still work, but nothing is being read automatically.
-  if (scan === "MANUAL_ENTRY") issues.push("Scanner Missing")
+  if (!scannerVerified) issues.push("Scanner not verified")
 
-  const level: HealthLevel = PrintEngine.status() === "OFFLINE" || failed > 0
-    ? "CRITICAL"
-    : scan === "MANUAL_ENTRY" || queueLength > 0
-      ? "DEGRADED"
-      : "HEALTHY"
+  // A printer that has failed, or held work, is a counter that has stopped —
+  // that outranks anything unproven.
+  const level: HealthLevel =
+    PrintEngine.status() === "OFFLINE" || failed > 0 ? "CRITICAL"
+      : queueLength > 0 ? "ATTENTION"
+        // Never "healthy" by default. Nothing has been observed yet, and
+        // saying so is the whole point of this screen.
+        : !scannerVerified ? "NOT_VERIFIED"
+          : "VERIFIED"
 
-  return {
-    level,
-    label: level === "HEALTHY" ? "Hardware Healthy" : issues[0] ?? "Hardware Degraded",
-    issues,
-    queueLength,
-    errorsToday,
-  }
+  const label =
+    level === "VERIFIED" ? "Scanner Verified"
+      : level === "NOT_VERIFIED" ? "Hardware Not Verified"
+        : issues[0] ?? "Attention Required"
+
+  return { level, label, issues, queueLength, errorsToday }
 }

@@ -33,16 +33,20 @@ export function HardwareHealthChip() {
 
   if (!health) return null
 
-  const tone = health.level === "HEALTHY"
+  // Grey for unverified — deliberately NOT green. Nothing has been observed,
+  // and a green chip would be the same lie in a smaller box.
+  const tone = health.level === "VERIFIED"
     ? { dot: "bg-emerald-500", cls: "text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100" }
-    : health.level === "DEGRADED"
-      ? { dot: "bg-amber-400", cls: "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100" }
-      : { dot: "bg-rose-500", cls: "text-rose-700 border-rose-200 bg-rose-50 hover:bg-rose-100" }
+    : health.level === "NOT_VERIFIED"
+      ? { dot: "bg-slate-300", cls: "text-slate-600 border-slate-200 bg-slate-50 hover:bg-slate-100" }
+      : health.level === "ATTENTION"
+        ? { dot: "bg-amber-400", cls: "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100" }
+        : { dot: "bg-rose-500", cls: "text-rose-700 border-rose-200 bg-rose-50 hover:bg-rose-100" }
 
   return (
     <button
       onClick={() => setLaundryPage("hardware-manager")}
-      title={health.issues.length ? health.issues.join(" · ") : "All hardware healthy"}
+      title={health.issues.length ? health.issues.join(" · ") : "Scanner verified"}
       className={`hidden md:flex items-center gap-1.5 h-7 px-2 rounded-lg border text-[11px] font-medium transition-colors ${tone.cls}`}>
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${tone.dot}`} />
       {health.label}

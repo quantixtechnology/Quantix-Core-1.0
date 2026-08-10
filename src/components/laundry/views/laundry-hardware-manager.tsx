@@ -208,11 +208,13 @@ export function LaundryHardwareManager() {
     URL.revokeObjectURL(a.href)
   }
 
-  const healthChip = health.level === "HEALTHY"
+  const healthChip = health.level === "VERIFIED"
     ? { dot: "bg-emerald-500", cls: "border-emerald-300 text-emerald-700 bg-emerald-50" }
-    : health.level === "DEGRADED"
-      ? { dot: "bg-amber-400", cls: "border-amber-300 text-amber-700 bg-amber-50" }
-      : { dot: "bg-rose-500", cls: "border-rose-300 text-rose-700 bg-rose-50" }
+    : health.level === "NOT_VERIFIED"
+      ? { dot: "bg-slate-300", cls: "border-slate-200 text-slate-600 bg-slate-50" }
+      : health.level === "ATTENTION"
+        ? { dot: "bg-amber-400", cls: "border-amber-300 text-amber-700 bg-amber-50" }
+        : { dot: "bg-rose-500", cls: "border-rose-300 text-rose-700 bg-rose-50" }
 
   const filteredEvents = eventLog.search(logQuery, logLevel)
 
@@ -256,13 +258,18 @@ export function LaundryHardwareManager() {
       {tab === "dashboard" && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Tile label="Barcode Scanner" ok={scanStatus === "SCANNER_READY"} warn={scanStatus === "CAMERA_READY"}
-              value={scanStatus === "SCANNER_READY" ? "Connected" : scanStatus === "CAMERA_READY" ? "Camera fallback" : "Not detected"} icon={ScanLine} />
-            <Tile label="Printer" ok={printerOnline} value={printerOnline ? "Connected" : "Offline"} icon={Printer} />
+            {/* Proof, not capability. A keyboard-emulation scanner cannot be
+                enumerated, so "verified" means it has actually typed. */}
+            <Tile label="Barcode Scanner" ok={ScanEngine.everScanned()} warn={!ScanEngine.everScanned()}
+              value={ScanEngine.everScanned() ? `Active · last ${time(diag.scanner.lastScanAt)}` : "Presence not verified"} icon={ScanLine} />
+            <Tile label="Printer" ok={diag.printer.lastPrintAt !== null} warn={diag.printer.lastPrintAt === null}
+              value={diag.printer.lastPrintAt ? `Printed ${time(diag.printer.lastPrintAt)}` : "Browser print available · physical printer not verified"} icon={Printer} />
             <Tile label="Camera" ok={camera.count > 0} warn={camera.permission !== "granted"}
               value={camera.count ? (camera.permission === "granted" ? "Ready" : "Needs permission") : "None"} icon={Camera} />
-            <Tile label="Bluetooth" ok={caps.bluetooth} value={caps.bluetooth ? "Enabled" : "Unavailable"} icon={Bluetooth} />
-            <Tile label="USB" ok={caps.webUsb} value={caps.webUsb ? "Available" : "Unavailable"} icon={Usb} />
+            <Tile label="Bluetooth" ok={devices.some((d) => d.connection === "BLUETOOTH")} warn={caps.bluetooth}
+              value={devices.some((d) => d.connection === "BLUETOOTH") ? "Device paired" : caps.bluetooth ? "API supported · no device paired" : "API unavailable"} icon={Bluetooth} />
+            <Tile label="USB" ok={devices.some((d) => d.connection === "USB")} warn={caps.webUsb}
+              value={`${devices.filter((d) => d.connection === "USB").length} device(s) visible${caps.webUsb ? "" : " · API unavailable"}`} icon={Usb} />
             <Tile label="Network" ok={typeof navigator !== "undefined" ? navigator.onLine : true}
               value={typeof navigator !== "undefined" && navigator.onLine ? "Online" : "Offline"} icon={Wifi} />
             <Tile label="Print Queue" ok={health.queueLength === 0} value={`${health.queueLength} Pending`} icon={ListChecks} />
