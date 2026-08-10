@@ -15,6 +15,14 @@ export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
   if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
 
+  // Read is guarded too. It shipped without a guard, which meant a tenant's
+  // commercial entitlements were readable by anyone who knew the id — and it
+  // is why saving failed while loading appeared to work: only the write was
+  // ever checking. Read and write now use the identical pipeline, differing
+  // only in the level they demand.
+  const guard = await requireLaundryPermission(request, businessId, "laundry.settings.view")
+  if (!guard.ok) return guard.res
+
   const biz = await resolveLaundryBusiness(businessId)
   if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 

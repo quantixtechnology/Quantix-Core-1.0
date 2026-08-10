@@ -17,6 +17,7 @@ import { Boxes, Loader2, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { FeatureSelector } from "@/components/admin/laundry/feature-selector"
 import { hasAnySelection, NO_MODULES_SELECTED, licensableGroups } from "@/lib/laundry-licensing"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 
 interface Snapshot { enabledScreens: string[] }
 
@@ -27,15 +28,29 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
   const [saving, setSaving] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [baseline, setBaseline] = useState<string>("")
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/laundry/licensing?businessId=${encodeURIComponent(businessId)}`)
+      // getAuthHeaders() attaches the platform Bearer token. A raw fetch() here
+      // is what made saving fail with "Not authenticated" while reading
+      // appeared to work — read and write must use the same client.
+      const res = await fetch(`/api/laundry/licensing?businessId=${encodeURIComponent(businessId)}`, { headers: getAuthHeaders() })
+      // 404 means "not a laundry business" — self-hide, which is why callers
+      // may render this unconditionally. An auth failure is NOT that: hiding it
+      // turns a fixable problem into a card that mysteriously is not there, so
+      // it surfaces instead.
+      if (res.status === 401 || res.status === 403) {
+        setIsLaundry(true)
+        setAuthError((await res.json().catch(() => ({}))).error || "Not authorised to view this licence")
+        return
+      }
       if (!res.ok) { setIsLaundry(false); return }
       const j = await res.json()
       if (!j.success) { setIsLaundry(false); return }
       setIsLaundry(true)
+      setAuthError(null)
       const screens: string[] = (j.data as Snapshot).enabledScreens || []
       setSelected(new Set(screens))
       setBaseline(JSON.stringify([...screens].sort()))
@@ -62,7 +77,7 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
     try {
       const res = await fetch("/api/laundry/licensing", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ businessId, screenKeys: [...selected] }),
       })
       const j = await res.json()
@@ -93,7 +108,11 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
           it never deletes data, so re-enabling brings the tenant&apos;s orders, leads and history back untouched.
         </p>
 
-        {loading ? (
+        {authError ? (
+          <p className="text-xs text-rose-700 border border-rose-200 bg-rose-50 rounded-lg px-3 py-2">
+            {authError}. Sign in again, or ask a platform administrator to grant Workspace Settings access.
+          </p>
+        ) : loading ? (
           <div className="py-6 text-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin inline" /></div>
         ) : (
           <>
