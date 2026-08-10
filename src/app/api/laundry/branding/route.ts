@@ -16,16 +16,18 @@ import { resolveImageUrl } from "@/lib/image-url"
 export const runtime = "nodejs"
 
 const DEFAULT_COLOR = "#2563eb"
+const DEFAULT_SECONDARY = "#0f172a"
 
 async function readBranding(platformBusinessId: string) {
   const biz = await prisma.business.findUnique({
     where: { id: platformBusinessId },
-    select: { name: true, logo: true, primaryColor: true },
+    select: { name: true, logo: true, primaryColor: true, secondaryColor: true },
   })
   return {
     businessName: biz?.name ?? "",
     logo: biz?.logo ? resolveImageUrl(biz.logo) : null,
     primaryColor: biz?.primaryColor || DEFAULT_COLOR,
+    secondaryColor: biz?.secondaryColor || DEFAULT_SECONDARY,
   }
 }
 
@@ -63,6 +65,10 @@ export async function PUT(request: Request) {
       // null clears the logo; undefined leaves it untouched.
       ...(body.logo !== undefined ? { logo: body.logo || null } : {}),
       ...(typeof body.primaryColor === "string" && body.primaryColor ? { primaryColor: body.primaryColor } : {}),
+      // Business.secondaryColor already existed on the model; the branding page
+      // is simply the first surface to let a tenant set it. A picker that
+      // discarded its value would be worse than no picker.
+      ...(typeof body.secondaryColor === "string" && body.secondaryColor ? { secondaryColor: body.secondaryColor } : {}),
     },
   })
 
