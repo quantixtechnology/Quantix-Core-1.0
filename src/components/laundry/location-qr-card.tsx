@@ -169,8 +169,8 @@ export function LocationQrCard({
         <div className="rounded-lg border border-slate-200 bg-white p-2 shrink-0">
           {preview
             ? /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={preview} alt={`${locationName} location QR`} className={panel ? "h-[208px] w-[208px]" : "h-[104px] w-[104px]"} />
-            : <div className={`${panel ? "h-[208px] w-[208px]" : "h-[104px] w-[104px]"} grid place-items-center text-slate-300`}><Loader2 className="h-4 w-4 animate-spin" /></div>}
+              <img src={preview} alt={`${locationName} location QR`} className={panel ? "h-[240px] w-[240px]" : "h-[104px] w-[104px]"} />
+            : <div className={`${panel ? "h-[240px] w-[240px]" : "h-[104px] w-[104px]"} grid place-items-center text-slate-300`}><Loader2 className="h-4 w-4 animate-spin" /></div>}
         </div>
         <div className="min-w-0 w-full flex-1">
           <p className="text-xs font-semibold text-slate-800 truncate">{businessName}</p>

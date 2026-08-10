@@ -212,7 +212,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
             desktop the map, the coordinates and the QR were all pushed below
             the fold and the Save button with them. Capped at 90vh with only
             the BODY scrolling, so the header and the primary action stay put. */}
-        <DialogContent className="max-w-[1200px] w-[96vw] max-h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
+        <DialogContent className="!max-w-[min(1180px,calc(100vw-80px))] sm:!max-w-[min(1180px,calc(100vw-80px))] w-[min(1180px,calc(100vw-80px))] lg:min-w-[1000px] max-h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
           <DialogHeader className="shrink-0 border-b border-slate-200 px-6 py-4 space-y-1 text-left">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -242,7 +242,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5">
-            <div className="grid gap-8 lg:grid-cols-2 [&>*]:min-w-0">
+            <div className="grid gap-8 lg:grid-cols-[1.15fr_0.95fr] [&>*]:min-w-0">
 
               {/* ── Left: everything typed ─────────────────────────────── */}
               <div className="space-y-6">
@@ -329,7 +329,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 <Section title="Location" hint="Search and select the store\u2019s Google Maps location.">
                   {/* Height-capped so the map cannot swallow the column and
                       push the QR out of sight — the original complaint. */}
-                  <div className="[&_.gm-style]:rounded-lg [&>div>div:has(>div>.gm-style)]:!h-[340px]">
+                  <div className="[&_.gm-style]:rounded-lg [&>div>div:has(>div>.gm-style)]:!h-[380px]">
                     <StoreLocationPicker
                       value={{
                         latitude: form.latitude ? parseFloat(form.latitude) : null,
@@ -379,12 +379,13 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
           </div>
 
           <DialogFooter className="shrink-0 border-t border-slate-200 px-6 py-3.5 sm:justify-between gap-3 flex-wrap">
-            <span className="text-[11px] text-slate-400">
-              {editingStore ? "Changes apply when you save." : "The store is created when you save."}
+            <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              {editingStore ? "Unsaved changes apply when you save." : "The store is created when you save."}
             </span>
             <div className="flex items-center gap-2 ml-auto">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!form.storeName}>{editingStore ? "Update" : "Create"} Store</Button>
+            <Button onClick={handleSave} disabled={!form.storeName} className="min-w-[130px]">{editingStore ? "Update" : "Create"} Store</Button>
             </div>
           </DialogFooter>
         </DialogContent>
