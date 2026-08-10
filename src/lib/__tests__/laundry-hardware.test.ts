@@ -397,3 +397,55 @@ describe('health rollup — one verdict for the header and the dashboard', () =>
 })
 
 afterEach(() => { vi.useRealTimers() })
+
+// ── POS behaviour: a wedge scan lands with nothing focused ───────────────────
+// An operator at a counter must not click a field before every garment.
+describe('unfocused wedge scans dispatch', () => {
+  const burst = (code: string, gapMs: number, target?: EventTarget) => {
+    for (const ch of code) {
+      vi.setSystemTime(new Date(Date.now() + gapMs))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }))
+    }
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    if (target) Object.defineProperty(ev, 'target', { value: target })
+    window.dispatchEvent(ev)
+  }
+
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-08-11T10:00:00')) })
+  afterEach(() => vi.useRealTimers())
+
+  it('delivers a fast burst with no field focused', () => {
+    const seen: string[] = []
+    ScanEngine.start()
+    ScanEngine.attach((e) => seen.push(e.code))
+    burst('GAR000000000083', 5)
+    expect(seen).toEqual(['GAR000000000083'])
+  })
+
+  it('ignores human-speed typing', () => {
+    const seen: string[] = []
+    ScanEngine.start()
+    ScanEngine.attach((e) => seen.push(e.code))
+    burst('HELLO', 120)      // ~120ms per key — a person
+    expect(seen).toEqual([])
+  })
+
+  // The field is already receiving the characters and submits them itself.
+  it('leaves a focused input to handle its own Enter', () => {
+    const seen: string[] = []
+    ScanEngine.start()
+    ScanEngine.attach((e) => seen.push(e.code))
+    burst('GAR000000000084', 5, document.createElement('input'))
+    expect(seen).toEqual([])
+  })
+
+  it('stays ready for the next scan — no reactivation', () => {
+    const seen: string[] = []
+    ScanEngine.start()
+    ScanEngine.attach((e) => seen.push(e.code))
+    burst('GAR000000000001', 5)
+    vi.setSystemTime(new Date(Date.now() + 4000))
+    burst('GAR000000000002', 5)
+    expect(seen).toEqual(['GAR000000000001', 'GAR000000000002'])
+  })
+})

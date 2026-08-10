@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, ScanLine } from "lucide-react"
 import { Barcode } from "./barcode"
 import { CopyButton } from "@/components/ui/copy-button"
+import { ScanEngine } from "@/lib/hardware"
 
 interface ScanResult {
   item: {
@@ -148,6 +149,22 @@ export function LaundryGarmentLookup() {
     }
   }, [scanMode, result])
 
+  // POS behaviour: while scan mode is on, a wedge scanner lands ANYWHERE on the
+  // page — no field to click first, and the listener stays live scan after scan
+  // until the operator leaves scan mode or the screen. The focused input above
+  // still works; this only covers the case where focus has drifted, which at a
+  // counter is most of the time.
+  useEffect(() => {
+    if (!scanMode) return
+    ScanEngine.start()
+    return ScanEngine.attach((e) => {
+      const q = e.code.trim().toUpperCase()
+      if (!q || scanGuard(q)) return
+      setCode(q)
+      search(q)
+    })
+  }, [scanMode, search])
+
   // Duplicate scan guard for scanner mode
   const lastCode = useRef("")
   const lastTime = useRef(0)
@@ -186,17 +203,21 @@ export function LaundryGarmentLookup() {
 
       {/* Scanner-mode overlay bar */}
       {scanMode && (
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 -mx-1">
-          <ScanLine className="h-5 w-5 text-blue-600 shrink-0" />
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 -mx-1">
+          <ScanLine className="h-5 w-5 text-emerald-600 shrink-0" />
           <input
             ref={scanInputRef}
             autoFocus
-            className="flex-1 bg-transparent border-none outline-none text-sm font-mono text-blue-900 placeholder:text-blue-400"
-            placeholder="Scan a barcode..."
+            className="flex-1 bg-transparent border-none outline-none text-sm font-mono text-emerald-900 placeholder:text-emerald-500/70"
+            placeholder="Ready — scan a garment (no need to click here)"
             onKeyDown={handleScanInput}
           />
-          <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-100 text-[10px]">Scan Mode</Badge>
-          <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600" onClick={() => setScanMode(false)}>Stop</Button>
+          {/* Live for as long as scan mode is on: many scans, no reactivation. */}
+          <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-100 text-[10px] gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Ready to Scan
+          </Badge>
+          <Button size="sm" variant="ghost" className="h-7 text-xs text-emerald-700" onClick={() => setScanMode(false)}>Stop</Button>
         </div>
       )}
 

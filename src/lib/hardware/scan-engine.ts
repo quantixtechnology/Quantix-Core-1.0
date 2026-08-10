@@ -28,6 +28,14 @@ const SCANNER_IDLE_MS = 5 * 60 * 1000
 /** Identical code inside this window is one physical scan, not two. */
 const DUPLICATE_WINDOW_MS = 900
 
+/** A field that is already receiving the keystrokes handles its own Enter. */
+function isEditable(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || !el.tagName) return false
+  const tag = el.tagName.toUpperCase()
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true
+}
+
 type Handler = (e: ScanEvent) => void
 
 interface Attachment { id: number; handler: Handler }
@@ -83,9 +91,27 @@ class ScanEngineImpl {
   private observeKey(e: KeyboardEvent) {
     const now = Date.now()
     if (e.key === "Enter") {
+      const looksLikeScan = this.buf.length >= MIN_WEDGE_LENGTH && this.isFastBurst()
       // autoDetect off pins the ladder to whatever the administrator chose —
       // timing is still measured for diagnostics, but never promotes a rung.
-      if (this.autoDetect && this.buf.length >= MIN_WEDGE_LENGTH && this.isFastBurst()) this.noteWedgeSeen(now)
+      if (this.autoDetect && looksLikeScan) this.noteWedgeSeen(now)
+
+      // Dispatch the burst, so a wedge scanner behaves like a POS scanner:
+      // present a barcode and it lands, with nothing focused and no button
+      // pressed first. Previously the engine only CLASSIFIED these keystrokes
+      // and waited for a focused input to call submit(), which is why an
+      // operator had to click a field before every scan.
+      //
+      // Two guards keep this from stealing ordinary input:
+      //   • the burst must be mechanically fast, so human typing never matches;
+      //   • an editable element that has focus handles its own Enter — that
+      //     field is already receiving the characters and will submit them.
+      if (looksLikeScan && this.autoDetect && !isEditable(e.target)) {
+        const code = this.buf
+        this.resetBuffer()
+        this.submit(code)
+        return
+      }
       this.resetBuffer()
       return
     }
