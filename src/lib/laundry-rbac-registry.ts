@@ -171,11 +171,35 @@ export function permKeyToScreenLevel(permKey: string): { screenKey: string; leve
  * module names or legacy fallback permissions are ever consulted, and a
  * screenKey that is not registered in SCREEN_MODULES is never accessible.
  */
+/**
+ * A detail screen belongs to its section, and is reached BY the section.
+ *
+ * Granting "Orders" and then discovering the employee cannot open an order is
+ * not a permission an administrator meant to withhold — it is one they never
+ * knew existed. A small business configures sections, not screens, so the
+ * parent's grant satisfies the child.
+ *
+ * Only genuine detail pages belong here: a screen reachable on its own from
+ * navigation is its own section and must keep its own grant. Garment Lookup,
+ * for instance, is a top-level tool rather than a detail of anything.
+ */
+export const SCREEN_PARENTS: Record<string, string> = {
+  "laundry.order_detail": "laundry.orders",
+}
+
 export function isScreenAccessible(
   screenLevels: Record<string, number>,
   isOwner: boolean,
   screenKey: string,
 ): boolean {
   if (isOwner) return true
-  return isValidScreenKey(screenKey) && (screenLevels[screenKey] ?? 0) >= Level.VIEW
+  if (!isValidScreenKey(screenKey)) return false
+  if ((screenLevels[screenKey] ?? 0) >= Level.VIEW) return true
+  // Inherit VIEW from the section this screen is part of. Deliberately VIEW
+  // only: it decides whether the screen OPENS. What may be done inside it
+  // still reads that screen's own level, so CREATE/EDIT semantics are
+  // unchanged, and no store or tenant scope is bypassed — those are enforced
+  // by the data queries, not here.
+  const parent = SCREEN_PARENTS[screenKey]
+  return !!parent && (screenLevels[parent] ?? 0) >= Level.VIEW
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Level, isValidScreenKey, isScreenAccessible } from "@/lib/laundry-rbac-registry"
+import { Level, isValidScreenKey, isScreenAccessible , SCREEN_PARENTS } from "@/lib/laundry-rbac-registry"
 import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
 import { laundryRoleLabel, hasLaundryWorkspaceAccess } from "@/lib/runtime-auth"
 import { resolveLaundryLandingPage, accessibleLaundryPages, isLaundryPageAccessible, resolveLaundryScreenKeys } from "@/lib/laundry-nav-config"
@@ -206,5 +206,46 @@ describe("resolveUnassignedPermissions — BusinessUser.role never grants access
         expect(isValidScreenKey(s.screenKey), `${role.code}: ${s.screenKey}`).toBe(true)
       }
     }
+  })
+})
+
+// ── Section grants cover their detail screens ────────────────────────────────
+// Granting "Orders" and then finding the employee cannot open an order is not a
+// permission an administrator meant to withhold — it is one they never knew
+// existed. A small business configures sections, not screens.
+describe('a section grant covers its detail screen', () => {
+  const ordersOnly = { 'laundry.orders': Level.VIEW }
+
+  it('opens Order Detail for someone granted only Orders', () => {
+    expect(isScreenAccessible(ordersOnly, false, 'laundry.order_detail')).toBe(true)
+  })
+
+  it('still refuses Order Detail without the Orders grant', () => {
+    expect(isScreenAccessible({}, false, 'laundry.order_detail')).toBe(false)
+    expect(isScreenAccessible({ 'laundry.customers': Level.EDIT }, false, 'laundry.order_detail')).toBe(false)
+  })
+
+  it('grants nothing else — inheritance is not a blanket', () => {
+    for (const k of ['laundry.staff', 'laundry.settings', 'laundry.reports', 'crm.leads']) {
+      expect(isScreenAccessible(ordersOnly, false, k)).toBe(false)
+    }
+  })
+
+  // A screen reachable on its own from navigation is its own section.
+  it('does not make Garment Lookup a child of anything', () => {
+    expect(SCREEN_PARENTS['laundry.garment_lookup']).toBeUndefined()
+    expect(isScreenAccessible(ordersOnly, false, 'laundry.garment_lookup')).toBe(false)
+  })
+
+  it('inherits at VIEW even when the parent is higher, without inflating the child', () => {
+    expect(isScreenAccessible({ 'laundry.orders': Level.EDIT }, false, 'laundry.order_detail')).toBe(true)
+  })
+
+  it('never resurrects an unregistered screen key', () => {
+    expect(isScreenAccessible({ 'laundry.orders': Level.VIEW }, false, 'laundry.not_a_screen')).toBe(false)
+  })
+
+  it('leaves the owner path untouched', () => {
+    expect(isScreenAccessible({}, true, 'laundry.order_detail')).toBe(true)
   })
 })
