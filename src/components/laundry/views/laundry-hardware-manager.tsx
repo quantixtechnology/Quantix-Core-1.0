@@ -112,6 +112,10 @@ export function LaundryHardwareManager() {
     [printerOnline, jobs, scanStatus, events],
   )
 
+  // Everything the log called an error today, including diagnostics and faults
+  // a later success answered. Shown only as context under the active count.
+  const historicalErrors = useMemo(() => eventLog.historicalErrorCount(), [events])
+
   const printers = devices.filter((d) => d.kind.endsWith("PRINTER"))
   const scanners = devices.filter((d) => d.kind === "BARCODE_SCANNER")
   const scanner = scanners[0] ?? null
@@ -145,7 +149,9 @@ export function LaundryHardwareManager() {
     const e = await ScanEngine.scanOnce(30000)
     setTestingScan(false)
     if (e) toast.success(`Read "${e.code}" via ${e.source.replace(/_/g, " ").toLowerCase()}`)
-    else { eventLog.record("ERROR", "Scanner test timed out"); toast.error("No scan detected. Check the scanner, or use the camera.") }
+    // TEST_FAILED, not ERROR: the operator declining to scan within the test
+    // window is not a hardware fault, and must not count against health.
+    else { eventLog.record("TEST_FAILED", "Scanner test timed out", "Diagnostic only — no scan presented during the test window"); toast.error("No scan detected. Check the scanner, or use the camera.") }
   }
 
   const runCameraTest = async () => {
@@ -268,12 +274,27 @@ export function LaundryHardwareManager() {
               value={camera.count ? (camera.permission === "granted" ? "Ready" : "Needs permission") : "None"} icon={Camera} />
             <Tile label="Bluetooth" ok={devices.some((d) => d.connection === "BLUETOOTH")} warn={caps.bluetooth}
               value={devices.some((d) => d.connection === "BLUETOOTH") ? "Device paired" : caps.bluetooth ? "API supported · no device paired" : "API unavailable"} icon={Bluetooth} />
-            <Tile label="USB" ok={devices.some((d) => d.connection === "USB")} warn={caps.webUsb}
-              value={`${devices.filter((d) => d.connection === "USB").length} device(s) visible${caps.webUsb ? "" : " · API unavailable"}`} icon={Usb} />
+            {/* WebUSB cannot see a keyboard-emulation scanner — the OS claims
+                it as a keyboard, so zero here is normal and expected even with
+                a scanner plugged in and working. Report the real count, then
+                say plainly what it does not mean. */}
+            <Tile label="USB" ok={devices.some((d) => d.connection === "USB") || ScanEngine.everScanned()} warn={caps.webUsb}
+              value={`${devices.filter((d) => d.connection === "USB").length} browser-visible device${devices.filter((d) => d.connection === "USB").length === 1 ? "" : "s"}${caps.webUsb ? "" : " · API unavailable"}`}
+              note={ScanEngine.everScanned()
+                ? "Keyboard/HID scanner verified — not enumerable via WebUSB"
+                : "Keyboard/HID scanners are never listed here"}
+              icon={Usb} />
             <Tile label="Network" ok={typeof navigator !== "undefined" ? navigator.onLine : true}
               value={typeof navigator !== "undefined" && navigator.onLine ? "Online" : "Offline"} icon={Wifi} />
             <Tile label="Print Queue" ok={health.queueLength === 0} value={`${health.queueLength} Pending`} icon={ListChecks} />
-            <Tile label="Hardware Errors" ok={health.errorsToday === 0} value={String(health.errorsToday)} icon={AlertTriangle} />
+            {/* Active faults only. Diagnostics the operator ran by hand, and
+                complaints a later success already answered, belong in the log
+                rather than in a red tile over working hardware. */}
+            <Tile label="Hardware Errors" ok={health.errorsToday === 0} value={String(health.errorsToday)}
+              note={historicalErrors > health.errorsToday
+                ? `${historicalErrors - health.errorsToday} earlier/diagnostic event${historicalErrors - health.errorsToday === 1 ? "" : "s"} today — see Event Log`
+                : undefined}
+              icon={AlertTriangle} />
           </div>
 
           <Card className="rounded-xl border-slate-200">
@@ -305,7 +326,22 @@ export function LaundryHardwareManager() {
         <Card className="rounded-xl border-slate-200">
           <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><ScanLine className="h-[18px] w-[18px] text-blue-600" /> Scanner Status</CardTitle></CardHeader>
           <CardContent className="space-y-1.5 text-xs">
-            <Row k="Status" v={scanStatus === "SCANNER_READY" ? "Connected" : scanStatus === "CAMERA_READY" ? "Camera fallback" : "Not detected"} />
+            {/* Two different questions, previously answered by one row.
+                "Has a scanner proven itself here?" is settled by a real read
+                and stays settled. "Where would input come from this second?"
+                decays to the camera after five idle minutes — which is a
+                routing fact, not a demotion of verified hardware. Showing the
+                second answer alone made a working scanner read as
+                "Camera fallback". */}
+            <Row k="Status" v={
+              ScanEngine.scannerPresent() ? "Scanner Verified · Active"
+                : ScanEngine.everScanned() ? `Scanner Verified · idle since ${when(diag.scanner.lastScanAt)}`
+                  : scanStatus === "CAMERA_READY" ? "Not verified · camera fallback available"
+                    : "Not verified · manual entry"
+            } />
+            {ScanEngine.everScanned() && !ScanEngine.scannerPresent() && (
+              <Row k="Input routing" v="Camera offered while the scanner is idle — scanning still works" />
+            )}
             <Row k="Connection" v={scanner ? `${scanner.connection} ${scanner.source === "WEBHID" ? "HID" : ""}`.trim() : "Keyboard emulation (no pairing needed)"} />
             <Row k="Type" v="Keyboard Emulation" />
             <Row k="Manufacturer" v={scanner?.manufacturer || "Unknown"} />
@@ -564,7 +600,7 @@ export function LaundryHardwareManager() {
   )
 }
 
-function Tile({ label, value, ok, warn, icon: Icon }: { label: string; value: string; ok: boolean; warn?: boolean; icon: typeof Usb }) {
+function Tile({ label, value, note, ok, warn, icon: Icon }: { label: string; value: string; note?: string; ok: boolean; warn?: boolean; icon: typeof Usb }) {
   const dot = ok ? "bg-emerald-500" : warn ? "bg-amber-400" : "bg-rose-500"
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -573,6 +609,7 @@ function Tile({ label, value, ok, warn, icon: Icon }: { label: string; value: st
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
         <span className="text-sm font-semibold text-slate-800">{value}</span>
       </div>
+      {note && <div className="mt-1 text-[11px] leading-snug text-slate-500">{note}</div>}
     </div>
   )
 }

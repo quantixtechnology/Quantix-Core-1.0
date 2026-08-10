@@ -449,3 +449,56 @@ describe('unfocused wedge scans dispatch', () => {
     expect(seen).toEqual(['GAR000000000001', 'GAR000000000002'])
   })
 })
+
+// ── Diagnostics must not make working hardware look broken ──────────────────
+// Production showed "Hardware Errors: 4" beside a verified, actively scanning
+// scanner. The four were Test Scanner timeouts.
+describe('active faults vs historical diagnostics', () => {
+  beforeEach(() => { eventLog.clear(); ScanEngine.resetForTests() })
+
+  it('does not count scanner-test timeouts as hardware errors', () => {
+    for (let i = 0; i < 4; i++) eventLog.record('TEST_FAILED', 'Scanner test timed out')
+    expect(eventLog.errorCount()).toBe(0)
+    expect(eventLog.historicalErrorCount()).toBe(4)
+  })
+
+  // Those four are already in operators' localStorage as plain ERROR rows.
+  it('reclassifies legacy ERROR rows written before TEST_FAILED existed', () => {
+    for (let i = 0; i < 4; i++) eventLog.record('ERROR', 'Scanner test timed out')
+    expect(eventLog.errorCount()).toBe(0)
+    expect(eventLog.historicalErrorCount()).toBe(4)
+  })
+
+  it('still reports a genuine fault', () => {
+    eventLog.record('PRINT_FAILED', 'Label print failed')
+    expect(eventLog.errorCount()).toBe(1)
+  })
+
+  it('retires a fault a later success has answered', () => {
+    eventLog.record('PRINT_FAILED', 'Label print failed')
+    eventLog.record('PRINT_OK', 'Label printed')
+    expect(eventLog.errorCount()).toBe(0)
+  })
+
+  it('keeps every diagnostic in the timeline', () => {
+    eventLog.record('TEST_FAILED', 'Scanner test timed out')
+    expect(eventLog.all()).toHaveLength(1)
+  })
+
+  it('health is not dragged down by diagnostics alone', () => {
+    for (let i = 0; i < 4; i++) eventLog.record('TEST_FAILED', 'Scanner test timed out')
+    expect(hardwareHealth().level).not.toBe('CRITICAL')
+  })
+})
+
+// ── A verified scanner is never described as a camera fallback ─────────────
+describe('verified scanner reporting', () => {
+  beforeEach(() => { eventLog.clear(); ScanEngine.resetForTests(); diagnostics.resetForTests?.() })
+
+  it('routing may fall back to camera while verification still stands', () => {
+    ScanEngine.start()
+    ScanEngine.submit('GAR000000000083', 'USB_SCANNER')
+    expect(ScanEngine.everScanned()).toBe(true)   // Status: Scanner Verified
+    expect(ScanEngine.scannerPresent()).toBe(true)
+  })
+})

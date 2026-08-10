@@ -16,7 +16,7 @@ export type HardwareEventType =
   | "PRINTER_ONLINE" | "PRINTER_OFFLINE" | "PRINT_OK" | "PRINT_FAILED" | "PRINT_QUEUED" | "PRINT_RETRIED" | "PRINT_CANCELLED"
   | "CAMERA_GRANTED" | "CAMERA_DENIED" | "CAMERA_TEST"
   | "DEVICE_PAIRED" | "DEVICE_DISCOVERED" | "DISCOVERY_RUN"
-  | "PREFERENCE_CHANGED" | "TEST_RUN" | "ERROR"
+  | "PREFERENCE_CHANGED" | "TEST_RUN" | "TEST_FAILED" | "ERROR"
 
 export type HardwareEventLevel = "INFO" | "WARN" | "ERROR"
 
@@ -35,7 +35,34 @@ const LEVELS: Record<HardwareEventType, HardwareEventLevel> = {
   PRINT_FAILED: "ERROR", PRINT_QUEUED: "WARN", PRINT_RETRIED: "INFO", PRINT_CANCELLED: "INFO",
   CAMERA_GRANTED: "INFO", CAMERA_DENIED: "WARN", CAMERA_TEST: "INFO",
   DEVICE_PAIRED: "INFO", DEVICE_DISCOVERED: "INFO", DISCOVERY_RUN: "INFO",
-  PREFERENCE_CHANGED: "INFO", TEST_RUN: "INFO", ERROR: "ERROR",
+  PREFERENCE_CHANGED: "INFO", TEST_RUN: "INFO", TEST_FAILED: "ERROR", ERROR: "ERROR",
+}
+
+/**
+ * Diagnostics the operator ran on purpose. They belong in the timeline — a
+ * support call wants to see that a test was run and what it found — but they
+ * are NOT a verdict on live hardware. A "Test Scanner" that timed out at 09:00
+ * says nothing about a scanner that has been reading garments since 09:05.
+ */
+const DIAGNOSTIC_TYPES = new Set<HardwareEventType>(["TEST_RUN", "TEST_FAILED", "CAMERA_TEST", "DISCOVERY_RUN"])
+
+/**
+ * Entries written before TEST_FAILED existed were recorded as plain ERROR, and
+ * they are already sitting in operators' localStorage inflating the error tile.
+ * Recognise them by message so history reclassifies itself without a migration.
+ */
+const LEGACY_DIAGNOSTIC_MESSAGES = [/scanner test/i, /camera test/i, /discovery/i]
+
+export function isDiagnosticEvent(e: HardwareEvent): boolean {
+  if (DIAGNOSTIC_TYPES.has(e.type)) return true
+  return e.type === "ERROR" && LEGACY_DIAGNOSTIC_MESSAGES.some((re) => re.test(e.message))
+}
+
+/** Later proof that the subsystem works, which retires an earlier complaint. */
+const RESOLVED_BY: Record<string, HardwareEventType[]> = {
+  SCANNER_LOST: ["SCAN", "SCANNER_CONNECTED"],
+  PRINTER_OFFLINE: ["PRINT_OK", "PRINTER_ONLINE"],
+  PRINT_FAILED: ["PRINT_OK"],
 }
 
 const listeners = new Set<(e: HardwareEvent[]) => void>()
@@ -76,7 +103,32 @@ export const eventLog = {
 
   latest(): HardwareEvent | null { return read()[0] ?? null },
 
-  errorCount(): number {
+  /**
+   * Faults that are still true right now.
+   *
+   * Two things are deliberately excluded, because counting them made verified
+   * hardware look broken:
+   *   • diagnostics the operator ran by hand (see isDiagnosticEvent);
+   *   • complaints a later success has already answered — a failed print at
+   *     09:00 followed by a good print at 09:02 is history, not a fault.
+   */
+  activeErrors(): HardwareEvent[] {
+    const since = new Date(); since.setHours(0, 0, 0, 0)
+    const list = read() // newest first
+    return list.filter((e, i) => {
+      if (e.level !== "ERROR" || new Date(e.at) < since) return false
+      if (isDiagnosticEvent(e)) return false
+      const resolvers = RESOLVED_BY[e.type]
+      // Anything newer sits at a LOWER index, this list being newest-first.
+      return !resolvers || !list.slice(0, i).some((n) => resolvers.includes(n.type))
+    })
+  },
+
+  /** What health and the dashboard tile report: active faults only. */
+  errorCount(): number { return this.activeErrors().length },
+
+  /** Everything the log has ever called an error, for the timeline view. */
+  historicalErrorCount(): number {
     const since = new Date(); since.setHours(0, 0, 0, 0)
     return read().filter((e) => e.level === "ERROR" && new Date(e.at) >= since).length
   },
