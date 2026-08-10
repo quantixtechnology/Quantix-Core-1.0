@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { ensureNavigationConfig, defaultNavigationConfig, screenDisplayName, screenIcon } from "@/lib/laundry-nav-config"
 import { SCREEN_MODULES } from "@/lib/laundry-rbac-registry"
+import { resolveLicence } from "@/lib/laundry-licensing-server"
 import { syncLaundryPermissions, canonicalizeNavScreenKey } from "@/lib/permission-sync"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
@@ -30,11 +31,16 @@ export async function GET(request: Request) {
     // Every Navigation Manager item is a real registered screen key so Roles &
     // Permissions, the sidebar, the workspace gate and the server guards all
     // resolve it through the single permission resolver.
+    // Licensing filters the catalog too: a module the tenant has not bought is
+    // not offered as something to add to the navigation.
+    const licence = await resolveLicence(biz.id)
     const screens: { screenKey: string; displayName: string }[] = []
     for (const m of SCREEN_MODULES) {
       if (m.key === "customer_app") continue
       for (const s of m.screens) {
-        screens.push({ screenKey: `${m.key}.${s.key}`, displayName: s.label })
+        const screenKey = `${m.key}.${s.key}`
+        if (!licence.isScreenEnabled(screenKey)) continue
+        screens.push({ screenKey, displayName: s.label })
       }
     }
     return NextResponse.json({ data: screens })
@@ -58,7 +64,17 @@ export async function GET(request: Request) {
 
   if (!nav) return NextResponse.json({ error: "Navigation not found" }, { status: 404 })
 
-  return NextResponse.json({ data: nav })
+  // Hide unlicensed items — and any section left with nothing in it — so a
+  // disabled module is absent rather than merely empty. This single filter
+  // serves BOTH consumers of this endpoint: the sidebar and the Navigation
+  // Manager. Nothing is deleted; re-licensing the module brings the tenant's
+  // own arrangement straight back.
+  const licence = await resolveLicence(biz.id)
+  const sections = nav.sections
+    .map((sec) => ({ ...sec, items: sec.items.filter((i) => licence.isScreenEnabled(i.screenKey)) }))
+    .filter((sec) => sec.items.length > 0)
+
+  return NextResponse.json({ data: { ...nav, sections } })
 }
 
 export async function PUT(request: Request) {

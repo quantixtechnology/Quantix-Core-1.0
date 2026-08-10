@@ -9,6 +9,7 @@
 //   LED-CRM-YYYYMM-NNNNNN · OPP-CRM-… · ACT-CRM-… · TSK-CRM-…
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness, type ResolvedLaundryBusiness } from "@/lib/laundry-business"
+import { resolveLicence } from "@/lib/laundry-licensing-server"
 
 export const CRM_FEATURE_KEY = "CRM"
 
@@ -19,10 +20,12 @@ export type CrmBusiness = ResolvedLaundryBusiness
 export async function resolveCrmAccess(businessId: string | null | undefined): Promise<{ biz: CrmBusiness; enabled: boolean } | null> {
   const biz = await resolveLaundryBusiness(businessId)
   if (!biz) return null
-  const feature = await prisma.laundryBusinessFeature.findUnique({
-    where: { businessId_featureKey: { businessId: biz.id, featureKey: CRM_FEATURE_KEY } },
-  })
-  return { biz, enabled: !!feature?.enabled }
+  // Reads the licensing engine rather than the raw row, so CRM answers to the
+  // same switch as every other module. The engine matches "CRM" and "crm" and
+  // keeps CRM's original opt-in default, so an existing tenant's entitlement is
+  // unchanged — this is a rewiring, not a policy change.
+  const licence = await resolveLicence(biz.id)
+  return { biz, enabled: licence.isModuleEnabled("crm") }
 }
 
 // Standard guard for CRM API routes. Throws typed errors the routes map to 404/403.
