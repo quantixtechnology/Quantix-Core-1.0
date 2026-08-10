@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { StoreLocationPicker, type StoreLocation } from "@/components/shared/google/store-location-picker"
+import { LocationQrCard } from "@/components/laundry/location-qr-card"
 
 type Store = {
   id: string
@@ -43,6 +44,9 @@ type Store = {
 
 export function LaundryStoresView({ businessId }: { businessId: string }) {
   const [stores, setStores] = useState<Store[]>([])
+  // Business identity for the QR card label, from the same branding record the
+  // sidebar and invoices read. Read-only; failure just falls back to the store.
+  const [businessName, setBusinessName] = useState("")
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingStore, setEditingStore] = useState<Store | null>(null)
@@ -73,6 +77,14 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
+
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/laundry/branding?businessId=${encodeURIComponent(businessId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.success) setBusinessName(j.data.businessName || "") })
+      .catch(() => {})
+  }, [businessId])
 
   useEffect(() => { fetchStores() }, [businessId])
 
@@ -276,6 +288,22 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                     pincode: loc.pincode ?? "",
                   }))
                 }}
+              />
+              {/* Sits with the location it describes. The QR is derived from
+                  the coordinates the picker just set, so changing the pin and
+                  saving changes the QR — nothing to regenerate by hand. */}
+              <LocationQrCard
+                className="mt-3"
+                businessName={businessName || "Business"}
+                locationName={form.storeName || editingStore?.storeName || "Store"}
+                address={form.formattedAddress || form.address || null}
+                latitude={form.latitude ? parseFloat(form.latitude) : null}
+                longitude={form.longitude ? parseFloat(form.longitude) : null}
+                unsaved={
+                  !!editingStore &&
+                  (parseFloat(form.latitude || "NaN") !== (editingStore.latitude ?? NaN) ||
+                   parseFloat(form.longitude || "NaN") !== (editingStore.longitude ?? NaN))
+                }
               />
             </div>
             <div>
