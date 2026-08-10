@@ -16,6 +16,7 @@ import { LaundryVerificationSettingsForm } from "./laundry-verification-settings
 import { toast } from "sonner"
 import { invalidateTransportModes } from "@/hooks/use-transport-modes"
 import type { TransportMode } from "@/lib/laundry-transport"
+import { LaundryBrandingSettings } from "@/components/laundry/views/laundry-branding-settings"
 
 interface WorkspaceSettingsProps {
   businessId: string
@@ -137,6 +138,9 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryStorageWidget businessId={businessId} />
 
       <LaundryFinancialSettingsForm businessId={businessId} />
+
+      {/* Business identity first — it is what every other surface renders. */}
+      <LaundryBrandingSettings businessId={businessId} />
 
       <LaundryAvailabilitySettingsForm businessId={businessId} />
 

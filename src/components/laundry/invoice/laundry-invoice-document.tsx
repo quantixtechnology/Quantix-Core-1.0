@@ -49,16 +49,31 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
     <div id="laundry-invoice-print" className="bg-white text-slate-800 mx-auto max-w-[720px] p-6 text-sm">
       {/* Header — tenant identity only (no platform branding). */}
       <div className="flex items-start justify-between border-b-2 pb-4" style={{ borderColor: accent }}>
-        <div className="flex items-center gap-3">
+        {/* Business first, branch second — the hierarchy a chain actually has.
+            The logo box is landscape and fits by contain, so a wide logo shows
+            edge to edge and a square one is centred, neither one stretched. */}
+        <div className="flex items-start gap-3 min-w-0">
           {settings.businessLogo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={settings.businessLogo} alt="" className="h-14 w-14 rounded object-contain" />
+            <span className="h-14 aspect-[10/3] inline-flex items-center justify-center shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={settings.businessLogo} alt={businessName} className="max-h-full max-w-full object-contain" />
+            </span>
           ) : null}
-          <div>
+          <div className="min-w-0">
             <p className="text-lg font-bold" style={{ color: accent }}>{businessName}</p>
             {settings.businessAddress && <p className="text-xs text-slate-500 whitespace-pre-line">{settings.businessAddress}</p>}
             {contact && <p className="text-xs text-slate-500">{contact}</p>}
             {gst.enabled && (gst.gstNumber || settings.gstNumber) && <p className="text-xs text-slate-500">GSTIN: {gst.gstNumber || settings.gstNumber}</p>}
+            {/* The branch that served this order, beneath the business it
+                belongs to — never in its place. */}
+            {store?.name && store.name !== businessName && (
+              <p className="mt-1.5 border-t border-slate-100 pt-1.5 text-xs text-slate-600">
+                <span className="font-semibold">{store.name}</span>
+                {[store.address, store.city, store.state].filter(Boolean).length > 0 && (
+                  <span className="text-slate-500"> · {[store.address, store.city, store.state].filter(Boolean).join(", ")}</span>
+                )}
+              </p>
+            )}
           </div>
         </div>
         <div className="text-right">

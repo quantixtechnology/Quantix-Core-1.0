@@ -15,6 +15,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
 import { SCREEN_PAGE_MAP, defaultNavigationConfig, isLaundryPageAccessible, screenDisplayName, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
 import { isScreenAccessible } from "@/lib/laundry-rbac-registry"
+import { BrandLogo } from "@/components/laundry/brand-logo"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -161,11 +162,23 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     if (saved > 0) el.scrollTop = saved
   }, [])
 
+  // Tenant branding, from the same record invoices and the PWAs read.
+  const [branding, setBranding] = useState<{ businessName: string; logo: string | null; primaryColor: string } | null>(null)
   const [navSections, setNavSections] = useState<NavSectionDto[]>([])
   const [navLoaded, setNavLoaded] = useState(false)
   const [navError, setNavError] = useState(false)
 
   const businessId = currentBusinessId || ""
+
+  useEffect(() => {
+    if (!businessId) return
+    // Branding failing must never affect navigation — the sidebar falls back to
+    // the product mark and keeps working.
+    fetch(`/api/laundry/branding?businessId=${businessId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.success) setBranding(j.data) })
+      .catch(() => {})
+  }, [businessId])
 
   useEffect(() => {
     if (!businessId) return
@@ -239,17 +252,24 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
-  const brand = user?.businessName || "Laundry OS"
+  // The tenant's own brand, not the product's. A business owner opening their
+  // workspace should see their name and mark, not "Laundry OS" — the platform
+  // is our concern, not theirs.
+  const brand = branding?.businessName || user?.businessName || "Laundry OS"
   const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
   const Brand = (
     <div className="flex items-center gap-2.5 px-2">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-sm">
-        <Shirt className="h-[18px] w-[18px]" />
-      </div>
+      {branding?.logo ? (
+        <BrandLogo src={branding.logo} name={brand} size="sm" color={branding.primaryColor} />
+      ) : (
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-sm">
+          <Shirt className="h-[18px] w-[18px]" />
+        </div>
+      )}
       <div className="min-w-0 leading-tight">
         <p className="truncate text-[15px] font-bold text-slate-800">{brand}</p>
-        <p className="text-[10px] font-semibold tracking-[0.15em] text-blue-500 uppercase">Laundry</p>
+        <p className="text-[10px] font-semibold tracking-[0.15em] text-blue-500 uppercase">Laundry OS</p>
       </div>
     </div>
   )
