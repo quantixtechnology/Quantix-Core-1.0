@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Upload, Trash2, RefreshCw, Save, Check, Sparkles, ImageIcon, Info } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import {
   BrandLogo, LOGO_ACCEPT, LOGO_MAX_BYTES, readImageSize, logoAdvice,
 } from "@/components/laundry/brand-logo"
@@ -51,11 +52,36 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
   const [advice, setAdvice] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  /**
+   * Read a response as JSON, but never blindly.
+   *
+   * `.json()` on an HTML body throws "Unexpected token '<'", which tells a
+   * business owner nothing and tells a developer nothing either. When the body
+   * is not JSON we capture what it actually was — endpoint, status,
+   * content-type, first bytes — log that for diagnosis and surface a plain
+   * sentence to the user.
+   */
+  const readJson = async (res: Response, endpoint: string) => {
+    const ct = res.headers.get("content-type") || ""
+    if (!ct.includes("application/json")) {
+      const preview = (await res.text().catch(() => "")).slice(0, 200)
+      console.error("[branding upload] non-JSON response", { endpoint, status: res.status, contentType: ct, preview })
+      throw new Error(
+        res.status === 401 || res.status === 403
+          ? "Your session has expired. Sign in again and retry the upload."
+          : `Logo upload failed (${res.status || "network"}). Please try again.`,
+      )
+    }
+    return res.json()
+  }
+
   const load = useCallback(async () => {
     if (!bizId) return
     setLoading(true)
     try {
-      const j = await fetch(`/api/laundry/branding?businessId=${encodeURIComponent(bizId)}`).then((r) => r.json())
+      const url = `/api/laundry/branding?businessId=${encodeURIComponent(bizId)}`
+      const res = await fetch(url, { headers: getAuthHeaders() })
+      const j = await readJson(res, url)
       if (j.success) { setData(j.data); setBaseline(JSON.stringify(j.data)) }
     } catch { /* keep defaults; the form still works */ } finally { setLoading(false) }
   }, [bizId])
@@ -79,30 +105,54 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
   }, [data])
 
   const pickLogo = async (file: File) => {
-    if (file.size > LOGO_MAX_BYTES) { toast.error("Logo must be 2 MB or smaller"); return }
+    if (file.size > LOGO_MAX_BYTES) { toast.error("Logo must be smaller than 2 MB"); return }
     setAdvice(logoAdvice(await readImageSize(file)))
+
+    // Optimistic: show the chosen file at once from a local object URL, so the
+    // three previews respond to the click rather than to the round trip. The
+    // previous logo is held so a failure restores it instead of dropping to the
+    // initials placeholder, which reads as "your logo was deleted".
+    const previous = data.logo
+    const localUrl = URL.createObjectURL(file)
+    set("logo", localUrl)
     setUploading(true)
+
+    const endpoint = "/api/core/upload"
     try {
       const fd = new FormData()
       fd.append("file", file); fd.append("businessId", bizId)
       fd.append("type", "image"); fd.append("category", "branding")
-      const j = await fetch("/api/core/upload", { method: "POST", body: fd }).then((r) => r.json())
+
+      // Same auth as the branding API — one mechanism, not two. Content-Type
+      // is deliberately dropped: multipart needs the boundary the browser
+      // generates, and setting it by hand corrupts the body.
+      const headers = getAuthHeaders()
+      delete (headers as Record<string, string>)["Content-Type"]
+
+      const res = await fetch(endpoint, { method: "POST", body: fd, headers })
+      const j = await readJson(res, endpoint)
       const url = j.url || j.data?.url || j.path
-      if (!url) throw new Error(j.error || "Upload failed")
+      if (!res.ok || !url) throw new Error(j.error || "Upload failed")
+
       set("logo", url)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed")
-    } finally { setUploading(false) }
+      set("logo", previous)   // never silently fall back to the placeholder
+      setAdvice(null)
+      toast.error(e instanceof Error ? e.message : "Logo upload failed. Please try again.")
+    } finally {
+      URL.revokeObjectURL(localUrl)
+      setUploading(false)
+    }
   }
 
   const save = async () => {
     setSaving(true)
     try {
       const res = await fetch("/api/laundry/branding", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
+        method: "PUT", headers: getAuthHeaders(),
         body: JSON.stringify({ businessId: bizId, ...data }),
       })
-      const j = await res.json()
+      const j = await readJson(res, "/api/laundry/branding")
       if (!res.ok || !j.success) throw new Error(j.error || "Could not save")
       setData(j.data); setBaseline(JSON.stringify(j.data))
       toast.success("Branding updated")
@@ -112,6 +162,19 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
   }
 
   const name = data.businessName || "Your Business"
+
+  // A replaced logo often keeps its filename, so the browser and CDN happily
+  // serve the old bytes. The version is derived from the URL itself, so it
+  // changes exactly when the logo does and is stable across renders — a random
+  // parameter each render would defeat caching entirely. Blob URLs (the
+  // optimistic preview) are left alone; they are already unique.
+  const logoSrc = useMemo(() => {
+    if (!data.logo) return null
+    if (data.logo.startsWith("blob:")) return data.logo
+    let h = 0
+    for (let i = 0; i < data.logo.length; i++) h = (h * 31 + data.logo.charCodeAt(i)) | 0
+    return `${data.logo}${data.logo.includes("?") ? "&" : "?"}v=${Math.abs(h)}`
+  }, [data.logo])
 
   if (loading) {
     return (
@@ -146,7 +209,7 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
               // contain + both maxima: a landscape logo takes the width, a
               // square one stays square, and neither is stretched or cropped.
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={data.logo} alt={name} className="object-contain" style={{ maxWidth: "100%", maxHeight: 160 }} />
+              <img src={logoSrc!} alt={name} className="object-contain" style={{ maxWidth: "100%", maxHeight: 160 }} />
             ) : (
               <BrandLogo src={null} name={name} size="xl" color={data.primaryColor} className="!h-[100px]" />
             )}
@@ -217,7 +280,7 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
               <Preview label="Sidebar">
                 <div className="rounded-xl border border-slate-200 bg-white p-3 w-full">
                   <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <BrandLogo src={data.logo} name={name} size="sm" color={data.primaryColor} />
+                    <BrandLogo src={logoSrc} name={name} size="sm" color={data.primaryColor} />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{name}</p>
                       <p className="text-[9px] font-semibold tracking-[0.15em] uppercase" style={{ color: data.primaryColor }}>Laundry OS</p>
@@ -237,7 +300,7 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
               <Preview label="Invoice">
                 <div className="rounded-xl border border-slate-200 bg-white p-3 w-full">
                   <div className="flex items-start gap-2 border-b-2 pb-2" style={{ borderColor: data.primaryColor }}>
-                    <BrandLogo src={data.logo} name={name} size="sm" color={data.primaryColor} />
+                    <BrandLogo src={logoSrc} name={name} size="sm" color={data.primaryColor} />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold truncate" style={{ color: data.primaryColor }}>{name}</p>
                       <p className="text-[9px] text-slate-500">GSTIN · Phone · Email</p>
