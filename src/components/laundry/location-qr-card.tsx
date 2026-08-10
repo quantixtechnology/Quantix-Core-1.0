@@ -72,11 +72,25 @@ export function LocationQrCard({
 
   const fileBase = `${slug(businessName)}-${slug(locationName)}-location-qr`
 
+  /**
+   * Download without touching layout.
+   *
+   * The anchor is never appended to the document, so it cannot occupy space,
+   * shift content or create overflow. Revoking is deferred: revoking in the
+   * same tick as click() cancels the download in some browsers, and the
+   * try/finally guarantees the URL is released even if click() throws.
+   */
   const saveBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url; a.download = filename; a.click()
-    URL.revokeObjectURL(url)
+    try {
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      a.rel = "noopener"
+      a.click()
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    }
   }
 
   const downloadPng = useCallback(async () => {
