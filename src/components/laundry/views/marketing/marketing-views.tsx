@@ -104,7 +104,7 @@ export function MarketingReports({ businessId }: { businessId: string }) {
 // ── Coupons / Vouchers (list + create/edit) ───────────────────────────────────
 const EMPTY = {
   title: "", description: "", code: "", discountType: "PERCENT", discountValue: "10",
-  maxDiscount: "", minOrderValue: "", workspaceType: "", status: "ACTIVE",
+  maxDiscount: "", minOrderValue: "", status: "ACTIVE",
   startAt: "", endAt: "", maxUses: "", maxUsesPerCustomer: "", applyTo: ["ORDER"] as string[], enabled: true,
 }
 type Form = typeof EMPTY
@@ -133,7 +133,7 @@ export function MarketingCoupons({ businessId }: { businessId: string }) {
       title: p.title, description: p.description || "", code: p.code || "",
       discountType: p.discountType, discountValue: String(p.discountValue),
       maxDiscount: p.maxDiscount != null ? String(p.maxDiscount) : "", minOrderValue: p.minOrderValue != null ? String(p.minOrderValue) : "",
-      workspaceType: p.workspaceType || "", status: p.status,
+      status: p.status,
       startAt: p.startAt ? p.startAt.slice(0, 10) : "", endAt: p.endAt ? p.endAt.slice(0, 10) : "",
       maxUses: p.maxUses != null ? String(p.maxUses) : "", maxUsesPerCustomer: p.maxUsesPerCustomer != null ? String(p.maxUsesPerCustomer) : "",
       applyTo: parseApplyTo(p.applyTo), enabled: p.enabled,
@@ -150,7 +150,7 @@ export function MarketingCoupons({ businessId }: { businessId: string }) {
       discountType: form.discountType, discountValue: Number(form.discountValue) || 0,
       maxDiscount: form.maxDiscount ? Number(form.maxDiscount) : null,
       minOrderValue: form.minOrderValue ? Number(form.minOrderValue) : null,
-      workspaceType: form.workspaceType || null, status: form.status, enabled: form.enabled,
+      status: form.status, enabled: form.enabled,
       startAt: form.startAt || null, endAt: form.endAt || null,
       maxUses: form.maxUses ? Number(form.maxUses) : null,
       maxUsesPerCustomer: form.maxUsesPerCustomer ? Number(form.maxUsesPerCustomer) : null,
@@ -196,7 +196,6 @@ export function MarketingCoupons({ businessId }: { businessId: string }) {
                       <span className="text-sm font-semibold text-slate-800 truncate">{p.title}</span>
                       <Badge variant="outline" className={`text-[10px] ${STATUS_TONE[p.status] || ""}`}>{p.status}</Badge>
                       {!p.enabled && <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-400">Off</Badge>}
-                      {p.workspaceType && <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">{p.workspaceType}</Badge>}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">{discountLabel(p)} · {p.usedCount} used{p.minOrderValue ? ` · min ${inr(p.minOrderValue)}` : ""}{p.endAt ? ` · ends ${new Date(p.endAt).toLocaleDateString("en-IN")}` : ""}</p>
                   </div>
@@ -229,13 +228,12 @@ export function MarketingCoupons({ businessId }: { businessId: string }) {
               <L label={form.discountType === "PERCENT" ? "Percent %" : "Amount ₹"}><Input type="number" value={form.discountValue} onChange={(e) => set("discountValue", e.target.value)} /></L>
               <L label="Max Discount ₹"><Input type="number" value={form.maxDiscount} onChange={(e) => set("maxDiscount", e.target.value)} placeholder="—" disabled={form.discountType === "FIXED"} /></L>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            {/* No Workspace field. This IS the Laundry workspace — the tenant's
+                own URL says so — and the server infers it on save, so the
+                choice was a platform concept leaking into a business owner's
+                screen where the only valid answer was already known. */}
+            <div className="grid grid-cols-2 gap-3">
               <L label="Min Order ₹"><Input type="number" value={form.minOrderValue} onChange={(e) => set("minOrderValue", e.target.value)} placeholder="0" /></L>
-              <L label="Workspace">
-                <select value={form.workspaceType} onChange={(e) => set("workspaceType", e.target.value)} className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm bg-white">
-                  <option value="">All</option><option value="LAUNDRY">Laundry</option><option value="COMMERCE">Commerce</option>
-                </select>
-              </L>
               <L label="Status">
                 <select value={form.status} onChange={(e) => set("status", e.target.value)} className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm bg-white">
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}

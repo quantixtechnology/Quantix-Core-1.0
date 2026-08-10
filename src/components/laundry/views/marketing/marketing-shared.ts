@@ -14,11 +14,28 @@ export interface Promotion {
   _count?: { redemptions: number }
 }
 
+// Campaign types a coupon can apply to, independently selectable.
+//
+// Stored as a JSON array in Promotion.applyTo, so extending the list needs no
+// schema change and no migration — an older coupon simply carries fewer values.
+// The first three are the original keys and MUST keep their spelling: existing
+// rows contain them.
 export const APPLY_TO_OPTIONS = [
-  { value: "ORDER", label: "Normal Orders" },
-  { value: "SUBSCRIPTION_PURCHASE", label: "Subscription Purchase" },
+  { value: "ORDER", label: "Normal Laundry Order" },
+  { value: "FIRST_ORDER", label: "First Order" },
+  { value: "SUBSCRIPTION_PURCHASE", label: "First Subscription" },
   { value: "SUBSCRIPTION_RENEWAL", label: "Subscription Renewal" },
+  { value: "SUBSCRIPTION_UPGRADE", label: "Subscription Upgrade" },
+  { value: "ANNUAL_PLAN", label: "Annual Plan" },
+  { value: "REFERRAL_REWARD", label: "Referral Reward" },
+  { value: "BIRTHDAY", label: "Birthday Coupon" },
+  { value: "LOYALTY_REWARD", label: "Loyalty Reward" },
+  { value: "FESTIVAL_CAMPAIGN", label: "Festival Campaign" },
+  { value: "RECOVERY", label: "Recovery Coupon" },
 ] as const
+
+export const applyToLabel = (value: string): string =>
+  APPLY_TO_OPTIONS.find((o) => o.value === value)?.label ?? value
 
 export const STATUS_OPTIONS = ["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "EXPIRED", "CANCELLED"] as const
 

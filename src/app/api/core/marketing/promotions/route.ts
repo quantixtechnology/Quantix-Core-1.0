@@ -47,10 +47,22 @@ export async function POST(request: Request) {
     }
 
     const applyTo = Array.isArray(body.applyTo) && body.applyTo.length ? body.applyTo : ["ORDER"]
+
+    // The workspace is a property of the TENANT, not a choice. A business
+    // reached at laundrydrycleaners.quantixtechnology.in is a Laundry
+    // workspace, and its owner has no other product to create a coupon for —
+    // offering the choice only invites a coupon that silently applies nowhere.
+    //
+    // Inferred from the business's assigned product and NOT read from the
+    // request, so a tenant cannot create a coupon for another workspace even
+    // by calling this directly. A platform admin managing cross-product
+    // templates does so from the Platform Dashboard, which is a different
+    // surface with its own guard.
+    const workspaceType = await inferWorkspaceType(bizId)
     const promotion = await prisma.promotion.create({
       data: {
         businessId: bizId,
-        workspaceType: body.workspaceType || null,
+        workspaceType,
         kind: body.kind === "DISCOUNT" ? "DISCOUNT" : "VOUCHER",
         title, description: body.description || null, code,
         discountType, discountValue,
@@ -71,4 +83,16 @@ export async function POST(request: Request) {
     console.error("[marketing-promotions] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+/**
+ * The workspace a tenant's coupons belong to, from its assigned product.
+ * Null when the business has no product yet — the coupon then applies
+ * everywhere, which is the pre-existing "all workspaces" meaning.
+ */
+async function inferWorkspaceType(platformBusinessId: string): Promise<string | null> {
+  const biz = await prisma.business
+    .findUnique({ where: { id: platformBusinessId }, select: { productCode: true } })
+    .catch(() => null)
+  return biz?.productCode ? biz.productCode.toUpperCase() : null
 }

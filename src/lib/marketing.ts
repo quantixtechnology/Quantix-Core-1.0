@@ -23,7 +23,9 @@ export interface PromotionLite {
 // Facts the rule engine can compare against (Phase 1 subset; extend additively).
 export interface PromoContext {
   workspaceType?: string | null
-  applyTo?: string // ORDER | SUBSCRIPTION_PURCHASE | SUBSCRIPTION_RENEWAL
+  applyTo?: string // one of APPLY_TO_OPTIONS — see marketing-shared
+  /** How many times THIS customer has already redeemed this coupon. */
+  customerRedemptions?: number
   orderValue?: number
   firstOrder?: boolean
   customerTier?: string
@@ -96,17 +98,80 @@ export function isLive(p: PromotionLite, now: Date = new Date()): boolean {
   return true
 }
 
-export interface EligibilityResult { eligible: boolean; reason?: string }
+/**
+ * Why a coupon was refused. A machine-readable code alongside the message, so
+ * a caller can branch on the cause instead of matching prose.
+ */
+export type IneligibleCode =
+  | "DISABLED" | "NOT_STARTED" | "EXPIRED" | "USAGE_LIMIT" | "ALREADY_REDEEMED"
+  | "WRONG_WORKSPACE" | "WRONG_PURCHASE_TYPE" | "MIN_ORDER" | "RULES"
 
-// Full eligibility for a specific cart/customer context.
+export interface EligibilityResult { eligible: boolean; reason?: string; code?: IneligibleCode }
+
+const inr = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`
+const onDate = (d: Date | string) =>
+  new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+
+/**
+ * Full eligibility for a specific cart/customer context.
+ *
+ * Every branch names its own cause. "This coupon is not currently active"
+ * covered five different failures — expired, not yet started, paused, disabled,
+ * exhausted — and a customer at a counter cannot act on that, nor can the
+ * operator explain it. Each now says the one thing that is actually wrong.
+ */
 export function checkEligibility(p: PromotionLite, ctx: PromoContext, now: Date = new Date()): EligibilityResult {
-  if (!isLive(p, now)) return { eligible: false, reason: "This coupon is not currently active." }
-  if (p.workspaceType && ctx.workspaceType && p.workspaceType !== ctx.workspaceType) return { eligible: false, reason: "Not valid for this workspace." }
+  // Order matters: state of the coupon itself, then the fit with this cart.
+  if (!p.enabled || p.status === "PAUSED" || p.status === "CANCELLED") {
+    return { eligible: false, code: "DISABLED", reason: "This coupon has been disabled." }
+  }
+  if (p.startAt && now < new Date(p.startAt)) {
+    return { eligible: false, code: "NOT_STARTED", reason: `This coupon starts on ${onDate(p.startAt)}.` }
+  }
+  if (p.status === "EXPIRED" || (p.endAt && now > new Date(p.endAt))) {
+    return { eligible: false, code: "EXPIRED", reason: p.endAt ? `This coupon expired on ${onDate(p.endAt)}.` : "This coupon has expired." }
+  }
+  if (p.status !== "ACTIVE" && p.status !== "SCHEDULED") {
+    return { eligible: false, code: "DISABLED", reason: "This coupon is not available." }
+  }
+  if (p.maxUses != null && p.usedCount >= p.maxUses) {
+    return { eligible: false, code: "USAGE_LIMIT", reason: "This coupon has reached its usage limit." }
+  }
+  // Per-customer cap — the customer has had their turn, which is a different
+  // thing from the coupon being exhausted globally.
+  if (p.maxUsesPerCustomer != null && (ctx.customerRedemptions ?? 0) >= p.maxUsesPerCustomer) {
+    return { eligible: false, code: "ALREADY_REDEEMED", reason: "You have already redeemed this coupon." }
+  }
+  if (p.workspaceType && ctx.workspaceType && p.workspaceType !== ctx.workspaceType) {
+    return { eligible: false, code: "WRONG_WORKSPACE", reason: "This coupon is not valid here." }
+  }
   const applyTo = parseApplyTo(p.applyTo)
-  if (ctx.applyTo && !applyTo.includes(ctx.applyTo)) return { eligible: false, reason: "Not valid for this purchase type." }
-  if (p.minOrderValue != null && (ctx.orderValue ?? 0) < p.minOrderValue) return { eligible: false, reason: `Minimum order value is ₹${p.minOrderValue}.` }
-  if (!rulesPass(p.rules, ctx)) return { eligible: false, reason: "You are not eligible for this coupon." }
+  if (ctx.applyTo && !applyTo.includes(ctx.applyTo)) {
+    return { eligible: false, code: "WRONG_PURCHASE_TYPE", reason: purchaseTypeReason(applyTo) }
+  }
+  if (p.minOrderValue != null && (ctx.orderValue ?? 0) < p.minOrderValue) {
+    return { eligible: false, code: "MIN_ORDER", reason: `Minimum order of ${inr(p.minOrderValue)} required.` }
+  }
+  if (!rulesPass(p.rules, ctx)) {
+    return { eligible: false, code: "RULES", reason: "You are not eligible for this coupon." }
+  }
   return { eligible: true }
+}
+
+/** Name what the coupon IS for, rather than only what this purchase is not. */
+function purchaseTypeReason(applyTo: string[]): string {
+  const NAMES: Record<string, string> = {
+    ORDER: "normal orders", FIRST_ORDER: "a first order",
+    SUBSCRIPTION_PURCHASE: "subscription purchase", SUBSCRIPTION_RENEWAL: "subscription renewal",
+    SUBSCRIPTION_UPGRADE: "subscription upgrade", ANNUAL_PLAN: "annual plans",
+    REFERRAL_REWARD: "referral rewards", BIRTHDAY: "birthday rewards",
+    LOYALTY_REWARD: "loyalty rewards", FESTIVAL_CAMPAIGN: "festival campaigns",
+    RECOVERY: "recovery offers",
+  }
+  const names = applyTo.map((k) => NAMES[k] ?? k.toLowerCase().replace(/_/g, " "))
+  if (names.length === 0) return "This coupon is not valid for this purchase."
+  if (names.length === 1) return `Valid only for ${names[0]}.`
+  return `Valid only for ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}.`
 }
 
 // Compute the discount amount for an order value (never negative; capped).

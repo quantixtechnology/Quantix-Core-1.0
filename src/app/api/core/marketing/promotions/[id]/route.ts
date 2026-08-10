@@ -17,7 +17,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!existing) return NextResponse.json({ error: "Promotion not found" }, { status: 404 })
 
     const data: Record<string, unknown> = {}
-    const fields = ["title", "description", "workspaceType", "status", "kind"] as const
+    // workspaceType is deliberately NOT editable: it belongs to the tenant, is
+    // inferred at creation, and letting an update move a coupon to another
+    // product would reintroduce exactly what the create path now prevents.
+    const fields = ["title", "description", "status", "kind"] as const
     for (const f of fields) if (body[f] !== undefined) data[f] = body[f]
     if (body.enabled !== undefined) data.enabled = !!body.enabled
     if (body.discountType !== undefined) data.discountType = body.discountType === "FIXED" ? "FIXED" : "PERCENT"
