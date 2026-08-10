@@ -9,9 +9,20 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { QrCode, Share2, ExternalLink } from "lucide-react"
 import { CopyButton } from "@/components/ui/copy-button"
+import { AppQrDialog } from "@/components/laundry/apps/app-qr-dialog"
 
-export function AppShareCard({ title, description, url, icon, note }: { title: string; description: string; url: string; icon?: React.ReactNode; note?: string }) {
+export function AppShareCard({ title, description, url, icon, note, qrDialog }: {
+  title: string; description: string; url: string; icon?: React.ReactNode; note?: string
+  /**
+   * Opt-in. When supplied, QR Code opens the polished print-ready dialog
+   * instead of the inline preview. Only the Customer App passes it — that is
+   * the QR a business actually prints for the counter and the entrance; the
+   * staff apps are shared by link, so their inline preview is left alone.
+   */
+  qrDialog?: { businessName: string; appName: string }
+}) {
   const [showQr, setShowQr] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,16 +47,20 @@ export function AppShareCard({ title, description, url, icon, note }: { title: s
         </div>
         <div className="flex gap-2 flex-wrap">
           <CopyButton value={url} label="Link" size="sm" variant="outline">Copy Link</CopyButton>
-          <Button size="sm" variant="outline" className="gap-1" onClick={() => setShowQr((s) => !s)}><QrCode className="h-3.5 w-3.5" /> QR Code</Button>
+          <Button size="sm" variant="outline" className="gap-1" onClick={() => (qrDialog ? setQrOpen(true) : setShowQr((s) => !s))}><QrCode className="h-3.5 w-3.5" /> QR Code</Button>
           <Button size="sm" variant="outline" className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={whatsapp}><Share2 className="h-3.5 w-3.5" /> WhatsApp</Button>
         </div>
-        {showQr && (
+        {showQr && !qrDialog && (
           <div className="flex flex-col items-center pt-1">
             {qr ? <img src={qr} alt="QR" className="h-40 w-40 rounded-lg border border-slate-100" /> : <div className="h-40 w-40 grid place-items-center text-slate-300 text-xs">Generating…</div>}
             <p className="text-[11px] text-slate-400 mt-1">Scan to open on a phone</p>
           </div>
         )}
         {note && <p className="text-[11px] text-slate-400">{note}</p>}
+        {qrDialog && (
+          <AppQrDialog open={qrOpen} onOpenChange={setQrOpen} url={url}
+            businessName={qrDialog.businessName} appName={qrDialog.appName} />
+        )}
       </CardContent>
     </Card>
   )

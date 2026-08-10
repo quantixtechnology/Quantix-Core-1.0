@@ -16,14 +16,13 @@
 // but wrong QR on printed material is far more expensive than a missing one.
 
 import { useCallback, useEffect, useState } from "react"
-import QRCode from "qrcode"
 import { Button } from "@/components/ui/button"
 import { QrCode, Download, Share2, Link as LinkIcon, AlertTriangle, Check, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { locationMapsUrl } from "@/lib/delivery-actions"
+import { qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE } from "@/lib/qr-export"
 
 /** Print resolution. 1000px keeps a QR crisp on a business card at any size. */
-const PNG_SIZE = 1000
 
 export interface LocationQrCardProps {
   /** Business identity — the brand the location belongs to. */
@@ -46,9 +45,6 @@ export interface LocationQrCardProps {
   className?: string
 }
 
-const slug = (s: string) =>
-  s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "location"
-
 export function LocationQrCard({
   businessName, locationName, address, latitude, longitude, unsaved = false, variant = "compact", className = "",
 }: LocationQrCardProps) {
@@ -57,89 +53,41 @@ export function LocationQrCard({
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function"
+  const canShare = canShareQr()
 
   useEffect(() => {
     if (!mapsUrl) { setPreview(null); return }
     let alive = true
     // Deterministic: the same coordinates always produce the same payload, so
     // the QR needs no stored record and can never drift from the location.
-    QRCode.toDataURL(mapsUrl, { width: panel ? 640 : 320, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } })
+    qrPreviewDataUrl(mapsUrl, panel ? 640 : 320)
       .then((d) => { if (alive) setPreview(d) })
       .catch(() => { if (alive) setPreview(null) })
     return () => { alive = false }
   }, [mapsUrl, panel])
 
-  const fileBase = `${slug(businessName)}-${slug(locationName)}-location-qr`
-
-  /**
-   * Download without touching layout.
-   *
-   * The anchor is never appended to the document, so it cannot occupy space,
-   * shift content or create overflow. Revoking is deferred: revoking in the
-   * same tick as click() cancels the download in some browsers, and the
-   * try/finally guarantees the URL is released even if click() throws.
-   */
-  const saveBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob)
-    try {
-      const a = document.createElement("a")
-      a.href = url
-      a.download = filename
-      a.rel = "noopener"
-      a.click()
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(url), 30_000)
-    }
-  }
+  const fileBase = `${qrSlug(businessName)}-${qrSlug(locationName)}-location-qr`
 
   const downloadPng = useCallback(async () => {
     if (!mapsUrl) return
     setBusy("png")
-    try {
-      // margin 4 = the 4-module quiet zone the spec requires; without it a
-      // scanner pressed against printed material often fails to lock on.
-      const dataUrl = await QRCode.toDataURL(mapsUrl, {
-        width: PNG_SIZE, margin: 4, errorCorrectionLevel: "M",
-        color: { dark: "#000000", light: "#ffffff" },
-      })
-      const blob = await (await fetch(dataUrl)).blob()
-      saveBlob(blob, `${fileBase}.png`)
-      toast.success(`Downloaded ${PNG_SIZE} × ${PNG_SIZE} PNG`)
-    } catch { toast.error("Could not generate the PNG") } finally { setBusy(null) }
+    try { await downloadQrPng(mapsUrl, fileBase); toast.success(`Downloaded ${QR_PNG_SIZE} × ${QR_PNG_SIZE} PNG`) }
+    catch { toast.error("Could not generate the PNG") } finally { setBusy(null) }
   }, [mapsUrl, fileBase])
 
   const downloadSvg = useCallback(async () => {
     if (!mapsUrl) return
     setBusy("svg")
-    try {
-      // Vector, for a designer placing it on a card at any size.
-      const svg = await QRCode.toString(mapsUrl, {
-        type: "svg", margin: 4, errorCorrectionLevel: "M",
-        color: { dark: "#000000", light: "#ffffff" },
-      })
-      saveBlob(new Blob([svg], { type: "image/svg+xml" }), `${fileBase}.svg`)
-      toast.success("Downloaded SVG")
-    } catch { toast.error("Could not generate the SVG") } finally { setBusy(null) }
+    try { await downloadQrSvg(mapsUrl, fileBase); toast.success("Downloaded SVG") }
+    catch { toast.error("Could not generate the SVG") } finally { setBusy(null) }
   }, [mapsUrl, fileBase])
 
   const share = useCallback(async () => {
     if (!mapsUrl) return
     setBusy("share")
-    try {
-      const dataUrl = await QRCode.toDataURL(mapsUrl, { width: PNG_SIZE, margin: 4, color: { dark: "#000000", light: "#ffffff" } })
-      const blob = await (await fetch(dataUrl)).blob()
-      const file = new File([blob], `${fileBase}.png`, { type: "image/png" })
-      const payload: ShareData = { title: `${businessName} — ${locationName}`, text: `${locationName} location`, url: mapsUrl }
-      // Sharing the image is better where allowed; some platforms accept only
-      // the link, so fall back rather than fail.
-      const withFile = { ...payload, files: [file] } as ShareData
-      if (navigator.canShare?.(withFile)) await navigator.share(withFile)
-      else await navigator.share(payload)
-    } catch (e) {
-      // A user dismissing the sheet is not an error worth shouting about.
-      if ((e as Error)?.name !== "AbortError") toast.error("Sharing is not available here")
-    } finally { setBusy(null) }
+    const ok = await shareQr(mapsUrl, fileBase, `${businessName} — ${locationName}`, `${locationName} location`)
+    if (!ok) toast.error("Sharing is not available here")
+    setBusy(null)
   }, [mapsUrl, fileBase, businessName, locationName])
 
   const copyLink = useCallback(async () => {

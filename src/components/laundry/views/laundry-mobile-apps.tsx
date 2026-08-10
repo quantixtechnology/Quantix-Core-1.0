@@ -18,7 +18,18 @@ interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
 interface Provisioning { customer: AppStatus; executive: AppStatus; store: AppStatus }
 
 export function LaundryMobileApps() {
-  const { currentBusinessId } = useAuthStore()
+  const { currentBusinessId, user } = useAuthStore()
+  // Branding record first — the same name the sidebar and invoices show — so
+  // the printed QR carries the business's own identity, not a placeholder.
+  const [brandName, setBrandName] = useState("")
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/branding?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.success) setBrandName(j.data.businessName || "") })
+      .catch(() => {})
+  }, [currentBusinessId])
+  const businessName = brandName || user?.businessName || ""
   const [prov, setProv] = useState<Provisioning | null>(null)
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState(false)
@@ -72,7 +83,7 @@ export function LaundryMobileApps() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="space-y-2">
-          <AppShareCard title="Customer App" description="Customers book pickups, track orders and pay." icon={<Smartphone className="h-5 w-5" />} url={customerUrl} note="Your dedicated branded customer website & PWA." />
+          <AppShareCard title="Customer App" description="Customers book pickups, track orders and pay." icon={<Smartphone className="h-5 w-5" />} url={customerUrl} note="Your dedicated branded customer website & PWA." qrDialog={{ businessName: businessName || "Your Business", appName: "Customer App" }} />
           <StatusStrip label="Customer host" status={prov?.customer} loading={loading} />
         </div>
         <div className="space-y-2">
