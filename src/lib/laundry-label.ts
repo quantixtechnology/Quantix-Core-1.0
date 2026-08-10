@@ -13,8 +13,9 @@
 //   2. The image must print at its NATURAL size — one canvas pixel per printer
 //      dot. Any CSS scaling (the old `width:98%`) resamples the bitmap and
 //      smears bar edges, which is the classic cause of "sometimes it scans".
-//   3. Quiet zones must survive. The bars take ~95% of the label and the
-//      remainder is split evenly either side.
+//   3. Quiet zones must survive, INSIDE a 2mm safe margin that no ink may enter.
+//      Bars are sized to be read rather than to fill the label: a 15-char GAR
+//      occupies ~36mm of the 50mm width, and the rest is deliberate white space.
 //
 // IMPORTANT: printLabels() MUST be a pure side-effect — it opens a window and
 // calls window.print(). It must NEVER mutate React state, call APIs, or trigger
@@ -112,20 +113,50 @@ export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 // assumed, so a longer code (legacy ORD-…-G1 garments) degrades predictably
 // instead of running off the edge of the label.
 
-// LAYOUT: 60mm (W) x 40mm (H).
-// Both are fixed, but the WIDTH is a floor rather than a ceiling: if a code
-// needs more than 60mm at full module width the label grows instead of the
-// barcode being compressed. Nothing is ever squeezed to fit.
-// 2 dots is the FLOOR, not the target. The module GROWS to whatever the label
-// can carry — a wider bar is easier to scan — and only ever drops below 2 when a
-// code is too long to fit even at the maximum label width.
-export const TARGET_MODULE_DOTS = 2   // minimum narrow bar: 2 dots @203dpi = 0.25mm
-export const MAX_MODULE_DOTS = 6      // sanity cap (0.75mm bars)
-export const FIXED_LABEL_HEIGHT_MM = 40
-export const FIXED_LABEL_WIDTH_MM = 60
-export const MIN_QUIET_MM = 2.5       // Code 128 standard; leaves the width for bars
+// LAYOUT: 50mm (W) x 38mm (H) landscape — the physical die-cut stock.
+//
+// BOTH ARE HARD. The printed page is exactly the label, so @page, the .label box
+// and the media in the printer all agree; a page that disagrees with the stock is
+// what makes a driver scale or clip, and either one ruins the print.
+//
+// The previous layout treated width as a FLOOR and grew both the module and the
+// bar height to consume every spare millimetre. That is why the customer's sample
+// shows a barcode filling the label with the GAR crammed against the bottom edge.
+// Bars are now sized to be READ, not to fill: a 2-dot module is the scanner
+// optimum at 203 DPI, and anything past it is spent on white space that keeps the
+// symbol clear of the edges.
+export const TARGET_MODULE_DOTS = 2   // narrow bar: 2 dots @203dpi = 0.25mm
+export const MAX_MODULE_DOTS = 3      // past 3 dots a 15-char GAR outgrows 50mm
+export const FIXED_LABEL_HEIGHT_MM = 38
+export const FIXED_LABEL_WIDTH_MM = 50
+export const MIN_QUIET_MM = 2.5       // Code 128 standard, measured from the bars
 export const MIN_BARCODE_MM = 18
 export const MAX_LABEL_WIDTH_MM = 108 // TE244 maximum printable width
+
+/**
+ * Ink-free border on every side. Nothing — bars, quiet zone or text — is allowed
+ * inside it, so a millimetre of feed drift or die-cut tolerance cannot clip the
+ * symbol. This is ON TOP of the Code 128 quiet zone, not a substitute for it.
+ */
+export const SAFE_MARGIN_MM = 2
+
+/**
+ * Ceiling on bar height, as a share of the label. Previously the bars simply took
+ * whatever vertical space was left over — on a 40mm label that was 30mm, i.e. 75%
+ * of the label, which is exactly the oversized result being reported. Code 128 is
+ * a 1-D symbology: height past ~20mm buys no scan reliability, it only crowds the
+ * human-readable line.
+ */
+export const MAX_BARCODE_HEIGHT_FRACTION = 0.55
+
+/** Largest GAR type size. Auto-sizing from label width reached 17pt at 60mm — a
+ *  7.8mm text block that pushed itself onto the bottom edge. */
+export const MAX_GAR_PT = 10
+
+/** Printable width once both safe margins are removed. */
+export function usableWidthMm(widthMm: number): number {
+  return Math.max(0, widthMm - SAFE_MARGIN_MM * 2)
+}
 
 /**
  * The LARGEST whole-dot module a code can use on a given label while keeping the
@@ -137,7 +168,9 @@ export const MAX_LABEL_WIDTH_MM = 108 // TE244 maximum printable width
 export function bestModuleDots(modules: number, widthMm: number, dpi: number): number {
   if (modules <= 0) return 0
   const dotsPerMm = dpi / 25.4
-  const labelDots = Math.floor(widthMm * dotsPerMm)
+  // Measured across the SAFE area, not the whole label — the outer 2mm is not
+  // available to the symbol, and pretending it is puts bars near the edge.
+  const labelDots = Math.floor(usableWidthMm(widthMm) * dotsPerMm)
   const quietDots = Math.ceil(MIN_QUIET_MM * dotsPerMm)
   const usable = labelDots - quietDots * 2
   return Math.max(0, Math.min(MAX_MODULE_DOTS, Math.floor(usable / modules)))
@@ -160,10 +193,12 @@ export function autoWidthMm(modules: number, dpi: number, moduleDots = TARGET_MO
  * narrow label would overflow.
  */
 export function garFontPt(widthMm: number, chars: number): number {
-  const usableMm = widthMm - MIN_QUIET_MM * 2
+  const usableMm = usableWidthMm(widthMm)
   // Courier advance ≈ 0.6em; convert mm → pt at 72pt/inch.
   const maxPt = (usableMm / Math.max(1, chars)) / 0.6 / (25.4 / 72)
-  return Math.min(20, Math.max(7, Math.floor(maxPt)))
+  // Capped: the width-derived size is a CEILING for fitting on one line, never a
+  // target. Bigger type here only steals height from the bars and the margin.
+  return Math.min(MAX_GAR_PT, Math.max(7, Math.floor(maxPt)))
 }
 
 export interface LabelGeometry {
@@ -225,6 +260,9 @@ export function fitBarcode(modules: number, widthMm: number, dpi: number, target
   }
 }
 
+/** Breathing room between the bars and the GAR line. */
+export const BARCODE_TEXT_GAP_MM = 1.2
+
 /** Vertical space the GAR line needs at a given type size. */
 export function textBlockMm(fontPt: number): number {
   return (fontPt / 72) * 25.4 * 1.3 // pt → mm, plus line-height headroom
@@ -234,16 +272,20 @@ export function computeLabelGeometry(value: string, cfg: LabelConfig, widthMm?: 
   const dpi = cfg.dpi || 203
   const modules = code128Modules(value)
   const w = widthMm ?? autoWidthMm(modules, dpi, cfg.moduleWidth ?? TARGET_MODULE_DOTS)
-  const f = fitBarcode(modules, w, dpi, cfg.moduleWidth ?? TARGET_MODULE_DOTS)
+  // Fit inside the safe area. fitBarcode centres the image across whatever width
+  // it is handed, so handing it the label width would push the image to the very
+  // edges; the CSS padding then supplies the untouchable border.
+  const f = fitBarcode(modules, usableWidthMm(w), dpi, cfg.moduleWidth ?? TARGET_MODULE_DOTS)
 
-  // HEIGHT IS FIXED at 40mm. The bars take whatever remains after the GAR line
-  // and the margins — no density maths, because the width already guarantees a
-  // full-size module.
-  const opts = resolveBarcodeOpts(cfg)
+  // HEIGHT: the bars get a CAPPED share, not the leftovers. Cap first, then the
+  // free space, so a short label still cannot overflow.
   const h = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
   const fontPt = garFontPt(w, value.length)
-  const free = h - opts.marginTop - opts.marginBottom - textBlockMm(fontPt) - 1.2
-  const barcodeHeightMm = Math.max(MIN_BARCODE_MM, free)
+  const free = h - SAFE_MARGIN_MM * 2 - textBlockMm(fontPt) - BARCODE_TEXT_GAP_MM
+  const barcodeHeightMm = Math.max(
+    Math.min(MIN_BARCODE_MM, free),           // never overflow, even on a tiny label
+    Math.min(h * MAX_BARCODE_HEIGHT_FRACTION, free),
+  )
 
   return {
     moduleDots: f.moduleDots, modules,
@@ -265,20 +307,24 @@ export function computeJobLayout(values: string[], cfg: LabelConfig) {
   const labelWidth = cfg.widthMm || FIXED_LABEL_WIDTH_MM
   const maxModules = values.reduce((m, v) => Math.max(m, code128Modules(v)), 0)
 
-  // MAXIMISE THE BARS FIRST. Grow the module to the widest whole dot the label
-  // can carry — a 15-char GAR on a 60mm label reaches 3 dots (0.375mm bars,
-  // ~54mm, ~91% of the label). Only when even the 2-dot floor will not fit does
-  // the label widen, and only when THAT hits the printer's 108mm head does the
-  // module finally drop below the floor.
+  // THE PAGE IS THE STOCK. Width stays exactly as configured for every code that
+  // fits, because @page is what the driver matches against the loaded media — a
+  // page wider than the label is precisely what produces a scaled or clipped
+  // print. bestModuleDots already caps at MAX_MODULE_DOTS and measures inside the
+  // safe area, so the bars land well clear of the edges.
   let moduleDots = cfg.moduleWidth ?? bestModuleDots(maxModules, labelWidth, dpi)
   let widthMm = labelWidth
 
-  if (moduleDots < TARGET_MODULE_DOTS) {
+  // ESCAPE HATCH, not the normal path: a legacy ORD-…-G1 item number encodes to
+  // ~442 modules and physically cannot fit 50mm at even one dot. Printing it
+  // clipped would guarantee an unscannable label, so that job — and only that
+  // job — widens. Every GAR code fits, so GAR labels are always exactly 50×38.
+  if (moduleDots < 1) {
     moduleDots = TARGET_MODULE_DOTS
-    let needed = autoWidthMm(maxModules, dpi, moduleDots)
+    let needed = autoWidthMm(maxModules, dpi, moduleDots) + SAFE_MARGIN_MM * 2
     while (moduleDots > 1 && needed > MAX_LABEL_WIDTH_MM) {
       moduleDots--
-      needed = autoWidthMm(maxModules, dpi, moduleDots)
+      needed = autoWidthMm(maxModules, dpi, moduleDots) + SAFE_MARGIN_MM * 2
     }
     widthMm = Math.min(MAX_LABEL_WIDTH_MM, Math.max(labelWidth, needed, 25))
   }
@@ -292,14 +338,17 @@ export function computeJobLayout(values: string[], cfg: LabelConfig) {
   }
 }
 
-// 40 × 30 mm landscape on the TE244 at 203 DPI.
-// 60mm (W) x 40mm (H). Width is a floor: computeJobLayout widens it if a code
-// needs more room, so the barcode is never compressed.
+// 50mm (W) x 38mm (H) landscape on the TE244 at 203 DPI.
 export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: FIXED_LABEL_WIDTH_MM, heightMm: FIXED_LABEL_HEIGHT_MM, dpi: 203 }
-// Versioned: earlier keys hold sizes from the previous layouts (v1 fixed 20mm,
-// v2 fixed 40mm WIDTH). This layout inverts that — 40mm HEIGHT, auto width — so
-// v3 starts every workstation on the current defaults. Old keys are left alone.
-const KEY = "qx-laundry-label-config-v4"
+
+// VERSIONED, and the version MUST be bumped whenever the physical size changes.
+//
+// loadLabelConfig merges the saved object OVER the defaults, so a workstation
+// that once saved {widthMm:60, heightMm:40} keeps printing 60x40 no matter what
+// DEFAULT_LABEL_CONFIG says. That is a large part of why the customer's label
+// stayed oversized: the new size never reached the terminal that had a stale
+// entry. v5 abandons those keys, so every workstation starts at 50x38.
+const KEY = "qx-laundry-label-config-v5"
 export function loadLabelConfig(): LabelConfig {
   if (typeof window === "undefined") return DEFAULT_LABEL_CONFIG
   try { return { ...DEFAULT_LABEL_CONFIG, ...JSON.parse(localStorage.getItem(KEY) || "{}") } } catch { return DEFAULT_LABEL_CONFIG }
@@ -332,9 +381,9 @@ function barcodeDataURL(value: string, cfg: LabelConfig, geo: LabelGeometry): st
 }
 
 function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
-  const opts = resolveBarcodeOpts(cfg)
   const values = labels.map((l) => l.garScanCode || l.itemNumber)
-  // Height 40mm FIXED; width AUTO, sized so the barcode is never compressed.
+  // 50 x 38mm fixed. One size for the whole run — thermal stock feeds on a fixed
+  // pitch, so a per-label size would misregister everything after the first.
   const job = computeJobLayout(values, cfg)
   const w = job.widthMm, h = job.heightMm
   const garPt = job.fontPt
@@ -349,15 +398,23 @@ function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
         <div class="gar">${escapeHtml(bcValue)}</div>
       </div>`
   })
+  // EVERY dimension below is in millimetres. No percentages, no vw/vh, no
+  // transform: scale() — the page, the box and the bitmap are all stated in
+  // physical units so the browser has nothing to reinterpret at print time.
   return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
+    /* The page IS the label. Zero margin, and the size declared here is what the
+       driver matches to the loaded media — print at 100% / Actual Size, never
+       "Fit to page", which would rescale all of this. */
     @page { size: ${w}mm ${h}mm; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html,body { margin:0; padding:0; background:#fff; font-family: Arial, Helvetica, sans-serif; }
-    /* Horizontal padding is 0 on purpose — the barcode carries its own quiet
-       zone, so CSS padding here would subtract from it rather than add to it. */
-    .label { width:${w}mm; height:${h}mm; padding:${opts.marginTop}mm 0 ${opts.marginBottom}mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
+    /* SAFE MARGIN on all four sides. The barcode still carries its own Code 128
+       quiet zone INSIDE this box — the two add up rather than one replacing the
+       other — so feed drift cannot bring a bar to the edge. */
+    .label { width:${w}mm; height:${h}mm; padding:${SAFE_MARGIN_MM}mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
+    .label:last-child { page-break-after: auto; }
     /* No scaling and no smoothing — the bitmap must reach the printer dot-for-dot. */
-    .bc { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 0.8mm; }
+    .bc { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 ${BARCODE_TEXT_GAP_MM}mm; }
     .gar { font-family:'Courier New',monospace; font-weight:700; font-size:${garPt}pt; letter-spacing:0.5px; line-height:1.1; color:#000; white-space:nowrap; }
     @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;border-radius:2px;} }
   </style></head><body>${rows.join("")}</body></html>`

@@ -3,6 +3,7 @@ import {
   fitBarcode, autoWidthMm, garFontPt, textBlockMm, bestModuleDots,
   TARGET_MODULE_DOTS, MIN_QUIET_MM, MIN_BARCODE_MM,
   FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM,
+  SAFE_MARGIN_MM, MAX_BARCODE_HEIGHT_FRACTION, MAX_GAR_PT, BARCODE_TEXT_GAP_MM, usableWidthMm,
 } from '@/lib/laundry-label'
 
 // ============================================================================
@@ -75,52 +76,80 @@ describe('fitBarcode at the auto width', () => {
   })
 })
 
-describe('fixed 60 x 40mm label', () => {
-  it('the size constants match the requested label', () => {
-    expect(FIXED_LABEL_WIDTH_MM).toBe(60)
-    expect(FIXED_LABEL_HEIGHT_MM).toBe(40)
+describe('fixed 50 x 38mm label — sized to be read, not to fill', () => {
+  it('the size constants match the requested physical stock', () => {
+    expect(FIXED_LABEL_WIDTH_MM).toBe(50)
+    expect(FIXED_LABEL_HEIGHT_MM).toBe(38)
   })
 
-  // The bars are GROWN to fill the label — width is never left unused, because a
-  // wider bar is what a scanner reads most reliably.
-  it('grows the module to 3 dots on a 60mm label', () => {
+  // Regression for the customer's oversized sample. The old layout grew the
+  // module until the bars filled 90%+ of the label; a 2-dot module is the
+  // scanner optimum and the spare width becomes margin instead.
+  it('picks a 2-dot module and does NOT grow to fill the width', () => {
     const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
-    expect(md).toBe(3)
-    expect(md).toBeGreaterThanOrEqual(TARGET_MODULE_DOTS) // 2 dots is the FLOOR
-    expect(md / DOTS_PER_MM).toBeCloseTo(0.375, 3)
+    expect(md).toBe(2)
+    expect(md / DOTS_PER_MM).toBeCloseTo(0.25, 3)
   })
 
-  it('fills 90-92% of the label with bars', () => {
+  it('leaves the bars well inside the label — not edge to edge', () => {
     const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
-    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md)
-    const pct = (f.barDots / Math.floor(FIXED_LABEL_WIDTH_MM * DOTS_PER_MM)) * 100
-    expect(pct).toBeGreaterThanOrEqual(90)
-    expect(pct).toBeLessThanOrEqual(92)
-    expect(f.barsMm).toBeGreaterThanOrEqual(54)
-    expect(f.barsMm).toBeLessThanOrEqual(55)
+    const f = fitBarcode(GAR_MODULES, usableWidthMm(FIXED_LABEL_WIDTH_MM), DPI, md)
+    const pct = (f.barsMm / FIXED_LABEL_WIDTH_MM) * 100
+    expect(pct).toBeGreaterThan(65)   // still a big, readable symbol
+    expect(pct).toBeLessThan(80)      // but never crowding the edges
   })
 
-  it('keeps quiet zones in the 2.5-3mm Code 128 band', () => {
+  it('keeps the quiet zone at or above the Code 128 minimum', () => {
     const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
-    const f = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md)
-    expect(f.quietMm).toBeGreaterThanOrEqual(2.5)
-    expect(f.quietMm).toBeLessThanOrEqual(3)
+    const f = fitBarcode(GAR_MODULES, usableWidthMm(FIXED_LABEL_WIDTH_MM), DPI, md)
+    expect(f.quietMm).toBeGreaterThanOrEqual(MIN_QUIET_MM)
     expect(f.fits).toBe(true)
-    expect(f.imageWidthMm).toBeLessThanOrEqual(FIXED_LABEL_WIDTH_MM)
+  })
+
+  // The safe margin is ON TOP of the quiet zone, so the true white border is
+  // both added together.
+  it('never lets the image enter the 2mm safe margin', () => {
+    const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
+    const f = fitBarcode(GAR_MODULES, usableWidthMm(FIXED_LABEL_WIDTH_MM), DPI, md)
+    expect(f.imageWidthMm).toBeLessThanOrEqual(usableWidthMm(FIXED_LABEL_WIDTH_MM))
+    const edgeToFirstBar = SAFE_MARGIN_MM + f.quietMm
+    expect(edgeToFirstBar).toBeGreaterThanOrEqual(SAFE_MARGIN_MM + MIN_QUIET_MM)
   })
 
   it('never grows the module past the point where the quiet zone would break', () => {
     const md = bestModuleDots(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI)
-    const tooBig = fitBarcode(GAR_MODULES, FIXED_LABEL_WIDTH_MM, DPI, md + 1)
-    // One dot wider would overflow, so fitBarcode steps it back down.
+    const tooBig = fitBarcode(GAR_MODULES, usableWidthMm(FIXED_LABEL_WIDTH_MM), DPI, md + 1)
     expect(tooBig.moduleDots).toBeLessThanOrEqual(md)
   })
 
-  it('leaves well over the minimum bar height after the GAR line', () => {
-    const w = FIXED_LABEL_WIDTH_MM
-    const pt = garFontPt(w, 15)
-    const bars = FIXED_LABEL_HEIGHT_MM - 0.4 - 0.4 - textBlockMm(pt) - 1.2
-    expect(bars).toBeGreaterThan(MIN_BARCODE_MM)
+  // The bug in the photo: bars took every leftover millimetre (~30mm of 40mm)
+  // and shoved the GAR line onto the bottom edge.
+  it('caps bar height instead of giving it the leftovers', () => {
+    const pt = garFontPt(FIXED_LABEL_WIDTH_MM, 15)
+    const cap = FIXED_LABEL_HEIGHT_MM * MAX_BARCODE_HEIGHT_FRACTION
+    const free = FIXED_LABEL_HEIGHT_MM - SAFE_MARGIN_MM * 2 - textBlockMm(pt) - BARCODE_TEXT_GAP_MM
+    const bars = Math.max(Math.min(MIN_BARCODE_MM, free), Math.min(cap, free))
+    expect(bars).toBeGreaterThanOrEqual(MIN_BARCODE_MM)  // still scannable
+    expect(bars).toBeLessThan(free)                       // leftovers NOT consumed
+    expect(bars / FIXED_LABEL_HEIGHT_MM).toBeLessThanOrEqual(MAX_BARCODE_HEIGHT_FRACTION)
+  })
+
+  it('the whole stack fits inside 38mm with clear space top and bottom', () => {
+    const pt = garFontPt(FIXED_LABEL_WIDTH_MM, 15)
+    const cap = FIXED_LABEL_HEIGHT_MM * MAX_BARCODE_HEIGHT_FRACTION
+    const free = FIXED_LABEL_HEIGHT_MM - SAFE_MARGIN_MM * 2 - textBlockMm(pt) - BARCODE_TEXT_GAP_MM
+    const bars = Math.max(Math.min(MIN_BARCODE_MM, free), Math.min(cap, free))
+    const content = bars + BARCODE_TEXT_GAP_MM + textBlockMm(pt)
+    expect(content).toBeLessThanOrEqual(FIXED_LABEL_HEIGHT_MM - SAFE_MARGIN_MM * 2)
+  })
+
+  // The GAR is one line, always, at a size a person can read across a counter.
+  it('holds the GAR line to a readable size that cannot wrap', () => {
+    const pt = garFontPt(FIXED_LABEL_WIDTH_MM, 15)
+    expect(pt).toBeLessThanOrEqual(MAX_GAR_PT)
+    expect(pt).toBeGreaterThanOrEqual(7)
+    const textMm = 15 * pt * 0.6 * (25.4 / 72)
+    expect(textMm).toBeLessThanOrEqual(usableWidthMm(FIXED_LABEL_WIDTH_MM))
   })
 })
 
@@ -129,7 +158,9 @@ describe('GAR text always fits the auto width', () => {
     for (const [w, chars] of [[42, 15], [30, 15], [108, 37], [60, 20]] as const) {
       const pt = garFontPt(w, chars)
       const textMm = chars * pt * 0.6 * (25.4 / 72)
-      expect(textMm).toBeLessThanOrEqual(w - MIN_QUIET_MM * 2 + 0.01)
+      // The guarantee is the SAFE area — the GAR line must not enter the 2mm
+      // border, which is a tighter promise than merely clearing the quiet zone.
+      expect(textMm).toBeLessThanOrEqual(usableWidthMm(w) + 0.01)
     }
   })
 

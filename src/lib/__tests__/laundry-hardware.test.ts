@@ -493,7 +493,7 @@ describe('active faults vs historical diagnostics', () => {
 
 // ── A verified scanner is never described as a camera fallback ─────────────
 describe('verified scanner reporting', () => {
-  beforeEach(() => { eventLog.clear(); ScanEngine.resetForTests(); diagnostics.resetForTests?.() })
+  beforeEach(() => { eventLog.clear(); ScanEngine.resetForTests() })
 
   it('routing may fall back to camera while verification still stands', () => {
     ScanEngine.start()
