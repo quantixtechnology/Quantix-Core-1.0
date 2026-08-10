@@ -133,15 +133,33 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
       </header>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,35fr)_minmax(0,65fr)] items-start">
-        {/* ── Logo: the subject of the page ─────────────────────────────── */}
-        <Panel title="Logo">
-          <div className="rounded-2xl bg-[linear-gradient(45deg,#f8fafc_25%,transparent_25%),linear-gradient(-45deg,#f8fafc_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f8fafc_75%),linear-gradient(-45deg,transparent_75%,#f8fafc_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] border border-slate-200 p-5 grid place-items-center min-h-[180px]">
-            {/* Checkerboard behind, so a transparent PNG reads as transparent
-                rather than as a white block. */}
-            <BrandLogo src={data.logo} name={name} size="xl" color={data.primaryColor} className="!h-[120px]" />
+        {/* ── Brand identity: logo, name, product — one vertical axis ───── */}
+        <Panel title="Brand Identity">
+          {/* Fixed 220px stage so the card never changes height as logos come
+              and go, and nothing can spill past its edge. The checkerboard
+              lets a transparent PNG read as transparent instead of as a white
+              block. */}
+          <div
+            className="rounded-2xl border border-slate-200 bg-[linear-gradient(45deg,#f8fafc_25%,transparent_25%),linear-gradient(-45deg,#f8fafc_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f8fafc_75%),linear-gradient(-45deg,transparent_75%,#f8fafc_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] flex items-center justify-center overflow-hidden"
+            style={{ height: 220, padding: 32 }}>
+            {data.logo ? (
+              // contain + both maxima: a landscape logo takes the width, a
+              // square one stays square, and neither is stretched or cropped.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={data.logo} alt={name} className="object-contain" style={{ maxWidth: "100%", maxHeight: 160 }} />
+            ) : (
+              <BrandLogo src={null} name={name} size="xl" color={data.primaryColor} className="!h-[100px]" />
+            )}
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          {/* Logo first, business second, product third — the hierarchy a
+              white-label tenant should see, all on the same axis. */}
+          <div className="mt-4 text-center">
+            <p className="text-[18px] font-bold leading-tight text-slate-900 truncate">{name}</p>
+            <p className="text-[13px] font-medium text-slate-400 mt-0.5">Laundry OS</p>
+          </div>
+
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
             <input ref={fileRef} type="file" accept={LOGO_ACCEPT} className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) pickLogo(f); e.target.value = "" }} />
             <Button size="sm" variant={data.logo ? "outline" : "default"} className="gap-1.5" disabled={uploading} onClick={() => fileRef.current?.click()}>
@@ -149,23 +167,25 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
               {data.logo ? "Replace Logo" : "Upload Logo"}
             </Button>
             {data.logo && (
-              <Button size="sm" variant="ghost" className="gap-1.5 text-slate-500" onClick={() => { set("logo", null); setAdvice(null) }}>
-                <Trash2 className="h-3.5 w-3.5" /> Remove Logo
+              <Button size="sm" variant="outline" className="gap-1.5 text-slate-500" onClick={() => { set("logo", null); setAdvice(null) }}>
+                <Trash2 className="h-3.5 w-3.5" /> Remove
               </Button>
             )}
           </div>
 
-          {advice && <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">{advice}</p>}
+          {advice && <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">{advice}</p>}
 
-          <dl className="mt-4 space-y-1.5 text-[11px]">
-            <Spec k="Recommended" v="600 × 180 px (landscape)" />
-            <Spec k="Format" v="PNG preferred · SVG, JPG, WEBP" />
-            <Spec k="Maximum" v="2 MB" />
-            <Spec k="Background" v="Transparent recommended" />
-          </dl>
-          <p className="mt-3 text-[11px] text-slate-400 leading-relaxed">
-            Logos are never stretched or cropped. A square logo is centred with equal space either side.
-          </p>
+          {/* Compact and centred on the same axis, not spread into columns. */}
+          <div className="mt-4 border-t border-slate-100 pt-3 text-center">
+            <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Recommended</p>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              600 × 180 px · Landscape<br />
+              Transparent PNG · 2 MB max
+            </p>
+            <p className="mt-2 text-[10px] text-slate-400 leading-relaxed">
+              Never stretched or cropped. A square logo stays centred with equal space either side.
+            </p>
+          </div>
         </Panel>
 
         {/* ── Identity + colours + previews ─────────────────────────────── */}
