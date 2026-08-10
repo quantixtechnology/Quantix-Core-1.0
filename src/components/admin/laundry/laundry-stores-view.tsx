@@ -207,120 +207,171 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editingStore ? "Edit Store" : "Add Store"}</DialogTitle>
-            <DialogDescription>Configure store details for this laundry business.</DialogDescription>
+        {/* Wide two-column form. The old modal was one narrow column, so on a
+            desktop the map, the coordinates and the QR were all pushed below
+            the fold and the Save button with them. Capped at 90vh with only
+            the BODY scrolling, so the header and the primary action stay put. */}
+        <DialogContent className="max-w-[1040px] w-[95vw] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3.5 space-y-0.5 text-left">
+            <DialogTitle className="text-base font-semibold">{editingStore ? "Edit Store" : "Add Store"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {/* Business above branch, matching the branding hierarchy. */}
+              {businessName ? <span className="font-medium text-slate-600">{businessName}</span> : null}
+              {businessName && (form.storeName || editingStore?.storeName) ? " — " : null}
+              {form.storeName || editingStore?.storeName || "Manage store details, location and customer-facing information."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="col-span-2">
-              <Label>Store Name *</Label>
-              <Input value={form.storeName} onChange={e => setForm(p => ({ ...p, storeName: e.target.value }))} placeholder="Main Store" />
-            </div>
-            <div>
-              <Label>Store Type</Label>
-              <Select value={form.storeType} onValueChange={v => setForm(p => ({ ...p, storeType: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RETAIL_STORE">Retail Store</SelectItem>
-                  <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
-                  <SelectItem value="BOTH">Both (Retail + Processing)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <div className="flex items-center gap-2 pb-1.5">
-                <Switch checked={form.isActive} onCheckedChange={v => setForm(p => ({ ...p, isActive: v }))} />
-                <Label className="text-sm">Active</Label>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+            <div className="grid gap-5 lg:grid-cols-2">
+
+              {/* ── Left: everything typed ─────────────────────────────── */}
+              <div className="space-y-5">
+                <Section title="Basic Information">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <Label>Store Name *</Label>
+                      <Input value={form.storeName} onChange={e => setForm(p => ({ ...p, storeName: e.target.value }))} placeholder="Main Store" />
+                    </div>
+                    <div>
+                      <Label>Store Type</Label>
+                      <Select value={form.storeType} onValueChange={v => setForm(p => ({ ...p, storeType: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="RETAIL_STORE">Retail Store</SelectItem>
+                          <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
+                          <SelectItem value="BOTH">Both (Retail + Processing)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-end">
+                      <div className="flex items-center gap-2 pb-1.5">
+                        <Switch checked={form.isActive} onCheckedChange={v => setForm(p => ({ ...p, isActive: v }))} />
+                        <Label className="text-sm">Active</Label>
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+
+                <Section title="Manager">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Manager Name</Label>
+                      <Input value={form.managerName} onChange={e => setForm(p => ({ ...p, managerName: e.target.value }))} placeholder="Store Manager" />
+                    </div>
+                    <div>
+                      <Label>Mobile</Label>
+                      <Input value={form.mobile} onChange={e => setForm(p => ({ ...p, mobile: e.target.value }))} placeholder="+91 98765 43210" />
+                    </div>
+                    <div className="col-span-2">
+                      <Label>Email</Label>
+                      <Input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="store@example.com" />
+                    </div>
+                  </div>
+                </Section>
+
+                <Section title="Address">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <Label>Address</Label>
+                      <Textarea rows={2} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Store address" />
+                    </div>
+                    <div>
+                      <Label>City</Label>
+                      <Input value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="Mumbai" />
+                    </div>
+                    <div>
+                      <Label>State</Label>
+                      <Input value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} placeholder="Maharashtra" />
+                    </div>
+                    <div>
+                      <Label>Pincode</Label>
+                      <Input value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value }))} placeholder="400001" />
+                    </div>
+                  </div>
+                </Section>
+
+                <Section title="Operations">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Service Radius (KM)</Label>
+                      <Input value={form.serviceRadiusKm} onChange={e => setForm(p => ({ ...p, serviceRadiusKm: e.target.value }))} placeholder="5" />
+                    </div>
+                    <div>
+                      <Label>Daily Capacity (KG)</Label>
+                      <Input value={form.dailyCapacityKg} onChange={e => setForm(p => ({ ...p, dailyCapacityKg: e.target.value }))} placeholder="500" />
+                    </div>
+                  </div>
+                </Section>
+              </div>
+
+              {/* ── Right: the place, and the QR that points at it ─────── */}
+              <div className="space-y-5">
+                <Section title="Store Location">
+                  {/* Height-capped so the map cannot swallow the column and
+                      push the QR out of sight — the original complaint. */}
+                  <div className="[&_.gm-style]:rounded-lg [&>div>div:has(>div>.gm-style)]:!h-[280px]">
+                    <StoreLocationPicker
+                      value={{
+                        latitude: form.latitude ? parseFloat(form.latitude) : null,
+                        longitude: form.longitude ? parseFloat(form.longitude) : null,
+                        googlePlaceId: form.googlePlaceId || null,
+                        formattedAddress: form.formattedAddress || null,
+                        address: form.address || null,
+                        city: form.city || null,
+                        state: form.state || null,
+                        pincode: form.pincode || null,
+                      }}
+                      onChange={(loc: StoreLocation) => {
+                        setForm(p => ({
+                          ...p,
+                          latitude: loc.latitude != null ? String(loc.latitude) : "",
+                          longitude: loc.longitude != null ? String(loc.longitude) : "",
+                          googlePlaceId: loc.googlePlaceId ?? "",
+                          formattedAddress: loc.formattedAddress ?? "",
+                          address: loc.address ?? "",
+                          city: loc.city ?? "",
+                          state: loc.state ?? "",
+                          pincode: loc.pincode ?? "",
+                        }))
+                      }}
+                    />
+                  </div>
+                </Section>
+
+                {/* Part 1's component, unchanged — placement only. */}
+                <LocationQrCard
+                  businessName={businessName || "Business"}
+                  locationName={form.storeName || editingStore?.storeName || "Store"}
+                  address={form.formattedAddress || form.address || null}
+                  latitude={form.latitude ? parseFloat(form.latitude) : null}
+                  longitude={form.longitude ? parseFloat(form.longitude) : null}
+                  unsaved={
+                    !!editingStore &&
+                    (parseFloat(form.latitude || "NaN") !== (editingStore.latitude ?? NaN) ||
+                     parseFloat(form.longitude || "NaN") !== (editingStore.longitude ?? NaN))
+                  }
+                />
               </div>
             </div>
-            <div>
-              <Label>Manager Name</Label>
-              <Input value={form.managerName} onChange={e => setForm(p => ({ ...p, managerName: e.target.value }))} placeholder="Store Manager" />
-            </div>
-            <div>
-              <Label>Mobile</Label>
-              <Input value={form.mobile} onChange={e => setForm(p => ({ ...p, mobile: e.target.value }))} placeholder="+91 98765 43210" />
-            </div>
-            <div className="col-span-2">
-              <Label>Email</Label>
-              <Input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="store@example.com" />
-            </div>
-            <div className="col-span-2">
-              <Label>Address</Label>
-              <Textarea value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Store address" />
-            </div>
-            <div>
-              <Label>City</Label>
-              <Input value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="Mumbai" />
-            </div>
-            <div>
-              <Label>State</Label>
-              <Input value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} placeholder="Maharashtra" />
-            </div>
-            <div>
-              <Label>Pincode</Label>
-              <Input value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value }))} placeholder="400001" />
-            </div>
-            <div className="col-span-2">
-              <Label>Store Location</Label>
-              <StoreLocationPicker
-                value={{
-                  latitude: form.latitude ? parseFloat(form.latitude) : null,
-                  longitude: form.longitude ? parseFloat(form.longitude) : null,
-                  googlePlaceId: form.googlePlaceId || null,
-                  formattedAddress: form.formattedAddress || null,
-                  address: form.address || null,
-                  city: form.city || null,
-                  state: form.state || null,
-                  pincode: form.pincode || null,
-                }}
-                onChange={(loc: StoreLocation) => {
-                  setForm(p => ({
-                    ...p,
-                    latitude: loc.latitude != null ? String(loc.latitude) : "",
-                    longitude: loc.longitude != null ? String(loc.longitude) : "",
-                    googlePlaceId: loc.googlePlaceId ?? "",
-                    formattedAddress: loc.formattedAddress ?? "",
-                    address: loc.address ?? "",
-                    city: loc.city ?? "",
-                    state: loc.state ?? "",
-                    pincode: loc.pincode ?? "",
-                  }))
-                }}
-              />
-              {/* Sits with the location it describes. The QR is derived from
-                  the coordinates the picker just set, so changing the pin and
-                  saving changes the QR — nothing to regenerate by hand. */}
-              <LocationQrCard
-                className="mt-3"
-                businessName={businessName || "Business"}
-                locationName={form.storeName || editingStore?.storeName || "Store"}
-                address={form.formattedAddress || form.address || null}
-                latitude={form.latitude ? parseFloat(form.latitude) : null}
-                longitude={form.longitude ? parseFloat(form.longitude) : null}
-                unsaved={
-                  !!editingStore &&
-                  (parseFloat(form.latitude || "NaN") !== (editingStore.latitude ?? NaN) ||
-                   parseFloat(form.longitude || "NaN") !== (editingStore.longitude ?? NaN))
-                }
-              />
-            </div>
-            <div>
-              <Label>Service Radius (KM)</Label>
-              <Input value={form.serviceRadiusKm} onChange={e => setForm(p => ({ ...p, serviceRadiusKm: e.target.value }))} placeholder="5" />
-            </div>
-            <div>
-              <Label>Daily Capacity (KG)</Label>
-              <Input value={form.dailyCapacityKg} onChange={e => setForm(p => ({ ...p, dailyCapacityKg: e.target.value }))} placeholder="500" />
-            </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="shrink-0 border-t border-slate-200 px-5 py-3 sm:justify-end gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.storeName}>{editingStore ? "Update" : "Create"} Store</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/** A titled group inside the Store modal — keeps the two columns legible. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</h4>
+      {children}
     </div>
   )
 }
