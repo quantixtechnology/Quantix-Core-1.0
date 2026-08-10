@@ -15,7 +15,6 @@ import { useResponsive } from "@/hooks/use-responsive"
 import { useRuntimeAuth } from "@/hooks/use-runtime-auth"
 import { SCREEN_PAGE_MAP, defaultNavigationConfig, isLaundryPageAccessible, screenDisplayName, resolveLaundryLandingPage } from "@/lib/laundry-nav-config"
 import { isScreenAccessible } from "@/lib/laundry-rbac-registry"
-import { BrandLogo } from "@/components/laundry/brand-logo"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
@@ -258,18 +257,33 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const brand = branding?.businessName || user?.businessName || "Laundry OS"
   const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
+  // Stacked identity: logo above the business name, product name last. The
+  // tenant's mark leads — a logo sitting beside the name reads as an app icon,
+  // not as their brand.
+  //
+  // The desktop sidebar is collapsible="icon", so the text is hidden and the
+  // block shrinks in that state; without that a centred two-line caption would
+  // spill out of a rail-width column.
   const Brand = (
-    <div className="flex items-center gap-2.5 px-2">
+    <div className="flex w-full flex-col items-center justify-center gap-1.5 px-2 text-center">
       {branding?.logo ? (
-        <BrandLogo src={branding.logo} name={brand} size="sm" color={branding.primaryColor} />
+        // Contained on both axes: a landscape logo takes the available width,
+        // a square one stays square. Never stretched, never cropped.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={branding.logo}
+          alt={brand}
+          className="object-contain group-data-[collapsible=icon]:max-h-7"
+          style={{ maxHeight: 44, maxWidth: "100%" }}
+        />
       ) : (
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-sm">
           <Shirt className="h-[18px] w-[18px]" />
         </div>
       )}
-      <div className="min-w-0 leading-tight">
-        <p className="truncate text-[15px] font-bold text-slate-800">{brand}</p>
-        <p className="text-[10px] font-semibold tracking-[0.15em] text-blue-500 uppercase">Laundry OS</p>
+      <div className="min-w-0 w-full leading-tight group-data-[collapsible=icon]:hidden">
+        <p className="truncate text-[17px] font-semibold text-slate-800">{brand}</p>
+        <p className="text-[12px] font-medium text-slate-400">Laundry OS</p>
       </div>
     </div>
   )
@@ -344,7 +358,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
           <SheetHeader className="p-0 shrink-0 border-b border-slate-200">
             <SheetTitle className="sr-only">Laundry Workspace</SheetTitle>
             <SheetDescription className="sr-only">Navigation</SheetDescription>
-            <div className="flex items-center h-16 px-4">{Brand}</div>
+            <div className="flex items-center justify-center h-[100px] px-4">{Brand}</div>
           </SheetHeader>
           <ScrollArea className="flex-1 min-h-0 py-3" style={WHITE_THEME}>{renderNav(false)}</ScrollArea>
           <div className="p-3 shrink-0 border-t border-slate-200">{Footer}</div>
@@ -356,7 +370,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-200" style={WHITE_THEME}>
       <SidebarHeader className="p-0 shrink-0 border-b border-slate-200">
-        <div className="flex items-center h-16 px-2">{Brand}</div>
+        <div className="flex items-center justify-center h-[100px] px-2 group-data-[collapsible=icon]:h-16">{Brand}</div>
       </SidebarHeader>
       <SidebarContent ref={scrollRef} onScroll={onNavScroll} className="py-3 gap-0">
         {renderNav()}
