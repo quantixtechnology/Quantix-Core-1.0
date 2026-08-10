@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
-import { LaundryProductFeaturesCard } from '@/components/admin/laundry/laundry-product-features-card'
+import { LaundryLicensingCard } from '@/components/admin/laundry/laundry-licensing-card'
 import { CommerceTemplateAssignCard, CommerceTemplateReviewField } from '@/components/admin/commerce/commerce-template-assign-card'
 import { CommerceCategoryField } from '@/components/admin/businesses/commerce-category-field'
 import { ProductSelector } from '@/components/admin/businesses/product-selector'
@@ -466,9 +466,11 @@ export function BusinessManagementWizard({ businessId }: Props) {
                   </div>
                 )}
               </Card>
-              {/* Optional Laundry OS features (e.g. CRM) — per-tenant entitlements.
-                  The card self-hides for businesses without a Laundry workspace. */}
-              <LaundryProductFeaturesCard businessId={bizId} />
+              {/* Per-tenant licence — the hierarchical module/screen selector.
+                  Replaces the old CRM/Marketing switches; writes through the
+                  licensing engine the sidebar, Navigation Manager, RBAC and the
+                  API guards all read. Self-hides for non-Laundry businesses. */}
+              <LaundryLicensingCard businessId={bizId} />
               {/* Commerce storefront template — self-hides unless product=COMMERCE.
                   Resolves the category default and allows a compatible override. */}
               <CommerceTemplateAssignCard businessId={bizId} productCode={biz?.productCode} />

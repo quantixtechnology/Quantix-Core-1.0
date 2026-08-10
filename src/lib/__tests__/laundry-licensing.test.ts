@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   buildLicence, normalizeRows, licensableCatalog, applyModuleToggle, applyScreenToggle,
   rowsForSelection, moduleOf, OPT_IN_MODULES, DEFAULT_LICENCE, FEATURE_NOT_ENABLED,
+  licensableGroups, groupState, toggleGroup, toggleScreen, hasAnySelection,
+  NO_MODULES_SELECTED, selectionFromLicence,
 } from '@/lib/laundry-licensing'
 import { SCREEN_MODULES } from '@/lib/laundry-rbac-registry'
 
@@ -175,5 +177,88 @@ describe('re-enabling', () => {
 describe('the refusal message', () => {
   it('is the wording the API returns', () => {
     expect(FEATURE_NOT_ENABLED).toBe('Feature Not Enabled')
+  })
+})
+
+// ── Display grouping + the selector's parent/child rules ────────────────────
+describe('display grouping', () => {
+  it('splits Laundry into the shop floor and its settings', () => {
+    const keys = licensableGroups().map((g) => g.key)
+    expect(keys).toContain('laundry:ops')
+    expect(keys).toContain('laundry:settings')
+    expect(keys).not.toContain('laundry')
+  })
+
+  it('puts operational screens on the floor and configuration under settings', () => {
+    const g = licensableGroups()
+    const ops = g.find((x) => x.key === 'laundry:ops')!.screens.map((s) => s.screenKey)
+    const set = g.find((x) => x.key === 'laundry:settings')!.screens.map((s) => s.screenKey)
+    expect(ops).toContain('laundry.orders')
+    expect(ops).toContain('laundry.new_order')
+    expect(set).toContain('laundry.settings')
+    expect(set).toContain('laundry.hardware')
+    expect(set).toContain('laundry.roles')
+  })
+
+  it('loses no screen in the split', () => {
+    const grouped = licensableGroups().reduce((n, g) => n + g.screens.length, 0)
+    const catalog = licensableCatalog()
+      .filter((m) => m.key !== 'customer_app')
+      .reduce((n, m) => n + m.screens.length, 0)
+    expect(grouped).toBe(catalog)
+  })
+
+  it('hides the customer app, which is not administrator-licensable', () => {
+    expect(licensableGroups().map((g) => g.key)).not.toContain('customer_app')
+  })
+
+  // The future-proofing claim, asserted: every other module is its own group
+  // with no per-module UI code anywhere.
+  it('gives every other registered module exactly one group', () => {
+    const groups = licensableGroups()
+    for (const m of licensableCatalog()) {
+      if (m.key === 'laundry' || m.key === 'customer_app') continue
+      expect(groups.filter((g) => g.key === m.key)).toHaveLength(1)
+    }
+  })
+})
+
+describe('parent / child selection in the selector', () => {
+  const crm = () => licensableGroups().find((g) => g.key === 'crm')!
+
+  it('checking a parent selects every child', () => {
+    const next = toggleGroup(crm(), new Set(), true)
+    expect(crm().screens.every((s) => next.has(s.screenKey))).toBe(true)
+    expect(groupState(crm(), next)).toBe('all')
+  })
+
+  it('unchecking a parent clears every child', () => {
+    const on = toggleGroup(crm(), new Set(), true)
+    expect(groupState(crm(), toggleGroup(crm(), on, false))).toBe('none')
+  })
+
+  it('is indeterminate when only some children are selected', () => {
+    const on = toggleGroup(crm(), new Set(), true)
+    const partial = toggleScreen(crm().screens[0].screenKey, on, false)
+    expect(groupState(crm(), partial)).toBe('some')
+  })
+
+  it('leaves other groups untouched when a parent is toggled', () => {
+    const marketing = licensableGroups().find((g) => g.key === 'marketing')!
+    const next = toggleGroup(crm(), toggleGroup(marketing, new Set(), true), false)
+    expect(groupState(marketing, next)).toBe('all')
+  })
+
+  it('refuses a selection with nothing in it', () => {
+    expect(hasAnySelection(new Set())).toBe(false)
+    expect(hasAnySelection(new Set(['crm.leads']))).toBe(true)
+    expect(NO_MODULES_SELECTED).toBe('Select at least one module.')
+  })
+
+  it('round-trips a licence into an editable selection', () => {
+    const licence = buildLicence(normalizeRows(rowsForSelection(new Set(['crm.leads']))))
+    const selection = selectionFromLicence(licence)
+    expect(selection.has('crm.leads')).toBe(true)
+    expect(groupState(crm(), selection)).toBe('some')
   })
 })

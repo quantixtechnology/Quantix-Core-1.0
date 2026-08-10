@@ -145,3 +145,78 @@ export function rowsForSelection(selected: Set<string>): { featureKey: string; e
 }
 
 export const FEATURE_NOT_ENABLED = "Feature Not Enabled"
+
+// ── Display grouping ────────────────────────────────────────────────────────
+//
+// Licensing is stored and enforced per SCREEN KEY. Grouping is presentation
+// only: it exists because "Laundry" is one RBAC module but reads to a human as
+// two unrelated things — the shop floor, and the settings behind it.
+//
+// A module with no split rule becomes exactly one group, so a future module
+// (Inventory, Accounting, HRMS, Franchise) shows up in the selector the moment
+// it is registered in SCREEN_MODULES. That is the whole future-proofing claim:
+// registering a module and its screens is the only step.
+
+/** Screens of the `laundry` module that belong under Settings rather than the floor. */
+const LAUNDRY_SETTINGS_SCREENS = new Set([
+  "subscription_plans", "subscriptions", "categories", "pricing", "pricing_simulator",
+  "charges_rules", "services", "garments", "stores", "staff", "delivery_executives",
+  "roles", "mobile_apps", "reports", "settings", "hardware", "navigation",
+])
+
+/** Modules the selector should not offer — not administrator-licensable. */
+const HIDDEN_GROUPS = new Set(["customer_app"])
+
+export interface LicensableGroup {
+  key: string
+  label: string
+  optIn: boolean
+  screens: LicensableScreen[]
+}
+
+export function licensableGroups(): LicensableGroup[] {
+  const out: LicensableGroup[] = []
+  for (const m of licensableCatalog()) {
+    if (HIDDEN_GROUPS.has(m.key)) continue
+    if (m.key === "laundry") {
+      const floor = m.screens.filter((s) => !LAUNDRY_SETTINGS_SCREENS.has(s.key))
+      const settings = m.screens.filter((s) => LAUNDRY_SETTINGS_SCREENS.has(s.key))
+      if (floor.length) out.push({ key: "laundry:ops", label: "Store Operations", optIn: false, screens: floor })
+      if (settings.length) out.push({ key: "laundry:settings", label: "Laundry Settings", optIn: false, screens: settings })
+      continue
+    }
+    out.push({ key: m.key, label: m.label, optIn: m.optIn, screens: m.screens })
+  }
+  return out
+}
+
+export type GroupState = "all" | "none" | "some"
+
+/** Tri-state for a parent checkbox: some children selected is neither on nor off. */
+export function groupState(group: LicensableGroup, selected: Set<string>): GroupState {
+  const on = group.screens.filter((s) => selected.has(s.screenKey)).length
+  if (on === 0) return "none"
+  return on === group.screens.length ? "all" : "some"
+}
+
+/** Checking a parent selects every child; unchecking clears them. */
+export function toggleGroup(group: LicensableGroup, selected: Set<string>, enabled: boolean): Set<string> {
+  const next = new Set(selected)
+  for (const s of group.screens) enabled ? next.add(s.screenKey) : next.delete(s.screenKey)
+  return next
+}
+
+export function toggleScreen(screenKey: string, selected: Set<string>, enabled: boolean): Set<string> {
+  const next = new Set(selected)
+  enabled ? next.add(screenKey) : next.delete(screenKey)
+  return next
+}
+
+/** Every screen a licence currently grants, as a selection the UI can edit. */
+export function selectionFromLicence(licence: Licence): Set<string> {
+  return licence.enabledScreens()
+}
+
+/** A tenant with nothing licensed cannot operate; the selector must refuse it. */
+export const NO_MODULES_SELECTED = "Select at least one module."
+export const hasAnySelection = (selected: Set<string>): boolean => selected.size > 0

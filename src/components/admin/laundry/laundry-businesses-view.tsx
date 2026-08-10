@@ -20,7 +20,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { LaundryBusinessCreate } from "./laundry-business-create"
-import { LaundryProductFeaturesCard } from "./laundry-product-features-card"
+import { LaundryLicensingCard } from "./laundry-licensing-card"
 
 type LaundryBusiness = {
   id: string
@@ -1064,7 +1064,7 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
 
                 <SubscriptionBillingCard subscription={licensing.subscription} />
 
-                <LaundryProductFeaturesCard businessId={businessId} />
+                <LaundryLicensingCard businessId={businessId} />
 
                 <PlatformProvisioningCard
                   config={licensing.platformProvisioning}
