@@ -279,11 +279,19 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
             <div className="grid gap-3 md:grid-cols-2">
               <Preview label="Sidebar">
                 <div className="rounded-xl border border-slate-200 bg-white p-3 w-full">
-                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <BrandLogo src={logoSrc} name={name} size="sm" color={data.primaryColor} />
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{name}</p>
-                      <p className="text-[9px] font-semibold tracking-[0.15em] uppercase" style={{ color: data.primaryColor }}>Laundry OS</p>
+                  {/* Mirrors the real sidebar header: stacked, centred, with
+                      the logo given the same generous share of the column. A
+                      preview that flatters the result is worse than none. */}
+                  <div className="flex flex-col items-center justify-center gap-1 pb-2 border-b border-slate-100 text-center">
+                    {logoSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoSrc} alt={name} className="object-contain" style={{ maxHeight: 44, maxWidth: 128 }} />
+                    ) : (
+                      <BrandLogo src={null} name={name} size="sm" color={data.primaryColor} />
+                    )}
+                    <div className="min-w-0 w-full">
+                      <p className="text-xs font-semibold text-slate-800 truncate">{name}</p>
+                      <p className="text-[10px] font-medium text-slate-400">Laundry OS</p>
                     </div>
                   </div>
                   <div className="pt-2 space-y-1">

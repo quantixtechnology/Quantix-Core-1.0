@@ -273,8 +273,14 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
         <img
           src={branding.logo}
           alt={brand}
-          className="object-contain group-data-[collapsible=icon]:max-h-7"
-          style={{ maxHeight: 44, maxWidth: "100%" }}
+          className="object-contain group-data-[collapsible=icon]:!max-h-7 group-data-[collapsible=icon]:!max-w-[28px]"
+          // Sized for a ~200px column: 160px of the ~170px usable width, and
+          // 56px tall. Generous on purpose — an uploaded 600×180 canvas often
+          // carries transparent margin, so the visible artwork is smaller than
+          // the file suggests. We cannot trim that without processing the
+          // asset, and the asset must stay untouched, so the fix is to give it
+          // room rather than to crop it.
+          style={{ maxHeight: 56, maxWidth: 160 }}
         />
       ) : (
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-sm">
@@ -282,8 +288,8 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
         </div>
       )}
       <div className="min-w-0 w-full leading-tight group-data-[collapsible=icon]:hidden">
-        <p className="truncate text-[17px] font-semibold text-slate-800">{brand}</p>
-        <p className="text-[12px] font-medium text-slate-400">Laundry OS</p>
+        <p className="truncate text-[15px] font-semibold text-slate-800">{brand}</p>
+        <p className="text-[11px] font-medium text-slate-400">Laundry OS</p>
       </div>
     </div>
   )
@@ -358,7 +364,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
           <SheetHeader className="p-0 shrink-0 border-b border-slate-200">
             <SheetTitle className="sr-only">Laundry Workspace</SheetTitle>
             <SheetDescription className="sr-only">Navigation</SheetDescription>
-            <div className="flex items-center justify-center h-[100px] px-4">{Brand}</div>
+            <div className="flex items-center justify-center h-[112px] px-4">{Brand}</div>
           </SheetHeader>
           <ScrollArea className="flex-1 min-h-0 py-3" style={WHITE_THEME}>{renderNav(false)}</ScrollArea>
           <div className="p-3 shrink-0 border-t border-slate-200">{Footer}</div>
@@ -370,7 +376,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-200" style={WHITE_THEME}>
       <SidebarHeader className="p-0 shrink-0 border-b border-slate-200">
-        <div className="flex items-center justify-center h-[100px] px-2 group-data-[collapsible=icon]:h-16">{Brand}</div>
+        <div className="flex items-center justify-center h-[112px] px-2 group-data-[collapsible=icon]:h-16">{Brand}</div>
       </SidebarHeader>
       <SidebarContent ref={scrollRef} onScroll={onNavScroll} className="py-3 gap-0">
         {renderNav()}
