@@ -20,6 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { StoreLocationPicker, type StoreLocation } from "@/components/shared/google/store-location-picker"
 import { LocationQrCard } from "@/components/laundry/location-qr-card"
+import { CopyButton } from "@/components/ui/copy-button"
 
 type Store = {
   id: string
@@ -211,23 +212,41 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
             desktop the map, the coordinates and the QR were all pushed below
             the fold and the Save button with them. Capped at 90vh with only
             the BODY scrolling, so the header and the primary action stay put. */}
-        <DialogContent className="max-w-[1040px] w-[95vw] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden">
-          <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3.5 space-y-0.5 text-left">
-            <DialogTitle className="text-base font-semibold">{editingStore ? "Edit Store" : "Add Store"}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {/* Business above branch, matching the branding hierarchy. */}
-              {businessName ? <span className="font-medium text-slate-600">{businessName}</span> : null}
-              {businessName && (form.storeName || editingStore?.storeName) ? " — " : null}
-              {form.storeName || editingStore?.storeName || "Manage store details, location and customer-facing information."}
-            </DialogDescription>
+        <DialogContent className="max-w-[1200px] w-[96vw] max-h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0 border-b border-slate-200 px-6 py-4 space-y-1 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-semibold tracking-tight">{editingStore ? "Edit Store" : "Add Store"}</DialogTitle>
+                {/* Business owns the branch; the branch never replaces it. */}
+                <p className="mt-0.5 text-sm text-slate-600 break-words">
+                  {businessName && <span className="font-medium">{businessName}</span>}
+                  {businessName && (form.storeName || editingStore?.storeName) && <span className="text-slate-300"> · </span>}
+                  <span>{form.storeName || editingStore?.storeName || "New store"}</span>
+                </p>
+                <DialogDescription className="text-xs mt-0.5">
+                  Store details, manager, location and the customer-facing Location QR.
+                </DialogDescription>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${form.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${form.isActive ? "bg-emerald-500" : "bg-slate-300"}`} />
+                  {form.isActive ? "Active" : "Inactive"}
+                </span>
+                {editingStore?.storeCode && (
+                  <CopyButton value={editingStore.storeCode} label="Store Code" size="sm" variant="ghost" className="h-6 px-1.5 !text-[10px] font-mono text-slate-400">
+                    {editingStore.storeCode}
+                  </CopyButton>
+                )}
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-            <div className="grid gap-5 lg:grid-cols-2">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5">
+            <div className="grid gap-8 lg:grid-cols-2 [&>*]:min-w-0">
 
               {/* ── Left: everything typed ─────────────────────────────── */}
-              <div className="space-y-5">
-                <Section title="Basic Information">
+              <div className="space-y-6">
+                <Section title="Store Information">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <Label>Store Name *</Label>
@@ -306,11 +325,11 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
               </div>
 
               {/* ── Right: the place, and the QR that points at it ─────── */}
-              <div className="space-y-5">
-                <Section title="Store Location">
+              <div className="space-y-6">
+                <Section title="Location" hint="Search and select the store\u2019s Google Maps location.">
                   {/* Height-capped so the map cannot swallow the column and
                       push the QR out of sight — the original complaint. */}
-                  <div className="[&_.gm-style]:rounded-lg [&>div>div:has(>div>.gm-style)]:!h-[280px]">
+                  <div className="[&_.gm-style]:rounded-lg [&>div>div:has(>div>.gm-style)]:!h-[340px]">
                     <StoreLocationPicker
                       value={{
                         latitude: form.latitude ? parseFloat(form.latitude) : null,
@@ -340,7 +359,9 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 </Section>
 
                 {/* Part 1's component, unchanged — placement only. */}
+                <Section title="Location QR" hint="Customer-facing \u2014 for visiting cards, signage and sharing.">
                 <LocationQrCard
+                  variant="panel"
                   businessName={businessName || "Business"}
                   locationName={form.storeName || editingStore?.storeName || "Store"}
                   address={form.formattedAddress || form.address || null}
@@ -352,13 +373,19 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                      parseFloat(form.longitude || "NaN") !== (editingStore.longitude ?? NaN))
                   }
                 />
+                </Section>
               </div>
             </div>
           </div>
 
-          <DialogFooter className="shrink-0 border-t border-slate-200 px-5 py-3 sm:justify-end gap-2">
+          <DialogFooter className="shrink-0 border-t border-slate-200 px-6 py-3.5 sm:justify-between gap-3 flex-wrap">
+            <span className="text-[11px] text-slate-400">
+              {editingStore ? "Changes apply when you save." : "The store is created when you save."}
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.storeName}>{editingStore ? "Update" : "Create"} Store</Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -367,11 +394,17 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
 }
 
 /** A titled group inside the Store modal — keeps the two columns legible. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * A titled group. Deliberately NOT a card: the previous version boxed every
+ * group, and five nested cards inside a dialog reads as clutter rather than
+ * structure. A rule and a heading separate them with far less noise.
+ */
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</h4>
-      {children}
-    </div>
+    <section className="min-w-0 border-t border-slate-100 pt-4 first:border-t-0 first:pt-0">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</h4>
+      {hint && <p className="mt-0.5 mb-3 text-[11px] text-slate-400">{hint}</p>}
+      <div className={hint ? "" : "mt-3"}>{children}</div>
+    </section>
   )
 }

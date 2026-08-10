@@ -40,6 +40,9 @@ export interface LocationQrCardProps {
    * yet agree with.
    */
   unsaved?: boolean
+  /** "panel" renders a larger, customer-facing presentation. Presentation
+   *  only — the payload, exports and share behaviour are identical. */
+  variant?: "compact" | "panel"
   className?: string
 }
 
@@ -47,8 +50,9 @@ const slug = (s: string) =>
   s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "location"
 
 export function LocationQrCard({
-  businessName, locationName, address, latitude, longitude, unsaved = false, className = "",
+  businessName, locationName, address, latitude, longitude, unsaved = false, variant = "compact", className = "",
 }: LocationQrCardProps) {
+  const panel = variant === "panel"
   const mapsUrl = locationMapsUrl(latitude, longitude)
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -60,11 +64,11 @@ export function LocationQrCard({
     let alive = true
     // Deterministic: the same coordinates always produce the same payload, so
     // the QR needs no stored record and can never drift from the location.
-    QRCode.toDataURL(mapsUrl, { width: 320, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } })
+    QRCode.toDataURL(mapsUrl, { width: panel ? 640 : 320, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } })
       .then((d) => { if (alive) setPreview(d) })
       .catch(() => { if (alive) setPreview(null) })
     return () => { alive = false }
-  }, [mapsUrl])
+  }, [mapsUrl, panel])
 
   const fileBase = `${slug(businessName)}-${slug(locationName)}-location-qr`
 
@@ -161,14 +165,14 @@ export function LocationQrCard({
 
       {/* Business above location, matching the branding hierarchy: the brand
           owns the place, the place is the branch. */}
-      <div className="mt-2 flex items-start gap-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-1.5 shrink-0">
+      <div className={`mt-2 gap-3 ${panel ? "flex flex-col items-center text-center" : "flex items-start"}`}>
+        <div className="rounded-lg border border-slate-200 bg-white p-2 shrink-0">
           {preview
             ? /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={preview} alt={`${locationName} location QR`} className="h-[104px] w-[104px]" />
-            : <div className="h-[104px] w-[104px] grid place-items-center text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /></div>}
+              <img src={preview} alt={`${locationName} location QR`} className={panel ? "h-[208px] w-[208px]" : "h-[104px] w-[104px]"} />
+            : <div className={`${panel ? "h-[208px] w-[208px]" : "h-[104px] w-[104px]"} grid place-items-center text-slate-300`}><Loader2 className="h-4 w-4 animate-spin" /></div>}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-full flex-1">
           <p className="text-xs font-semibold text-slate-800 truncate">{businessName}</p>
           <p className="text-xs text-slate-600 truncate">{locationName}</p>
           {address && <p className="mt-0.5 text-[11px] text-slate-400 line-clamp-2">{address}</p>}
@@ -179,7 +183,7 @@ export function LocationQrCard({
         </div>
       </div>
 
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
+      <div className={`mt-3 flex flex-wrap gap-1.5 ${panel ? "justify-center" : ""}`}>
         <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={busy === "png"} onClick={downloadPng}>
           {busy === "png" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} PNG
         </Button>
