@@ -1,14 +1,16 @@
 "use client"
 
-// Laundry OS shell header — premium enterprise top bar: global search UI,
-// notification bell, and tenant user profile. Presentation only (search and
-// notifications are UI shells; no backend behavior changed). Profile logout
-// uses the existing auth action.
+// Laundry OS shell header — sidebar toggle, hardware status, notifications and
+// the tenant user profile.
+//
+// Deliberately NO global search. Search lives inside the module that owns the
+// records: Orders searches orders, Garment Lookup resolves GAR/ITM codes. A
+// header-level search over all of them was tried and removed — it could only
+// ever restate what those searches already do, with a second set of predicates
+// free to disagree with them.
 
-import { useState } from "react"
-import { Menu, Shield, Search, Bell, ChevronDown, LogOut, UserCircle } from "lucide-react"
+import { Menu, Shield, Bell, ChevronDown, LogOut, UserCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -26,8 +28,6 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
   const { supportMode, clearSupportMode, resetWorkspaceState } = useAdminStore()
   const { user, logout } = useAuthStore()
   const { assignedRbacRole, isLoaded, businessRole, platformRole } = useRuntimeAuth()
-  const { setLaundryPage } = useAdminStore()
-  const [search, setSearch] = useState("")
 
   const name = user?.name ?? "Laundry User"
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -35,18 +35,6 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
   const roleLabel = isLoaded
     ? (laundryRoleLabel(effectiveRole) || "Team Member")
     : "Loading..."
-
-  // Detect GAR codes in search bar and redirect to Garment Lookup
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && search.trim()) {
-      const q = search.trim().toUpperCase()
-      if (/^GAR\d{12}$/.test(q) || /^ITM-/.test(q)) {
-        e.preventDefault()
-        setSearch(q)
-        setLaundryPage("garment-lookup")
-      }
-    }
-  }
 
   const handleLogout = () => {
     // Full workspace-scoped cleanup before leaving: server-side logout,
@@ -80,17 +68,7 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
         <Button variant="ghost" size="icon" className="md:hidden text-slate-600" onClick={onMobileMenuClick}><Menu className="h-5 w-5" /></Button>
         <SidebarTrigger className="hidden md:flex text-slate-500" />
 
-        {/* Global search */}
-        <div className="relative flex-1 max-w-xl mx-auto">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search orders, customers, invoices... (GAR codes open lookup)"
-            className="h-10 pl-10 bg-slate-50 border-slate-200 rounded-lg text-sm focus-visible:bg-white font-mono"
-          />
-        </div>
+        <div className="flex-1" />
 
         <div className="flex items-center gap-1.5">
           {/* Hardware health — same rollup the Hardware Manager shows */}
