@@ -53,6 +53,9 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
   const dirty = JSON.stringify([...selected].sort()) !== baseline
   const total = licensableGroups().reduce((n, g) => n + g.screens.length, 0)
 
+  // Revert to the last saved licence without a reload.
+  const reset = () => setSelected(new Set(JSON.parse(baseline || "[]") as string[]))
+
   const save = async () => {
     if (!hasAnySelection(selected)) { toast({ title: NO_MODULES_SELECTED, variant: "destructive" }); return }
     setSaving(true)
@@ -64,8 +67,13 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
       })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Could not save")
-      setBaseline(JSON.stringify([...selected].sort()))
-      toast({ title: "Licence saved", description: `${selected.size} of ${total} screens enabled` })
+      // Re-seed from the SERVER's answer rather than assuming the request
+      // stuck: the save response carries the persisted snapshot, so what the
+      // page shows next is what a reload would show.
+      const persisted: string[] = j.data?.enabledScreens ?? [...selected]
+      setSelected(new Set(persisted))
+      setBaseline(JSON.stringify([...persisted].sort()))
+      toast({ title: "✓ Licence updated successfully", description: `${persisted.length} of ${total} screens enabled` })
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : "Could not save", variant: "destructive" })
     } finally { setSaving(false) }
@@ -90,12 +98,25 @@ export function LaundryLicensingCard({ businessId }: { businessId: string }) {
         ) : (
           <>
             <FeatureSelector value={selected} onChange={setSelected} disabled={saving} />
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={save} disabled={saving || !dirty || !hasAnySelection(selected)} className="gap-1.5">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save licence
-              </Button>
-              {dirty && <span className="text-[11px] text-amber-600">Unsaved changes</span>}
-            </div>
+
+            {/* Sticky action bar — the module grid is long, and a save button
+                that scrolls away is a save that does not get pressed. It
+                appears only when there is something to save, so it never sits
+                over the content for no reason. */}
+            {dirty && (
+              <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 border-t border-slate-200 bg-white/95 backdrop-blur px-6 py-3 flex items-center gap-3">
+                <span className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" /> Unsaved changes
+                </span>
+                <span className="text-[11px] text-muted-foreground">{selected.size} / {total} screens enabled</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={reset} disabled={saving}>Cancel</Button>
+                  <Button size="sm" onClick={save} disabled={saving || !hasAnySelection(selected)} className="gap-1.5">
+                    {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : <><Save className="h-3.5 w-3.5" /> Save Changes</>}
+                  </Button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </CardContent>

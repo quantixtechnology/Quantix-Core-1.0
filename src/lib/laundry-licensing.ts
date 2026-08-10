@@ -61,17 +61,37 @@ export const moduleOf = (screenKey: string): string => screenKey.split(".")[0] ?
 /** Raw rows as stored, normalised for lookup. */
 export type LicenceRows = Record<string, boolean>
 
+/**
+ * Collapse stored rows into a lookup.
+ *
+ * "CRM" and "crm" are the same entitlement — the old features card wrote the
+ * uppercase form, the module catalog uses the lowercase one — so both fold to
+ * one key. That fold is where a real bug lived: a tenant can hold BOTH rows,
+ * and a single pass let whichever the database returned last win. Prisma makes
+ * no ordering promise without an orderBy, so the licence changed between page
+ * loads for no visible reason: save Coupons, refresh, Marketing is off again.
+ *
+ * The canonical lowercase key therefore always wins, in two passes, so the
+ * result no longer depends on row order. saveLicence additionally rewrites the
+ * legacy rows in step, which removes the contradiction at the source.
+ */
 export function normalizeRows(rows: { featureKey: string; enabled: boolean }[]): LicenceRows {
   const out: LicenceRows = {}
-  for (const r of rows) {
-    const key = r.featureKey.trim()
-    if (!key) continue
-    out[key.toLowerCase()] = !!r.enabled
-    // "CRM" and "crm" are the same entitlement; the legacy writer used the
-    // former and the module catalog uses the latter.
-  }
+  const clean = rows.map((r) => ({ key: r.featureKey.trim(), enabled: !!r.enabled })).filter((r) => r.key)
+  // Pass 1 — legacy rows stored in any other casing.
+  for (const r of clean) if (r.key !== r.key.toLowerCase()) out[r.key.toLowerCase()] = r.enabled
+  // Pass 2 — canonical rows, which override whatever pass 1 left.
+  for (const r of clean) if (r.key === r.key.toLowerCase()) out[r.key] = r.enabled
   return out
 }
+
+/**
+ * Legacy uppercase aliases kept in step whenever a licence is saved, so the
+ * duplicate can never disagree with the canonical row again. Dropping them
+ * instead would be cleaner, but they predate this engine and may still be read
+ * somewhere outside it.
+ */
+export const LEGACY_ALIASES: Record<string, string> = { crm: "CRM", marketing: "MARKETING" }
 
 export interface Licence {
   rows: LicenceRows
@@ -138,7 +158,11 @@ export function rowsForSelection(selected: Set<string>): { featureKey: string; e
   const out: { featureKey: string; enabled: boolean }[] = []
   for (const m of licensableCatalog()) {
     const on = m.screens.filter((s) => selected.has(s.screenKey))
-    out.push({ featureKey: m.key, enabled: on.length > 0 })
+    const moduleEnabled = on.length > 0
+    out.push({ featureKey: m.key, enabled: moduleEnabled })
+    // Keep any legacy alias identical, so the pair can never disagree.
+    const alias = LEGACY_ALIASES[m.key]
+    if (alias) out.push({ featureKey: alias, enabled: moduleEnabled })
     for (const s of m.screens) out.push({ featureKey: s.screenKey, enabled: selected.has(s.screenKey) })
   }
   return out

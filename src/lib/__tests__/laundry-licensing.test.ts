@@ -3,7 +3,7 @@ import {
   buildLicence, normalizeRows, licensableCatalog, applyModuleToggle, applyScreenToggle,
   rowsForSelection, moduleOf, OPT_IN_MODULES, DEFAULT_LICENCE, FEATURE_NOT_ENABLED,
   licensableGroups, groupState, toggleGroup, toggleScreen, hasAnySelection,
-  NO_MODULES_SELECTED, selectionFromLicence,
+  NO_MODULES_SELECTED, selectionFromLicence, LEGACY_ALIASES,
 } from '@/lib/laundry-licensing'
 import { SCREEN_MODULES } from '@/lib/laundry-rbac-registry'
 
@@ -128,8 +128,19 @@ describe('parent and child selection', () => {
 describe('saving a selection', () => {
   it('writes every catalog key, so no unseen row decides access later', () => {
     const out = rowsForSelection(new Set(['crm.leads']))
+    // Every module + every screen, plus the legacy uppercase alias for the two
+    // modules that have one, kept in step so the pair cannot disagree.
     const expected = licensableCatalog().reduce((n, m) => n + m.screens.length + 1, 0)
+      + Object.keys(LEGACY_ALIASES).length
     expect(out).toHaveLength(expected)
+  })
+
+  it('writes the legacy alias with the same value as its canonical row', () => {
+    const out = rowsForSelection(new Set(['crm.leads']))
+    expect(out.find((r) => r.featureKey === 'crm')?.enabled).toBe(true)
+    expect(out.find((r) => r.featureKey === 'CRM')?.enabled).toBe(true)
+    expect(out.find((r) => r.featureKey === 'marketing')?.enabled).toBe(false)
+    expect(out.find((r) => r.featureKey === 'MARKETING')?.enabled).toBe(false)
   })
 
   it('marks a module enabled when any child is selected', () => {
