@@ -19,8 +19,9 @@ import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subs
 import type { WebNav } from "./storefront-website"
 import { GoogleAddressPicker } from "./google/address-picker"
 import type { DeliveryAddress } from "@/stores/cart-store"
-import { effectiveTatHours, orderTatHours, hasCustomTat, tatLabel, earliestDeliveryDayKey } from "@/lib/laundry-tat"
+import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey } from "@/lib/laundry-tat"
 import { cartTatHours } from "@/lib/laundry-cart"
+import { slotIsPast } from "@/lib/laundry-slots"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
@@ -28,7 +29,7 @@ type AuthCustomer = { name: string; phone: string; email: string } | null
 const maskPhone = (p: string) => p && p.length >= 4 ? `••••••${p.slice(-4)}` : p
 const maskEmail = (e: string) => { const [u, d] = e.split("@"); return u && d ? `${u.slice(0, 3)}•••@${d}` : e }
 interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; unitPrice: number; pricingType: string | null; unit: string | null; gstPercent: number | null }
-interface Service { tatEnabled?: boolean; turnaroundHours?: number; tatUnit?: string | null; id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; orderMode?: string; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
+interface Service { subscriptionEligible?: boolean; tatEnabled?: boolean; turnaroundHours?: number; tatUnit?: string | null; id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; orderMode?: string; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
 interface Plan { id: string; name: string; slug: string; description: string | null; imageUrl: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
 
 // Tenant marketing image with a graceful icon fallback (no distortion, lazy).
@@ -463,7 +464,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   useEffect(() => {
     const full = fullSlotsByDate[deliveryDate] || []
     if (deliverySlot && full.includes(deliverySlot)) {
-      setDeliverySlot(deliverySlots.find((s) => !full.includes(s)) || "")
+      setDeliverySlot(deliverySlots.find((s) => !full.includes(s) && !slotTooEarly(s, deliveryDate)) || "")
     }
   }, [fullSlotsByDate, deliveryDate, deliverySlot, deliverySlots]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -495,13 +496,43 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   // Every service on the menu, by id — so a MIXED cart reads each line's real
   // turnaround instead of whatever happened to be snapshotted on it.
   const liveTat = useMemo(
-    () => new Map((allServices || []).map((s) => [s.id, { tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours }])),
+    () => new Map((allServices || []).map((s) => [s.id, { tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours, subscriptionEligible: !!s.subscriptionEligible }])),
     [allServices],
   )
   const cartTat = useMemo(() => cartTatHours(cartItems, liveTat), [cartItems, liveTat])
-  const minDeliveryDate = useMemo(
-    () => (date ? earliestDeliveryDayKey(new Date(`${date}T00:00:00`), [{ tatEnabled: true, defaultTurnaroundHours: cartTat }]) : ""),
-    [date, cartTat],
+
+  // THE EARLIEST PERMISSIBLE DELIVERY MOMENT — a datetime, not a date.
+  //
+  // This was measured from MIDNIGHT of the pickup day, so a 6h service on a
+  // 10:00 AM pickup allowed 06:00 and every slot after it. The clock has to
+  // start when the garments are actually collected: the pickup slot's start.
+  const earliestAt = useMemo(() => {
+    if (!date) return null
+    const startStr = String(slot || "00:00").split("-")[0].trim()
+    const [hh, mm] = startStr.split(":").map((n) => parseInt(n, 10))
+    const base = new Date(`${date}T00:00:00`)
+    base.setHours(Number.isFinite(hh) ? hh : 0, Number.isFinite(mm) ? mm : 0, 0, 0)
+    return earliestDeliveryAt(base, cartTat)
+  }, [date, slot, cartTat])
+
+  const minDeliveryDate = useMemo(() => (earliestAt ? dayKey(earliestAt) : ""), [earliestAt])
+
+  // A slot is out of reach when it STARTS before that moment. slotIsPast already
+  // answers exactly this question against a reference time, so the TAT reuses it
+  // rather than introducing a second rule. Capacity ("FULL") stays separate and
+  // untouched.
+  // Eligibility is the SERVICE's, from LaundryService.subscriptionEligible. A
+  // mixed cart offers the option when any line's service allows it; the existing
+  // entitlement check then decides what is actually covered — this only stops
+  // the customer ticking a box that can never apply.
+  const subEligible = useMemo(
+    () => laundryLines(cartItems).some((i) => liveTat.get(String(i.serviceId))?.subscriptionEligible),
+    [cartItems, liveTat],
+  )
+
+  const slotTooEarly = useCallback(
+    (s: string, forDate: string) => !!earliestAt && slotIsPast(s, forDate, earliestAt),
+    [earliestAt],
   )
 
   useEffect(() => {
@@ -826,7 +857,10 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     if (!date) { toast.error("Select a pickup date"); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
     if (!deliveryDate) { toast.error("Select a standard delivery date"); return }
+    // ENFORCED AT SUBMIT, not only in the picker — a stale selection, an edited
+    // input or a re-render must not be able to get an early slot through.
     if (minDeliveryDate && deliveryDate < minDeliveryDate) { toast.error(`Standard delivery cannot be earlier than ${tatLabel(cartTat).replace(" delivery", "")} after pickup`); return }
+    if (deliverySlot && slotTooEarly(deliverySlot, deliveryDate)) { toast.error(`This service needs ${tatLabel(cartTat).replace(" delivery", "")} after pickup — choose a later slot`); return }
     if (!deliverySlot) { toast.error("Select a standard delivery time slot"); return }
     if (!backupDate) { toast.error("Select a backup delivery date"); return }
     if (backupDate < addDays(deliveryDate, 1)) { toast.error("Backup Delivery must be at least 24 hours after the Standard Delivery date."); return }
@@ -1258,7 +1292,8 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
                 <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
                   {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
                     const isFull = (fullSlotsByDate[deliveryDate] || []).includes(s)
-                    return <option key={s} value={s} disabled={isFull} className={isFull ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : ""}</option>
+                    const tooEarly = slotTooEarly(s, deliveryDate)
+                    return <option key={s} value={s} disabled={isFull || tooEarly} className={isFull || tooEarly ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : tooEarly ? " — too early" : ""}</option>
                   })}
                 </select>
               </Field>
@@ -1279,10 +1314,13 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               </Field>
             </div>
             {!subscriptionInCart && (
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={useSub} disabled={checkingSub} onChange={(e) => onToggleSub(e.target.checked)} />
-                Use my subscription allowance {checkingSub && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
-              </label>
+              <div>
+                <label className={`flex items-center gap-2 text-sm ${subEligible ? "text-gray-700" : "text-gray-400 cursor-not-allowed"}`}>
+                  <input type="checkbox" checked={useSub && subEligible} disabled={checkingSub || !subEligible} onChange={(e) => onToggleSub(e.target.checked)} />
+                  Use my subscription allowance {checkingSub && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
+                </label>
+                {!subEligible && <p className="mt-1 text-xs text-gray-400">Subscription is not available for this service.</p>}
+              </div>
             )}
             {useSub && subStatus?.active && (
               <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs space-y-1">

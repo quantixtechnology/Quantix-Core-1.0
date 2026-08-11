@@ -3,6 +3,7 @@ import {
   STANDARD_TAT_HOURS, effectiveTatHours, hasCustomTat, orderTatHours,
   earliestDeliveryAt, earliestDeliveryDayKey, tatLabel, toHours, fromHours, dayKey,
 } from '@/lib/laundry-tat'
+import { slotIsPast } from '@/lib/laundry-slots'
 
 const STANDARD   = { name: 'Wash & Fold',         defaultTurnaroundHours: 24, tatEnabled: false }
 const DRYCLEAN   = { name: 'Dry Cleaning',        defaultTurnaroundHours: 48, tatEnabled: false }
@@ -186,5 +187,69 @@ describe('cart turnaround prefers live service config over the line snapshot', (
     const live = new Map([['svc-standard', { tatEnabled: false, defaultTurnaroundHours: 24 }]])
     const tat = resolve([line('svc-standard')], live)
     expect(earliestDeliveryDayKey(new Date('2026-08-11T00:00:00'), [{ tatEnabled: true, defaultTurnaroundHours: tat }])).toBe('2026-08-12')
+  })
+})
+
+// ── The remaining hole: the DATE was constrained, the TIME was not ──────────
+// A 6h service on a 10:00 AM pickup allowed 11 Aug, and every slot on 11 Aug
+// including 11:00 AM, because the minimum was measured from MIDNIGHT of the
+// pickup day and only compared as a date.
+describe('earliest permissible delivery is a datetime, from the pickup slot', () => {
+  const pickupAt = (day: string, slot: string) => {
+    const [hh, mm] = slot.split('-')[0].trim().split(':').map(Number)
+    const d = new Date(`${day}T00:00:00`)
+    d.setHours(hh, mm, 0, 0)
+    return d
+  }
+
+  it('6h from a 10:00 AM pickup is 4:00 PM the same day', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 6)
+    expect(e).toEqual(new Date('2026-08-11T16:00:00'))
+    expect(dayKey(e)).toBe('2026-08-11')
+  })
+
+  // Every one of these was selectable before.
+  it('blocks the same-day slots that start before 4:00 PM', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 6)
+    for (const s of ['09:00-10:00', '11:00-12:00', '12:00-13:00', '14:00-15:00', '15:00-16:00']) {
+      expect(slotIsPast(s, '2026-08-11', e)).toBe(true)
+    }
+  })
+
+  it('allows 4:00 PM and later on the same day', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 6)
+    for (const s of ['16:00-17:00', '17:00-18:00', '20:00-21:00']) {
+      expect(slotIsPast(s, '2026-08-11', e)).toBe(false)
+    }
+  })
+
+  it('12h from the same pickup pushes the floor to 10:00 PM', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 12)
+    expect(e).toEqual(new Date('2026-08-11T22:00:00'))
+    expect(slotIsPast('21:00-22:00', '2026-08-11', e)).toBe(true)
+    expect(slotIsPast('22:00-23:00', '2026-08-11', e)).toBe(false)
+  })
+
+  it('a standard 24h service still lands on the next day — unchanged', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 24)
+    expect(dayKey(e)).toBe('2026-08-12')
+    // And no slot on the following day is blocked by the TAT.
+    expect(slotIsPast('14:00-15:00', '2026-08-12', e)).toBe(false)
+  })
+
+  it('never restricts slots on a LATER date', () => {
+    const e = earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), 6)
+    for (const s of ['09:00-10:00', '11:00-12:00']) {
+      expect(slotIsPast(s, '2026-08-12', e)).toBe(false)
+    }
+  })
+
+  it('a mixed cart uses the longest, so 24h wins over 6h', () => {
+    const tat = orderTatHours([
+      { tatEnabled: false, defaultTurnaroundHours: 24 },
+      { tatEnabled: true, defaultTurnaroundHours: 6 },
+    ])
+    expect(tat).toBe(24)
+    expect(dayKey(earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), tat))).toBe('2026-08-12')
   })
 })
