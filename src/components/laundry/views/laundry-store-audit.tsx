@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Search, Loader2, ClipboardCheck, ArrowLeft, ArrowRight, User, Store as StoreIcon, Clock,
   Shirt, Camera, X, Check, PauseCircle, Save, ImageIcon,
+  Pencil, Trash2, History,
 } from "lucide-react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { LaundryWorkflowTimeline } from "./laundry-workflow-timeline"
@@ -36,20 +37,55 @@ const DEFECTS = [
 interface OrderRow { id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string; customerId: string | null }
 interface Item {
   id: string; garmentName: string; serviceName: string; quantity: number; weightKg: number
-  pricingType: string; unitPrice: number
+  pricingType: string; unitPrice: number; total?: number
+  // Already returned by the detail API (LaundryOrderItem columns) — declared
+  // here so a correction can pre-select the current garment and service.
+  garmentId: string | null; serviceId: string | null
   condition: string | null; defects: string | null; inspectionNotes: string | null
 }
+interface OrderEvent { id: string; action: string; note: string | null; actorName: string | null; createdAt: string }
+interface SvcOption { id: string; name: string; subscriptionEligible?: boolean }
 interface OrderDetail extends OrderRow {
   items: Item[]
   totalWeightKg: number
   store?: { storeName: string; storeCode: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   auditNotes: string | null; auditPhotos: string | null
+  events?: OrderEvent[]
 }
 interface Inspection { condition: string; defects: string[]; notes: string }
 
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
+/** Plain-language names for the timeline actions this screen surfaces. */
+const EVENT_LABEL: Record<string, string> = {
+  AUDIT_ITEM_CHANGED: "Garment changed",
+  AUDIT_ITEM_REMOVED: "Garment removed",
+  REOPEN_AUDIT: "Returned to Audit",
+  COMPLETE_AUDIT: "Audit approved",
+  START_AUDIT: "Audit started",
+  RECEIVE: "Order received",
+}
+
 const fmt = (s: string) => new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+
+/**
+ * Subscription status for one garment×service pair.
+ *
+ * Stated on every row, before approval, because discovering after payment that
+ * a blanket was never covered is the failure this is meant to prevent.
+ */
+function EligibilityLine({ eligible, alternatives }: { eligible: boolean; alternatives: string[] }) {
+  if (eligible) {
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">✓ Subscription eligible</span>
+  }
+  return (
+    <span className="text-[11px] text-slate-500">
+      <span className="font-medium text-slate-600">✕ Not covered by subscription</span>
+      <span className="text-slate-400"> · Normal pricing applies</span>
+      {alternatives.length > 0 && <span className="block text-slate-400">Subscription eligible for {alternatives.join(", ")}.</span>}
+    </span>
+  )
+}
 
 export function LaundryStoreAudit() {
   const { currentBusinessId, user } = useAuthStore()
@@ -70,6 +106,41 @@ export function LaundryStoreAudit() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [acting, setActing] = useState(false)
+
+  // ── Audit corrections ───────────────────────────────────────────────────
+  // Deliberately in LaundryStoreAudit, the component that owns detail.items.
+  // The intake component below has its own separate row state; mixing the two
+  // is what broke the previous attempt.
+  const { garments } = useGarmentMaster(currentBusinessId)
+  const [services, setServices] = useState<SvcOption[]>([])
+  const [editRow, setEditRow] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ garmentId: "", serviceId: "", quantity: "1", weightKg: "" })
+  const [rowBusy, setRowBusy] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/services?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => r.json())
+      .then((j) => setServices(j.success ? (j.data || []) : []))
+      .catch(() => {})
+  }, [currentBusinessId])
+
+  // Eligibility = the SERVICE allows subscriptions AND the GARMENT is included.
+  // Same rule the coverage engine applies, read from the same two flags, so the
+  // screen cannot promise cover the engine will not grant.
+  const isEligible = useCallback((garmentId: string | null, serviceId: string | null) => {
+    const g = garments.find((x) => x.id === garmentId) as { subscriptionIncluded?: boolean } | undefined
+    const sv = services.find((x) => x.id === serviceId)
+    return !!g?.subscriptionIncluded && !!sv?.subscriptionEligible
+  }, [garments, services])
+
+  /** Which OTHER active services would cover this garment — useful when one will not. */
+  const eligibleElsewhere = useCallback((garmentId: string | null, serviceId: string | null) => {
+    const g = garments.find((x) => x.id === garmentId) as { subscriptionIncluded?: boolean } | undefined
+    if (!g?.subscriptionIncluded) return []
+    return services.filter((sv) => sv.subscriptionEligible && sv.id !== serviceId).map((sv) => sv.name)
+  }, [garments, services])
 
   const loadQueue = useCallback(async (silent = false) => {
     if (!currentBusinessId) return
@@ -104,6 +175,58 @@ export function LaundryStoreAudit() {
   }, [])
 
   const backToQueue = () => { setSelectedId(null); setDetail(null) }
+
+  const beginEdit = (it: Item) => {
+    setEditRow(it.id)
+    setEditForm({ garmentId: it.garmentId || "", serviceId: it.serviceId || "", quantity: String(it.quantity), weightKg: it.weightKg ? String(it.weightKg) : "" })
+  }
+
+  /**
+   * Save a correction. The server re-prices through the existing resolver and
+   * rewrites the order snapshot, so the screen RELOADS from it rather than
+   * computing money in the browser — the totals shown are the stored ones.
+   */
+  const saveItem = async (itemId: string) => {
+    if (!selectedId) return
+    setRowBusy(itemId)
+    try {
+      const res = await fetch(`/api/laundry/orders/${selectedId}/items/${itemId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: currentBusinessId,
+          garmentId: editForm.garmentId || undefined,
+          serviceId: editForm.serviceId || undefined,
+          quantity: Number(editForm.quantity) || 1,
+          weightKg: Number(editForm.weightKg) || 0,
+        }),
+      })
+      const j = await res.json()
+      // An NA combination comes back with the real reason from the resolver.
+      if (!res.ok || j.success === false) throw new Error(j.error || "Could not update this garment")
+      toast({ title: "Garment updated" })
+      setEditRow(null)
+      await openOrder(selectedId)
+      loadQueue(true)
+    } catch (e) {
+      toast({ title: "Could not update", description: e instanceof Error ? e.message : "Failed", variant: "destructive" })
+    } finally { setRowBusy(null) }
+  }
+
+  const removeItem = async (itemId: string, garmentName: string) => {
+    if (!selectedId) return
+    if (!window.confirm(`Remove ${garmentName} from this order?`)) return
+    setRowBusy(itemId)
+    try {
+      const res = await fetch(`/api/laundry/orders/${selectedId}/items/${itemId}?businessId=${encodeURIComponent(currentBusinessId || "")}`, { method: "DELETE" })
+      const j = await res.json()
+      if (!res.ok || j.success === false) throw new Error(j.error || "Could not remove this garment")
+      toast({ title: `${garmentName} removed` })
+      await openOrder(selectedId)
+      loadQueue(true)
+    } catch (e) {
+      toast({ title: "Could not remove", description: e instanceof Error ? e.message : "Failed", variant: "destructive" })
+    } finally { setRowBusy(null) }
+  }
 
   // Scan a bag QR/code → open that order's audit directly (no search). Resolves
   // a REUSABLE bag first (its currentOrderId), then falls back to a legacy
@@ -295,9 +418,89 @@ export function LaundryStoreAudit() {
                         ))}
                       </div>
                       <Input value={ins.notes} onChange={(e) => setNotes(it.id, e.target.value)} placeholder="Remarks for this garment (optional)" className="h-8 text-sm" />
+
+                      {/* CORRECTION CONTROLS. Store Audit records what was
+                          actually received, so a line must be fixable. Pricing
+                          and NA refusal are decided server-side; this only
+                          collects the change. */}
+                      <div className="mt-2 border-t border-slate-100 pt-2">
+                        {editRow === it.id ? (
+                          <div className="space-y-2">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div>
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Garment</span>
+                                <LaundryGarmentSelect value={editForm.garmentId} onChange={(v) => setEditForm((f) => ({ ...f, garmentId: v }))} garments={garments} />
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Service</span>
+                                <select value={editForm.serviceId} onChange={(e) => setEditForm((f) => ({ ...f, serviceId: e.target.value }))} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+                                  <option value="">Select service…</option>
+                                  {services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-end gap-2">
+                              <div className="w-24">
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Qty</span>
+                                <Input type="number" min={1} value={editForm.quantity} onChange={(e) => setEditForm((f) => ({ ...f, quantity: e.target.value }))} className="h-9 text-sm" />
+                              </div>
+                              <div className="w-28">
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Weight (kg)</span>
+                                <Input type="number" min={0} step="0.05" value={editForm.weightKg} onChange={(e) => setEditForm((f) => ({ ...f, weightKg: e.target.value }))} className="h-9 text-sm" />
+                              </div>
+                              <div className="ml-auto flex gap-2">
+                                <Button size="sm" variant="outline" className="h-9" onClick={() => setEditRow(null)}>Cancel</Button>
+                                <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700 text-white" disabled={rowBusy === it.id} onClick={() => saveItem(it.id)}>
+                                  {rowBusy === it.id ? "Saving…" : "Save"}
+                                </Button>
+                              </div>
+                            </div>
+                            {/* Eligibility for the PENDING selection, so the
+                                auditor sees the consequence before saving. */}
+                            <EligibilityLine eligible={isEligible(editForm.garmentId, editForm.serviceId)} alternatives={eligibleElsewhere(editForm.garmentId, editForm.serviceId)} />
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <EligibilityLine eligible={isEligible(it.garmentId, it.serviceId)} alternatives={eligibleElsewhere(it.garmentId, it.serviceId)} />
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => beginEdit(it)}>
+                                <Pencil className="h-3.5 w-3.5" /> Edit
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-rose-600 hover:bg-rose-50" disabled={rowBusy === it.id} onClick={() => removeItem(it.id, it.garmentName)}>
+                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
+                {/* AUDIT HISTORY — read from the order's existing event timeline
+                    (LaundryOrderEvent), which already records transitions; the
+                    correction API appends to the same log. No new model, and no
+                    need to leave this screen to see what changed. */}
+                {(detail.events?.length ?? 0) > 0 && (
+                  <div className="rounded-lg border border-slate-200">
+                    <button onClick={() => setShowHistory((v) => !v)} className="flex w-full items-center justify-between px-3 py-2 text-left">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><History className="h-3.5 w-3.5" /> Audit History</span>
+                      <span className="text-[11px] text-slate-400">{showHistory ? "Hide" : `${detail.events?.length} events`}</span>
+                    </button>
+                    {showHistory && (
+                      <div className="space-y-1.5 border-t border-slate-100 px-3 py-2">
+                        {detail.events!.map((ev) => (
+                          <div key={ev.id} className="text-[11px]">
+                            <span className="font-medium text-slate-700">{EVENT_LABEL[ev.action] || ev.action.replace(/_/g, " ")}</span>
+                            {/* before → after, exactly as the API wrote it. */}
+                            {ev.note && <span className="text-slate-500"> · {ev.note}</span>}
+                            <span className="block text-slate-400">{ev.actorName || "—"} · {fmt(ev.createdAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Add a MISSED garment even after the order already has some — the new
                     garment is priced + normalised like intake, then inspected below. */}
                 {detail.items.length > 0 && (
