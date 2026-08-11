@@ -96,6 +96,39 @@ export async function requireLaundryLevel(request: Request, businessIdInput: str
   return { ok: true, ctx, resolved, platformBusinessId: biz.platformBusinessId }
 }
 
+/**
+ * Authenticated MEMBER of this laundry business — no screen permission required.
+ *
+ * For the handful of reads the workspace shell itself needs before anyone has
+ * navigated anywhere: the tenant's own name, logo and brand colour. Those are
+ * not settings administration, and gating them on laundry.settings.view meant
+ * only owners and Super Admin could see their own logo while a Store Manager
+ * got a 403 and a blank sidebar.
+ *
+ * This is NOT a relaxation of RBAC. It runs exactly the same tenant resolution
+ * and authentication as requireLaundryLevel — an unauthenticated caller, or a
+ * user who does not belong to this business, is still rejected. The only thing
+ * omitted is the per-screen level check, because there is no screen involved.
+ *
+ * Use it only for data every member of the workspace is entitled to see. Any
+ * read that is genuinely part of a settings screen keeps requireLaundryLevel.
+ */
+export async function requireLaundryMember(request: Request, businessIdInput: string | null | undefined): Promise<GuardOk | GuardFail> {
+  if (!businessIdInput) return { ok: false, res: NextResponse.json({ error: "Missing businessId" }, { status: 400 }) }
+  const biz = await resolveLaundryBusiness(businessIdInput)
+  if (!biz?.platformBusinessId) return { ok: false, res: NextResponse.json({ error: "Laundry business not found" }, { status: 404 }) }
+  if (isInternalCall(request)) {
+    const ctx = { userId: "system", userName: "system", userEmail: "", laundryBusinessId: biz.id, platformBusinessId: biz.platformBusinessId, role: "LAUNDRY_OWNER", isSupportMode: false } as Ctx
+    return { ok: true, internal: true, ctx, resolved: { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: "INTERNAL", roleName: "Internal", source: "owner" }, platformBusinessId: biz.platformBusinessId }
+  }
+  // The same authentication every other laundry endpoint uses. It resolves the
+  // caller against THIS business, so one tenant cannot read another's brand.
+  const ctx = await getLaundryAuthContext(biz.id, request)
+  if (!ctx) return { ok: false, res: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) }
+  const resolved = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)
+  return { ok: true, ctx, resolved, platformBusinessId: biz.platformBusinessId }
+}
+
 /** @deprecated Use requireLaundryLevel(screenKey, Level.*) instead. Only exists for backward compatibility during refactor — remove after all callers migrate. */
 export async function requireLaundryPermission(
   request: Request, businessIdInput: string | null | undefined, key: string): Promise<GuardOk | GuardFail> {

@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { requireLaundryPermission, requireLaundryMember } from "@/lib/laundry-rbac"
 import { resolveImageUrl } from "@/lib/image-url"
 
 export const runtime = "nodejs"
@@ -35,7 +35,14 @@ export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
   if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
 
-  const guard = await requireLaundryPermission(request, businessId, "laundry.settings.view")
+  // READ: any authenticated member of this business. The workspace shell draws
+  // the logo before anyone has opened a settings screen, so requiring
+  // laundry.settings.view meant a Store Manager, Supervisor or counter user got
+  // a 403 here and an unbranded sidebar — while owners and Super Admin, who
+  // hold that permission, saw the logo and never noticed.
+  //
+  // Writing still requires laundry.settings.edit; see PUT below.
+  const guard = await requireLaundryMember(request, businessId)
   if (!guard.ok) return guard.res
 
   const biz = await resolveLaundryBusiness(businessId)
