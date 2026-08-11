@@ -216,3 +216,52 @@ export function matchesLedgerFilter(f: LedgerFilter, row: { paid: number; balanc
     default: return true
   }
 }
+
+// ── Plain-language guidance on the discount form ────────────────────────────
+// The form used to say "Up to ₹32.00 may still be given on this order." That
+// number was maxCompensation() — correct, and meaningless to someone at a
+// counter, because it silently mixes what is still owed with what could be
+// refunded. A Store Manager needs to know two things: what has already
+// happened, and what a discount will DO next.
+
+export interface DiscountHint {
+  /** What the money looks like right now. */
+  status: string
+  /** What adding a discount will cause. */
+  effect: string
+  /** Only when money has actually been taken and could come back. */
+  refundLimit: string | null
+}
+
+const money = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export function discountHint(m: OrderMoney, adjustments: AdjustmentRow[]): DiscountHint {
+  const paid = round2(m.amountPaid)
+  const payable = round2(m.balanceDue)
+  const alreadyRefundable = round2(adjustments.reduce((s, a) => s + (a.refundable || 0), 0))
+  // What could still come back: money taken, less what earlier discounts already
+  // claimed against it.
+  const refundable = Math.max(0, round2(paid - alreadyRefundable))
+
+  if (paid > 0 && payable <= 0) {
+    return {
+      status: `Already paid: ${money(paid)}`,
+      effect: "A discount now will create a refund due to the customer.",
+      refundLimit: refundable > 0 ? `Maximum refund available: ${money(refundable)}` : null,
+    }
+  }
+
+  if (paid > 0) {
+    return {
+      status: `Paid ${money(paid)} · ${money(payable)} still to pay`,
+      effect: "A discount reduces what is still to pay first, then creates a refund.",
+      refundLimit: refundable > 0 ? `Maximum refund available: ${money(refundable)}` : null,
+    }
+  }
+
+  return {
+    status: `Amount payable: ${money(payable)}`,
+    effect: "A discount will reduce what the customer pays.",
+    refundLimit: null,
+  }
+}

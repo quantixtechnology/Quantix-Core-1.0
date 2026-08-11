@@ -142,7 +142,7 @@ describe('presentation', () => {
 })
 
 // ── Discounts and schemes (Payments & Ledger) ───────────────────────────────
-import { discountAmount, schemeRefusal, financialSummary, matchesLedgerFilter } from '@/lib/laundry-adjustment'
+import { discountAmount, schemeRefusal, financialSummary, matchesLedgerFilter, discountHint, type OrderMoney } from '@/lib/laundry-adjustment'
 
 describe('acceptance: discount arithmetic', () => {
   it('TEST 1 — ₹500 invoice, ₹100 discount → ₹400 payable', () => {
@@ -229,5 +229,55 @@ describe('ledger filters', () => {
   it('ALL keeps every order, whatever its position', () => {
     expect(matchesLedgerFilter('ALL', row({ paid: 500 }))).toBe(true)
     expect(matchesLedgerFilter('ALL', row({}))).toBe(true)
+  })
+})
+
+// ── The wording on the discount form ────────────────────────────────────────
+// The reported case: invoice ₹42, fully covered by subscription, ₹42 paid, ₹10
+// already discounted — and the form said "Up to ₹32.00 may still be given",
+// which is maxCompensation() and means nothing at a counter.
+describe('discount guidance is plain language', () => {
+  it('a fully paid order says what was paid and what a discount will do', () => {
+    const h = discountHint({ grandTotal: 42, amountPaid: 42, balanceDue: 0 },
+      [{ amount: 10, appliedToDue: 0, refundable: 10, refundStatus: 'PENDING' }])
+    expect(h.status).toBe('Already paid: ₹42.00')
+    expect(h.effect).toBe('A discount now will create a refund due to the customer.')
+    // ₹42 taken minus the ₹10 already claimed.
+    expect(h.refundLimit).toBe('Maximum refund available: ₹32.00')
+  })
+
+  it('an unpaid order talks about what the customer pays, not refunds', () => {
+    const h = discountHint({ grandTotal: 500, amountPaid: 0, balanceDue: 500 }, [])
+    expect(h.status).toBe('Amount payable: ₹500.00')
+    expect(h.effect).toBe('A discount will reduce what the customer pays.')
+    expect(h.refundLimit).toBeNull()
+  })
+
+  it('a part-paid order explains the order the discount is applied in', () => {
+    const h = discountHint({ grandTotal: 500, amountPaid: 300, balanceDue: 200 }, [])
+    expect(h.status).toBe('Paid ₹300.00 · ₹200.00 still to pay')
+    expect(h.effect).toContain('reduces what is still to pay first')
+    expect(h.refundLimit).toBe('Maximum refund available: ₹300.00')
+  })
+
+  it('drops the refund line once nothing more can come back', () => {
+    const h = discountHint({ grandTotal: 500, amountPaid: 500, balanceDue: 0 },
+      [{ amount: 500, appliedToDue: 0, refundable: 500, refundStatus: 'PENDING' }])
+    expect(h.refundLimit).toBeNull()
+  })
+
+  // No internal terminology may reach the user.
+  it('never uses internal vocabulary', () => {
+    const cases: OrderMoney[] = [
+      { grandTotal: 42, amountPaid: 42, balanceDue: 0 },
+      { grandTotal: 500, amountPaid: 0, balanceDue: 500 },
+      { grandTotal: 500, amountPaid: 300, balanceDue: 200 },
+    ]
+    for (const m of cases) {
+      const all = Object.values(discountHint(m, [])).join(' ')
+      for (const word of ['compensation', 'maxCompensation', 'appliedToDue', 'refundable', 'balanceDue', 'grandTotal', 'adjustment']) {
+        expect(all.toLowerCase()).not.toContain(word.toLowerCase())
+      }
+    }
   })
 })

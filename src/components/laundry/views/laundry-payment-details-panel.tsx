@@ -12,7 +12,7 @@ import { toast } from "sonner"
 import { Loader2, X, Plus, Undo2, IndianRupee } from "lucide-react"
 import {
   ADJUSTMENT_REASONS, REFUND_LABEL, reasonLabel, financialSummary, maxCompensation,
-  validateCompensation, canRefund, discountAmount, KIND_LABEL,
+  validateCompensation, canRefund, discountAmount, KIND_LABEL, discountHint,
   type RefundStatus, type AdjustmentKind,
 } from "@/lib/laundry-adjustment"
 
@@ -70,6 +70,7 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
 
   const f = money ? financialSummary(money, adjustments) : null
   const max = money ? maxCompensation(money, adjustments) : 0
+  const hint = money ? discountHint(money, adjustments) : null
 
   // The preview the brief asks for: what this discount does BEFORE saving.
   const preview = useMemo(() => {
@@ -251,7 +252,15 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                     <Row k="Refund Due" v={inr(Math.min(preview || 0, f.paid))} tone="text-rose-700" />
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400">Up to {inr(max)} may still be given on this order.</p>
+                {/* Says what has happened and what this will do, instead of a
+                    bare ceiling figure the user has no way to interpret. */}
+                {hint && (
+                  <div className="text-[11px] leading-relaxed text-slate-500">
+                    <p className="font-medium text-slate-600">{hint.status}</p>
+                    <p>{hint.effect}</p>
+                    {hint.refundLimit && <p className="text-rose-600">{hint.refundLimit}</p>}
+                  </div>
+                )}
 
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowDiscount(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
