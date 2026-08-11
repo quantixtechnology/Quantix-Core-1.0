@@ -33,6 +33,7 @@ import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 import { assertLaundryBookingOpen } from "@/lib/laundry-availability"
+import { slotHasEnded } from "@/lib/laundry-slots"
 
 export const runtime = "nodejs"
 
@@ -108,6 +109,16 @@ export async function POST(request: Request) {
     const addr = await resolvePickupAddress({ addressId: pickup?.addressId, structured: pickup?.structured, legacyString: pickup?.address, customerId: customerRow.id, customerName: customerRow.name, customerPhone: customerRow.phone })
     if (hasItems && !addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
     const pickupSnapshot = addr.ok ? (addr.snapshot || null) : null
+
+    // SERVER-SIDE PICKUP WINDOW CHECK. The client greys out and re-selects an
+    // ended slot, but a stale tab, a replayed request or a crafted body must not
+    // be able to book a pickup for a window that has already closed. Judged on
+    // the slot's END in business local time, so a slot currently underway is
+    // still bookable — this is not a "date < today" rule.
+    if (pickup?.date && pickup?.timeSlot && slotHasEnded(pickup.timeSlot, pickup.date)) {
+      return NextResponse.json({ success: false, error: "That pickup slot has already ended. Please choose another slot." }, { status: 400 })
+    }
+
 
     // ── Garment LaundryOrder (normal prices) ─────────────────────────────────
     let order: { id: string; orderNumber: string; grandTotal: number } | null = null

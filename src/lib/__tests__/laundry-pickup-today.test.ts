@@ -92,3 +92,59 @@ describe('every other rule still applies', () => {
     expect(isLaundryDateAvailable(OPEN, TODAY, '2026-08-20').available).toBe(false)
   })
 })
+
+// ── An ended slot must not survive as the SELECTED value ────────────────────
+// The reported hazard: the option said "— ended" but stayed selected and
+// Confirm Order remained available. A disabled option is a label, not a guard.
+describe('selection never rests on an ended slot', () => {
+  const SLOTS = ['14:00-15:00', '15:00-16:00', '16:00-17:00', '17:00-18:00']
+  const live = (date: string, now: Date) => SLOTS.filter((s) => !slotHasEnded(s, date, now))
+
+  it('at 4:47 PM only the live slots remain selectable', () => {
+    expect(live(TODAY, AT_1647)).toEqual(['16:00-17:00', '17:00-18:00'])
+  })
+
+  it('an ended selection advances to the next live slot', () => {
+    const chosen = '14:00-15:00'
+    expect(slotHasEnded(chosen, TODAY, AT_1647)).toBe(true)
+    expect(live(TODAY, AT_1647)[0]).toBe('16:00-17:00')
+  })
+
+  it('a live selection is left alone', () => {
+    expect(slotHasEnded('16:00-17:00', TODAY, AT_1647)).toBe(false)
+  })
+
+  // Late enough that nothing is left: the customer must pick another date
+  // rather than being silently advanced to a slot that does not exist.
+  it('leaves nothing selectable once the day is exhausted', () => {
+    const late = new Date('2026-08-11T19:30:00')
+    expect(live(TODAY, late)).toEqual([])
+  })
+
+  it('a slot that ends while the form is open becomes unselectable', () => {
+    const chosen = '16:00-17:00'
+    expect(slotHasEnded(chosen, TODAY, new Date('2026-08-11T16:59:00'))).toBe(false)
+    expect(slotHasEnded(chosen, TODAY, new Date('2026-08-11T17:00:00'))).toBe(true)
+  })
+
+  it('tomorrow keeps every slot selectable', () => {
+    expect(live('2026-08-12', AT_1647)).toEqual(SLOTS)
+  })
+})
+
+describe('the server refuses an ended slot independently', () => {
+  const read = (p: string) => require('fs').readFileSync(require('path').join(process.cwd(), p), 'utf8')
+
+  for (const route of [
+    'src/app/api/core/storefront/laundry-order/route.ts',
+    'src/app/api/core/storefront/laundry-checkout/route.ts',
+  ]) {
+    it(`${route} validates the pickup slot`, () => {
+      const src = read(route)
+      expect(src).toContain('slotHasEnded(pickup.timeSlot, pickup.date)')
+      expect(src).toContain('That pickup slot has already ended')
+      // Judged on the slot end, never on the date alone.
+      expect(src).not.toMatch(/pickup\.date\s*<\s*(today|businessToday)/)
+    })
+  }
+})

@@ -485,6 +485,29 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     return d.toISOString().split("T")[0]
   }
 
+  // A disabled <option> can still be the SELECTED value — greying it out is a
+  // label, not a guard. Whenever the chosen pickup slot has finished (on load,
+  // on a date change, or because the clock passed it while the customer was
+  // filling in the form), move to the next slot still open today. When none is
+  // left the selection is cleared, forcing another date rather than letting an
+  // impossible pickup through.
+  const liveSlots = useMemo(
+    () => (date ? pickupSlots.filter((sl) => !slotHasEnded(sl, date)) : pickupSlots),
+    [pickupSlots, date],
+  )
+
+  useEffect(() => {
+    if (!date || !slot || !slotHasEnded(slot, date)) return
+    setSlot(liveSlots[0] || "")
+  }, [date, slot, liveSlots])
+
+  // Also on a timer: a customer who leaves checkout open across a slot boundary
+  // must not be able to submit a slot that ended while they were reading.
+  useEffect(() => {
+    const id = setInterval(() => setSlot((cur) => (cur && date && slotHasEnded(cur, date) ? "" : cur)), 60_000)
+    return () => clearInterval(id)
+  }, [date])
+
   // EARLIEST DELIVERY = pickup + the cart's turnaround.
   //
   // The clock starts at pickup, not at checkout, because garments cannot be
@@ -856,6 +879,14 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
+    // Revalidated HERE, not only when the list was drawn — the clock may have
+    // moved since. The server repeats this check independently.
+    if (slotHasEnded(slot, date)) {
+      const next = liveSlots[0]
+      setSlot(next || "")
+      toast.error(next ? `That pickup slot has ended — ${next} selected instead. Please confirm.` : "No pickup slots remain today. Please choose another date.")
+      return
+    }
     if (!deliveryDate) { toast.error("Select a standard delivery date"); return }
     // ENFORCED AT SUBMIT, not only in the picker — a stale selection, an edited
     // input or a re-render must not be able to get an early slot through.

@@ -28,6 +28,7 @@ import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/lau
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
+import { slotHasEnded } from "@/lib/laundry-slots"
 
 export const runtime = "nodejs"
 
@@ -98,6 +99,16 @@ export async function POST(request: Request) {
     })
     if (!addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
     const pickupSnapshot = addr.snapshot || null
+
+    // SERVER-SIDE PICKUP WINDOW CHECK. The client greys out and re-selects an
+    // ended slot, but a stale tab, a replayed request or a crafted body must not
+    // be able to book a pickup for a window that has already closed. Judged on
+    // the slot's END in business local time, so a slot currently underway is
+    // still bookable — this is not a "date < today" rule.
+    if (pickup?.date && pickup?.timeSlot && slotHasEnded(pickup.timeSlot, pickup.date)) {
+      return NextResponse.json({ success: false, error: "That pickup slot has already ended. Please choose another slot." }, { status: 400 })
+    }
+
 
     // ── Address-first store assignment — nearest serviceable LaundryStore is
     //    resolved from the pickup coordinates via the shared engine. Addresses
