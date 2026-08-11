@@ -140,3 +140,94 @@ describe('presentation', () => {
     expect(s.compensation).toBe(66.66)
   })
 })
+
+// ── Discounts and schemes (Payments & Ledger) ───────────────────────────────
+import { discountAmount, schemeRefusal, financialSummary, matchesLedgerFilter } from '@/lib/laundry-adjustment'
+
+describe('acceptance: discount arithmetic', () => {
+  it('TEST 1 — ₹500 invoice, ₹100 discount → ₹400 payable', () => {
+    const f = financialSummary({ grandTotal: 500, amountPaid: 0, balanceDue: 400 },
+      [{ amount: 100, appliedToDue: 100, refundable: 0, refundStatus: 'NOT_REQUIRED' }])
+    expect(f.invoiceTotal).toBe(500)
+    expect(f.discount).toBe(100)
+    expect(f.netPayable).toBe(400)
+  })
+
+  it('TEST 2 — subscription ₹300 + ₹50 discount on ₹500 → ₹150 payable', () => {
+    const f = financialSummary(
+      { grandTotal: 500, amountPaid: 0, balanceDue: 150, subscriptionCoveredAmount: 300 },
+      [{ amount: 50, appliedToDue: 50, refundable: 0, refundStatus: 'NOT_REQUIRED' }])
+    expect(f.subscriptionCovered).toBe(300)
+    expect(f.discount).toBe(50)
+    expect(f.netPayable).toBe(150)
+    // Coverage and discount stay separate lines, never netted into one.
+    expect(f.subscriptionCovered + f.discount + f.netPayable).toBe(f.invoiceTotal)
+  })
+
+  it('TEST 3 — paid ₹500, later ₹100 discount → ₹100 refund due, payment intact', () => {
+    const f = financialSummary({ grandTotal: 500, amountPaid: 500, balanceDue: 0 },
+      [{ amount: 100, appliedToDue: 0, refundable: 100, refundStatus: 'PENDING' }])
+    expect(f.paid).toBe(500)
+    expect(f.refundDue).toBe(100)
+    expect(f.invoiceTotal).toBe(500)
+  })
+
+  it('TEST 4 — a ₹100 fixed scheme gives ₹100', () => {
+    expect(discountAmount('FIXED', 100, 500)).toBe(100)
+  })
+
+  it('TEST 5 — a 10% scheme on ₹500 gives ₹50', () => {
+    expect(discountAmount('PERCENT', 10, 500)).toBe(50)
+  })
+
+  it('honours the scheme cap and never exceeds the order', () => {
+    expect(discountAmount('PERCENT', 50, 500, 100)).toBe(100)
+    expect(discountAmount('FIXED', 900, 500)).toBe(500)
+  })
+})
+
+describe('TEST 6 — an unusable scheme is refused, with the reason', () => {
+  const now = new Date('2026-08-11T10:00:00')
+  it('expired', () => {
+    expect(schemeRefusal({ status: 'ACTIVE', endAt: '2026-08-01' }, 500, now)).toContain('expired')
+  })
+  it('not started', () => {
+    expect(schemeRefusal({ status: 'SCHEDULED', startAt: '2026-09-01' }, 500, now)).toContain('not started')
+  })
+  it('switched off', () => {
+    expect(schemeRefusal({ status: 'ACTIVE', enabled: false }, 500, now)).toContain('switched off')
+  })
+  it('paused or cancelled', () => {
+    expect(schemeRefusal({ status: 'PAUSED' }, 500, now)).toContain('paused')
+  })
+  it('below the minimum order value', () => {
+    expect(schemeRefusal({ status: 'ACTIVE', minOrderValue: 1000 }, 500, now)).toContain('minimum order')
+  })
+  it('accepts a live scheme', () => {
+    expect(schemeRefusal({ status: 'ACTIVE', enabled: true, startAt: '2026-08-01', endAt: '2026-12-31', minOrderValue: 100 }, 500, now)).toBeNull()
+  })
+})
+
+describe('ledger filters', () => {
+  const row = (o: Partial<{ paid: number; balance: number; discount: number; refunded: number; refundDue: number }>) =>
+    ({ paid: 0, balance: 0, discount: 0, refunded: 0, refundDue: 0, ...o })
+
+  it('separates pending, partial and paid', () => {
+    expect(matchesLedgerFilter('PENDING', row({ balance: 500 }))).toBe(true)
+    expect(matchesLedgerFilter('PENDING', row({ balance: 200, paid: 300 }))).toBe(false)
+    expect(matchesLedgerFilter('PARTIAL', row({ balance: 200, paid: 300 }))).toBe(true)
+    expect(matchesLedgerFilter('PAID', row({ paid: 500 }))).toBe(true)
+  })
+
+  it('finds discounted and refunded orders', () => {
+    expect(matchesLedgerFilter('DISCOUNTED', row({ discount: 50 }))).toBe(true)
+    expect(matchesLedgerFilter('REFUNDED', row({ refundDue: 100 }))).toBe(true)
+    expect(matchesLedgerFilter('REFUNDED', row({ refunded: 100 }))).toBe(true)
+  })
+
+  // TEST 7: a delivered, fully paid order still belongs in the ledger.
+  it('ALL keeps every order, whatever its position', () => {
+    expect(matchesLedgerFilter('ALL', row({ paid: 500 }))).toBe(true)
+    expect(matchesLedgerFilter('ALL', row({}))).toBe(true)
+  })
+})

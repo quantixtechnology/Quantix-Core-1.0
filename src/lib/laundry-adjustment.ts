@@ -117,3 +117,102 @@ export function canRefund(status: string): boolean {
 function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100
 }
+
+// ── Discounts: manual and scheme ────────────────────────────────────────────
+// A discount and a compensation are the same financial event — money given back
+// to the customer — so they share one table and one split rule. Only the label
+// and how the amount was DERIVED differ.
+
+export type AdjustmentKind = "COMPENSATION" | "MANUAL_DISCOUNT" | "SCHEME_DISCOUNT"
+export type DiscountType = "FIXED" | "PERCENT"
+
+export const KIND_LABEL: Record<AdjustmentKind, string> = {
+  COMPENSATION: "Customer Compensation",
+  MANUAL_DISCOUNT: "Manual Discount",
+  SCHEME_DISCOUNT: "Scheme Discount",
+}
+
+/** What a promotion is worth on a given order value, honouring its cap. */
+export function discountAmount(type: string, value: number, orderValue: number, maxDiscount?: number | null): number {
+  const v = Number(value) || 0
+  const raw = type === "PERCENT" ? (orderValue * v) / 100 : v
+  const capped = maxDiscount != null && maxDiscount > 0 ? Math.min(raw, maxDiscount) : raw
+  // Never more than the order is worth, and never negative.
+  return Math.max(0, Math.round(Math.min(capped, orderValue) * 100) / 100)
+}
+
+export interface SchemeLike {
+  status?: string | null
+  enabled?: boolean | null
+  startAt?: Date | string | null
+  endAt?: Date | string | null
+  minOrderValue?: number | null
+}
+
+/**
+ * Why a scheme cannot be used right now, or null when it can. Mirrors the
+ * conditions the Promotion model already stores — it does not invent new ones.
+ */
+export function schemeRefusal(p: SchemeLike, orderValue: number, now: Date = new Date()): string | null {
+  if (p.enabled === false) return "This scheme is switched off."
+  if (p.status && !["ACTIVE", "SCHEDULED"].includes(p.status)) return `This scheme is ${String(p.status).toLowerCase()}.`
+  if (p.startAt && new Date(p.startAt) > now) return "This scheme has not started yet."
+  if (p.endAt && new Date(p.endAt) < now) return "This scheme has expired."
+  if (p.minOrderValue != null && orderValue < p.minOrderValue) return `This scheme needs a minimum order of ₹${p.minOrderValue}.`
+  return null
+}
+
+export interface LedgerMoney extends OrderMoney {
+  subscriptionCoveredAmount?: number
+  discount?: number
+}
+
+export interface FinancialSummary {
+  invoiceTotal: number
+  subscriptionCovered: number
+  discount: number
+  netPayable: number
+  paid: number
+  refunded: number
+  refundDue: number
+  balance: number
+}
+
+/**
+ * The Financial Summary block.
+ *
+ * Subscription coverage and discounts are kept apart on purpose: coverage is
+ * allowance the customer already owns, a discount is money the business gives
+ * up. Netting them together would make an allowance look like a price cut and
+ * hide which one actually moved.
+ */
+export function financialSummary(money: LedgerMoney, adjustments: AdjustmentRow[]): FinancialSummary {
+  const base = summarise(money, adjustments)
+  const subscriptionCovered = round2(money.subscriptionCoveredAmount ?? 0)
+  // Discount recorded at order time, plus everything given afterwards.
+  const discount = round2((money.discount ?? 0) + base.compensation)
+  return {
+    invoiceTotal: base.invoiceTotal,
+    subscriptionCovered,
+    discount,
+    netPayable: Math.max(0, round2(base.invoiceTotal - subscriptionCovered - discount)),
+    paid: base.paid,
+    refunded: base.refunded,
+    refundDue: base.refundDue,
+    balance: base.balance,
+  }
+}
+
+/** Filter buckets on the Payments & Ledger list. */
+export type LedgerFilter = "ALL" | "PENDING" | "PARTIAL" | "PAID" | "DISCOUNTED" | "REFUNDED"
+
+export function matchesLedgerFilter(f: LedgerFilter, row: { paid: number; balance: number; discount: number; refunded: number; refundDue: number }): boolean {
+  switch (f) {
+    case "PENDING": return row.balance > 0 && row.paid <= 0
+    case "PARTIAL": return row.balance > 0 && row.paid > 0
+    case "PAID": return row.balance <= 0
+    case "DISCOUNTED": return row.discount > 0
+    case "REFUNDED": return row.refunded > 0 || row.refundDue > 0
+    default: return true
+  }
+}

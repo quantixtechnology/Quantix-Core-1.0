@@ -4761,11 +4761,11 @@ model LaundryOrder {
   services                LaundryOrderService[]
   items                   LaundryOrderItem[]
   payments                LaundryPayment[]
+  adjustments             LaundryOrderAdjustment[]
   invoice                 LaundryInvoice?
   timestamps              LaundryStageTimestamp[]
   events                  LaundryOrderEvent[]
   feedback                LaundryOrderFeedback?
-  laundryOrderAdjustments LaundryOrderAdjustment[]
 
   @@index([businessId])
   @@index([storeId])
