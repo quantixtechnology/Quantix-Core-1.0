@@ -17,12 +17,14 @@ import { Loader2, Plus, Search, Pencil, Trash2, Download, Zap } from "lucide-rea
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { MasterImportDialog } from "./masters/master-import-dialog"
+import { tatLabel, toHours, fromHours } from "@/lib/laundry-tat"
 
 interface Cat { id: string; name: string }
 interface Service {
   id: string; name: string; code: string | null; categoryId: string | null; category?: Cat | null
   description: string | null; defaultPricingType: string; defaultGstPercent: number | null
   defaultTurnaroundHours: number; processingSequence: number; expressAvailable: boolean
+  tatEnabled?: boolean; tatUnit?: string | null
   displayOnWebsite: boolean; availableInStore: boolean
   availableForPickup: boolean; subscriptionEligible: boolean; displayOrder: number; isActive: boolean
 }
@@ -31,7 +33,7 @@ const PRICING_TYPES = ["PER_PIECE", "PER_KG", "FIXED", "CORPORATE", "SUBSCRIPTIO
 const ptLabel = (t: string) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 const EMPTY = {
   name: "", code: "", categoryId: NONE, description: "", defaultPricingType: "PER_PIECE", defaultGstPercent: "",
-  defaultTurnaroundHours: 24, processingSequence: 0, expressAvailable: false, displayOnWebsite: true,
+  defaultTurnaroundHours: 24, tatEnabled: false, tatUnit: "HOURS", processingSequence: 0, expressAvailable: false, displayOnWebsite: true,
   availableInStore: true, availableForPickup: true, subscriptionEligible: false, displayOrder: 0, isActive: true,
 }
 type Form = typeof EMPTY
@@ -68,7 +70,8 @@ export function LaundryServicesMaster() {
     setForm({
       name: s.name, code: s.code || "", categoryId: s.categoryId || NONE, description: s.description || "",
       defaultPricingType: s.defaultPricingType || "PER_PIECE", defaultGstPercent: s.defaultGstPercent?.toString() ?? "",
-      defaultTurnaroundHours: s.defaultTurnaroundHours, processingSequence: s.processingSequence ?? 0,
+      defaultTurnaroundHours: s.defaultTurnaroundHours, tatEnabled: !!s.tatEnabled, tatUnit: s.tatUnit || "HOURS",
+      processingSequence: s.processingSequence ?? 0,
       expressAvailable: s.expressAvailable, displayOnWebsite: s.displayOnWebsite, availableInStore: s.availableInStore,
       availableForPickup: s.availableForPickup, subscriptionEligible: s.subscriptionEligible, displayOrder: s.displayOrder, isActive: s.isActive,
     })
@@ -120,7 +123,7 @@ export function LaundryServicesMaster() {
                 <TableCell className="font-medium">{s.name}{s.expressAvailable && <Zap className="inline h-3 w-3 ml-1 text-amber-500" />}</TableCell>
                 <TableCell>{s.category?.name ? <Badge variant="outline">{s.category.name}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell><Badge variant="outline" className="text-[11px]">{ptLabel(s.defaultPricingType)}</Badge></TableCell>
-                <TableCell>{s.defaultTurnaroundHours}h</TableCell>
+                <TableCell>{s.tatEnabled ? tatLabel(s.defaultTurnaroundHours, s.tatUnit).replace(" delivery", "") : "Standard"}</TableCell>
                 <TableCell className="text-[11px] text-muted-foreground">{[s.availableInStore && "Store", s.availableForPickup && "Pickup", s.displayOnWebsite && "Web", s.subscriptionEligible && "Sub"].filter(Boolean).join(" · ") || "—"}</TableCell>
                 <TableCell><Switch checked={s.isActive} onCheckedChange={() => toggle(s)} /></TableCell>
                 <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => remove(s)}><Trash2 className="h-4 w-4 text-red-500" /></Button></TableCell>
@@ -150,10 +153,45 @@ export function LaundryServicesMaster() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><Label>Turnaround (hours)</Label><Input type="number" value={form.defaultTurnaroundHours} onChange={(e) => set("defaultTurnaroundHours", parseInt(e.target.value) || 0)} /></div>
+            <div className="grid grid-cols-2 gap-3">
               <div><Label>Default GST %</Label><Input type="number" step="any" value={form.defaultGstPercent} onChange={(e) => set("defaultGstPercent", e.target.value)} /></div>
               <div><Label>Processing Seq.</Label><Input type="number" value={form.processingSequence} onChange={(e) => set("processingSequence", parseInt(e.target.value) || 0)} /></div>
+            </div>
+
+            {/* DELIVERY / TURNAROUND. Plain language on purpose — the owner is
+                choosing "this service is delivered faster than normal", not
+                configuring an override hierarchy. */}
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Custom Turnaround Time</Label>
+                  <p className="text-[11px] text-muted-foreground">Off — uses the standard delivery time. On — this service is delivered in the time you set.</p>
+                </div>
+                <Switch checked={!!form.tatEnabled} onCheckedChange={(v) => set("tatEnabled", v)} />
+              </div>
+              {form.tatEnabled && (
+                <div className="mt-3 flex items-end gap-2">
+                  <div className="w-24">
+                    <Label>Delivery Time</Label>
+                    <Input type="number" min={1} value={fromHours(form.defaultTurnaroundHours, form.tatUnit).value}
+                      onChange={(e) => set("defaultTurnaroundHours", toHours(parseInt(e.target.value) || 1, (form.tatUnit === "DAYS" ? "DAYS" : "HOURS")))} />
+                  </div>
+                  <div className="w-32">
+                    <Select value={form.tatUnit || "HOURS"} onValueChange={(u) => {
+                      // Keep the number the owner sees; re-express it in the new unit.
+                      const shown = fromHours(form.defaultTurnaroundHours, form.tatUnit).value
+                      set("tatUnit", u); set("defaultTurnaroundHours", toHours(shown, u === "DAYS" ? "DAYS" : "HOURS"))
+                    }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="HOURS">Hours</SelectItem>
+                        <SelectItem value="DAYS">Days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="pb-2 text-[11px] text-muted-foreground">Customers see &ldquo;{tatLabel(form.defaultTurnaroundHours, form.tatUnit)}&rdquo;.</p>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Tog label="Express Available" k="expressAvailable" />

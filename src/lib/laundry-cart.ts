@@ -10,6 +10,7 @@
 // identical orders.
 // ============================================================================
 import type { CartItem } from "@/stores/cart-store"
+import { orderTatHours } from "@/lib/laundry-tat"
 
 export type CartItemInput = Omit<CartItem, "quantity"> & { quantity: number }
 
@@ -18,6 +19,7 @@ export type CartItemInput = Omit<CartItem, "quantity"> & { quantity: number }
 export function makeGarmentLine(o: {
   serviceId: string; serviceName: string; garmentId: string; garmentName: string
   unitPrice: number; unit?: string | null; pricingType?: string | null; gstPercent?: number | null; quantity: number
+  tatEnabled?: boolean; turnaroundHours?: number
 }): CartItemInput {
   // A garment priced per-kg carries a quantity for inventory but no booking
   // price — its amount is resolved by weight at Store Audit.
@@ -30,6 +32,10 @@ export function makeGarmentLine(o: {
     price: isKg ? 0 : o.unitPrice, mrp: isKg ? 0 : o.unitPrice, image: "", isVeg: null,
     unit: o.unit || "piece", pricingType: o.pricingType || "PER_PIECE", gstPercent: o.gstPercent ?? 0,
     billedAfterAudit: isKg || undefined,
+    // Turnaround snapshotted onto the line like the price, so the checkout can
+    // compute the order's delivery window across a MIXED cart without needing
+    // the service master, and a later change to the service cannot rewrite it.
+    tatEnabled: o.tatEnabled, turnaroundHours: o.turnaroundHours,
     quantity: o.quantity,
   }
 }
@@ -38,6 +44,7 @@ export function makeGarmentLine(o: {
 // price is 0 and it is flagged "billed after audit". Keyed by service.
 export function makePerKgLine(o: {
   serviceId: string; serviceName: string; weightKg: number; unitPrice?: number | null; gstPercent?: number | null
+  tatEnabled?: boolean; turnaroundHours?: number
 }): CartItemInput {
   return {
     kind: "laundry",
@@ -47,13 +54,14 @@ export function makePerKgLine(o: {
     price: 0, mrp: 0, image: "", isVeg: null,
     unit: "kg", pricingType: "PER_KG", gstPercent: o.gstPercent ?? 0,
     weightKg: o.weightKg, billedAfterAudit: true,
+    tatEnabled: o.tatEnabled, turnaroundHours: o.turnaroundHours,
     quantity: 1,
   }
 }
 
 // A Pickup-First (Bag) line — the service ONLY, no garments and no price.
 // One bag per service; garments are counted later at Store Audit.
-export function makeBagLine(o: { serviceId: string; serviceName: string }): CartItemInput {
+export function makeBagLine(o: { serviceId: string; serviceName: string; tatEnabled?: boolean; turnaroundHours?: number }): CartItemInput {
   return {
     kind: "laundry",
     productId: `bag:${o.serviceId}`, variantId: o.serviceId,
@@ -116,4 +124,16 @@ export function groupLaundryByService(items: CartItem[]): { serviceId: string; s
     map.get(key)!.lines.push(l)
   }
   return [...map.values()]
+}
+
+/**
+ * Turnaround for everything in the cart — the LONGEST, because the order ships
+ * as one. Reads the snapshot on each line; lines added before this existed
+ * simply count as standard.
+ */
+export function cartTatHours(items: CartItem[]): number {
+  return orderTatHours(laundryLines(items).map((i) => ({
+    tatEnabled: (i as { tatEnabled?: boolean }).tatEnabled,
+    defaultTurnaroundHours: (i as { turnaroundHours?: number }).turnaroundHours,
+  })))
 }

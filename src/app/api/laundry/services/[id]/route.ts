@@ -35,6 +35,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(b.defaultPricingType !== undefined && { defaultPricingType: b.defaultPricingType }),
         ...(b.defaultGstPercent !== undefined && { defaultGstPercent: NUM(b.defaultGstPercent) }),
         ...(b.defaultTurnaroundHours !== undefined && { defaultTurnaroundHours: b.defaultTurnaroundHours }),
+        ...(b.tatEnabled !== undefined && { tatEnabled: !!b.tatEnabled }),
+        ...(b.tatUnit !== undefined && { tatUnit: b.tatUnit === "DAYS" ? "DAYS" : b.tatUnit === "HOURS" ? "HOURS" : null }),
         ...(b.processingSequence !== undefined && { processingSequence: b.processingSequence }),
         ...(b.expressAvailable !== undefined && { expressAvailable: !!b.expressAvailable }),
         ...(b.displayOnWebsite !== undefined && { displayOnWebsite: !!b.displayOnWebsite }),

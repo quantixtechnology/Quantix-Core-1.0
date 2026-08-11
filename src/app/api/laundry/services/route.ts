@@ -63,6 +63,10 @@ export async function POST(request: Request) {
         defaultPricingType: b.defaultPricingType || "PER_PIECE",
         defaultGstPercent: NUM(b.defaultGstPercent),
         defaultTurnaroundHours: typeof b.defaultTurnaroundHours === "number" ? b.defaultTurnaroundHours : 24,
+        // Off by default: a new service uses the standard delivery time until
+        // the owner deliberately overrides it.
+        tatEnabled: !!b.tatEnabled,
+        tatUnit: b.tatUnit === "DAYS" ? "DAYS" : b.tatUnit === "HOURS" ? "HOURS" : null,
         processingSequence: typeof b.processingSequence === "number" ? b.processingSequence : 0,
         expressAvailable: b.expressAvailable ?? false,
         displayOnWebsite: b.displayOnWebsite ?? true,

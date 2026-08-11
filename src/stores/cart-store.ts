@@ -40,6 +40,11 @@ export interface CartItem {
   gstPercent?: number
   weightKg?: number     // estimate for a PER_KG service line (billed after audit)
   billedAfterAudit?: boolean
+  // Service turnaround, snapshotted at add-to-cart like the price, so the
+  // checkout can compute a mixed cart's delivery window and a later change to
+  // the service master cannot retroactively alter it.
+  tatEnabled?: boolean
+  turnaroundHours?: number
   bagMode?: boolean     // Pickup-First (Bag) line: service only, no garments, counted at audit
   planId?: string       // subscription line
   billingCycle?: string

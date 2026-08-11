@@ -4895,7 +4895,15 @@ model LaundryService {
   color                  String?
   defaultPricingType     String   @default("PER_PIECE") // PER_PIECE | PER_KG | FIXED | SUBSCRIPTION | CORPORATE
   defaultGstPercent      Float?
+  // TURNAROUND. defaultTurnaroundHours already held a per-service TAT in HOURS
+  // and the admin New Order screen already reads it, so it stays the value —
+  // adding a second number would be the parallel system this must not become.
+  // tatEnabled is what is genuinely new: it separates "this service overrides
+  // the standard delivery time" from "nobody changed the 24h default".
+  // tatUnit is presentation only, so "1 Day" round-trips instead of "24 Hours".
   defaultTurnaroundHours Int      @default(24)
+  tatEnabled             Boolean  @default(false)
+  tatUnit                String? // HOURS | DAYS — display unit for the value above
   processingSequence     Int      @default(0) // order in the processing line
   expressAvailable       Boolean  @default(false)
   displayOnWebsite       Boolean  @default(true)

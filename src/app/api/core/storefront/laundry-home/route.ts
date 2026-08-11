@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const [business, rules, services, garments, plans] = await Promise.all([
       prisma.business.findUnique({ where: { id: platformId }, select: { name: true, businessType: true, isOnline: true } }),
       prisma.laundryPricingRule.findMany({ where: { businessId: lbId, isActive: true } }),
-      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true, displayOnWebsite: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true, orderMode: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true, displayOnWebsite: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true, orderMode: true, tatEnabled: true, defaultTurnaroundHours: true, tatUnit: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, categoryId: true, category: { select: { name: true } } } }),
       prisma.subscriptionPlan.findMany({ where: { businessId: platformId, serviceType: "LAUNDRY", isActive: true }, orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }] }),
     ])
@@ -75,6 +75,11 @@ export async function GET(request: Request) {
         id: svc.id, name: svc.name, description: svc.description, icon: svc.icon,
         imageUrl: svc.image ? resolveImageUrl(svc.image) : null,
         orderMode: svc.orderMode || "GARMENT",
+        // Turnaround, so the cart can work out the earliest delivery date. The
+        // slot and capacity rules that follow are untouched.
+        tatEnabled: !!svc.tatEnabled,
+        turnaroundHours: svc.defaultTurnaroundHours,
+        tatUnit: svc.tatUnit,
         pricingMode,
         items, // only configured, orderable garments (PER_GARMENT services)
         perKg: perKgRule ? { price: perKgRule.price, minWeightKg: perKgRule.minWeightKg, gstPercent: perKgRule.gstPercent } : null,

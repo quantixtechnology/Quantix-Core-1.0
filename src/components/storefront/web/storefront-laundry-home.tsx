@@ -19,6 +19,8 @@ import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subs
 import type { WebNav } from "./storefront-website"
 import { GoogleAddressPicker } from "./google/address-picker"
 import type { DeliveryAddress } from "@/stores/cart-store"
+import { effectiveTatHours, orderTatHours, hasCustomTat, tatLabel, earliestDeliveryDayKey } from "@/lib/laundry-tat"
+import { cartTatHours } from "@/lib/laundry-cart"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
@@ -26,7 +28,7 @@ type AuthCustomer = { name: string; phone: string; email: string } | null
 const maskPhone = (p: string) => p && p.length >= 4 ? `••••••${p.slice(-4)}` : p
 const maskEmail = (e: string) => { const [u, d] = e.split("@"); return u && d ? `${u.slice(0, 3)}•••@${d}` : e }
 interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; unitPrice: number; pricingType: string | null; unit: string | null; gstPercent: number | null }
-interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; orderMode?: string; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
+interface Service { tatEnabled?: boolean; turnaroundHours?: number; tatUnit?: string | null; id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; orderMode?: string; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
 interface Plan { id: string; name: string; slug: string; description: string | null; imageUrl: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
 
 // Tenant marketing image with a graceful icon fallback (no distortion, lazy).
@@ -192,7 +194,22 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
                     priceLine={s.fromPrice != null
                       ? <p className="mt-0.5 text-sm font-bold text-gray-900"><span className="text-[11px] font-medium text-gray-400">From </span>{inr(s.fromPrice)} <span className="text-xs font-medium text-gray-400">/ {s.fromUnit === "kg" ? "kg" : s.fromUnit === "fixed" ? "item" : "piece"}</span></p>
                       : <p className="mt-0.5 text-xs text-gray-400">Pricing unavailable</p>}
-                    metaLine={s.description ? <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p> : undefined}
+                    metaLine={
+                      // The turnaround badge appears only when the service
+                      // actually overrides the standard — never because its
+                      // name happens to contain "Express", and never on a
+                      // service left on the default.
+                      (hasCustomTat({ tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours }) || s.description) ? (
+                        <div className="mt-1">
+                          {hasCustomTat({ tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours }) && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                              ⚡ {tatLabel(effectiveTatHours({ tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours }), s.tatUnit)}
+                            </span>
+                          )}
+                          {s.description && <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p>}
+                        </div>
+                      ) : undefined
+                    }
                     button={<button onClick={() => setActiveService(s)} disabled={storeClosed} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>{storeClosed ? "Currently closed" : (s.orderMode === "BAG" ? <><span className="sm:hidden">Book</span><span className="hidden sm:inline">Book Pickup</span></> : <><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></>)}</button>}
                   />
                 ))}
@@ -467,10 +484,23 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     return d.toISOString().split("T")[0]
   }
 
-  // Pickup date chosen → Standard Delivery = pickup + 24h (editable default).
+  // EARLIEST DELIVERY = pickup + the cart's turnaround.
+  //
+  // The clock starts at pickup, not at checkout, because garments cannot be
+  // washed before they are collected — which is also exactly what the previous
+  // "pickup + 1 day" rule meant. A cart with no custom-TAT service resolves to
+  // 24h and therefore to the same date as before: standard services see no
+  // change whatsoever. Everything after this point — slots, capacity, closures
+  // — is the existing logic, untouched.
+  const cartTat = useMemo(() => cartTatHours(cartItems), [cartItems])
+  const minDeliveryDate = useMemo(
+    () => (date ? earliestDeliveryDayKey(new Date(`${date}T00:00:00`), [{ tatEnabled: true, defaultTurnaroundHours: cartTat }]) : ""),
+    [date, cartTat],
+  )
+
   useEffect(() => {
-    if (date) setDeliveryDate(addDays(date, 1))
-  }, [date]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (minDeliveryDate) setDeliveryDate(minDeliveryDate)
+  }, [minDeliveryDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Standard Delivery date chosen/edited → Backup Delivery minimum is
   // Standard + 24h. A backup date the customer manually picked beyond that is
@@ -730,10 +760,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const addToCart = () => {
     const others = cartItems.filter((l) => !(l.kind === "laundry" && l.serviceId === service.id))
     const mine = isBag
-      ? [makeBagLine({ serviceId: service.id, serviceName: service.name })]
+      ? [makeBagLine({ tatEnabled: service.tatEnabled, turnaroundHours: service.turnaroundHours, serviceId: service.id, serviceName: service.name })]
       : isPerKg
-        ? [makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null })]
-        : selected.map((it) => makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
+        ? [makePerKgLine({ tatEnabled: service.tatEnabled, turnaroundHours: service.turnaroundHours, serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null })]
+        : selected.map((it) => makeGarmentLine({ tatEnabled: service.tatEnabled, turnaroundHours: service.turnaroundHours, serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
     replaceItems([...others, ...mine])
     toast.success(isBag ? "Pickup bag added" : "Added to your bag")
     onClose()
@@ -790,7 +820,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!date) { toast.error("Select a pickup date"); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
     if (!deliveryDate) { toast.error("Select a standard delivery date"); return }
-    if (deliveryDate < addDays(date, 1)) { toast.error("Standard delivery must be at least 24 hours after the pickup date"); return }
+    if (minDeliveryDate && deliveryDate < minDeliveryDate) { toast.error(`Standard delivery cannot be earlier than ${tatLabel(cartTat).replace(" delivery", "")} after pickup`); return }
     if (!deliverySlot) { toast.error("Select a standard delivery time slot"); return }
     if (!backupDate) { toast.error("Select a backup delivery date"); return }
     if (backupDate < addDays(deliveryDate, 1)) { toast.error("Backup Delivery must be at least 24 hours after the Standard Delivery date."); return }
@@ -1217,7 +1247,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={date ? addDays(date, 1) : undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
+              <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={minDeliveryDate || undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
                   {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
