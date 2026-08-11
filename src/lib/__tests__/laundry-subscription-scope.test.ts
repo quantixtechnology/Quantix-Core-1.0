@@ -69,13 +69,67 @@ describe('the coverage engine keys on the SERVICE', () => {
     expect(ENGINE).toContain('prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }')
   })
 
-  // The decisive change: the same shirt can be covered under Wash & Fold and
-  // excluded under Express Wash & Fold, which a garment flag cannot express.
-  it('no longer selects coverage by garment', () => {
-    expect(ENGINE).not.toContain('subscriptionIncluded: true')
+  // Superseded. Keying on the GARMENT ALONE was the original fault — it could
+  // not express "covered under Wash & Fold, not under Express Wash & Fold". The
+  // service is now required, and the garment is required TOO, so a Blanket under
+  // an eligible service is still excluded. Neither flag decides alone.
+  it('requires the service, and does not rely on the garment alone', () => {
+    expect(ENGINE).toContain('subscriptionEligible: true')
+    expect(ENGINE).toContain('serviceId: { in: sIds }, garmentId: { in: gIds }')
   })
 
   it('still derives PER_KG / PER_PIECE from the pricing rule — billing unchanged', () => {
     expect(ENGINE).toContain('mode: r.pricingType === "PER_KG" ? "PER_KG" : "PER_PIECE"')
+  })
+})
+
+// ── Coverage needs the SERVICE and the GARMENT to agree ─────────────────────
+// The money bug: Wash & Fold eligible meant every garment under it consumed
+// allowance, including a Blanket the plan never covered.
+describe('subscription coverage is per service AND garment', () => {
+  const ENGINE2 = readFileSync(join(process.cwd(), 'src/lib/laundry-subscription-server.ts'), 'utf8')
+
+  it('reads both eligibility flags', () => {
+    expect(ENGINE2).toContain('subscriptionEligible: true')
+    expect(ENGINE2).toContain('subscriptionIncluded: true')
+  })
+
+  it('narrows the pricing rules by BOTH sets', () => {
+    expect(ENGINE2).toContain('serviceId: { in: sIds }, garmentId: { in: gIds }')
+  })
+
+  it('covers nothing when either side has no eligible rows', () => {
+    expect(ENGINE2).toContain('if (eligibleServices.length === 0 || eligibleGarments.length === 0) return []')
+  })
+
+  it('still derives the mode from the pricing rule — billing unchanged', () => {
+    expect(ENGINE2).toContain('mode: r.pricingType === "PER_KG" ? "PER_KG" : "PER_PIECE"')
+  })
+
+  // Mixed orders must not be blocked — only the ineligible line stays payable.
+  it('returns a per-pair list, so eligible and ineligible lines coexist', () => {
+    expect(ENGINE2).toContain('{ serviceId: string; garmentId: string | null; mode: AllowanceMode }[]')
+  })
+})
+
+describe('Return to Audit is reachable again', () => {
+  const PANEL2 = readFileSync(join(process.cwd(), 'src/components/laundry/views/laundry-payment-details-panel.tsx'), 'utf8')
+
+  it('uses the existing transition endpoint and edge', () => {
+    expect(PANEL2).toContain('/transition')
+    expect(PANEL2).toContain('toStatus: "PENDING_STORE_AUDIT"')
+  })
+
+  it('requires a reason', () => {
+    expect(PANEL2).toContain('if (!returnReason.trim())')
+    expect(PANEL2).toContain('disabled={busy === "return" || !returnReason.trim()}')
+  })
+
+  it('creates no duplicate order', () => {
+    expect(PANEL2).not.toMatch(/orders`,\s*\{\s*method:\s*"POST"/)
+  })
+
+  it('adds no new permission', () => {
+    expect(PANEL2).not.toMatch(/laundry\.(audit_reopen|return_to_audit)/)
   })
 })

@@ -62,10 +62,22 @@ export async function grantAllowance(tx: Tx, sub: { id: string; businessId: stri
 // still comes from the pricing rule, so allowances, billing and redemption are
 // unchanged — only which pairs qualify.
 export async function subscriptionCoverageRules(laundryBusinessId: string): Promise<{ serviceId: string; garmentId: string | null; mode: AllowanceMode }[]> {
-  const eligible = await prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }, select: { id: true } })
-  if (eligible.length === 0) return []
-  const sIds = eligible.map((s) => s.id)
-  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, serviceId: { in: sIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
+  // BOTH dimensions must agree. A service being eligible does not make every
+  // garment under it eligible: Wash & Fold may be included while a Blanket
+  // washed under Wash & Fold is not. Keying on the service alone silently
+  // consumed allowance for garments the plan never covered.
+  //
+  // Both flags already exist — LaundryService.subscriptionEligible and
+  // LaundryGarment.subscriptionIncluded — so this is an AND over what the
+  // Pricing configuration already stores, not a new eligibility system.
+  const [eligibleServices, eligibleGarments] = await Promise.all([
+    prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }, select: { id: true } }),
+    prisma.laundryGarment.findMany({ where: { businessId: laundryBusinessId, subscriptionIncluded: true }, select: { id: true } }),
+  ])
+  if (eligibleServices.length === 0 || eligibleGarments.length === 0) return []
+  const sIds = eligibleServices.map((s) => s.id)
+  const gIds = eligibleGarments.map((g) => g.id)
+  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, serviceId: { in: sIds }, garmentId: { in: gIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
   const seen = new Set<string>()
   const out: { serviceId: string; garmentId: string | null; mode: AllowanceMode }[] = []
   for (const r of rules) {

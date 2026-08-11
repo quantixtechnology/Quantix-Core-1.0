@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Loader2, X, Plus, Undo2, IndianRupee } from "lucide-react"
+import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck } from "lucide-react"
 import {
   ADJUSTMENT_REASONS, REFUND_LABEL, reasonLabel, financialSummary, maxCompensation,
   validateCompensation, canRefund, discountAmount, KIND_LABEL, discountHint,
@@ -33,6 +33,8 @@ const PAY_METHODS = ["CASH", "UPI", "RAZORPAY"] as const
 export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onChanged }: {
   orderId: string; businessId: string; onClose: () => void; onChanged?: () => void
 }) {
+  const [showReturn, setShowReturn] = useState(false)
+  const [returnReason, setReturnReason] = useState("")
   const [money, setMoney] = useState<Money | null>(null)
   const [adjustments, setAdjustments] = useState<Adj[]>([])
   const [payments, setPayments] = useState<Pay[]>([])
@@ -126,6 +128,27 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       toast.success("Payment recorded")
       setShowCollect(false); setPayAmount("")
       load(); onChanged?.()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }
+  }
+
+  // RETURN TO AUDIT. Uses the existing transition endpoint and the existing
+  // REOPEN_AUDIT edge, so the workflow decides whether it is allowed — this adds
+  // no new rule and no new permission. The button reappeared here because
+  // Payments & Ledger became the landing page for this nav item, which moved it
+  // off the path staff actually walk.
+  const returnToAudit = async () => {
+    if (!returnReason.trim()) { toast.error("Enter a reason."); return }
+    setBusy("return")
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/transition`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, toStatus: "PENDING_STORE_AUDIT", note: `Returned to audit: ${returnReason.trim()}` }),
+      })
+      const j = await res.json()
+      if (!res.ok || j.success === false) throw new Error(j.error || "Could not return this order to audit")
+      toast.success("Order returned to Store Audit")
+      setShowReturn(false); setReturnReason("")
+      onChanged?.(); onClose()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }
   }
 
@@ -302,6 +325,29 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                 </div>
               </div>
             )}
+
+            <div className="border-t border-slate-100 pt-3">
+              {!showReturn ? (
+                <button onClick={() => setShowReturn(true)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-blue-700">
+                  <ClipboardCheck className="h-3.5 w-3.5" /> Return to Audit
+                </button>
+              ) : (
+                <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold text-slate-700">Return Order to Audit?</p>
+                  <p className="text-[11px] text-slate-500">This sends the order back to Store Audit for correction or review. The order, its payments, subscription and audit history are all kept — nothing is duplicated.</p>
+                  <input value={returnReason} onChange={(e) => setReturnReason(e.target.value)} placeholder="Reason (required)"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowReturn(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+                    <button onClick={returnToAudit} disabled={busy === "return" || !returnReason.trim()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                      {busy === "return" && <Loader2 className="h-3 w-3 animate-spin" />} Return to Audit
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <Section title="Payment History">
               {payments.length === 0 ? <Empty>No payments recorded yet.</Empty> : payments.map((p) => (
