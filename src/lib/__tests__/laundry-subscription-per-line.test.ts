@@ -16,7 +16,7 @@ const sub = (pieces = 70): SubForCoverage => ({
 })
 
 const line = (itemId: string, serviceId: string, garmentId: string, lineAmount: number, quantity = 1): CoverLine =>
-  ({ itemId, serviceId, garmentId, quantity, weightKg: 0, lineAmount })
+  ({ itemId, serviceId, garmentId, quantity, weightKg: 0, lineAmount, unitPrice: lineAmount })
 
 describe('Case 1 — Shirt + Wash & Fold is covered', () => {
   const r = computeCoverage([sub()], [line('i1', WASH_FOLD, SHIRT, 70)])

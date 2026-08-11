@@ -463,8 +463,18 @@ export function LaundryStoreAudit() {
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <EligibilityLine eligible={isEligible(it.garmentId, it.serviceId)} alternatives={eligibleElsewhere(it.garmentId, it.serviceId)}
-                              rate={it.unitPrice > 0 ? `${inr(it.unitPrice)}${it.pricingType === "PER_KG" ? "/kg" : ""}` : null} />
+                            <div className="min-w-0">
+                              {/* A per-kg garment with no weight cannot be
+                                  priced — say so, because a silent ₹0 reads as
+                                  free and hides a missing measurement. */}
+                              {it.pricingType === "PER_KG" && !(it.weightKg > 0) && (
+                                <p className="text-[11px] font-medium text-amber-700">
+                                  Enter the weight to price this garment{it.unitPrice > 0 ? ` at ${inr(it.unitPrice)}/kg` : ""}.
+                                </p>
+                              )}
+                              <EligibilityLine eligible={isEligible(it.garmentId, it.serviceId)} alternatives={eligibleElsewhere(it.garmentId, it.serviceId)}
+                                rate={it.unitPrice > 0 ? `${inr(it.unitPrice)}${it.pricingType === "PER_KG" ? "/kg" : ""}` : null} />
+                            </div>
                             <div className="flex gap-2">
                               <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => beginEdit(it)}>
                                 <Pencil className="h-3.5 w-3.5" /> Edit

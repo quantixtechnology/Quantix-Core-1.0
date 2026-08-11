@@ -43,9 +43,16 @@ async function recomputeOrder(orderId: string) {
     select: { id: true, serviceId: true, garmentId: true, quantity: true, weightKg: true },
   })
 
+  // PER_KG is billed by the ORDER's total weight, not per line — computeQuote
+  // groups those lines and prices them from ctx.totalWeightKg. Omitting it (as
+  // this did) resolves the rule correctly, reports the right ₹/kg, and then
+  // amounts every per-kg line at ZERO. That is why an audited Blanket moved to
+  // Dry Clean showed the new service at no charge.
+  const totalWeightKg = r2(items.reduce((n, it) => n + (it.weightKg || 0), 0))
+
   const { lines } = await resolveOrderBilling(
     order.businessId,
-    { storeId: order.storeId, customerType: order.customerType || null, pickup: false, delivery: false },
+    { storeId: order.storeId, customerType: order.customerType || null, pickup: false, delivery: false, totalWeightKg },
     items.map((it) => ({ serviceId: it.serviceId || null, garmentId: it.garmentId || null, quantity: it.quantity || 0, weightKg: it.weightKg || 0 })),
   )
 
@@ -63,7 +70,6 @@ async function recomputeOrder(orderId: string) {
   const subtotal = r2(priced.reduce((s, l) => s + l.lineAmount, 0))
   const gstTotal = r2(priced.reduce((s, l) => s + l.gstAmount, 0))
   const grandTotal = r2(subtotal + gstTotal)
-  const totalWeightKg = r2(priced.filter((l) => l.pricingType === "PER_KG").reduce((s, l) => s + (l.weightKg || 0), 0))
 
   await prisma.$transaction(async (tx) => {
     // Write each line's resolved price back onto its item.
@@ -118,7 +124,17 @@ async function recomputeOrder(orderId: string) {
     where: { id: orderId },
     select: { grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true },
   })
+  // A per-kg garment with no weight cannot be priced. Say so explicitly — a
+  // silent ₹0 is indistinguishable from "free" and is what made this look like
+  // a pricing failure rather than a missing measurement.
+  const needsWeight = items
+    .map((it, i) => ({ it, l: priced[i] }))
+    .filter(({ it, l }) => l && l.pricingType === "PER_KG" && (it.weightKg || 0) <= 0)
+    .map(({ it, l }) => ({ itemId: it.id, garmentName: l.garmentName, serviceName: l.serviceName, unitPrice: l.unitPrice }))
+
   return {
+    needsWeight,
+    totalWeightKg,
     grandTotal: r2(after?.grandTotal ?? grandTotal),
     amountPaid: r2(after?.amountPaid ?? order.amountPaid ?? 0),
     balanceDue: r2(after?.balanceDue ?? 0),
@@ -173,7 +189,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // returns no priced line when the garment×service pair has no rule.
     const probe = await resolveOrderBilling(
       order.businessId,
-      { storeId: order.storeId, customerType: order.customerType || null, pickup: false, delivery: false },
+      { storeId: order.storeId, customerType: order.customerType || null, pickup: false, delivery: false, totalWeightKg: weightKg },
       [{ serviceId: serviceId || null, garmentId: garmentId || null, quantity, weightKg }],
     )
     const line = probe.lines[0]
