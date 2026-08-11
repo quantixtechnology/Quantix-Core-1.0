@@ -117,7 +117,9 @@ describe('Payment Details panel exposes the money actions', () => {
 
   it('shows both actions', () => {
     expect(PANEL).toContain('Add Discount')
-    expect(PANEL).toContain('Record Payment')
+    // Renamed to "Collect Payment", now sitting beside "Pay Later".
+    expect(PANEL).toContain('Collect Payment')
+    expect(PANEL).toContain('Pay Later')
   })
 
   it('offers Manual and Scheme, with fixed and percentage', () => {

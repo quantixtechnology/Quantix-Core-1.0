@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck } from "lucide-react"
+import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck, Clock } from "lucide-react"
 import {
   ADJUSTMENT_REASONS, REFUND_LABEL, reasonLabel, financialSummary, maxCompensation,
   validateCompensation, canRefund, discountAmount, KIND_LABEL, discountHint,
@@ -33,6 +33,7 @@ const PAY_METHODS = ["CASH", "UPI", "RAZORPAY"] as const
 export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onChanged }: {
   orderId: string; businessId: string; onClose: () => void; onChanged?: () => void
 }) {
+  const [showPayLater, setShowPayLater] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
   const [returnReason, setReturnReason] = useState("")
   const [money, setMoney] = useState<Money | null>(null)
@@ -125,6 +126,8 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       })
       const j = await res.json()
       if (!res.ok || j.success === false) throw new Error(j.error || "Could not record payment")
+      // The endpoint advances PAYMENT_PENDING → READY_FOR_PROCESSING itself, so
+      // collecting never leaves the order stuck in the queue.
       toast.success("Payment recorded")
       setShowCollect(false); setPayAmount("")
       load(); onChanged?.()
@@ -149,6 +152,30 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       toast.success("Order returned to Store Audit")
       setShowReturn(false); setReturnReason("")
       onChanged?.(); onClose()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }
+  }
+
+  /**
+   * Pay Later is a DECISION, not a payment: it posts no money, leaves
+   * amountPaid alone and the balance outstanding, records a PAY_LATER event and
+   * advances the order out of Payment Collection. All of that already exists on
+   * the payment endpoint; this only offers it.
+   *
+   * The workspace payment policy still applies — a business set to
+   * ADVANCE_REQUIRED gets a 403 and the reason is shown.
+   */
+  const payLater = async () => {
+    setBusy("paylater")
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/payment?businessId=${encodeURIComponent(businessId)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, action: "PAY_LATER" }),
+      })
+      const j = await res.json()
+      if (!res.ok || j.success === false) throw new Error(j.error || "Could not approve pay later")
+      toast.success(j.data?.payLater ? "Pay Later approved — order moved to Packing & Dispatch" : "No balance due — order moved to Packing & Dispatch")
+      setShowPayLater(false)
+      load(); onChanged?.()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }
   }
 
@@ -201,9 +228,15 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
                 <Plus className="h-3 w-3" /> Add Discount
               </button>
-              <button onClick={() => { setShowCollect((v) => !v); setShowDiscount(false); setPayAmount(String(f.balance || "")) }} disabled={f.balance <= 0}
+              <button onClick={() => { setShowCollect((v) => !v); setShowDiscount(false); setShowPayLater(false); setPayAmount(String(f.balance || "")) }} disabled={f.balance <= 0}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-                <Plus className="h-3 w-3" /> Record Payment
+                <Plus className="h-3 w-3" /> Collect Payment
+              </button>
+              {/* The business explicitly authorising a later payment. Offered
+                  beside collection, never instead of it. */}
+              <button onClick={() => { setShowPayLater((v) => !v); setShowCollect(false); setShowDiscount(false) }} disabled={f.balance <= 0}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                <Clock className="h-3 w-3" /> Pay Later
               </button>
             </div>
 
@@ -290,6 +323,20 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                   <button onClick={applyDiscount} disabled={busy === "discount" || !preview}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
                     {busy === "discount" && <Loader2 className="h-3 w-3 animate-spin" />} Apply Discount
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {showPayLater && (
+              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                <p className="text-xs text-amber-900">{inr(f.balance)} will remain outstanding. Allow this customer to pay later?</p>
+                <p className="text-[11px] text-amber-800">No payment is recorded. The order moves to Packing &amp; Dispatch and stays in Payments &amp; Ledger until the balance is collected.</p>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowPayLater(false)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+                  <button onClick={payLater} disabled={busy === "paylater"}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    {busy === "paylater" && <Loader2 className="h-3 w-3 animate-spin" />} Confirm Pay Later
                   </button>
                 </div>
               </div>

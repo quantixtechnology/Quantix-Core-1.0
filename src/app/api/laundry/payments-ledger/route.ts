@@ -68,6 +68,18 @@ export async function GET(request: Request) {
       },
     })
 
+    // Orders the business explicitly authorised to pay later. Derived from the
+    // PAY_LATER event the payment endpoint already writes — no new status field
+    // and no second mechanism.
+    const orderIds = orders.map((o) => o.id)
+    const payLaterRows = orderIds.length
+      ? await prisma.laundryOrderEvent.findMany({
+          where: { orderId: { in: orderIds }, action: "PAY_LATER" },
+          select: { orderId: true }, distinct: ["orderId"],
+        })
+      : []
+    const payLater = new Set(payLaterRows.map((e) => e.orderId))
+
     // One lookup for the page, not one per row.
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean))] as string[]
     const custs = custIds.length
@@ -81,7 +93,10 @@ export async function GET(request: Request) {
       return {
         id: o.id, orderNumber: o.orderNumber, invoiceNumber: o.invoice?.invoiceNumber ?? null,
         customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
-        orderDate: o.createdAt, orderStatus: o.status, paymentStatus: o.paymentStatus,
+        orderDate: o.createdAt, orderStatus: o.status,
+        // Only while something is still owed; once collected it reverts to the
+        // real payment status.
+        paymentStatus: payLater.has(o.id) && f.balance > 0 ? "PAY LATER" : o.paymentStatus,
         orderTotal: f.invoiceTotal, subscriptionCovered: f.subscriptionCovered, discount: f.discount,
         paid: f.paid, refunded: f.refunded, refundDue: f.refundDue, balance: f.balance,
       }
