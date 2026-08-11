@@ -27,6 +27,7 @@ const LaundryMobileApps = dynamic(() => import("@/components/laundry/views/laund
 const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryReadyForDelivery })), { loading: () => <PageLoader /> })
 const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laundry-order-detail").then(m => ({ default: m.LaundryOrderDetail })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
+const LaundryPaymentsLedger = dynamic(() => import("@/components/laundry/views/laundry-payments-ledger").then(m => ({ default: m.LaundryPaymentsLedger })), { loading: () => <PageLoader /> })
 const LaundryGarmentLookup = dynamic(() => import("@/components/laundry/views/laundry-garment-lookup").then(m => ({ default: m.LaundryGarmentLookup })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
@@ -135,6 +136,7 @@ export function LaundryPageRouter() {
     // ── Store operations (available to any user with permission) ──────────
     case "audit-queue": return <LaundryStoreAudit />
     case "payment-queue": return <LaundryPaymentCollection />
+    case "payments-ledger": return <LaundryPaymentsLedger />
     case "packing-queue": return <LaundryPacking />
     case "dispatch-queue": return <LaundryDispatch />
     case "store-receive-queue": return <LaundryStoreReceive />

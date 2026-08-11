@@ -4755,17 +4755,17 @@ model LaundryOrder {
   serviceabilityStatus  String?
   deliveryZoneId        String?
 
-  business                LaundryBusiness          @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store                   LaundryStore             @relation(fields: [storeId], references: [id])
-  packet                  LaundryPacket?
-  services                LaundryOrderService[]
-  items                   LaundryOrderItem[]
-  payments                LaundryPayment[]
-  adjustments             LaundryOrderAdjustment[]
-  invoice                 LaundryInvoice?
-  timestamps              LaundryStageTimestamp[]
-  events                  LaundryOrderEvent[]
-  feedback                LaundryOrderFeedback?
+  business    LaundryBusiness          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store       LaundryStore             @relation(fields: [storeId], references: [id])
+  packet      LaundryPacket?
+  services    LaundryOrderService[]
+  items       LaundryOrderItem[]
+  payments    LaundryPayment[]
+  adjustments LaundryOrderAdjustment[]
+  invoice     LaundryInvoice?
+  timestamps  LaundryStageTimestamp[]
+  events      LaundryOrderEvent[]
+  feedback    LaundryOrderFeedback?
 
   @@index([businessId])
   @@index([storeId])
@@ -5126,15 +5126,22 @@ model LaundryItemEvent {
 // totals and appends these; amountPaid/balanceDue/paymentStatus on the order
 // are the running summary.
 model LaundryPayment {
-  id         String   @id @default(cuid())
-  orderId    String
-  businessId String
-  method     String // CASH | UPI | CARD | WALLET | CREDIT | SUBSCRIPTION | PARTIAL
-  amount     Float
-  reference  String?
-  note       String?
-  createdBy  String?
-  createdAt  DateTime @default(now())
+  id               String   @id @default(cuid())
+  orderId          String
+  businessId       String
+  method           String // CASH | UPI | CARD | WALLET | CREDIT | SUBSCRIPTION | PARTIAL | RAZORPAY | REFUND
+  amount           Float
+  reference        String?
+  // Gateway identifiers, so a Razorpay refund can find the payment it belongs
+  // to. Empty until Razorpay is configured — never populated with a placeholder,
+  // because a fake id is worse than none when a real refund is attempted.
+  status           String   @default("SUCCESS") // SUCCESS | PENDING | FAILED
+  gateway          String? // razorpay | ...  (matches PlatformPaymentPlugin.gateway)
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  note             String?
+  createdBy        String?
+  createdAt        DateTime @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -5162,8 +5169,18 @@ model LaundryOrderAdjustment {
   // How much of this adjustment reduced an unpaid balance vs. became refundable.
   appliedToDue    Float     @default(0)
   refundable      Float     @default(0)
+  // How the amount was derived, for the ledger line. A scheme LINKS to the
+  // existing Promotion rather than copying any of its rules here.
+  kind            String    @default("COMPENSATION") // COMPENSATION | MANUAL_DISCOUNT | SCHEME_DISCOUNT
+  promotionId     String?
+  promotionCode   String?
   refundStatus    String    @default("NOT_REQUIRED") // NOT_REQUIRED | PENDING | PROCESSING | REFUNDED | FAILED
-  refundReference String?
+  refundReference String? // manual: UTR / receipt number
+  // Razorpay-ready: the payment this reverses, the gateway's refund id once one
+  // exists, and why an attempt failed. REFUNDED is written only on confirmation.
+  refundPaymentId String? // LaundryPayment.id of the original payment
+  gatewayRefundId String?
+  refundError     String?
   refundedAt      DateTime?
   createdBy       String?
   createdByName   String?

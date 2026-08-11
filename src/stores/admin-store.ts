@@ -105,6 +105,7 @@ export type LaundryBusinessPage =
   | "new-order"
   | "audit-queue"
   | "payment-queue"
+  | "payments-ledger"
   | "packing-queue"
   | "dispatch-queue"
   | "store-receive-queue"

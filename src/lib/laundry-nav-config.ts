@@ -63,7 +63,11 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "processing.sorting": "ws-sorting",
   "processing.transit": "ws-transit",
   "store_ops.store_audit": "audit-queue",
-  "store_ops.payment_collection": "payment-queue",
+  // Payments & Ledger is now the landing page for this nav item: the permanent
+  // financial view. The operational PAYMENT_PENDING queue is unchanged and is
+  // one click away inside it. Same screen key, so the same permission governs
+  // both and no new RBAC entry was needed.
+  "store_ops.payment_collection": "payments-ledger",
   "store_ops.packing_qr": "packing-queue",
   "store_ops.transit": "dispatch-queue",
   "store_ops.store_receive": "store-receive-queue",

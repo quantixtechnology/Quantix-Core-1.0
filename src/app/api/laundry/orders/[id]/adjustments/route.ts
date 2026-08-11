@@ -15,7 +15,7 @@ import { prisma } from "@/lib/prisma"
 import { requireLaundryLevel } from "@/lib/laundry-rbac"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { splitAdjustment, validateCompensation, ADJUSTMENT_REASONS } from "@/lib/laundry-adjustment"
+import { splitAdjustment, validateCompensation, ADJUSTMENT_REASONS, discountAmount, schemeRefusal } from "@/lib/laundry-adjustment"
 
 export const runtime = "nodejs"
 
@@ -61,8 +61,30 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const order = await loadOrder(id, biz.id)
     if (!order) return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 })
 
-    const amount = Math.round((Number(b.amount) || 0) * 100) / 100
     const reason = VALID_REASONS.has(String(b.reason)) ? String(b.reason) : "OTHER"
+    const kind = ["COMPENSATION", "MANUAL_DISCOUNT", "SCHEME_DISCOUNT"].includes(String(b.kind)) ? String(b.kind) : "COMPENSATION"
+
+    // THE AMOUNT IS ALWAYS DECIDED HERE. A percentage or a scheme sent from the
+    // client is a request, not a figure — the server recomputes it from the
+    // order's own total and the promotion's own rules.
+    let amount = Math.round((Number(b.amount) || 0) * 100) / 100
+    let promotionId: string | null = null
+    let promotionCode: string | null = null
+
+    if (kind === "SCHEME_DISCOUNT") {
+      const promo = await prisma.promotion.findFirst({
+        where: { id: String(b.promotionId || ""), businessId: biz.platformBusinessId ?? undefined },
+      })
+      if (!promo) return NextResponse.json({ success: false, error: "Scheme not found" }, { status: 404 })
+      // Every existing Promotion condition still applies; none are re-implemented.
+      const refusal = schemeRefusal(promo, order.grandTotal)
+      if (refusal) return NextResponse.json({ success: false, error: refusal }, { status: 400 })
+      amount = discountAmount(promo.discountType, promo.discountValue, order.grandTotal, promo.maxDiscount)
+      promotionId = promo.id
+      promotionCode = promo.code
+    } else if (kind === "MANUAL_DISCOUNT" && String(b.discountType) === "PERCENT") {
+      amount = discountAmount("PERCENT", Number(b.discountValue) || 0, order.grandTotal, null)
+    }
 
     // Re-validated server-side against the CURRENT rows, inside the same
     // transaction that writes, so two managers acting at once cannot both pass.
@@ -77,7 +99,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       const { refundable, appliedToDue } = splitAdjustment(order, existing, amount)
       const row = await tx.laundryOrderAdjustment.create({
         data: {
-          orderId: id, businessId: biz.id, amount, reason,
+          orderId: id, businessId: biz.id, amount, reason, kind, promotionId, promotionCode,
           note: typeof b.note === "string" ? b.note.slice(0, 500) : null,
           appliedToDue, refundable,
           // Nothing is owed back when the money was never collected.
