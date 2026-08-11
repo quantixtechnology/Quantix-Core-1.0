@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     await ensureGarmentCodes(lbId)
 
     const [services, categories, garments, rules] = await Promise.all([
-      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, subscriptionEligible: true } }),
       prisma.laundryCategory.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, code: true, name: true, categoryId: true, averageWeight: true, subscriptionIncluded: true, category: { select: { name: true } } } }),
       prisma.laundryPricingRule.findMany({ where: { businessId: lbId, isActive: true, garmentId: { not: null }, serviceId: { not: null }, storeId: null, customerType: null, categoryId: null }, select: { serviceId: true, garmentId: true, pricingType: true, price: true, minWeightKg: true } }),

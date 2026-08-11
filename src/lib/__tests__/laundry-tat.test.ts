@@ -128,3 +128,63 @@ describe('unit conversion round-trips what the owner typed', () => {
     expect(toHours(-3, 'DAYS')).toBe(24)
   })
 })
+
+// ── Why checkout still showed +24h ──────────────────────────────────────────
+// The turnaround was read ONLY from a snapshot written onto each cart line. A
+// cart already in localStorage, or a line added by a surface that does not pass
+// it, carried nothing — and "nothing" resolves to the 24h standard. The live
+// service config now wins.
+describe('cart turnaround prefers live service config over the line snapshot', () => {
+  const EXPRESS_6 = { tatEnabled: true, defaultTurnaroundHours: 6 }
+  const line = (serviceId: string, snap?: { tatEnabled?: boolean; turnaroundHours?: number }) =>
+    ({ kind: 'laundry' as const, serviceId, ...snap })
+
+  // Reimplements the resolution cartTatHours performs, over plain objects.
+  const resolve = (lines: ReturnType<typeof line>[], live?: Map<string, typeof EXPRESS_6>) =>
+    orderTatHours(lines.map((l) => live?.get(l.serviceId) ?? {
+      tatEnabled: l.tatEnabled, defaultTurnaroundHours: l.turnaroundHours,
+    }))
+
+  it('a STALE line with no snapshot still gets 6h from the live service', () => {
+    const live = new Map([['svc-express', EXPRESS_6]])
+    expect(resolve([line('svc-express')], live)).toBe(6)   // was 24 — the reported bug
+  })
+
+  it('without the live map a stale line falls back to standard — the old behaviour', () => {
+    expect(resolve([line('svc-express')])).toBe(24)
+  })
+
+  it('live config beats a snapshot that has gone out of date', () => {
+    const live = new Map([['svc-express', { tatEnabled: true, defaultTurnaroundHours: 12 }]])
+    expect(resolve([line('svc-express', { tatEnabled: true, turnaroundHours: 6 })], live)).toBe(12)
+  })
+
+  it('a mixed cart still takes the longest — 24h wins over 6h', () => {
+    const live = new Map([
+      ['svc-standard', { tatEnabled: false, defaultTurnaroundHours: 24 }],
+      ['svc-express', EXPRESS_6],
+    ])
+    expect(resolve([line('svc-standard'), line('svc-express')], live)).toBe(24)
+  })
+
+  it('express-only cart takes the longest express — 12h over 6h', () => {
+    const live = new Map([
+      ['svc-e6', EXPRESS_6],
+      ['svc-e12', { tatEnabled: true, defaultTurnaroundHours: 12 }],
+    ])
+    expect(resolve([line('svc-e6'), line('svc-e12')], live)).toBe(12)
+  })
+
+  // The exact production report: pickup 11 Aug, 6h service, was showing 12 Aug.
+  it('a 6h service on an 11 Aug pickup is deliverable on 11 Aug, not 12 Aug', () => {
+    const live = new Map([['svc-express', EXPRESS_6]])
+    const tat = resolve([line('svc-express')], live)
+    expect(earliestDeliveryDayKey(new Date('2026-08-11T00:00:00'), [{ tatEnabled: true, defaultTurnaroundHours: tat }])).toBe('2026-08-11')
+  })
+
+  it('a standard cart on the same pickup still lands on 12 Aug', () => {
+    const live = new Map([['svc-standard', { tatEnabled: false, defaultTurnaroundHours: 24 }]])
+    const tat = resolve([line('svc-standard')], live)
+    expect(earliestDeliveryDayKey(new Date('2026-08-11T00:00:00'), [{ tatEnabled: true, defaultTurnaroundHours: tat }])).toBe('2026-08-12')
+  })
+})

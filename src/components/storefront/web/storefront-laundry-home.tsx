@@ -311,7 +311,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
         </div>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
+      {activeService && <ServiceSheet allServices={services} service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
       {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} token={token} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
     </div>
   )
@@ -323,7 +323,7 @@ interface SubStatus { active: boolean; subscriptionId?: string; planName?: strin
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
 interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean; isPickupDefault?: boolean }
 const fmtAddr = (a: Addr) => [a.addressLine1, a.area, a.landmark, [a.city, a.state].filter(Boolean).join(", ") + (a.pincode ? ` - ${a.pincode}` : "")].filter((x) => x && String(x).trim()).join(", ")
-function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, initialDetails, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; initialDetails?: boolean; onClose: () => void }) {
+function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, initialDetails, onClose }: { allServices: Service[]; service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; initialDetails?: boolean; onClose: () => void }) {
   // Shared cart — the single source of truth this checkout consumes.
   const cartItems = useCartStore((s) => s.items)
   const clearCart = useCartStore((s) => s.clearCart)
@@ -492,7 +492,13 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   // 24h and therefore to the same date as before: standard services see no
   // change whatsoever. Everything after this point — slots, capacity, closures
   // — is the existing logic, untouched.
-  const cartTat = useMemo(() => cartTatHours(cartItems), [cartItems])
+  // Every service on the menu, by id — so a MIXED cart reads each line's real
+  // turnaround instead of whatever happened to be snapshotted on it.
+  const liveTat = useMemo(
+    () => new Map((allServices || []).map((s) => [s.id, { tatEnabled: s.tatEnabled, defaultTurnaroundHours: s.turnaroundHours }])),
+    [allServices],
+  )
+  const cartTat = useMemo(() => cartTatHours(cartItems, liveTat), [cartItems, liveTat])
   const minDeliveryDate = useMemo(
     () => (date ? earliestDeliveryDayKey(new Date(`${date}T00:00:00`), [{ tatEnabled: true, defaultTurnaroundHours: cartTat }]) : ""),
     [date, cartTat],

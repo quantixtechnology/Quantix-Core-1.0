@@ -18,7 +18,7 @@ import { Loader2, Search, Plus, Upload, Download, FileSpreadsheet, Tag, Trash2 }
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
-interface Svc { id: string; name: string }
+interface Svc { id: string; name: string; subscriptionEligible?: boolean }
 interface Cat { id: string; name: string }
 type Mode = "NOT_AVAILABLE" | "PER_PIECE" | "PER_KG"
 interface Cell { mode: string; price: number; minWeightKg: number | null }
@@ -61,7 +61,7 @@ export function LaundryPricingMatrix() {
 
   // ── Template / Export headers — keyed by Garment Code. Per service: a price
   //    column and a "<Service> Type" (billing) column. ──
-  const headers = useMemo(() => ["Garment Code", "Garment Name", "Category", "Subscription", ...services.flatMap((s) => [s.name, `${s.name} Type`])], [services])
+  const headers = useMemo(() => ["Garment Code", "Garment Name", "Category", ...services.flatMap((s) => [s.name, `${s.name} Type`])], [services])
 
   const downloadTemplate = () => {
     const sample = ["GAR00001", "Shirt", categories[0]?.name || "Men", "Yes", ...services.flatMap((_, i) => (i === 0 ? [100, "PER_KG"] : ["NA", "NA"]))]
@@ -72,7 +72,7 @@ export function LaundryPricingMatrix() {
 
   const exportMatrix = () => {
     const rows = garments.map((g) => [
-      g.code, g.name, g.categoryName || "", g.subscriptionIncluded ? "Yes" : "No",
+      g.code, g.name, g.categoryName || "",
       ...services.flatMap((s) => { const c = g.cells[s.id]; return c && c.mode !== "NOT_AVAILABLE" ? [c.price, typeLabel(c.mode)] : ["NA", "NA"] }),
     ])
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
@@ -111,20 +111,27 @@ export function LaundryPricingMatrix() {
               <th className="text-left font-semibold px-3 py-2.5">Code</th>
               <th className="text-left font-semibold px-3 py-2.5">Garment</th>
               <th className="text-left font-semibold px-3 py-2.5">Category</th>
-              <th className="text-center font-semibold px-3 py-2.5">Sub</th>
-              {services.map((s) => <th key={s.id} className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{s.name}</th>)}
+              {/* Subscription is a property of the SERVICE, not the garment —
+                  Wash & Fold can be included while Express Wash & Fold is not,
+                  for the very same shirt. Marking it on the service column is
+                  the only placement that can say that. */}
+              {services.map((s) => (
+                <th key={s.id} className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">
+                  {s.name}
+                  {s.subscriptionEligible && <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 normal-case">Sub</span>}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filtered.length === 0 ? (
-              <tr><td colSpan={5 + services.length} className="py-12 text-center text-slate-400">No garments. Add one or import your pricing sheet.</td></tr>
+              <tr><td colSpan={4 + services.length} className="py-12 text-center text-slate-400">No garments. Add one or import your pricing sheet.</td></tr>
             ) : filtered.map((g) => (
               <tr key={g.id} className={`hover:bg-slate-50/60 ${selected.has(g.id) ? "bg-blue-50/40" : ""}`}>
                 <td className="px-3 py-2.5 sticky left-0 bg-white" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(g.id)} onChange={() => toggleSel(g.id)} /></td>
                 <td className="px-3 py-2.5 font-mono text-xs text-slate-500 cursor-pointer" onClick={() => setEdit(g)}>{g.code}</td>
                 <td className="px-3 py-2.5 font-medium text-slate-800 cursor-pointer" onClick={() => setEdit(g)}>{g.name}</td>
                 <td className="px-3 py-2.5 text-slate-500 cursor-pointer" onClick={() => setEdit(g)}>{g.categoryName || "—"}</td>
-                <td className="px-3 py-2.5 text-center cursor-pointer" onClick={() => setEdit(g)}>{g.subscriptionIncluded ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50">Yes</Badge> : <span className="text-slate-300">No</span>}</td>
                 {services.map((s) => { const c = g.cells[s.id]; const na = !c || c.mode === "NOT_AVAILABLE"; return <td key={s.id} className={`px-3 py-2.5 text-right tabular-nums cursor-pointer ${na ? "text-slate-300" : "font-medium text-slate-700"}`} onClick={() => setEdit(g)}>{cellLabel(c)}</td> })}
               </tr>
             ))}
@@ -145,7 +152,6 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
   const [code, setCode] = useState(row?.code || "")
   const [categoryId, setCategoryId] = useState(row?.categoryId || "")
   const [avgWeight, setAvgWeight] = useState(row?.averageWeight != null ? String(row.averageWeight) : "")
-  const [sub, setSub] = useState(!!row?.subscriptionIncluded)
   const [cells, setCells] = useState<Record<string, { mode: Mode; price: string }>>(() => {
     const m: Record<string, { mode: Mode; price: string }> = {}
     for (const s of services) { const c = row?.cells[s.id]; m[s.id] = { mode: (c?.mode as Mode) || "NOT_AVAILABLE", price: c && c.mode !== "NOT_AVAILABLE" ? String(c.price) : "" } }
@@ -161,12 +167,12 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
     try {
       let garmentId = row?.id
       if (!garmentId) {
-        const j = await fetch("/api/laundry/garments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: name.trim(), code: code.trim() || undefined, categoryId: categoryId || null, averageWeight: avgWeight || null, subscriptionIncluded: sub }) }).then((r) => r.json())
+        const j = await fetch("/api/laundry/garments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: name.trim(), code: code.trim() || undefined, categoryId: categoryId || null, averageWeight: avgWeight || null }) }).then((r) => r.json())
         if (!j.success) throw new Error(j.error || "Could not create garment")
         garmentId = j.data.id
       }
       const cellPayload = services.map((s) => ({ serviceId: s.id, mode: cells[s.id].mode, price: cells[s.id].mode === "NOT_AVAILABLE" ? 0 : Number(cells[s.id].price) || 0 }))
-      const res = await fetch(`/api/laundry/garments/${garmentId}/pricing`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, categoryId: categoryId || null, averageWeight: avgWeight || null, subscriptionIncluded: sub, cells: cellPayload }) })
+      const res = await fetch(`/api/laundry/garments/${garmentId}/pricing`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, categoryId: categoryId || null, averageWeight: avgWeight || null, cells: cellPayload }) })
       const jj = await res.json()
       if (!res.ok || jj.success === false) throw new Error(jj.error || "Could not save pricing")
       toast.success("Saved"); onSaved()
@@ -189,7 +195,22 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm bg-white"><option value="">—</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             </div>
             <div className="space-y-1.5"><label className="text-sm text-slate-600">Average Weight (kg)</label><Input type="number" min={0} step="0.05" value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} className="h-10" placeholder="0.30" /></div>
-            <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700"><Switch checked={sub} onCheckedChange={setSub} className="data-[state=checked]:bg-emerald-600" /> Subscription Included</label>
+            {/* Read-only on purpose. One garment-wide switch could only say
+                "included everywhere" or "nowhere", so turning it off for an
+                express service turned it off for every other service too.
+                Eligibility is set per service in Services → Delivery. */}
+            <div className="col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[12px] font-semibold text-slate-600">Subscription eligibility</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {services.length === 0 && <span className="text-[12px] text-slate-400">No services yet.</span>}
+                {services.map((s) => (
+                  <span key={s.id} className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${s.subscriptionEligible ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                    {s.name}: {s.subscriptionEligible ? "Included" : "Not included"}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Set per service in Services → Edit Service. Changing one service never affects another.</p>
+            </div>
           </div>
           {row && <p className="text-[12px] text-slate-400 -mt-2">Code is permanent — pricing and history reference it, so the name can change freely.</p>}
           <div className="space-y-2">

@@ -10,7 +10,7 @@
 // identical orders.
 // ============================================================================
 import type { CartItem } from "@/stores/cart-store"
-import { orderTatHours } from "@/lib/laundry-tat"
+import { orderTatHours, type TatService } from "@/lib/laundry-tat"
 
 export type CartItemInput = Omit<CartItem, "quantity"> & { quantity: number }
 
@@ -131,9 +131,18 @@ export function groupLaundryByService(items: CartItem[]): { serviceId: string; s
  * as one. Reads the snapshot on each line; lines added before this existed
  * simply count as standard.
  */
-export function cartTatHours(items: CartItem[]): number {
-  return orderTatHours(laundryLines(items).map((i) => ({
-    tatEnabled: (i as { tatEnabled?: boolean }).tatEnabled,
-    defaultTurnaroundHours: (i as { turnaroundHours?: number }).turnaroundHours,
-  })))
+export function cartTatHours(items: CartItem[], liveByServiceId?: Map<string, TatService>): number {
+  return orderTatHours(laundryLines(items).map((i) => {
+    // LIVE CONFIG WINS. The line snapshot only covers lines added after the
+    // snapshot shipped and by a surface that passes it — a cart already sitting
+    // in localStorage, or a line added by the PWA, carries nothing and would
+    // silently fall back to the 24h standard. Reading the service the customer
+    // is actually ordering removes both failure modes.
+    const live = liveByServiceId?.get(String(i.serviceId))
+    if (live) return live
+    return {
+      tatEnabled: (i as { tatEnabled?: boolean }).tatEnabled,
+      defaultTurnaroundHours: (i as { turnaroundHours?: number }).turnaroundHours,
+    }
+  }))
 }
