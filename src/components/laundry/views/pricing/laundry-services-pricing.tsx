@@ -18,8 +18,9 @@ import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, Was
 import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
+import { tatLabel, toHours, fromHours } from "@/lib/laundry-tat"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[] }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[]; tatEnabled?: boolean; defaultTurnaroundHours?: number; tatUnit?: string | null }
 interface Category { id: string; name: string }
 
 // Configurable working stages a route can be composed from — ONLY the
@@ -42,7 +43,9 @@ const FINISH_CODES = new Set<string>(["IRON", "FOLD"])
 interface Garment { id: string; name: string; category?: { id: string; name: string | null } | null }
 interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
 
-const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true, orderMode: "GARMENT" }
+// tatValue is the number the owner sees, in whatever unit they picked; it is
+// converted to hours only on save, because hours is what the column stores.
+const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true, orderMode: "GARMENT", tatEnabled: false, tatValue: "12", tatUnit: "HOURS" }
 
 export function LaundryServicesPricing({ businessId }: { businessId: string }) {
   const [services, setServices] = useState<Service[]>([])
@@ -73,9 +76,16 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
   const [compatCats, setCompatCats] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
+  // Only meaningful while the toggle is on; a blank box on a standard service
+  // must never block saving.
+  const tatInvalid = form.tatEnabled && !(Number(form.tatValue) > 0)
 
   const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
-  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT" }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
+  const openEdit = (s: Service) => {
+    // Show the value back in the unit it was saved in — a service stored as
+    // "1 Day" must not reopen as "24 Hours".
+    const shown = fromHours(s.defaultTurnaroundHours ?? 24, s.tatUnit)
+    setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT", tatEnabled: !!s.tatEnabled, tatValue: String(shown.value), tatUnit: shown.unit }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
   // Reorder WITHIN a group only (cleaning stages or finishing stages) — finishing
   // always sits after Sorting, so it can never swap places with a cleaning stage.
@@ -93,9 +103,20 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
   const toggleCat = (id: string) => setCompatCats((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
   const save = async () => {
     if (!form.name.trim()) { toast.error("Service name is required"); return }
+    if (tatInvalid) { toast.error("Enter a valid delivery time."); return }
     setSaving(true)
     try {
-      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, orderMode: form.orderMode, processFlow: route.length ? route : null, ...(edit ? { compatibleCategoryIds: compatCats } : {}) }
+      const payload = {
+        businessId, name: form.name, description: form.description, image: form.image || null,
+        displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite,
+        orderMode: form.orderMode, processFlow: route.length ? route : null,
+        tatEnabled: form.tatEnabled,
+        // Only written while the toggle is ON. Switching off leaves the stored
+        // hours alone (PUT ignores undefined) so turning it back on restores
+        // what the owner had, and the calculation ignores it meanwhile.
+        ...(form.tatEnabled ? { defaultTurnaroundHours: toHours(Number(form.tatValue), form.tatUnit === "DAYS" ? "DAYS" : "HOURS"), tatUnit: form.tatUnit } : {}),
+        ...(edit ? { compatibleCategoryIds: compatCats } : {}),
+      }
       const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.error) throw new Error(j.error || "Save failed")
@@ -146,6 +167,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
               </div>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {s.orderMode === "BAG" && <Badge variant="outline" className="text-[10px] border-indigo-200 text-indigo-700 bg-indigo-50">Pickup First</Badge>}
+                {s.tatEnabled && <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-amber-50">⚡ {tatLabel(s.defaultTurnaroundHours ?? 24, s.tatUnit)}</Badge>}
                 <Badge variant="outline" className={`text-[10px] ${s.displayOnWebsite ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{s.displayOnWebsite ? "Website" : "Hidden"}</Badge>
                 {stages.length > 0 && <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">{stages.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label || c).join(" → ")}</Badge>}
               </div>
@@ -200,6 +222,41 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
                   ))}
                 </div>
               </div>
+            </FormSection>
+
+            {/* ── Delivery / Turnaround ── */}
+            <FormSection title="Delivery / Turnaround" subtitle="Set a custom delivery turnaround for this service. When enabled, this overrides the standard delivery time.">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label className="text-sm text-slate-600">Custom Turnaround Time</Label>
+                  {!form.tatEnabled && <p className="text-[13px] text-slate-400 mt-0.5">Uses standard delivery time</p>}
+                </div>
+                <Switch checked={form.tatEnabled} onCheckedChange={(v) => set("tatEnabled", v)} />
+              </div>
+
+              {form.tatEnabled && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-slate-600">Delivery Time</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number" min={1} value={form.tatValue}
+                      onChange={(e) => set("tatValue", e.target.value)}
+                      className={`h-11 w-28 text-[15px] ${tatInvalid ? "border-rose-400 focus-visible:ring-rose-300" : ""}`} />
+                    <div className="flex rounded-lg border border-slate-200 p-0.5">
+                      {(["HOURS", "DAYS"] as const).map((u) => (
+                        <button
+                          key={u} type="button" onClick={() => set("tatUnit", u)}
+                          className={`rounded-md px-4 py-2 text-[14px] font-medium transition-colors ${form.tatUnit === u ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+                          {u === "HOURS" ? "Hours" : "Days"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {tatInvalid
+                    ? <p className="text-[13px] font-medium text-rose-600">Enter a valid delivery time.</p>
+                    : <p className="text-[13px] text-slate-400">Customers see &ldquo;{tatLabel(toHours(Number(form.tatValue), form.tatUnit === "DAYS" ? "DAYS" : "HOURS"), form.tatUnit)}&rdquo;.</p>}
+                </div>
+              )}
             </FormSection>
 
             {/* ── Processing Route ── */}
