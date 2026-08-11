@@ -7,6 +7,8 @@
 // Shows ONLY tenant/business identity (from the Business Invoice Template) — no
 // platform (Quantix) branding.
 
+import { billToBlock, formatPhone } from "@/lib/laundry-bill-to"
+
 export interface InvoiceView {
   invoice: { number: string | null; status: string; issuedAt: string | null; notes: string | null } | null
   order: { orderNumber: string; pickupAddress: string | null; createdAt: string; pickupDate: string | null }
@@ -44,11 +46,12 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
   const accent = settings.primaryColor || "#0f172a"
   const businessName = settings.businessName || store?.name || "Laundry"
   const contact = [settings.businessPhone, settings.businessEmail, settings.businessWebsite].filter(Boolean).join(" · ")
+  const billTo = billToBlock(customer, order.pickupAddress)
 
   return (
     <div id="laundry-invoice-print" className="bg-white text-slate-800 mx-auto max-w-[720px] p-6 text-sm">
       {/* Header — tenant identity only (no platform branding). */}
-      <div className="flex items-start justify-between border-b-2 pb-4" style={{ borderColor: accent }}>
+      <div className="flex items-start justify-between border-b-2 pb-3" style={{ borderColor: accent }}>
         {/* Business first, branch second — the hierarchy a chain actually has.
             The logo box is landscape and fits by contain, so a wide logo shows
             edge to edge and a square one is centred, neither one stretched. */}
@@ -84,13 +87,21 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
       </div>
 
       {/* Meta */}
-      <div className="mt-4 grid grid-cols-2 gap-4">
+      <div className="mt-3 grid grid-cols-2 gap-4">
+        {/* ONE identity block. billToBlock() removes the snapshot's leading
+            "Name · Phone" line and any address line the block has already
+            stated — see src/lib/laundry-bill-to.ts. The stored snapshot is
+            untouched; only this presentation of it changes. */}
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Bill To</p>
-          <p className="font-semibold text-slate-900">{customer?.name || "Walk-in Customer"}</p>
-          {customer?.phone && <p className="text-xs text-slate-600">{customer.phone}</p>}
-          {customer?.email && <p className="text-xs text-slate-600">{customer.email}</p>}
-          {order.pickupAddress && <p className="mt-1 text-xs text-slate-600 whitespace-pre-line">{order.pickupAddress}</p>}
+          <p className="font-semibold text-slate-900">{billTo.name}</p>
+          {billTo.phone && <p className="text-xs text-slate-600">{formatPhone(billTo.phone)}</p>}
+          {billTo.email && <p className="text-xs text-slate-600">{billTo.email}</p>}
+          {billTo.addressLines.length > 0 && (
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              {billTo.addressLines.map((l, i) => <span key={i} className="block">{l}</span>)}
+            </p>
+          )}
         </div>
         <div className="text-right">
           <p className="text-xs text-slate-600">Invoice Date: <span className="font-medium text-slate-800">{fmtDate(invoice?.issuedAt || order.createdAt)}</span></p>
@@ -100,7 +111,7 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
       </div>
 
       {/* Items */}
-      <table className="mt-5 w-full border-collapse text-sm">
+      <table className="mt-4 w-full border-collapse text-sm">
         <thead>
           <tr className="border-y border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-400">
             <th className="py-2">Service / Garment</th>

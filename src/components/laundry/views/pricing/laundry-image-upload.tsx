@@ -26,10 +26,19 @@ export function LaundryImageUpload({
   objectFit = "cover",
   aspect = "aspect-[16/9]",
   formatMsg = "Unsupported image format. Use JPEG, PNG, WebP or GIF.",
+  frameClass = "",
+  previewClass = "",
+  compact = false,
 }: {
   value: string | null; businessId: string; folder: string; onChange: (url: string | null) => void
   allowed?: string[]; accept?: string; helper?: string
   objectFit?: "cover" | "contain"; aspect?: string; formatMsg?: string
+  /** Caps the whole control, e.g. "w-[260px]". Default: fills its container. */
+  frameClass?: string
+  /** Fixes the preview box, e.g. "h-[120px]". Overrides `aspect`. */
+  previewClass?: string
+  /** Drops the helper line and tightens the buttons, for dense config screens. */
+  compact?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -62,18 +71,22 @@ export function LaundryImageUpload({
     } catch { toast.error("Upload failed. Please check your connection and try again.") } finally { setUploading(false); if (inputRef.current) inputRef.current.value = "" }
   }
 
+  // A caller that fixes the box wins; otherwise the original fluid aspect ratio
+  // applies, so every existing call site renders exactly as before.
+  const box = previewClass || `w-full ${aspect}`
+
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${frameClass}`}>
       <input ref={inputRef} type="file" accept={acceptAttr} className="hidden" onChange={onFile} />
       {preview ? (
-        <div className={`relative w-full ${aspect} rounded-lg overflow-hidden border border-slate-200 bg-slate-50`}>
+        <div className={`relative ${box} rounded-lg overflow-hidden border border-slate-200 bg-slate-50`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="" className={`w-full h-full ${objectFit === "contain" ? "object-contain p-2" : "object-cover"}`} />
           <button type="button" onClick={() => onChange(null)} className="absolute top-1.5 right-1.5 rounded-full bg-black/60 text-white p-1"><X className="h-3.5 w-3.5" /></button>
         </div>
       ) : (
-        <button type="button" onClick={pick} className={`w-full ${aspect} rounded-lg border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-1 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors`}>
-          <ImageIcon className="h-6 w-6" /><span className="text-xs font-medium">No image</span>
+        <button type="button" onClick={pick} className={`${box} rounded-lg border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-1 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors`}>
+          <ImageIcon className={compact ? "h-5 w-5" : "h-6 w-6"} /><span className="text-[11px] font-medium">No image</span>
         </button>
       )}
       <div className="flex gap-2">
@@ -82,7 +95,7 @@ export function LaundryImageUpload({
         </Button>
         {preview && <Button type="button" size="sm" variant="ghost" className="h-8 text-rose-600" onClick={() => onChange(null)}>Remove</Button>}
       </div>
-      <p className="text-[10px] text-slate-400">{helper}</p>
+      {!compact && <p className="text-[10px] text-slate-400">{helper}</p>}
     </div>
   )
 }
