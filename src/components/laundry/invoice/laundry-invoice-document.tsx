@@ -79,9 +79,13 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
             )}
           </div>
         </div>
-        <div className="text-right">
+        {/* shrink-0 is the fix: this block sat next to a flexible sibling with
+            no shrink guard, so at narrow widths the browser took the space back
+            from here and broke "INV-LND-000017" at its hyphens into three
+            lines. The number now keeps its own width and never wraps. */}
+        <div className="shrink-0 pl-3 text-right">
           <p className="text-base font-bold" style={{ color: accent }}>INVOICE</p>
-          <p className="font-mono text-sm text-slate-700">{invoice?.number || "Draft"}</p>
+          <p className="whitespace-nowrap font-mono text-sm text-slate-700">{invoice?.number || "Draft"}</p>
           <span className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[status] || STATUS_STYLE.DRAFT}`}>{status}</span>
         </div>
       </div>

@@ -8,6 +8,8 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Eye, Printer, FileDown, CheckCircle2, Loader2, X } from "lucide-react"
 import { LaundryInvoiceDocument, type InvoiceView } from "./laundry-invoice-document"
+import { LaundryThermalReceipt } from "./laundry-thermal-receipt"
+import { DEFAULT_PRINTER_SETTINGS, normalizePrinterSettings, isRoll, pageCss, type PrinterSettings } from "@/lib/laundry-printer"
 
 const STATUS_STYLE: Record<string, string> = {
   PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -24,6 +26,9 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
   const [loading, setLoading] = useState(true)
   const [preview, setPreview] = useState(false)
   const [marking, setMarking] = useState(false)
+  // Printer configuration decides the PRESENTATION only. If it fails to load,
+  // the defaults apply and printing carries on exactly as before.
+  const [printer, setPrinter] = useState<PrinterSettings>(DEFAULT_PRINTER_SETTINGS)
 
   const load = useCallback(() => {
     if (!orderId || !businessId) return
@@ -35,6 +40,14 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
       .finally(() => setLoading(false))
   }, [orderId, businessId])
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/laundry/printer-settings?businessId=${encodeURIComponent(businessId)}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.success) setPrinter(normalizePrinterSettings(j.data)) })
+      .catch(() => {})
+  }, [businessId])
 
   const status = data?.invoice?.status || "DRAFT"
   const number = data?.invoice?.number
@@ -62,7 +75,11 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
   // and sets the window title to the invoice number so the browser's print
   // header shows the invoice — not the app URL (no Quantix branding).
   const printInvoice = () => {
-    const node = document.getElementById("laundry-invoice-print")
+    // Whichever rendering is on screen is the one that prints — the roll
+    // receipt on thermal paper, the full invoice otherwise. Same payload, same
+    // numbers; only the arrangement differs.
+    const roll = isRoll(printer)
+    const node = document.getElementById(roll ? "laundry-thermal-print" : "laundry-invoice-print")
     if (!node) return
     const w = window.open("", "_blank", "width=820,height=1040")
     if (!w) { toast.error("Allow pop-ups to print or save the invoice as PDF."); return }
@@ -70,8 +87,11 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
       .map((l) => `<link rel="stylesheet" href="${(l as HTMLLinkElement).href}">`).join("")
     const styles = Array.from(document.querySelectorAll("style")).map((s) => s.outerHTML).join("")
     const title = data?.invoice?.number || "Invoice"
+    // Copies are separate pages so a roll tears cleanly between them.
+    const copies = Array.from({ length: printer.copies }, (_, i) =>
+      `<div${i < printer.copies - 1 ? ' style="page-break-after:always"' : ""}>${node.outerHTML}</div>`).join("")
     w.document.open()
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${links}${styles}<style>@page{margin:16mm} body{margin:0}</style></head><body>${node.outerHTML}</body></html>`)
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${links}${styles}<style>${pageCss(printer)} body{margin:0}</style></head><body>${copies}</body></html>`)
     w.document.close()
     const go = () => { try { w.focus(); w.print() } catch { /* noop */ } }
     if (w.document.readyState === "complete") setTimeout(go, 400)
@@ -135,7 +155,9 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
                 <button onClick={() => setPreview(false)} className="rounded-lg p-1.5 hover:bg-slate-50"><X className="h-4 w-4 text-slate-500" /></button>
               </div>
             </div>
-            <LaundryInvoiceDocument data={data} />
+            {isRoll(printer)
+              ? <div className="flex justify-center bg-slate-100 py-4"><div className="bg-white p-2 shadow-sm"><LaundryThermalReceipt data={data} settings={printer} /></div></div>
+              : <LaundryInvoiceDocument data={data} />}
           </div>
         </div>
       )}

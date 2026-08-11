@@ -4328,6 +4328,21 @@ model LaundryOperationalConfig {
   // Payments: COD is always an option unless the owner switches it off here.
   // Online-gateway selection/config lives with the platform gateway system.
   codEnabled              Boolean         @default(true)
+  // Receipt/invoice printing for this workspace. Mirrors the Commerce store
+  // printer settings (paper size, printer type, the three print switches,
+  // header/footer, copies) so both products configure a printer the same way —
+  // stored per laundry business rather than per core Store, which laundry has
+  // no equivalent of. Presentation only: nothing here affects an order, an
+  // invoice number or a total.
+  printerPaperSize        String          @default("80mm") // 58mm | 80mm | A4 | custom
+  printerCustomWidthMm    Int             @default(80)
+  printerType             String          @default("thermal") // thermal | standard
+  printerAutoPrintOrder   Boolean         @default(false)
+  printerPrintOnPayment   Boolean         @default(false)
+  printerIncludeQr        Boolean         @default(true)
+  printerHeaderText       String          @default("")
+  printerFooterText       String          @default("")
+  printerCopies           Int             @default(1)
   updatedAt               DateTime        @updatedAt
   createdAt               DateTime        @default(now())
 
@@ -4441,30 +4456,30 @@ model LaundryScalingLimit {
 }
 
 model LaundryStore {
-  id                String   @id @default(cuid())
-  storeCode         String   @unique
-  laundryBusinessId String
-  storeName         String
-  storeType         String   @default("RETAIL_STORE")
-  managerName       String?
-  mobile            String?
-  email             String?
-  address           String?
-  city              String?
-  state             String?
-  pincode           String?
-  latitude          Float?
-  longitude         Float?
-  googlePlaceId     String?
-  formattedAddress  String?
-  serviceRadiusKm   Float?
-  dailyCapacityKg   Float?
-  isActive          Boolean  @default(true)
-  statusOverride    StoreStatusOverride @default(AUTOMATIC)
-  overrideExpiresAt DateTime?
-  businessHoursOverride String @default("{}")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                    String              @id @default(cuid())
+  storeCode             String              @unique
+  laundryBusinessId     String
+  storeName             String
+  storeType             String              @default("RETAIL_STORE")
+  managerName           String?
+  mobile                String?
+  email                 String?
+  address               String?
+  city                  String?
+  state                 String?
+  pincode               String?
+  latitude              Float?
+  longitude             Float?
+  googlePlaceId         String?
+  formattedAddress      String?
+  serviceRadiusKm       Float?
+  dailyCapacityKg       Float?
+  isActive              Boolean             @default(true)
+  statusOverride        StoreStatusOverride @default(AUTOMATIC)
+  overrideExpiresAt     DateTime?
+  businessHoursOverride String              @default("{}")
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   laundryBusiness    LaundryBusiness            @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
   departments        LaundryDepartment[]
@@ -4625,16 +4640,16 @@ model LaundryOrder {
   // Business reschedule. The rescheduled date IS deliveryDate — keeping one
   // operational source of truth avoids two fields drifting apart — so these
   // record only when it moved, who moved it and why.
-  deliveryRescheduledAt          DateTime?
-  deliveryRescheduledBy          String?
-  deliveryRescheduleReason       String?
-  pickupAddress          String?
-  pickupInstructions     String?
-  specialInstructions    String?
-  notes                  String?
-  createdBy              String?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  deliveryRescheduledAt    DateTime?
+  deliveryRescheduledBy    String?
+  deliveryRescheduleReason String?
+  pickupAddress            String?
+  pickupInstructions       String?
+  specialInstructions      String?
+  notes                    String?
+  createdBy                String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   // ── Financial snapshot ───────────────────────────────────────────────────
   // Resolved by the Billing Engine and PERSISTED at order creation. This is the
@@ -5534,16 +5549,16 @@ model LaundryCrmActivityType {
 // Lead / Opportunity priority — fully configurable, no hardcoding.
 // businessId-scoped (workspace tenant id). Order via displayOrder, default via isDefault.
 model LaundryCrmPriority {
-  id            String                    @id @default(cuid())
+  id            String                  @id @default(cuid())
   businessId    String
   name          String
-  color         String                    @default("#64748B")
-  displayOrder  Int                       @default(0)
-  active        Boolean                   @default(true)
-  isDefault     Boolean                   @default(false)
-  isSystem      Boolean                   @default(false)
-  createdAt     DateTime                  @default(now())
-  updatedAt     DateTime                  @updatedAt
+  color         String                  @default("#64748B")
+  displayOrder  Int                     @default(0)
+  active        Boolean                 @default(true)
+  isDefault     Boolean                 @default(false)
+  isSystem      Boolean                 @default(false)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
   leads         LaundryCrmLead[]
   opportunities LaundryCrmOpportunity[]
 
@@ -5552,16 +5567,16 @@ model LaundryCrmPriority {
 
 // Task type — user-configurable task categories, no hardcoding.
 model LaundryCrmTaskType {
-  id        String         @id @default(cuid())
-  businessId String
-  name       String
-  color      String         @default("#64748B")
-  displayOrder Int          @default(0)
-  active     Boolean        @default(true)
-  isSystem   Boolean        @default(false)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  tasks      LaundryCrmTask[]
+  id           String           @id @default(cuid())
+  businessId   String
+  name         String
+  color        String           @default("#64748B")
+  displayOrder Int              @default(0)
+  active       Boolean          @default(true)
+  isSystem     Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  tasks        LaundryCrmTask[]
 
   @@index([businessId])
 }
@@ -5570,14 +5585,14 @@ model LaundryCrmTaskType {
 // Configurable settings that are NOT a list live here rather than becoming
 // hardcoded behaviour.
 model LaundryCrmConfig {
-  id         String   @id @default(cuid())
-  businessId String   @unique
+  id              String   @id @default(cuid())
+  businessId      String   @unique
   // AUTO_FROM_STAGE → an opportunity's probability always follows its sales
   // stage's configured probability (operators never type it).
   // MANUAL          → probability is entered by hand and never overwritten.
-  probabilityMode String @default("AUTO_FROM_STAGE") // AUTO_FROM_STAGE | MANUAL
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  probabilityMode String   @default("AUTO_FROM_STAGE") // AUTO_FROM_STAGE | MANUAL
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([businessId])
 }
@@ -5604,9 +5619,9 @@ model LaundryCrmLead {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  status      LaundryCrmLeadStatus?  @relation(fields: [statusId], references: [id], onDelete: SetNull)
-  source      LaundryCrmLeadSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  priority    LaundryCrmPriority?    @relation(fields: [priorityId], references: [id], onDelete: SetNull)
+  status        LaundryCrmLeadStatus?         @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  source        LaundryCrmLeadSource?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  priority      LaundryCrmPriority?           @relation(fields: [priorityId], references: [id], onDelete: SetNull)
   opportunity   LaundryCrmOpportunity?
   activities    LaundryCrmActivity[]
   tasks         LaundryCrmTask[]
@@ -5848,7 +5863,7 @@ model CrmCommunicationSetting {
 //   {{mobile}} {{email}} {{currentDate}}
 model CrmCommunicationTemplate {
   id            String   @id @default(cuid())
-  businessId    String   // tenant id — any workspace id
+  businessId    String // tenant id — any workspace id
   channel       String // WHATSAPP | EMAIL
   name          String
   category      String? // Welcome | Follow-up | Quotation | Payment Reminder | …
@@ -5873,7 +5888,7 @@ model CrmCommunicationTemplate {
 // Files live in UPLOAD_ROOT/crm-recordings/<businessId>/ and metadata here.
 model CrmCallRecording {
   id             String   @id @default(cuid())
-  businessId     String   // tenant id — any workspace
+  businessId     String // tenant id — any workspace
   entityType     String // LEAD | CUSTOMER | OPPORTUNITY | ACTIVITY
   entityId       String
   fileName       String // original name, e.g. Pricing Discussion.mp3

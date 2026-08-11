@@ -11,6 +11,7 @@ import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 import { LaundrySlotSettingsForm } from "./laundry-slot-settings-form"
 import { LaundryAvailabilitySettingsForm } from "./laundry-availability-settings-form"
 import { LaundryPaymentSettingsForm } from "./laundry-payment-settings-form"
+import { LaundryPrinterSettingsForm } from "./laundry-printer-settings-form"
 import { LaundryPaymentProvidersForm } from "./laundry-payment-providers-form"
 import { LaundryVerificationSettingsForm } from "./laundry-verification-settings-form"
 import { toast } from "sonner"
@@ -160,6 +161,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       <LaundryPaymentSettingsForm businessId={businessId} />
 
       <LaundryPaymentProvidersForm businessId={businessId} />
+
+      <LaundryPrinterSettingsForm businessId={businessId} />
 
       <TransportModeCard
         storeToProcessing={storeToProcessing}
