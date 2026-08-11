@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { Eye, Printer, FileDown, CheckCircle2, Loader2, X } from "lucide-react"
 import { LaundryInvoiceDocument, type InvoiceView } from "./laundry-invoice-document"
 import { LaundryThermalReceipt } from "./laundry-thermal-receipt"
+import { LaundryCompensationPanel } from "./laundry-compensation-panel"
 import { DEFAULT_PRINTER_SETTINGS, normalizePrinterSettings, isRoll, pageCss, type PrinterSettings } from "@/lib/laundry-printer"
 
 const STATUS_STYLE: Record<string, string> = {
@@ -157,6 +158,11 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
           )}
         </div>
       )}
+
+      {/* Post-order goodwill. Deliberately here and not in Store Audit or
+          Payment Collection: it must stay reachable after payment, processing
+          and delivery are all finished. */}
+      <LaundryCompensationPanel orderId={orderId} businessId={businessId} onChanged={load} />
 
       {preview && data && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 no-print" onClick={() => setPreview(false)}>

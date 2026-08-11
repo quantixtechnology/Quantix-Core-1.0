@@ -4755,16 +4755,17 @@ model LaundryOrder {
   serviceabilityStatus  String?
   deliveryZoneId        String?
 
-  business   LaundryBusiness         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store      LaundryStore            @relation(fields: [storeId], references: [id])
-  packet     LaundryPacket?
-  services   LaundryOrderService[]
-  items      LaundryOrderItem[]
-  payments   LaundryPayment[]
-  invoice    LaundryInvoice?
-  timestamps LaundryStageTimestamp[]
-  events     LaundryOrderEvent[]
-  feedback   LaundryOrderFeedback?
+  business                LaundryBusiness          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store                   LaundryStore             @relation(fields: [storeId], references: [id])
+  packet                  LaundryPacket?
+  services                LaundryOrderService[]
+  items                   LaundryOrderItem[]
+  payments                LaundryPayment[]
+  invoice                 LaundryInvoice?
+  timestamps              LaundryStageTimestamp[]
+  events                  LaundryOrderEvent[]
+  feedback                LaundryOrderFeedback?
+  laundryOrderAdjustments LaundryOrderAdjustment[]
 
   @@index([businessId])
   @@index([storeId])
@@ -5134,6 +5135,39 @@ model LaundryPayment {
   note       String?
   createdBy  String?
   createdAt  DateTime @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([businessId])
+  @@index([createdAt])
+}
+
+// Post-order goodwill / compensation, recorded ALONGSIDE the invoice rather than
+// inside it. The original grandTotal and every LaundryPayment row stay exactly
+// as they were — an invoice that silently changes value after the fact is not
+// auditable. An adjustment reduces what is still owed, or becomes a refund the
+// business owes back; which one is decided by how much has already been paid.
+//
+// refundStatus is deliberately explicit. There is no automated laundry refund
+// call today, so money is never described as returned until someone records
+// that it actually was.
+model LaundryOrderAdjustment {
+  id              String    @id @default(cuid())
+  orderId         String
+  businessId      String
+  amount          Float // positive; always in the customer's favour
+  reason          String // EXPRESS_DELAY | SERVICE_ISSUE | GARMENT_ISSUE | COMPLAINT | GOODWILL | OTHER
+  note            String?
+  // How much of this adjustment reduced an unpaid balance vs. became refundable.
+  appliedToDue    Float     @default(0)
+  refundable      Float     @default(0)
+  refundStatus    String    @default("NOT_REQUIRED") // NOT_REQUIRED | PENDING | PROCESSING | REFUNDED | FAILED
+  refundReference String?
+  refundedAt      DateTime?
+  createdBy       String?
+  createdByName   String?
+  createdAt       DateTime  @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
