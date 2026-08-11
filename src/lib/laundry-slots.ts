@@ -47,6 +47,29 @@ export function slotIsPast(slot: string, dateISO: string | null | undefined, now
   return d.getTime() < now.getTime()
 }
 
+/**
+ * Has this slot COMPLETELY ended?
+ *
+ * The distinction that matters for a pickup: at 16:47 the 16:00-17:00 slot has
+ * started but not finished, and is still perfectly bookable — a courier can
+ * still come. slotIsPast() answers "has it started", which is the right question
+ * for a DELIVERY floor (nothing may be promised before the TAT elapses) and the
+ * wrong one for pickup availability.
+ *
+ * At exactly the end time the slot is treated as over.
+ */
+export function slotHasEnded(slot: string, dateISO: string | null | undefined, now: Date = new Date()): boolean {
+  if (!slot || !dateISO) return false
+  const parts = String(slot).split("-")
+  const endStr = (parts[1] ?? parts[0]).trim()
+  const end = toMin(endStr)
+  if (!Number.isFinite(end)) return false
+  const d = new Date(dateISO)
+  if (isNaN(d.getTime())) return false
+  d.setHours(Math.floor(end / 60), end % 60, 0, 0)
+  return d.getTime() <= now.getTime()
+}
+
 // Normalise a raw op-config row (or partial) into the two SlotConfigs, applying
 // defaults for any missing field. Keeps every surface consistent.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

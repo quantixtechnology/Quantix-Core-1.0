@@ -29,6 +29,7 @@ import {
   DAY_NAMES_SHORT,
 } from "@/lib/core/store"
 import type { StoreDayTiming, StoreOpenResult } from "@/lib/core/store"
+import { PRINT_TIMEZONE as BUSINESS_TIMEZONE } from "@/lib/print-timestamp"
 
 export interface LaundryAvailability {
   storeId: string | null
@@ -219,6 +220,12 @@ export async function checkBranchOpen(
 }
 
 // Is a specific pickup/delivery date bookable? Respects weekly off-days
+/** Today's date in the business timezone, as YYYY-MM-DD. */
+export function businessToday(now: Date = new Date()): string {
+  // en-CA formats as YYYY-MM-DD, which sorts correctly as a string.
+  return now.toLocaleDateString("en-CA", { timeZone: BUSINESS_TIMEZONE })
+}
+
 // (StoreTiming) holidays/temporary closures (closedUntil) — never a past date.
 export function isLaundryDateAvailable(
   timings: StoreDayTiming[],
@@ -229,8 +236,13 @@ export function isLaundryDateAvailable(
   const start = new Date(`${dateISO}T00:00:00.000Z`)
   if (isNaN(start.getTime())) return { available: false, reason: "Invalid date", openTime: null, closeTime: null }
 
-  // Past dates are never bookable.
-  if (start.getTime() < Date.now() - 6 * 60 * 60 * 1000) {
+  // A date is past only when its CALENDAR DAY is before today's, in business
+  // local time. This used to compare UTC midnight against now minus six hours —
+  // a rough stand-in for IST that broke every day at about 11:30 AM local, when
+  // "today" started reporting itself as past. A day is not in the past because
+  // some of it has elapsed; whether a particular SLOT has ended is a separate
+  // question, answered by slotHasEnded() against the chosen slot.
+  if (dateISO < businessToday()) {
     return { available: false, reason: "This date is in the past", openTime: null, closeTime: null }
   }
 

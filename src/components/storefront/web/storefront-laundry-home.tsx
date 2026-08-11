@@ -21,7 +21,7 @@ import { GoogleAddressPicker } from "./google/address-picker"
 import type { DeliveryAddress } from "@/stores/cart-store"
 import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey } from "@/lib/laundry-tat"
 import { cartTatHours } from "@/lib/laundry-cart"
-import { slotIsPast } from "@/lib/laundry-slots"
+import { slotIsPast, slotHasEnded } from "@/lib/laundry-slots"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
@@ -1282,7 +1282,12 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Pickup Date"><input type="date" value={date} min={todayIst()} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={slot} onChange={(e) => setSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {pickupSlots.length === 0 ? <option>Loading…</option> : pickupSlots.map((s) => <option key={s}>{s}</option>)}
+                  {pickupSlots.length === 0 ? <option>Loading…</option> : pickupSlots.map((s) => {
+                    // Only a slot that has completely ENDED is unavailable. At
+                    // 16:47 the 16:00-17:00 slot is still live and bookable.
+                    const over = slotHasEnded(s, date)
+                    return <option key={s} value={s} disabled={over} className={over ? "bg-gray-100 text-gray-400" : ""}>{s}{over ? " — ended" : ""}</option>
+                  })}
                 </select>
               </Field>
             </div>
