@@ -15,6 +15,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
+import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 
@@ -88,7 +89,41 @@ async function recomputeOrder(orderId: string) {
     })
   })
 
-  return { grandTotal, amountPaid: order.amountPaid || 0, balanceDue: r2(Math.max(0, grandTotal - (order.amountPaid || 0))) }
+  // SUBSCRIPTION FOLLOWS THE AUDITED LINE.
+  //
+  // Coverage is decided per garment×service from the order's CURRENT items, but
+  // it is applied ONCE and then treated as settled. After an audit correction
+  // that snapshot is stale: a Blanket booked as Wash & Fold (covered) and
+  // audited as Dry Clean (not covered) kept the coverage it no longer qualifies
+  // for, and kept consuming the customer's allowance.
+  //
+  // force releases the existing consumption and re-applies against the audited
+  // lines, so eligible lines stay covered, ineligible ones become payable, and
+  // the allowance reflects only what actually qualified. Real payments are
+  // untouched — this moves the coverage portion, not a LaundryPayment row.
+  //
+  // Only when coverage was already applied: an order that never used a
+  // subscription is left to the normal flow rather than silently acquiring one.
+  const beforeCoverage = await prisma.laundryOrder.findUnique({ where: { id: orderId }, select: { subscriptionCoveredAmount: true } })
+  if ((beforeCoverage?.subscriptionCoveredAmount || 0) > 0) {
+    try {
+      await applySubscriptionToOrder(orderId, { force: true, actorName: "Store Audit correction" })
+    } catch (e) {
+      // Never leave the order un-priced because the subscription re-apply failed.
+      console.error("[audit-item] subscription re-apply", e)
+    }
+  }
+
+  const after = await prisma.laundryOrder.findUnique({
+    where: { id: orderId },
+    select: { grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true },
+  })
+  return {
+    grandTotal: r2(after?.grandTotal ?? grandTotal),
+    amountPaid: r2(after?.amountPaid ?? order.amountPaid ?? 0),
+    balanceDue: r2(after?.balanceDue ?? 0),
+    subscriptionCoveredAmount: r2(after?.subscriptionCoveredAmount ?? 0),
+  }
 }
 
 /**

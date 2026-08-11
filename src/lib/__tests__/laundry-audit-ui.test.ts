@@ -72,9 +72,11 @@ describe('subscription eligibility is shown per row', () => {
   })
 
   it('states both outcomes in plain words', () => {
-    expect(SRC).toContain('✓ Subscription eligible')
+    // Wording follows the spec: "covered", and the ineligible line now also
+    // carries its rate so the financial consequence is visible.
+    expect(SRC).toContain('✓ Subscription covered')
     expect(SRC).toContain('✕ Not covered by subscription')
-    expect(SRC).toContain('Normal pricing applies')
+    expect(SRC).toContain('normal billing')
   })
 
   it('names another service that would cover it', () => {

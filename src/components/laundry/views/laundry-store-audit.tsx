@@ -74,14 +74,16 @@ const fmt = (s: string) => new Date(s).toLocaleString("en-IN", { day: "2-digit",
  * Stated on every row, before approval, because discovering after payment that
  * a blanket was never covered is the failure this is meant to prevent.
  */
-function EligibilityLine({ eligible, alternatives }: { eligible: boolean; alternatives: string[] }) {
+function EligibilityLine({ eligible, alternatives, rate }: { eligible: boolean; alternatives: string[]; rate?: string | null }) {
   if (eligible) {
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">✓ Subscription eligible</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">✓ Subscription covered</span>
   }
   return (
     <span className="text-[11px] text-slate-500">
+      {/* The rate is shown beside the refusal so the auditor sees the financial
+          consequence of this line, not just its status. */}
       <span className="font-medium text-slate-600">✕ Not covered by subscription</span>
-      <span className="text-slate-400"> · Normal pricing applies</span>
+      {rate ? <span className="text-slate-500"> · {rate} — normal billing</span> : <span className="text-slate-400"> · Normal pricing applies</span>}
       {alternatives.length > 0 && <span className="block text-slate-400">Subscription eligible for {alternatives.join(", ")}.</span>}
     </span>
   )
@@ -461,7 +463,8 @@ export function LaundryStoreAudit() {
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <EligibilityLine eligible={isEligible(it.garmentId, it.serviceId)} alternatives={eligibleElsewhere(it.garmentId, it.serviceId)} />
+                            <EligibilityLine eligible={isEligible(it.garmentId, it.serviceId)} alternatives={eligibleElsewhere(it.garmentId, it.serviceId)}
+                              rate={it.unitPrice > 0 ? `${inr(it.unitPrice)}${it.pricingType === "PER_KG" ? "/kg" : ""}` : null} />
                             <div className="flex gap-2">
                               <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => beginEdit(it)}>
                                 <Pencil className="h-3.5 w-3.5" /> Edit
