@@ -49,16 +49,23 @@ export async function grantAllowance(tx: Tx, sub: { id: string; businessId: stri
   return { kg, pieces }
 }
 
-// Subscription eligibility is defined ONCE in the Pricing Matrix, never per plan.
-// A garment is covered when LaundryGarment.subscriptionIncluded = true; its
-// PER_KG / PER_PIECE mode comes from the garment×service pricing rule. Returns the
-// coverage rules in the exact shape computeCoverage consumes. Keyed by the
-// LaundryBusiness id (garments + pricing rules live there).
+// Subscription eligibility is defined ONCE, on the SERVICE, never per plan.
+//
+// It used to be read from LaundryGarment.subscriptionIncluded, which cannot
+// express the actual rule: the same shirt is covered under Wash & Fold and not
+// covered under Express Wash & Fold. A garment-level flag can only say
+// "covered everywhere" or "nowhere", so an express service could never be
+// excluded without excluding the standard ones too.
+//
+// LaundryService.subscriptionEligible is the source of truth. A garment×service
+// pair is covered when THAT service is eligible; the PER_KG / PER_PIECE mode
+// still comes from the pricing rule, so allowances, billing and redemption are
+// unchanged — only which pairs qualify.
 export async function subscriptionCoverageRules(laundryBusinessId: string): Promise<{ serviceId: string; garmentId: string | null; mode: AllowanceMode }[]> {
-  const eligible = await prisma.laundryGarment.findMany({ where: { businessId: laundryBusinessId, subscriptionIncluded: true }, select: { id: true } })
+  const eligible = await prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }, select: { id: true } })
   if (eligible.length === 0) return []
-  const gIds = eligible.map((g) => g.id)
-  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, garmentId: { in: gIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
+  const sIds = eligible.map((s) => s.id)
+  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, serviceId: { in: sIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
   const seen = new Set<string>()
   const out: { serviceId: string; garmentId: string | null; mode: AllowanceMode }[] = []
   for (const r of rules) {

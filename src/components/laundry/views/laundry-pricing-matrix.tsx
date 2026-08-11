@@ -116,9 +116,11 @@ export function LaundryPricingMatrix() {
                   for the very same shirt. Marking it on the service column is
                   the only placement that can say that. */}
               {services.map((s) => (
-                <th key={s.id} className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">
-                  {s.name}
-                  {s.subscriptionEligible && <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 normal-case">Sub</span>}
+                <th key={s.id} className="text-right font-semibold px-3 py-2.5 whitespace-nowrap align-bottom">
+                  <div>{s.name}</div>
+                  <div className={`text-[9px] font-medium normal-case ${s.subscriptionEligible ? "text-emerald-600" : "text-slate-400"}`}>
+                    Subscription: {s.subscriptionEligible ? "Included" : "Not included"}
+                  </div>
                 </th>
               ))}
             </tr>
@@ -195,22 +197,10 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm bg-white"><option value="">—</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             </div>
             <div className="space-y-1.5"><label className="text-sm text-slate-600">Average Weight (kg)</label><Input type="number" min={0} step="0.05" value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} className="h-10" placeholder="0.30" /></div>
-            {/* Read-only on purpose. One garment-wide switch could only say
-                "included everywhere" or "nowhere", so turning it off for an
-                express service turned it off for every other service too.
-                Eligibility is set per service in Services → Delivery. */}
-            <div className="col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-[12px] font-semibold text-slate-600">Subscription eligibility</p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {services.length === 0 && <span className="text-[12px] text-slate-400">No services yet.</span>}
-                {services.map((s) => (
-                  <span key={s.id} className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${s.subscriptionEligible ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
-                    {s.name}: {s.subscriptionEligible ? "Included" : "Not included"}
-                  </span>
-                ))}
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">Set per service in Services → Edit Service. Changing one service never affects another.</p>
-            </div>
+            {/* No control here on purpose: a garment-wide switch could only
+                say "covered everywhere" or "nowhere", which is what made
+                turning Express off turn every other service off too. */}
+            <p className="col-span-2 text-[12px] text-slate-400">Subscription eligibility is configured per service in Services → Edit Service.</p>
           </div>
           {row && <p className="text-[12px] text-slate-400 -mt-2">Code is permanent — pricing and history reference it, so the name can change freely.</p>}
           <div className="space-y-2">

@@ -20,7 +20,7 @@ import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
 import { tatLabel, toHours, fromHours } from "@/lib/laundry-tat"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[]; tatEnabled?: boolean; defaultTurnaroundHours?: number; tatUnit?: string | null }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[]; subscriptionEligible?: boolean; tatEnabled?: boolean; defaultTurnaroundHours?: number; tatUnit?: string | null }
 interface Category { id: string; name: string }
 
 // Configurable working stages a route can be composed from — ONLY the
@@ -45,7 +45,7 @@ interface PriceRow { garmentId: string; garmentName: string; category: string | 
 
 // tatValue is the number the owner sees, in whatever unit they picked; it is
 // converted to hours only on save, because hours is what the column stores.
-const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true, orderMode: "GARMENT", tatEnabled: false, tatValue: "12", tatUnit: "HOURS" }
+const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true, orderMode: "GARMENT", subscriptionEligible: false, tatEnabled: false, tatValue: "12", tatUnit: "HOURS" }
 
 export function LaundryServicesPricing({ businessId }: { businessId: string }) {
   const [services, setServices] = useState<Service[]>([])
@@ -85,7 +85,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
     // Show the value back in the unit it was saved in — a service stored as
     // "1 Day" must not reopen as "24 Hours".
     const shown = fromHours(s.defaultTurnaroundHours ?? 24, s.tatUnit)
-    setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT", tatEnabled: !!s.tatEnabled, tatValue: String(shown.value), tatUnit: shown.unit }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
+    setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT", subscriptionEligible: !!s.subscriptionEligible, tatEnabled: !!s.tatEnabled, tatValue: String(shown.value), tatUnit: shown.unit }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
   // Reorder WITHIN a group only (cleaning stages or finishing stages) — finishing
   // always sits after Sorting, so it can never swap places with a cleaning stage.
@@ -110,6 +110,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
         businessId, name: form.name, description: form.description, image: form.image || null,
         displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite,
         orderMode: form.orderMode, processFlow: route.length ? route : null,
+        subscriptionEligible: form.subscriptionEligible,
         tatEnabled: form.tatEnabled,
         // Only written while the toggle is ON. Switching off leaves the stored
         // hours alone (PUT ignores undefined) so turning it back on restores
@@ -168,6 +169,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {s.orderMode === "BAG" && <Badge variant="outline" className="text-[10px] border-indigo-200 text-indigo-700 bg-indigo-50">Pickup First</Badge>}
                 {s.tatEnabled && <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-amber-50">⚡ {tatLabel(s.defaultTurnaroundHours ?? 24, s.tatUnit)}</Badge>}
+                {s.subscriptionEligible && <Badge variant="outline" className="text-[10px] border-emerald-200 text-emerald-700 bg-emerald-50">Subscription</Badge>}
                 <Badge variant="outline" className={`text-[10px] ${s.displayOnWebsite ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{s.displayOnWebsite ? "Website" : "Hidden"}</Badge>
                 {stages.length > 0 && <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">{stages.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label || c).join(" → ")}</Badge>}
               </div>
@@ -222,6 +224,19 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
                   ))}
                 </div>
               </div>
+            </FormSection>
+
+            {/* ── Subscription ── */}
+            <FormSection title="Subscription" subtitle="Whether subscription plans can be used for this service">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label className="text-sm text-slate-600">Subscription Eligible</Label>
+                  <p className="text-[13px] text-slate-400 mt-0.5">Allow customers to use subscription plans for this service.</p>
+                </div>
+                <Switch checked={form.subscriptionEligible} onCheckedChange={(v) => set("subscriptionEligible", v)} className="data-[state=checked]:bg-emerald-600" />
+              </div>
+              {/* Says out loud what the old garment-wide switch could not do. */}
+              <p className="text-[13px] text-slate-400">Applies to every garment priced under this service. Other services are unaffected.</p>
             </FormSection>
 
             {/* ── Delivery / Turnaround ── */}
