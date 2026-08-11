@@ -8,6 +8,7 @@
 // platform (Quantix) branding.
 
 import { billToBlock, formatPhone } from "@/lib/laundry-bill-to"
+import { printedOnLine } from "@/lib/print-timestamp"
 
 export interface InvoiceView {
   invoice: { number: string | null; status: string; issuedAt: string | null; notes: string | null } | null
@@ -39,7 +40,12 @@ const STATUS_STYLE: Record<string, string> = {
   CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
 }
 
-export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
+/**
+ * `printedAt` is stamped by the caller at the moment Print/Save-PDF is clicked,
+ * so a preview left open for twenty minutes cannot print a stale time. Omitted
+ * (preview, customer view) it simply reads "now".
+ */
+export function LaundryInvoiceDocument({ data, printedAt }: { data: InvoiceView; printedAt?: number }) {
   const { invoice, order, totals, gst, items, payments, customer, store, settings } = data
   const status = invoice?.status || "DRAFT"
   const charges = (totals.pickupCharge || 0) + (totals.deliveryCharge || 0) + (totals.expressCharge || 0)
@@ -191,6 +197,14 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
           {settings.invoiceFooter && <p className="mt-2 text-center">{settings.invoiceFooter}</p>}
         </div>
       )}
+
+      {/* WHEN THIS COPY WAS PRINTED — distinct from Invoice Date above, which
+          is when it was issued and never moves. Inside the document on purpose:
+          a browser print header does not survive a photocopy or an emailed PDF.
+          Subtle by design; it must not compete with the total. */}
+      <p className="mt-3 border-t border-slate-100 pt-2 text-right text-[10px] text-slate-400">
+        {printedOnLine(printedAt)}
+      </p>
     </div>
   )
 }

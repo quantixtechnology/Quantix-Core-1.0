@@ -45,6 +45,7 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [invoice, setInvoice] = useState<InvoiceView | null>(null)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [printedAt, setPrintedAt] = useState(() => Date.now())
   const [rate, setRate] = useState(0)
   const [comment, setComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -96,6 +97,12 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
       setDetail((p) => (p ? { ...p, feedback: j.data, canRate: false } : p))
       setRate(0); setComment("")
     } catch { setSubmitErr("Could not submit feedback.") } finally { setSubmitting(false) }
+  }
+  // Same rule as the admin panel: the customer's copy carries the time THIS
+  // copy was printed, re-stamped on every click.
+  const printNow = () => {
+    setPrintedAt(Date.now())
+    requestAnimationFrame(() => requestAnimationFrame(printInvoice))
   }
   const printInvoice = () => {
     const node = document.getElementById("laundry-invoice-print")
@@ -236,7 +243,7 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
             <button onClick={() => viewInvoice(detail.order.id)} className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: brandColor }}><FileText className="w-4 h-4" /> View Invoice</button>
           </>
         )}
-        {invoiceOpen && <InvoiceModal data={invoice} onClose={() => setInvoiceOpen(false)} onPrint={printInvoice} />}
+        {invoiceOpen && <InvoiceModal data={invoice} onClose={() => setInvoiceOpen(false)} onPrint={printNow} printedAt={printedAt} />}
       </div>
     )
   }
@@ -271,7 +278,7 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
           ))}
         </div>
       )}
-      {invoiceOpen && <InvoiceModal data={invoice} onClose={() => setInvoiceOpen(false)} onPrint={printInvoice} />}
+      {invoiceOpen && <InvoiceModal data={invoice} onClose={() => setInvoiceOpen(false)} onPrint={printNow} printedAt={printedAt} />}
     </div>
   )
 }
@@ -286,7 +293,7 @@ function Section({ icon: Icon, title, brandColor, children }: { icon: React.Comp
 }
 const Row = ({ k, v }: { k: string; v: string }) => <div className="flex justify-between gap-3 text-sm"><span className="text-gray-500 shrink-0">{k}</span><span className="text-right text-gray-800">{v}</span></div>
 
-function InvoiceModal({ data, onClose, onPrint }: { data: InvoiceView | null; onClose: () => void; onPrint: () => void }) {
+function InvoiceModal({ data, onClose, onPrint, printedAt }: { data: InvoiceView | null; onClose: () => void; onPrint: () => void; printedAt?: number }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 no-print" onClick={onClose}>
       <div className="relative my-6 w-full max-w-3xl rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -297,7 +304,7 @@ function InvoiceModal({ data, onClose, onPrint }: { data: InvoiceView | null; on
             <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-slate-50"><X className="h-4 w-4 text-slate-500" /></button>
           </div>
         </div>
-        {data ? <LaundryInvoiceDocument data={data} /> : <div className="flex items-center justify-center gap-2 py-20 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading invoice…</div>}
+        {data ? <LaundryInvoiceDocument data={data} printedAt={printedAt} /> : <div className="flex items-center justify-center gap-2 py-20 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading invoice…</div>}
       </div>
     </div>
   )

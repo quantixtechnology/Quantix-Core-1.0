@@ -29,6 +29,11 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
   // Printer configuration decides the PRESENTATION only. If it fails to load,
   // the defaults apply and printing carries on exactly as before.
   const [printer, setPrinter] = useState<PrinterSettings>(DEFAULT_PRINTER_SETTINGS)
+  // Stamped fresh on every Print / Save PDF. A preview left open for twenty
+  // minutes must not carry its opening time into the printed copy, and a
+  // re-print must get its own time — hence state re-stamped per click rather
+  // than a value captured when the document first rendered.
+  const [printedAt, setPrintedAt] = useState(() => Date.now())
 
   const load = useCallback(() => {
     if (!orderId || !businessId) return
@@ -74,6 +79,14 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
   // fixes the blank print (the node was inside the modal's display:none wrapper)
   // and sets the window title to the invoice number so the browser's print
   // header shows the invoice — not the app URL (no Quantix branding).
+  // Re-stamp, let React paint the new timestamp into the node, THEN clone it.
+  // printInvoice reads from the live DOM, so printing before that paint would
+  // ship the previous timestamp.
+  const printNow = () => {
+    setPrintedAt(Date.now())
+    requestAnimationFrame(() => requestAnimationFrame(printInvoice))
+  }
+
   const printInvoice = () => {
     // Whichever rendering is on screen is the one that prints — the roll
     // receipt on thermal paper, the full invoice otherwise. Same payload, same
@@ -98,7 +111,7 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
     else w.onload = () => setTimeout(go, 250)
   }
   // Ensure the invoice node is mounted (preview open) before printing.
-  const openAndPrint = () => { setPreview(true); setTimeout(printInvoice, 400) }
+  const openAndPrint = () => { setPreview(true); setTimeout(printNow, 400) }
 
   if (loading && !data) return <div className="rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-400">Loading invoice…</div>
 
@@ -151,13 +164,13 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
             <div className="no-print flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
               <p className="text-sm font-semibold text-slate-700">Invoice Preview</p>
               <div className="flex gap-2">
-                <button onClick={printInvoice} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"><Printer className="h-3.5 w-3.5" /> Print / Save PDF</button>
+                <button onClick={printNow} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"><Printer className="h-3.5 w-3.5" /> Print / Save PDF</button>
                 <button onClick={() => setPreview(false)} className="rounded-lg p-1.5 hover:bg-slate-50"><X className="h-4 w-4 text-slate-500" /></button>
               </div>
             </div>
             {isRoll(printer)
-              ? <div className="flex justify-center bg-slate-100 py-4"><div className="bg-white p-2 shadow-sm"><LaundryThermalReceipt data={data} settings={printer} /></div></div>
-              : <LaundryInvoiceDocument data={data} />}
+              ? <div className="flex justify-center bg-slate-100 py-4"><div className="bg-white p-2 shadow-sm"><LaundryThermalReceipt data={data} settings={printer} printedAt={printedAt} /></div></div>
+              : <LaundryInvoiceDocument data={data} printedAt={printedAt} />}
           </div>
         </div>
       )}

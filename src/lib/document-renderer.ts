@@ -9,6 +9,7 @@ import { readFile } from 'fs/promises'
 import { join }     from 'path'
 import { UPLOAD_ROOT } from '@/lib/upload-root'
 import type { PlatformSettingsData } from '@/lib/platform-settings'
+import { printedOnLine } from '@/lib/print-timestamp'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -373,6 +374,10 @@ ${printExtras}
       ${ps.invoiceFooterNotes ? `<div class="footer-top">${ps.invoiceFooterNotes}</div>` : ''}
       ${regs.length > 0 ? `<div class="footer-regs">${regs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
       ${ps.invoiceLegalDisclaimer ? `<div class="footer-disclaimer">${ps.invoiceLegalDisclaimer}</div>` : ''}
+      <!-- When THIS copy was printed, distinct from the Issued date above.
+           Rendered here rather than left to a browser print header, which does
+           not survive a photocopy or a forwarded PDF. -->
+      <div style="font-size:9px;color:#b0b8c4;margin-bottom:3px;">${printedOnLine()}</div>
       <div class="footer-bottom">
         <div class="footer-left">
           ${coName} &nbsp;·&nbsp; ${coEmail}${coWebsite ? ` &nbsp;·&nbsp; ${coWebsite}` : ''}
@@ -634,6 +639,8 @@ ${printExtras}
 
     <div class="footer">
       ${complianceRegs.length > 0 ? `<div style="font-size:9px;color:#b0b8c4;margin-bottom:3px;">${complianceRegs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
+      <!-- Print/export time for this copy — see the note above. -->
+      <div style="font-size:9px;color:#b0b8c4;margin-bottom:3px;">${printedOnLine()}</div>
       <div class="footer-bottom">
         <div>${business.name}${business.contactEmail ? ` &nbsp;·&nbsp; ${business.contactEmail}` : ''}${business.supportEmail && business.supportEmail !== business.contactEmail ? ` &nbsp;·&nbsp; ${business.supportEmail}` : ''}</div>
         <div style="font-size:9px;color:#b0b8c4;">Thank you for your business!</div>

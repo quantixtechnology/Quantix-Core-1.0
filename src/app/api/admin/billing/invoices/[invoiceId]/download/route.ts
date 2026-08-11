@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 import { withMiddleware } from '@/lib/middleware';
 import { NextResponse } from 'next/server';
 import { getPlatformSettings, salesDocLogoUrl, salesDocAccentColor } from '@/lib/platform-settings';
+import { printedOnLine } from '@/lib/print-timestamp'
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -140,7 +141,7 @@ function buildInvoiceHtml(opts: {
   .divider { height: 2px; background: linear-gradient(90deg, ${opts.accentColor}, #06b6d4); border-radius: 2px; margin-bottom: 20px; }
   .inv-meta { text-align: right; }
   .inv-meta .inv-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
-  .inv-meta .inv-no { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.3px; font-family: monospace; }
+  .inv-meta .inv-no { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.3px; font-family: monospace; white-space: nowrap; }
   .inv-meta .inv-dates { font-size: 10.5px; color: #6b7280; margin-top: 6px; line-height: 1.7; }
   .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; margin-top: 8px; }
   .status-paid { background: #d1fae5; color: #065f46; }
@@ -250,6 +251,8 @@ function buildInvoiceHtml(opts: {
   </div>` : ''}
 
   <div class="footer">
+    <!-- When THIS copy was printed, distinct from the invoice Date above. -->
+    <p>${printedOnLine()}</p>
     <p>This is a computer-generated invoice. No signature required.</p>
     <p>SAC Code ${opts.sacCode} — Information Technology (IT) Consulting and Support Services</p>
     <p style="margin-top:4px;">For billing queries: ${opts.sellerEmail}</p>

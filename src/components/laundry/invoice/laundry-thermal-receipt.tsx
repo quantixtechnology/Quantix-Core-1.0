@@ -11,6 +11,7 @@
 
 import { billToBlock, formatPhone } from "@/lib/laundry-bill-to"
 import { printableWidthMm } from "@/lib/laundry-printer"
+import { formatPrintedAt, PRINTED_ON_LABEL } from "@/lib/print-timestamp"
 import type { PrinterSettings } from "@/lib/laundry-printer"
 import type { InvoiceView } from "./laundry-invoice-document"
 
@@ -21,7 +22,7 @@ function Rule() {
   return <div className="my-1 border-t border-dashed border-black/40" />
 }
 
-export function LaundryThermalReceipt({ data, settings }: { data: InvoiceView; settings: PrinterSettings }) {
+export function LaundryThermalReceipt({ data, settings, printedAt }: { data: InvoiceView; settings: PrinterSettings; printedAt?: number }) {
   const { invoice, order, totals, gst, items, customer, store, settings: tenant } = data
   const widthMm = printableWidthMm(settings) ?? 72
   const billTo = billToBlock(customer, order.pickupAddress)
@@ -98,8 +99,14 @@ export function LaundryThermalReceipt({ data, settings }: { data: InvoiceView; s
       )}
 
       <Rule />
-      <div className="whitespace-pre-line pb-2 text-center">
+      <div className="whitespace-pre-line text-center">
         {settings.footerText.trim() || tenant.invoiceFooter || "Thank You"}
+      </div>
+      {/* On a 58mm roll the label and the value will not share a line, so they
+          are stacked rather than allowed to wrap mid-timestamp. */}
+      <div className="pb-2 text-center text-[8px] leading-tight">
+        <div>{PRINTED_ON_LABEL}:</div>
+        <div className="whitespace-nowrap">{formatPrintedAt(printedAt)}</div>
       </div>
     </div>
   )
