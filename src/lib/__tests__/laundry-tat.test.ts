@@ -253,3 +253,75 @@ describe('earliest permissible delivery is a datetime, from the pickup slot', ()
     expect(dayKey(earliestDeliveryAt(pickupAt('2026-08-11', '10:00-12:00'), tat))).toBe('2026-08-12')
   })
 })
+
+// ── Standard and Express cannot share an order ──────────────────────────────
+import { hasMixedDeliveryTypes, isExpressService, MIXED_DELIVERY_MESSAGE } from '@/lib/laundry-tat'
+
+describe('mixed Standard + Express is the only refused combination', () => {
+  const STD = { tatEnabled: false, defaultTurnaroundHours: 24 }
+  const STD2 = { tatEnabled: false, defaultTurnaroundHours: 48 }
+  const EXP6 = { tatEnabled: true, defaultTurnaroundHours: 6 }
+  const EXP12 = { tatEnabled: true, defaultTurnaroundHours: 12 }
+
+  it('refuses one of each', () => {
+    expect(hasMixedDeliveryTypes([STD, EXP6])).toBe(true)
+    expect(hasMixedDeliveryTypes([EXP12, STD2])).toBe(true)
+  })
+
+  // Explicitly still allowed — this rule must not narrow existing behaviour.
+  it('allows several STANDARD services together', () => {
+    expect(hasMixedDeliveryTypes([STD, STD2, STD])).toBe(false)
+  })
+
+  it('allows several EXPRESS services together', () => {
+    expect(hasMixedDeliveryTypes([EXP6, EXP12])).toBe(false)
+  })
+
+  it('allows a single service of either kind', () => {
+    expect(hasMixedDeliveryTypes([STD])).toBe(false)
+    expect(hasMixedDeliveryTypes([EXP6])).toBe(false)
+  })
+
+  it('allows an empty cart', () => {
+    expect(hasMixedDeliveryTypes([])).toBe(false)
+  })
+
+  // A legacy line with no service data counts as standard, which keeps an
+  // all-standard cart working rather than blocking it on missing data.
+  it('treats an unknown service as standard', () => {
+    expect(isExpressService(null)).toBe(false)
+    expect(hasMixedDeliveryTypes([null, STD])).toBe(false)
+    expect(hasMixedDeliveryTypes([null, EXP6])).toBe(true)
+  })
+
+  it('classifies by tatEnabled, not by turnaround length', () => {
+    // An express service configured SLOWER than standard is still express.
+    expect(isExpressService({ tatEnabled: true, defaultTurnaroundHours: 48 })).toBe(true)
+    expect(hasMixedDeliveryTypes([STD, { tatEnabled: true, defaultTurnaroundHours: 48 }])).toBe(true)
+  })
+
+  it('the message names the action the customer must take', () => {
+    expect(MIXED_DELIVERY_MESSAGE).toBe('Standard and Express services cannot be placed in the same order. Please submit Express services separately.')
+  })
+
+  // The TAT rules for allowed carts are unchanged.
+  it('an allowed express-only cart still takes the longest express TAT', () => {
+    expect(orderTatHours([EXP6, EXP12])).toBe(12)
+  })
+})
+
+describe('both order routes refuse a mixed order', () => {
+  const read = (p: string) => require('fs').readFileSync(require('path').join(process.cwd(), p), 'utf8')
+  for (const route of [
+    'src/app/api/core/storefront/laundry-order/route.ts',
+    'src/app/api/core/storefront/laundry-checkout/route.ts',
+  ]) {
+    it(route, () => {
+      const src = read(route)
+      expect(src).toContain('hasMixedDeliveryTypes(svcs)')
+      expect(src).toContain('MIXED_DELIVERY_MESSAGE')
+      // No splitting, and no new order type.
+      expect(src).not.toMatch(/splitOrder|createSecondOrder|orderType:\s*"EXPRESS"/)
+    })
+  }
+})

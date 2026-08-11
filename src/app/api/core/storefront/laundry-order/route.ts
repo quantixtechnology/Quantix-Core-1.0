@@ -29,6 +29,7 @@ import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
 import { slotHasEnded } from "@/lib/laundry-slots"
+import { hasMixedDeliveryTypes, MIXED_DELIVERY_MESSAGE } from "@/lib/laundry-tat"
 
 export const runtime = "nodejs"
 
@@ -99,6 +100,19 @@ export async function POST(request: Request) {
     })
     if (!addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
     const pickupSnapshot = addr.snapshot || null
+
+    // FINAL SAFETY CHECK. One order carries one delivery promise, so a mixed
+    // Standard + Express body is refused here too — the client blocks it, but a
+    // stale tab or a crafted request must not create an order whose promise
+    // cannot be honoured. Several standard services together, or several
+    // express services together, are unaffected.
+    const svcIds = [...new Set((items || []).map((i: { serviceId?: string }) => i.serviceId).filter(Boolean))] as string[]
+    if (svcIds.length > 1) {
+      const svcs = await prisma.laundryService.findMany({ where: { id: { in: svcIds } }, select: { tatEnabled: true } })
+      if (hasMixedDeliveryTypes(svcs)) {
+        return NextResponse.json({ success: false, error: MIXED_DELIVERY_MESSAGE }, { status: 400 })
+      }
+    }
 
     // SERVER-SIDE PICKUP WINDOW CHECK. The client greys out and re-selects an
     // ended slot, but a stale tab, a replayed request or a crafted body must not

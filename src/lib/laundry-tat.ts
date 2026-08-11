@@ -99,3 +99,34 @@ export function fromHours(hours: number, unit?: string | null): { value: number;
   if (unit === "DAYS") return { value: Math.max(1, Math.round(hours / 24)), unit: "DAYS" }
   return { value: Math.max(1, Math.round(hours)), unit: "HOURS" }
 }
+
+// ── Standard and Express cannot share an order ──────────────────────────────
+// One order carries ONE delivery promise. A cart holding a 24h standard service
+// and a 6h express service has no honest answer: taking the longest silently
+// removes what the customer paid express for, and taking the shortest promises
+// something the workflow cannot do. Rather than guess, or split the cart behind
+// the customer's back, checkout refuses and asks for two orders.
+//
+// This does not touch the 1 service = 1 bag rule, and it does not restrict
+// several standard services together or several express services together —
+// those still resolve through orderTatHours() exactly as before.
+
+export const MIXED_DELIVERY_MESSAGE =
+  "Standard and Express services cannot be placed in the same order. Please submit Express services separately."
+
+/** A service is Express when it has been given its own turnaround. */
+export function isExpressService(s: TatService | null | undefined): boolean {
+  return !!s?.tatEnabled
+}
+
+/** True when the cart holds at least one of each — the only refused case. */
+export function hasMixedDeliveryTypes(services: (TatService | null | undefined)[]): boolean {
+  let express = false
+  let standard = false
+  for (const s of services) {
+    if (isExpressService(s)) express = true
+    else standard = true
+    if (express && standard) return true
+  }
+  return false
+}

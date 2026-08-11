@@ -19,7 +19,7 @@ import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subs
 import type { WebNav } from "./storefront-website"
 import { GoogleAddressPicker } from "./google/address-picker"
 import type { DeliveryAddress } from "@/stores/cart-store"
-import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey } from "@/lib/laundry-tat"
+import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey, hasMixedDeliveryTypes, MIXED_DELIVERY_MESSAGE } from "@/lib/laundry-tat"
 import { cartTatHours } from "@/lib/laundry-cart"
 import { slotIsPast, slotHasEnded } from "@/lib/laundry-slots"
 
@@ -524,6 +524,14 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   )
   const cartTat = useMemo(() => cartTatHours(cartItems, liveTat), [cartItems, liveTat])
 
+  // One order carries one delivery promise, so a bag holding both kinds cannot
+  // be scheduled. The bag itself is left alone — the customer builds it freely
+  // and is only stopped at checkout.
+  const mixedDelivery = useMemo(
+    () => hasMixedDeliveryTypes(laundryLines(cartItems).map((i) => liveTat.get(String(i.serviceId)) ?? null)),
+    [cartItems, liveTat],
+  )
+
   // THE EARLIEST PERMISSIBLE DELIVERY MOMENT — a datetime, not a date.
   //
   // This was measured from MIDNIGHT of the pickup day, so a 6h service on a
@@ -878,6 +886,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     // mobile (identity) and a pickup address/date are needed to place an order.
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
+    if (mixedDelivery) { toast.error(MIXED_DELIVERY_MESSAGE); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
     // Revalidated HERE, not only when the list was drawn — the clock may have
     // moved since. The server repeats this check independently.
@@ -1375,9 +1384,18 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 flex gap-2"><AlertCircle className="w-4 h-4 shrink-0" /><span>{limitNotice}</span></div>
             )}
           </div>
+          {/* Shown as a standing notice, not only as a toast on click, so the
+              reason Confirm is unavailable is visible while the customer is
+              still deciding what to remove. */}
+          {mixedDelivery && (
+            <div className="mx-5 mb-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <span>{MIXED_DELIVERY_MESSAGE}</span>
+            </div>
+          )}
           <div className="border-t border-gray-100 px-5 py-4 flex gap-2">
             <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Back</button>
-            <button disabled={submitting} onClick={() => submit(forceNormal)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>
+            <button disabled={submitting || mixedDelivery} onClick={() => submit(forceNormal)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2" style={accentBg}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {subscriptionInCart ? "Place Order · Pay at Pickup" : forceNormal ? "Continue as Normal Order" : "Confirm Order"}
             </button>
