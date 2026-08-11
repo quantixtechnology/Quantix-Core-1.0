@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { LaundryWorkflowTimeline } from "./laundry-workflow-timeline"
+import { LaundryGarmentSelect, useGarmentMaster } from "@/components/laundry/garment-select"
 
 const DEFECTS = [
   { code: "MISSING_BUTTON", label: "Missing Button" },
@@ -385,14 +386,15 @@ export function LaundryStoreAudit() {
 // Engine and the order continues in the EXISTING audit flow.
 function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { orderId: string; orderNumber: string; businessId: string | null; onSaved: () => void; onCancel: () => void }) {
   const { toast } = useToast()
-  const [garments, setGarments] = useState<{ id: string; name: string }[]>([])
+  // Garments come from the shared master hook — same source as New Order and
+  // every other operational selector, so the lists cannot diverge.
+  const { garments } = useGarmentMaster(businessId)
   const [services, setServices] = useState<{ serviceId: string; serviceName: string }[]>([])
   const [rows, setRows] = useState<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!businessId) return
-    fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()).then((j) => setGarments(j.success ? (j.data || []).map((g: { id: string; name: string }) => ({ id: g.id, name: g.name })) : [])).catch(() => {})
     // The CONFIGURED services (each with a real id) are the source of truth — a
     // garment must map to one so the Pricing Engine can price it. The bag's booked
     // service (if any) only pre-selects the default; it is never the option list,
@@ -446,10 +448,9 @@ function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { 
               <option value="">Select service…</option>
               {services.map((s) => <option key={s.serviceId} value={s.serviceId}>{s.serviceName}</option>)}
             </select>
-            <select value={r.garmentId} onChange={(e) => upd(i, { garmentId: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
-              <option value="">Garment…</option>
-              {garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
+            {/* Searchable by name OR code — the list grows over time and
+                scrolling it at a counter is not workable. */}
+            <LaundryGarmentSelect value={r.garmentId} onChange={(v) => upd(i, { garmentId: v })} garments={garments} className="h-9" />
             <Input type="number" min={0} value={r.quantity} onChange={(e) => upd(i, { quantity: e.target.value })} placeholder="Qty" className="h-9 text-sm" />
             <Input type="number" min={0} step="0.05" value={r.weightKg} onChange={(e) => upd(i, { weightKg: e.target.value })} placeholder="kg" className="h-9 text-sm" />
             <button onClick={() => del(i)} className="text-slate-400 hover:text-rose-600 flex justify-center"><X className="h-4 w-4" /></button>

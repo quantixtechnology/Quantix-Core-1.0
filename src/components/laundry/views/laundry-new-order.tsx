@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode } from "@/lib/india"
 import { statusLabel } from "@/lib/laundry-workflow"
+import { LaundryGarmentSelect } from "@/components/laundry/garment-select"
 
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In" },
@@ -829,7 +830,9 @@ export default function LaundryNewOrder() {
               <div className="space-y-4 py-1">
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Garment</Label>
-                  <SearchableSelect value={mGarment} onChange={setMGarment} options={garments.map((g) => ({ value: g.id, label: g.name }))} placeholder="Search garment…" />
+                  {/* Shared selector: same master, and searchable by CODE as well as name —
+                      the previous options list carried only the name. */}
+                  <LaundryGarmentSelect value={mGarment} onChange={setMGarment} garments={garments} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Service</Label>
