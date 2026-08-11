@@ -16,6 +16,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { Loader2, Search, IndianRupee } from "lucide-react"
 import type { LedgerFilter } from "@/lib/laundry-adjustment"
+import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
 
 interface Row {
   id: string; orderNumber: string; invoiceNumber: string | null
@@ -39,7 +40,10 @@ const FILTERS: { key: LedgerFilter; label: string }[] = [
 
 export function LaundryPaymentsLedger() {
   const { currentBusinessId } = useAuthStore()
-  const { setLaundryPage, setSelectedOrderId } = useAdminStore()
+  const { setLaundryPage } = useAdminStore()
+  // Money actions happen HERE. Order Details stays the operational screen and
+  // keeps its own financial summary — this is not a second copy of it.
+  const [openOrder, setOpenOrder] = useState<Row | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<LedgerFilter>("ALL")
@@ -66,7 +70,7 @@ export function LaundryPaymentsLedger() {
     paid: a.paid + r.paid, balance: a.balance + r.balance, refundDue: a.refundDue + r.refundDue,
   }), { paid: 0, balance: 0, refundDue: 0 }), [rows])
 
-  const open = (r: Row) => { setSelectedOrderId?.(r.id); setLaundryPage("order-detail") }
+
 
   return (
     <div className="px-4 lg:px-6 py-6 space-y-4">
@@ -131,7 +135,7 @@ export function LaundryPaymentsLedger() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={9} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
             ) : rows.map((r) => (
-              <tr key={r.id} onClick={() => open(r)} className="cursor-pointer hover:bg-slate-50/60">
+              <tr key={r.id} onClick={() => setOpenOrder(r)} className="cursor-pointer hover:bg-slate-50/60">
                 <td className="px-3 py-2.5">
                   <div className="font-medium text-slate-800">{r.orderNumber}</div>
                   <div className="text-[11px] text-slate-400">{day(r.orderDate)}</div>
@@ -159,6 +163,13 @@ export function LaundryPaymentsLedger() {
           </tbody>
         </table>
       </div>
+      {openOrder && currentBusinessId && (
+        <LaundryPaymentDetailsPanel
+          orderId={openOrder.id} businessId={currentBusinessId}
+          onClose={() => setOpenOrder(null)}
+          onChanged={load}
+        />
+      )}
     </div>
   )
 }

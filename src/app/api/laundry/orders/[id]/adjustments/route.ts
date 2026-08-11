@@ -24,7 +24,7 @@ const VALID_REASONS = new Set(ADJUSTMENT_REASONS.map((r) => r.value as string))
 async function loadOrder(orderId: string, laundryBusinessId: string) {
   return prisma.laundryOrder.findFirst({
     where: { id: orderId, businessId: laundryBusinessId },
-    select: { id: true, grandTotal: true, amountPaid: true, balanceDue: true },
+    select: { id: true, orderNumber: true, grandTotal: true, amountPaid: true, balanceDue: true, discount: true, subscriptionCoveredAmount: true, customerId: true },
   })
 }
 
@@ -40,8 +40,33 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
 
     const order = await loadOrder(id, biz.id)
     if (!order) return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 })
-    const adjustments = await prisma.laundryOrderAdjustment.findMany({ where: { orderId: id }, orderBy: { createdAt: "desc" } })
-    return NextResponse.json({ success: true, data: { order, adjustments } })
+    // Everything the Payment Details panel needs, in one round trip: the money,
+    // the real payment rows, the adjustments, and the schemes that are usable
+    // on THIS order right now (filtered by the Promotion's own conditions).
+    const [adjustments, payments, promos, invoice, customer] = await Promise.all([
+      prisma.laundryOrderAdjustment.findMany({ where: { orderId: id }, orderBy: { createdAt: "desc" } }),
+      prisma.laundryPayment.findMany({ where: { orderId: id }, orderBy: { createdAt: "desc" } }),
+      biz.platformBusinessId
+        ? prisma.promotion.findMany({
+            where: { businessId: biz.platformBusinessId, OR: [{ workspaceType: "LAUNDRY" }, { workspaceType: null }] },
+            orderBy: { createdAt: "desc" }, take: 100,
+          })
+        : Promise.resolve([]),
+      prisma.laundryInvoice.findUnique({ where: { orderId: id }, select: { invoiceNumber: true } }),
+      order.customerId ? prisma.customer.findUnique({ where: { id: order.customerId }, select: { name: true, phone: true } }) : Promise.resolve(null),
+    ])
+
+    const schemes = promos
+      .map((p) => ({
+        id: p.id, title: p.title, code: p.code, discountType: p.discountType, discountValue: p.discountValue,
+        maxDiscount: p.maxDiscount,
+        // The refusal reason travels with the scheme so the UI can grey it out
+        // and say WHY, instead of silently hiding it.
+        refusal: schemeRefusal(p, order.grandTotal),
+        amount: discountAmount(p.discountType, p.discountValue, order.grandTotal, p.maxDiscount),
+      }))
+
+    return NextResponse.json({ success: true, data: { order, adjustments, payments, schemes, invoiceNumber: invoice?.invoiceNumber ?? null, customer } })
   } catch (e) {
     console.error("[order-adjustments] GET", e)
     return NextResponse.json({ success: false, error: "Failed" }, { status: 500 })

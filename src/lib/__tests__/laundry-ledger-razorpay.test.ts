@@ -88,8 +88,11 @@ describe('the ledger is permanent and read-only', () => {
     for (const w of ['.update(', '.create(', '.delete(']) expect(api).not.toContain(w)
   })
 
-  it('opening a row reuses the existing Order Details page', () => {
-    expect(LEDGER).toContain('setLaundryPage("order-detail")')
+  // Superseded: money actions moved INTO the ledger, so a row now opens the
+  // Payment Details panel. Order Details stays the operational screen.
+  it('opening a row opens Payment Details, not the order page', () => {
+    expect(LEDGER).toContain('setOpenOrder(r)')
+    expect(LEDGER).not.toContain('setLaundryPage("order-detail")')
   })
 
   it('search covers order, invoice, customer and mobile', () => {
@@ -98,5 +101,65 @@ describe('the ledger is permanent and read-only', () => {
     expect(api).toContain('invoiceNumber: { contains: q }')
     expect(api).toContain('phone: { contains: q }')
     expect(api).toContain('name: { contains: q }')
+  })
+})
+
+// ── The UI the previous pass left unfinished ────────────────────────────────
+describe('Payment Details panel exposes the money actions', () => {
+  const PANEL = read('src/components/laundry/views/laundry-payment-details-panel.tsx')
+  const LEDGER2 = read('src/components/laundry/views/laundry-payments-ledger.tsx')
+
+  it('a ledger row opens the panel, not the Order Details page', () => {
+    expect(LEDGER2).toContain('onClick={() => setOpenOrder(r)}')
+    expect(LEDGER2).toContain('<LaundryPaymentDetailsPanel')
+    expect(LEDGER2).not.toContain('setLaundryPage("order-detail")')
+  })
+
+  it('shows both actions', () => {
+    expect(PANEL).toContain('Add Discount')
+    expect(PANEL).toContain('Record Payment')
+  })
+
+  it('offers Manual and Scheme, with fixed and percentage', () => {
+    expect(PANEL).toContain('"MANUAL_DISCOUNT", "SCHEME_DISCOUNT"')
+    expect(PANEL).toContain('"FIXED", "PERCENT"')
+  })
+
+  it('previews the effect before saving', () => {
+    expect(PANEL).toContain('Current Payable')
+    expect(PANEL).toContain('New Payable')
+    // And the refund consequence when the order is already paid.
+    expect(PANEL).toContain('Refund Due')
+  })
+
+  it('keeps subscription and discount on separate lines', () => {
+    expect(PANEL).toContain('k="Subscription"')
+    expect(PANEL).toContain('k="Discount"')
+    expect(PANEL).toContain('financialSummary(money, adjustments)')
+  })
+
+  it('shows payment history with the gateway payment id when present', () => {
+    expect(PANEL).toContain('Payment History')
+    expect(PANEL).toContain('Payment ID: ${p.gatewayPaymentId}')
+  })
+
+  it('shows discounts and refunds as their own history', () => {
+    expect(PANEL).toContain('Discounts & Refunds')
+    expect(PANEL).toContain('Refund ID: ${a.gatewayRefundId}')
+  })
+
+  // Refusing is the honest behaviour until the gateway exists.
+  it('refuses to record a Razorpay payment while it is unconfigured', () => {
+    expect(PANEL).toContain('Razorpay is not configured yet')
+    expect(PANEL).toMatch(/payMethod === "RAZORPAY"[\s\S]{0,400}return/)
+  })
+
+  it('collects through the EXISTING payment endpoint', () => {
+    expect(PANEL).toContain('/payment?businessId=')
+  })
+
+  it('an unusable scheme stays visible but disabled, with its reason', () => {
+    expect(PANEL).toContain('disabled={!!s.refusal}')
+    expect(PANEL).toContain('s.refusal ? ` — ${s.refusal}`')
   })
 })
