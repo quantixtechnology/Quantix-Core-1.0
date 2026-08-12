@@ -20,6 +20,7 @@
 import { prisma } from "@/lib/prisma"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
 import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
+import { assignBagToOrder } from "@/lib/laundry-bag-assign"
 
 // Package lifecycle statuses. Additive — existing CREATED value is preserved.
 export const PACKAGE_STATUS_FINISHING_READY = "READY_FOR_FINISHING"
@@ -233,11 +234,27 @@ export async function assignFinishingBag(opts: {
   if (!targetPkg) {
     const bag = await prisma.laundryBag.findFirst({
       where: { businessId, OR: [{ bagNumber: c }, { qrValue: c }] },
-      select: { id: true, bagNumber: true, currentOrderId: true },
+      select: { id: true, bagNumber: true, currentOrderId: true, status: true },
     })
     if (bag) {
-      if (bag.currentOrderId !== orderId)
-        return { ok: false, error: `Bag ${bag.bagNumber} belongs to a different order — each finishing bag is used for one order only.`, code: "WRONG_ORDER" }
+      // A bag is a reusable asset, not the property of an order. The only
+      // question is whether it is occupied RIGHT NOW:
+      //
+      //   already on this order   → accept (re-scan)
+      //   free                    → bind it to this order and accept
+      //   on another live order   → refuse
+      //
+      // The old check compared currentOrderId to this order, which rejected an
+      // AVAILABLE bag too (its currentOrderId is null), so a bag released at the
+      // Processing Center could never be reused by the very order it had just
+      // carried.
+      if (bag.currentOrderId !== orderId) {
+        if (bag.status !== "AVAILABLE") {
+          return { ok: false, error: `Bag ${bag.bagNumber} is currently assigned to another active order. Please use another available bag.`, code: "WRONG_ORDER" }
+        }
+        const assigned = await assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId })
+        if (!assigned.ok) return { ok: false, error: assigned.error, code: "WRONG_ORDER" }
+      }
       targetPkg = packages[0]
     } else {
       const pickupBag = await prisma.laundryPickupBag.findFirst({

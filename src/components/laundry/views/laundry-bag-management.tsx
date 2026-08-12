@@ -68,8 +68,6 @@ export function LaundryBagManagement() {
   const [busy, setBusy] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[]; custody: any[] } | null>(null)
-  const [releaseStage, setReleaseStage] = useState<string>("PROCESSING_RECEIVE")
-  const [savingStage, setSavingStage] = useState(false)
   const [manualReleaseTarget, setManualReleaseTarget] = useState<Bag | null>(null)
   const [manualReleaseReason, setManualReleaseReason] = useState("")
   const [releasing, setReleasing] = useState(false)
@@ -78,22 +76,11 @@ export function LaundryBagManagement() {
 
   useEffect(() => {
     if (!currentBusinessId) return
-    fetch(`/api/laundry/bag-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) setReleaseStage(j.data.reusableBagReleaseStage) }).catch(() => {})
     fetch(`/api/laundry/rbac/me?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => {
       if (j.success) setCanManualRelease(j.data.isOwner || j.data.permissions?.includes("laundry.bags.manual_release"))
       setPermsLoaded(true)
     }).catch(() => setPermsLoaded(true))
   }, [currentBusinessId])
-
-  const saveReleaseStage = async (stage: string) => {
-    setReleaseStage(stage); setSavingStage(true)
-    try {
-      const res = await fetch("/api/laundry/bag-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, reusableBagReleaseStage: stage }) })
-      const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
-      toast.success("Bag release policy saved")
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setSavingStage(false) }
-  }
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return
@@ -118,7 +105,18 @@ export function LaundryBagManagement() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
+  // Wording per status, because "are you sure?" tells nobody what will happen.
+  const STATUS_CONFIRM: Record<string, { title: string; body: string }> = {
+    DAMAGED: { title: "Mark Bag as Damaged?", body: "will no longer be available for assignment." },
+    LOST: { title: "Mark Bag as Lost?", body: "will be removed from active availability." },
+    AVAILABLE: { title: "Release Bag?", body: "will become AVAILABLE for another order." },
+  }
+
   const setStatus = async (bag: Bag, status: string) => {
+    // These icons are small and sit next to each other; a single mis-click must
+    // not take a bag out of service.
+    const c = STATUS_CONFIRM[status]
+    if (c && !window.confirm(`${c.title}\n\n${bag.bagNumber} ${c.body}`)) return
     try {
       const j = await fetch(`/api/laundry/bags/${bag.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }).then((r) => r.json())
       if (!j.success) throw new Error(j.error || "Failed")
@@ -198,24 +196,11 @@ export function LaundryBagManagement() {
 
       <BagReconciliation businessId={currentBusinessId} />
 
-      {/* Reusable Bag Release Stage — configurable per laundry */}
-      <Card className="rounded-xl border-slate-200"><CardContent className="p-4 flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-700">Reusable Bag Release Stage {savingStage && <Loader2 className="inline h-3 w-3 animate-spin text-slate-400" />}</p>
-          <p className="text-xs text-slate-500 mt-0.5">When a reusable bag automatically returns to <b>Available</b> for the next order.</p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {[
-            { v: "PROCESSING_RECEIVE", t: "Release at Processing Center Receive", d: "Bag freed the moment the Processing Center scans it in — the garments come out there (recommended)" },
-            { v: "AFTER_DELIVERY", t: "Release after Delivery", d: "Bag stays with the order until it's delivered" },
-          ].map((o) => (
-            <button key={o.v} onClick={() => saveReleaseStage(o.v)} className={`text-left rounded-lg border p-3 w-full sm:w-56 transition-colors ${releaseStage === o.v ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
-              <p className={`text-sm font-medium ${releaseStage === o.v ? "text-blue-700" : "text-slate-700"}`}>{o.t}</p>
-              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{o.d}</p>
-            </button>
-          ))}
-        </div>
-      </CardContent></Card>
+      {/* The release stage is NOT configurable. A bag is freed by the physical
+          handover that empties it — pickup received at the store, Processing
+          Center receive, store receive of the return leg, delivery bag returned
+          — and those are properties of the operation, not settings. Bag
+          Management is the bag master, not a workflow configuration screen. */}
 
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative w-full max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bag no, order, customer\u2026" className="pl-9 h-9" /></div>
