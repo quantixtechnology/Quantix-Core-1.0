@@ -20,14 +20,14 @@ import {
   Factory, Clock,
 } from "lucide-react"
 
-interface FlowStage { key: string; label: string; page: string; count: number }
+interface FlowStage { key: string; label: string; page: string; count: number; completed: number; pending: number }
 interface WorkRow {
   id: string; orderNumber: string; status: string; customer: string | null
   garments: number; service: string | null; currentStage: string
   due: string | null; dueSlot: string | null; overdue: boolean
 }
 interface Dash {
-  returnToStore: number
+  returnToStore: { completed: number; pending: number }
   activity: { received: number; completed: number; returned: number }
   workloadNow: { inTransit: number; awaitingBarcode: number; awaitingProcessing: number; inProgress: number; qcPending: number; readyForDispatch: number }
   flow: FlowStage[]
@@ -219,7 +219,7 @@ export function ProcessingDashboard() {
               </div>
               <Merge />
               {/* Order-level terminal, not a garment stage. */}
-              <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore }} go={setLaundryPage} unit="orders" />
+              <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore.completed + data.returnToStore.pending, completed: data.returnToStore.completed, pending: data.returnToStore.pending }} go={setLaundryPage} unit="orders" />
             </div>
           </CardContent></Card>
 
@@ -287,20 +287,34 @@ export function ProcessingDashboard() {
   )
 }
 
-/** One box in the flow. Clickable: it opens the screen that clears that stage. */
+/**
+ * One box in the flow: stage name over a split completed / pending footer.
+ *
+ * Two separate figures, never "5 / 7" and never a percentage — at a glance an
+ * operator needs to know how much is DONE and how much is still to do, and a
+ * ratio makes them do the subtraction.
+ */
 function Node({ stage, go, unit = "garments" }: { stage: FlowStage; go: (p: never) => void; unit?: string }) {
-  const busy = stage.count > 0
   return (
     <button onClick={() => go(stage.page as never)}
-      className={`w-full max-w-[260px] rounded-xl border p-3 text-center transition-colors ${busy ? "border-blue-300 bg-blue-50/60 hover:bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{stage.label}</p>
-      <p className={`text-2xl font-bold tabular-nums ${busy ? "text-blue-700" : "text-slate-300"}`}>{stage.count}</p>
-      <p className="text-[10px] text-slate-400">{unit}</p>
+      className="w-full max-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white text-center transition-colors hover:border-blue-400">
+      <p className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{stage.label}</p>
+      <div className="grid grid-cols-2">
+        <div className="bg-emerald-600 px-2 py-1.5 text-white">
+          <p className="text-xl font-bold leading-tight tabular-nums">{stage.completed}</p>
+          <p className="text-[9px] font-semibold uppercase tracking-wide opacity-90">Completed</p>
+        </div>
+        <div className="bg-amber-500 px-2 py-1.5 text-white">
+          <p className="text-xl font-bold leading-tight tabular-nums">{stage.pending}</p>
+          <p className="text-[9px] font-semibold uppercase tracking-wide opacity-90">Pending</p>
+        </div>
+      </div>
+      <p className="py-1 text-[9px] text-slate-400">{unit}</p>
     </button>
   )
 }
 const byKey = (flow: FlowStage[], k: string): FlowStage =>
-  flow.find((f) => f.key === k) ?? { key: k, label: k, page: "processing-centers", count: 0 }
+  flow.find((f) => f.key === k) ?? { key: k, label: k, page: "processing-centers", count: 0, completed: 0, pending: 0 }
 
 /** Connectors. Plain CSS rules — a diagram this small needs no chart library. */
 function Down() { return <div className="h-5 w-px bg-slate-300" /> }

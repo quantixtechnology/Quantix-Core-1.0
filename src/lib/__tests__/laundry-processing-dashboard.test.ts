@@ -99,7 +99,8 @@ describe('the date selector drives everything', () => {
 describe('every number is real', () => {
   it('garment counts come from the same table the workstations read', () => {
     expect(API).toContain('prisma.laundryOrderItem.groupBy')
-    expect(API).toContain('by: ["processingStage"]')
+    // Now grouped by stage AND status so each card can split completed/pending.
+    expect(API).toContain('by: ["processingStage", "processingStatus"]')
   })
 
   it('receives are counted from the actual handover events', () => {
@@ -146,8 +147,8 @@ describe('the flow matches the real route through the centre', () => {
 
   it('ends at Return to Store, counted from orders not garments', () => {
     expect(UI).toContain('label: "Return to Store"')
-    expect(UI).toContain('count: data.returnToStore')
-    expect(API).toContain('returnToStore: readyForDispatch')
+    expect(UI).toContain('completed: data.returnToStore.completed')
+    expect(API).toContain('returnToStore: { completed: returnInTransit, pending: stillProcessing }')
   })
 
   it('every stage links to a page that exists', () => {
@@ -201,5 +202,46 @@ describe('quick actions reuse existing screens', () => {
       expect(UI).toContain(`"${p}"`)
       expect(STORE).toContain(`"${p}"`)
     }
+  })
+})
+
+
+// ── Completed vs Pending on every card ──────────────────────────────────────
+describe('each stage card splits completed from pending', () => {
+  it('reads the existing processingStatus, inventing nothing', () => {
+    expect(API).toContain("st === \"DONE\"")
+    expect(API).toContain('st === "WAITING" || st === "IN_PROGRESS"')
+  })
+
+  // REJECTED is an exception the QC screens handle; counting it as pending
+  // would overstate the work left.
+  it('excludes REJECTED from both figures', () => {
+    const fn = API.slice(API.indexOf('const pending ='), API.indexOf('\n', API.indexOf('const pending =')))
+    expect(fn).not.toContain('REJECTED')
+  })
+
+  it('every stage carries both numbers', () => {
+    expect(API).toContain('completed: done(f.key), pending: pending(f.key)')
+  })
+
+  it('Return to Store uses order statuses, not a new one', () => {
+    expect(API).toContain('status: "RETURN_IN_TRANSIT"')
+    expect(API).toContain('status: "PROCESSING"')
+  })
+
+  it('the card shows two figures, not a ratio or a percentage', () => {
+    expect(UI).toContain('>Completed<')
+    expect(UI).toContain('>Pending<')
+    // Scoped to the card itself — % appears elsewhere in the file legitimately.
+    const card = UI.slice(UI.indexOf('function Node('), UI.indexOf('const byKey'))
+    expect(card).not.toMatch(/\{stage\.completed\}\s*\/\s*\{/)
+    expect(card).not.toContain('%')
+    expect(card).not.toContain('progress')
+  })
+
+  it('uses the application success and warning colours', () => {
+    expect(UI).toContain('bg-emerald-600')
+    expect(UI).toContain('bg-amber-500')
+    expect(UI).toContain('text-white')
   })
 })

@@ -77,11 +77,14 @@ export async function GET(request: Request) {
 
     const [
       grouped, receivedOrders, readyForDispatch, completedInWindow, returnedInWindow, inTransit,
-      awaitingBarcodeOrders, workloadRaw, overdue,
+      awaitingBarcodeOrders, workloadRaw, returnInTransit, stillProcessing, overdue,
     ] = await Promise.all([
       // Garment distribution — the same source the workstation queues use.
+      // Grouped by stage AND status so each card can show DONE against
+      // still-to-do. Both fields already exist on the item — processingStatus is
+      // WAITING | IN_PROGRESS | DONE | REJECTED — so nothing new is invented.
       prisma.laundryOrderItem.groupBy({
-        by: ["processingStage"],
+        by: ["processingStage", "processingStatus"],
         where: { ...itemScope, processingStage: { not: null } },
         _count: { _all: true },
       }),
@@ -111,13 +114,23 @@ export async function GET(request: Request) {
         },
         take: 200,
       }),
+      prisma.laundryOrder.count({ where: { ...orderScope, status: "RETURN_IN_TRANSIT" } }),
+      prisma.laundryOrder.count({ where: { ...orderScope, status: "PROCESSING" } }),
       // Past its promise and not yet out of the building.
       prisma.laundryOrder.count({
         where: { ...orderScope, status: { in: ["PROCESSING", "IN_TRANSIT_TO_PROCESSING", "RETURN_IN_TRANSIT"] }, promisedDeliveryDate: { lt: now } },
       }),
     ])
 
-    const stage = (s: string) => grouped.find((g) => g.processingStage === s)?._count._all ?? 0
+    const at = (s: string, pred: (st: string | null) => boolean) =>
+      grouped.filter((g) => g.processingStage === s && pred(g.processingStatus)).reduce((n, g) => n + g._count._all, 0)
+    // Everything still at this stage, whatever its status — the figure the
+    // workstation queue shows.
+    const stage = (s: string) => at(s, () => true)
+    const done = (s: string) => at(s, (st) => st === "DONE")
+    // REJECTED is neither done nor waiting to be done; it is an exception the QC
+    // screens handle, so it is excluded from both rather than inflating pending.
+    const pending = (s: string) => at(s, (st) => st === "WAITING" || st === "IN_PROGRESS" || st === null)
 
     // Customer names live on the platform Customer table; one lookup for the page.
     const custIds = [...new Set(workloadRaw.map((o) => o.customerId).filter(Boolean))] as string[]
@@ -174,8 +187,10 @@ export async function GET(request: Request) {
         // Garment counts per stage, plus the order-level terminal. Return to
         // Store is not a garment stage — it is the package waiting to go back —
         // so it is counted from order status, the same way the console lists it.
-        flow: FLOW.map((f) => ({ ...f, count: stage(f.key) })),
-        returnToStore: readyForDispatch,
+        flow: FLOW.map((f) => ({ ...f, count: stage(f.key), completed: done(f.key), pending: pending(f.key) })),
+        // Return to Store is order-level: pending = still in the centre, done =
+        // already dispatched back and in transit. Both are existing statuses.
+        returnToStore: { completed: returnInTransit, pending: stillProcessing },
         workload,
         attention: {
           overdue,
