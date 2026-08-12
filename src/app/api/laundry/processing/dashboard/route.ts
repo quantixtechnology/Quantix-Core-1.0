@@ -28,18 +28,27 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
-// The garment stages the floor actually works, in flow order. Taken from the
-// existing workstation screens — this is not a second workflow definition.
+// The garment stages the floor actually works. Order matters here only for
+// "which stage is this order really at" — the DIAGRAM's shape lives in the UI,
+// because branching layout is a presentation decision, not data.
+//
+// The true sequence, per operations:
+//   Received → Washing | Dry Cleaning → Dry & Quality Check → Sorting
+//            → Ironing | Folding → Return to Store
+//
+// Washing and Dry Cleaning are parallel branches, as are Ironing and Folding —
+// a garment takes one of each pair, never both in sequence.
 const FLOW: { key: string; label: string; page: string }[] = [
-  { key: "RECEIVED", label: "Received", page: "audit-barcode" },
-  { key: "SORTING", label: "Sorting", page: "ws-sorting" },
+  { key: "RECEIVED", label: "Received to PC", page: "audit-barcode" },
   { key: "WASH", label: "Washing", page: "ws-wash" },
   { key: "DRYCLEAN", label: "Dry Cleaning", page: "ws-dryclean" },
   { key: "QC", label: "Dry & Quality Check", page: "ws-qc" },
+  { key: "SORTING", label: "Sorting", page: "ws-sorting" },
   { key: "IRON", label: "Ironing", page: "ws-iron" },
   { key: "FOLD", label: "Folding", page: "ws-fold" },
 ]
-const WORKING = ["SORTING", "WASH", "DRYCLEAN", "IRON", "FOLD"]
+// Garments actively being worked — everything between intake and dispatch.
+const WORKING = ["WASH", "DRYCLEAN", "SORTING", "IRON", "FOLD"]
 
 export async function GET(request: Request) {
   try {
@@ -162,7 +171,11 @@ export async function GET(request: Request) {
           qcPending: stage("QC"),
           readyForDispatch,                             // orders
         },
+        // Garment counts per stage, plus the order-level terminal. Return to
+        // Store is not a garment stage — it is the package waiting to go back —
+        // so it is counted from order status, the same way the console lists it.
         flow: FLOW.map((f) => ({ ...f, count: stage(f.key) })),
+        returnToStore: readyForDispatch,
         workload,
         attention: {
           overdue,

@@ -117,11 +117,37 @@ describe('every number is real', () => {
   })
 })
 
-describe('the flow mirrors the real stages and opens them', () => {
-  it('uses the existing stage keys, in flow order', () => {
+describe('the flow matches the real route through the centre', () => {
+  it('uses the existing stage keys', () => {
     for (const s of ['RECEIVED', 'SORTING', 'WASH', 'DRYCLEAN', 'QC', 'IRON', 'FOLD']) {
       expect(API).toContain(`key: "${s}"`)
     }
+  })
+
+  // Received → Washing|Dry Cleaning → Dry & Quality Check → Sorting →
+  // Ironing|Folding → Return to Store. QC comes BEFORE Sorting.
+  it('renders the stages in the operational order, not a straight line', () => {
+    const at = (k: string) => UI.indexOf(`byKey(data.flow, "${k}")`)
+    expect(at("RECEIVED")).toBeLessThan(at("WASH"))
+    expect(at("WASH")).toBeLessThan(at("QC"))
+    expect(at("QC")).toBeLessThan(at("SORTING"))
+    expect(at("SORTING")).toBeLessThan(at("IRON"))
+  })
+
+  it('pairs the parallel branches side by side', () => {
+    expect(UI).toMatch(/grid-cols-2[\s\S]{0,220}"WASH"[\s\S]{0,220}"DRYCLEAN"/)
+    expect(UI).toMatch(/grid-cols-2[\s\S]{0,220}"IRON"[\s\S]{0,220}"FOLD"/)
+  })
+
+  it('splits and merges around each pair', () => {
+    expect(UI.match(/<Split \/>/g)).toHaveLength(2)
+    expect(UI.match(/<Merge \/>/g)).toHaveLength(2)
+  })
+
+  it('ends at Return to Store, counted from orders not garments', () => {
+    expect(UI).toContain('label: "Return to Store"')
+    expect(UI).toContain('count: data.returnToStore')
+    expect(API).toContain('returnToStore: readyForDispatch')
   })
 
   it('every stage links to a page that exists', () => {
@@ -131,7 +157,9 @@ describe('the flow mirrors the real stages and opens them', () => {
   })
 
   it('the tiles are clickable', () => {
-    expect(UI).toContain('onClick={() => setLaundryPage(f.page as never)}')
+    // Each node opens the screen that clears its stage.
+    expect(UI).toContain('onClick={() => go(stage.page as never)}')
+    expect(UI).toContain('go={setLaundryPage}')
   })
 })
 

@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Loader2, RefreshCw, AlertTriangle, PackageCheck, Truck, ClipboardCheck,
-  Factory, ArrowRight, Clock,
+  Factory, Clock,
 } from "lucide-react"
 
 interface FlowStage { key: string; label: string; page: string; count: number }
@@ -27,6 +27,7 @@ interface WorkRow {
   due: string | null; dueSlot: string | null; overdue: boolean
 }
 interface Dash {
+  returnToStore: number
   activity: { received: number; completed: number; returned: number }
   workloadNow: { inTransit: number; awaitingBarcode: number; awaitingProcessing: number; inProgress: number; qcPending: number; readyForDispatch: number }
   flow: FlowStage[]
@@ -193,20 +194,32 @@ export function ProcessingDashboard() {
           </div>
 
           <Card className="rounded-xl border-slate-200"><CardContent className="p-4">
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-400">Production Flow</p>
-            {/* Garment counts per stage, straight from the workstation queues.
-                Each one opens the screen that clears it. */}
-            <div className="flex flex-wrap items-stretch gap-2">
-              {data.flow.map((f, i) => (
-                <div key={f.key} className="flex items-center gap-2">
-                  <button onClick={() => setLaundryPage(f.page as never)}
-                    className="min-w-[116px] rounded-lg border border-slate-200 p-2.5 text-left transition-colors hover:border-blue-400 hover:bg-blue-50/50">
-                    <p className="text-[11px] text-slate-500">{f.label}</p>
-                    <p className={`text-lg font-semibold tabular-nums ${f.count > 0 ? "text-slate-800" : "text-slate-300"}`}>{f.count}</p>
-                  </button>
-                  {i < data.flow.length - 1 && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
-                </div>
-              ))}
+            <p className="mb-4 text-[11px] font-bold uppercase tracking-wide text-slate-400">Production Flow</p>
+            {/* The real route through the centre. Washing/Dry Cleaning and
+                Ironing/Folding are PARALLEL branches — a garment takes one of
+                each pair, never both in sequence — so they sit side by side and
+                merge, rather than being strung into a single line. */}
+            <div className="mx-auto flex max-w-2xl flex-col items-center">
+              <Node stage={byKey(data.flow, "RECEIVED")} go={setLaundryPage} />
+              <Down />
+              <Split />
+              <div className="grid w-full grid-cols-2 gap-3">
+                <Node stage={byKey(data.flow, "WASH")} go={setLaundryPage} />
+                <Node stage={byKey(data.flow, "DRYCLEAN")} go={setLaundryPage} />
+              </div>
+              <Merge />
+              <Node stage={byKey(data.flow, "QC")} go={setLaundryPage} />
+              <Down />
+              <Node stage={byKey(data.flow, "SORTING")} go={setLaundryPage} />
+              <Down />
+              <Split />
+              <div className="grid w-full grid-cols-2 gap-3">
+                <Node stage={byKey(data.flow, "IRON")} go={setLaundryPage} />
+                <Node stage={byKey(data.flow, "FOLD")} go={setLaundryPage} />
+              </div>
+              <Merge />
+              {/* Order-level terminal, not a garment stage. */}
+              <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore }} go={setLaundryPage} unit="orders" />
             </div>
           </CardContent></Card>
 
@@ -270,6 +283,42 @@ export function ProcessingDashboard() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** One box in the flow. Clickable: it opens the screen that clears that stage. */
+function Node({ stage, go, unit = "garments" }: { stage: FlowStage; go: (p: never) => void; unit?: string }) {
+  const busy = stage.count > 0
+  return (
+    <button onClick={() => go(stage.page as never)}
+      className={`w-full max-w-[260px] rounded-xl border p-3 text-center transition-colors ${busy ? "border-blue-300 bg-blue-50/60 hover:bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{stage.label}</p>
+      <p className={`text-2xl font-bold tabular-nums ${busy ? "text-blue-700" : "text-slate-300"}`}>{stage.count}</p>
+      <p className="text-[10px] text-slate-400">{unit}</p>
+    </button>
+  )
+}
+const byKey = (flow: FlowStage[], k: string): FlowStage =>
+  flow.find((f) => f.key === k) ?? { key: k, label: k, page: "processing-centers", count: 0 }
+
+/** Connectors. Plain CSS rules — a diagram this small needs no chart library. */
+function Down() { return <div className="h-5 w-px bg-slate-300" /> }
+function Split() {
+  return (
+    <div className="w-full max-w-2xl">
+      <div className="mx-auto h-3 w-px bg-slate-300" />
+      <div className="mx-auto h-px w-1/2 bg-slate-300" />
+      <div className="mx-auto flex w-1/2 justify-between"><div className="h-3 w-px bg-slate-300" /><div className="h-3 w-px bg-slate-300" /></div>
+    </div>
+  )
+}
+function Merge() {
+  return (
+    <div className="w-full max-w-2xl">
+      <div className="mx-auto flex w-1/2 justify-between"><div className="h-3 w-px bg-slate-300" /><div className="h-3 w-px bg-slate-300" /></div>
+      <div className="mx-auto h-px w-1/2 bg-slate-300" />
+      <div className="mx-auto h-3 w-px bg-slate-300" />
     </div>
   )
 }
