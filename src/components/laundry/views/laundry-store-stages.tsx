@@ -632,14 +632,24 @@ export function LaundryStoreReceive() {
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : "Receive failed"); return false } finally { setBusy(false) }
   }
-  const receive = () => { if (selected) receiveOrder(selected.id) }
+  const receive = () => {
+    if (!selected) return
+    // Manual receipt bypasses the scan, so it names the order and asks. A single
+    // click must not accept a package nobody verified.
+    if (!window.confirm(`Confirm receipt of ${selected.orderNumber} without scanning?\n\n${selected.itemCount} garment(s). Use this only when the QR cannot be scanned.`)) return
+    receiveOrder(selected.id)
+  }
 
   // Scan-first receive: the returning package carries the identifier configured
   // for the Processing Center → Store leg (bag QR or the same packet QR it went
   // out with). One resolver, one mode — the server confirms it's in return transit.
   const resolveAndReceive = async (raw?: string) => {
-    const q = (raw ?? code).trim()
-    if (!q || !currentBusinessId || busy) return
+    // `raw` is present for the camera/scanner path. Falling back to `code` there
+    // would receive whatever happened to be left in the box from an earlier
+    // scan, which reads as "it accepted without me scanning anything".
+    const q = (raw !== undefined ? raw : code).trim()
+    if (!q) { toast.error("Nothing scanned — scan the bag or packet QR."); return }
+    if (!currentBusinessId || busy) return
     let orderId: string | null = null
     try {
       const j = await fetch(`/api/laundry/transport/resolve?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}&direction=PROCESSING_TO_STORE`).then((r) => r.json())
