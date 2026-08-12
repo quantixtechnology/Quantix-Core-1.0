@@ -95,6 +95,11 @@ export interface CreateLaundryOrderInput {
   // order permanently records WHERE the pickup happened and WHY the store was
   // assigned (analytics / routing / SLA).
   pickupAddressId?: string | null
+  // Copied from the chosen Address row so the field app can navigate without a
+  // second lookup. Nullable everywhere — an order may have no address at all.
+  pickupLandmark?: string | null
+  pickupLat?: number | null
+  pickupLng?: number | null
   pickupDistanceKm?: number | null
   serviceabilityStatus?: string | null
   deliveryZoneId?: string | null
@@ -199,6 +204,9 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       }),
       pickupAddress: input.pickupAddress ?? null,
       pickupAddressId: input.pickupAddressId ?? null,
+      pickupLandmark: input.pickupLandmark ?? null,
+      pickupLat: input.pickupLat ?? null,
+      pickupLng: input.pickupLng ?? null,
       pickupDistanceKm: input.pickupDistanceKm ?? null,
       serviceabilityStatus: input.serviceabilityStatus ?? null,
       deliveryZoneId: input.deliveryZoneId ?? null,

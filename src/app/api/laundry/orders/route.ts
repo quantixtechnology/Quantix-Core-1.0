@@ -14,7 +14,7 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId: businessIdInput, storeId, customerId, orderType, orderSource, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupRequired, deliveryRequired, pickupDate, pickupTimeSlot, deliveryDate, deliveryTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
+    const { businessId: businessIdInput, storeId, customerId, orderType, orderSource, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupRequired, deliveryRequired, pickupDate, pickupTimeSlot, deliveryDate, deliveryTimeSlot, pickupAddress, pickupAddressId, pickupLandmark, pickupLat, pickupLng, pickupInstructions, createdBy } = body
 
     if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
@@ -129,6 +129,13 @@ export async function POST(request: Request) {
       deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
       deliveryTimeSlot: deliveryTimeSlot || null,
       pickupAddress: pickupAddress || null,
+      // The saved Address the operator chose, and its coordinates. Recording the
+      // row id (not just the text) is what lets routing and the executive's map
+      // use the customer's existing location instead of a re-typed string.
+      pickupAddressId: pickupAddressId || null,
+      pickupLandmark: pickupLandmark || null,
+      pickupLat: pickupLat != null ? Number(pickupLat) : null,
+      pickupLng: pickupLng != null ? Number(pickupLng) : null,
       pickupInstructions: pickupInstructions || null,
       specialInstructions: specialInstructions || null,
       notes: notes || null,

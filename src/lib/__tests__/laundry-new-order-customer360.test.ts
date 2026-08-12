@@ -79,18 +79,22 @@ describe('switching customer never shows the previous one', () => {
 
 describe('order logic is untouched', () => {
   it('creation, pricing and subscription calls remain', () => {
-    for (const k of ['subscriptions/active', 'laundry/orders', 'specialInstructions']) {
+    // Superseded: `specialInstructions` was still sent (always empty) when the
+    // Instructions card was first removed. The New Order simplification dropped
+    // the field from the payload entirely, so it is no longer expected here.
+    // See laundry-fulfilment.test.ts for what the screen sends now.
+    for (const k of ['subscriptions/active', 'laundry/orders']) {
       expect(ORDER).toContain(k)
     }
   })
 
-  // The removal must not silently attach an instruction to every order.
-  it('no instruction is seeded now that the UI is gone', () => {
-    expect(ORDER).toContain('const [quickNotes] = useState<string[]>([])')
-    expect(ORDER).not.toContain('useState<string[]>(["Separate Whites"])')
-  })
-
-  it('the express/TAT logic that reads it still works', () => {
-    expect(ORDER).toContain('quickNotes.includes("Express Service")')
+  // Superseded: `quickNotes` was retained as empty state because the express
+  // check still read it. The simplification removed that check with the
+  // Instructions card, so the state is gone rather than emptied — which is the
+  // same guarantee (no instruction is attached to any order) with less to
+  // maintain. Express is now the explicit Delivery Speed toggle.
+  it('no instruction is seeded, and no instruction state survives', () => {
+    expect(ORDER).not.toContain('quickNotes')
+    expect(ORDER).not.toContain('Separate Whites')
   })
 })

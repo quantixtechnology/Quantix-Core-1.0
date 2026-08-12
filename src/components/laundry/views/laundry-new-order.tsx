@@ -1,31 +1,50 @@
 "use client"
 
-// New Laundry Order — enterprise reference layout (presentation layer only;
-// no workflow/API/schema/pricing changes). Order intake at the store counter:
-// customer, order type, services and logistics → creates the order in
-// PENDING_STORE_AUDIT. Garment counting / final bill happen at Store Audit, so
-// amounts read "Pending Audit". Services load from the Services master.
+// New Laundry Order — order intake at the store counter.
+//
+// The screen answers four questions and nothing else:
+//
+//   1. Who is the customer?          → search + Customer 360
+//   2. What are they giving us?      → garments / services (existing pricing)
+//   3. Do we collect the garments?   → Pickup Required
+//   4. Do we deliver them back?      → Delivery Required
+//
+// Everything that used to be asked here and is decided elsewhere has been
+// removed rather than reworked:
+//   Order Type      — derived, never asked. Pickup Required = Yes IS a home
+//                     pickup; the channel is already known (this screen is the
+//                     offline/store path, the storefront is the online one).
+//   Customer Type   — an account type and an active subscription are facts the
+//                     system already holds; the operator does not restate them.
+//   Payment         — Payment Collection owns it, after Store Audit fixes the
+//                     amount. Nothing here decides money.
+//   Expected Delivery / Instructions / Attachments — removed outright.
+//
+// Pickup and delivery are REQUIREMENTS on the order, not order types: the
+// existing pickupRequired / deliveryRequired booleans plus the existing
+// pickup/delivery date + slot fields carry all four combinations. No new model,
+// no new status, no second scheduling mechanism.
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
-import { generateSlots, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
+import { generateSlots, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT, slotHasEnded, slotIsPast } from "@/lib/laundry-slots"
+import { dayKey, earliestDeliveryDayKey } from "@/lib/laundry-tat"
+import { fulfilmentError, fulfilmentPayload, needsAddress as fulfilmentNeedsAddress, addressLabel, type FulfilmentState } from "@/lib/laundry-fulfilment"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
-  Search, UserPlus, User, Phone, MapPin, Clock, CreditCard, Store as StoreIcon,
-  FileText, Save, Send, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
+  Search, UserPlus, User, Phone, MapPin,
+  FileText, Save, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
   Hash, Calendar, UserCircle, Trash2, Info, X, Shirt, Plus, Minus,
-  BadgeCheck, ImagePlus, Upload, Truck, Navigation, Paperclip, Building2,
+  BadgeCheck, Truck, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "./pricing/searchable-select"
@@ -34,37 +53,16 @@ import { statusLabel } from "@/lib/laundry-workflow"
 import { LaundryGarmentSelect } from "@/components/laundry/garment-select"
 import { Customer360Panel } from "./customer-360-panel"
 
-const ORDER_TYPES = [
-  { value: "WALK_IN", label: "Walk-In" },
-  { value: "STORE_DROP", label: "Store Drop" },
-  { value: "HOME_PICKUP", label: "Home Pickup" },
-  { value: "CORPORATE", label: "Corporate Customer" },
-  { value: "SUBSCRIPTION", label: "Subscription Customer" },
-]
-
-// Customer Type = WHEN payment is collected (a preference only — collection itself
-// stays at the existing post-audit step, the amount is finalised at Store Audit).
-// Maps to the existing paymentPreference label; drives no workflow/pricing.
-//   Subscription     → subscription applied automatically, only extras charged
-//   Pay Now          → full amount collected at Store Audit once the bill is final
-//   Pay After Service→ collected before delivery (trusted / corporate)
-type PayType = "SUBSCRIPTION" | "PAY_NOW" | "PAY_AFTER"
-const PAY_TYPES: { value: PayType; label: string; hint: string }[] = [
-  { value: "SUBSCRIPTION", label: "Subscription", hint: "Subscription applied automatically — only extra garments/services are charged." },
-  { value: "PAY_NOW", label: "Pay Now", hint: "Full payment collected at Store Audit once the final bill is ready." },
-  { value: "PAY_AFTER", label: "Pay After Service", hint: "Payment collected before delivery." },
-]
-const payTypeToPreference = (t: PayType) => (t === "SUBSCRIPTION" ? "SUBSCRIPTION_BILLING" : t === "PAY_AFTER" ? "COD" : "FULL_ADVANCE")
-
-// Laundry Instructions — standard handling options that travel with the order
-// through every stage (stored in the SAME specialInstructions field, no backend
-// change). "Express Service" keeps the existing express pricing/turnaround link.
+// Order type, validation and the fields an order actually carries live in
+// src/lib/laundry-fulfilment.ts — pure, shared and tested, so the screen and the
+// tests cannot describe different rules.
+//
 // Slots are configured per business (Settings → Pickup & Delivery Time Slots);
 // these are only the fallback until the config loads.
 const FALLBACK_PICKUP_SLOTS = generateSlots(DEFAULT_PICKUP_SLOT)
 const FALLBACK_DELIVERY_SLOTS = generateSlots(DEFAULT_DELIVERY_SLOT)
 
-interface AddressRow { id?: string; addressType?: string; label?: string | null; isPickupDefault?: boolean; isDeliveryDefault?: boolean; isDefault?: boolean; addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
+interface AddressRow { id?: string; addressType?: string; label?: string | null; isPickupDefault?: boolean; isDeliveryDefault?: boolean; isDefault?: boolean; addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null; latitude?: number | null; longitude?: number | null }
 interface CustomerResult {
   id: string; name: string; phone: string | null; email: string | null
   loyaltyTier: string; walletBalance: number; customerCode: string | null
@@ -91,6 +89,10 @@ interface StoreInfo { id: string; storeName: string; city?: string | null }
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 // Digits-only, last-10 mobile (matches customerStats' phone aggregation).
 const normPhone = (p: string | null | undefined) => { const d = (p || "").replace(/\D/g, ""); return d.length >= 10 ? d.slice(-10) : "" }
+
+// One saved address → the single line the order stores and the executive reads.
+const formatAddress = (a: AddressRow) => [a.addressLine1, a.addressLine2, a.area, a.city, a.pincode].filter(Boolean).join(", ")
+const addressChoiceLabel = (a: AddressRow) => `${a.label || a.addressType || "Address"} — ${formatAddress(a)}`
 
 const turnaroundLabel = (h: number) => (h <= 0 ? "Custom" : h <= 12 ? "Same Day" : `${h} Hours`)
 const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
@@ -119,7 +121,6 @@ export default function LaundryNewOrder() {
   const [newCustState, setNewCustState] = useState("")
   const [newCustPincode, setNewCustPincode] = useState("")
 
-  const [orderType, setOrderType] = useState("WALK_IN")
   const [express, setExpress] = useState(false)
   const [expressCfg, setExpressCfg] = useState<{ enabled: boolean; hours: number | null }>({ enabled: false, hours: null })
   const [services, setServices] = useState<ServiceMaster[]>([])
@@ -137,9 +138,6 @@ export default function LaundryNewOrder() {
   const [mPricing, setMPricing] = useState(false)
   // live quote for the whole order
   const [quote, setQuote] = useState<{ grandTotal: number; lines: { lineTotal: number; matchedRuleId: string | null; pricingType: string | null; weightRequired?: boolean }[] } | null>(null)
-  const [overrideDelivery, setOverrideDelivery] = useState(false)
-  const [overrideReason, setOverrideReason] = useState("")
-  const [customDeliveryDate, setCustomDeliveryDate] = useState("")
   const [pickupRequired, setPickupRequired] = useState(false)
   const [deliveryRequired, setDeliveryRequired] = useState(false)
   const [pickupSlots, setPickupSlots] = useState<string[]>(FALLBACK_PICKUP_SLOTS)
@@ -148,31 +146,36 @@ export default function LaundryNewOrder() {
   const [pickupTimeSlot, setPickupTimeSlot] = useState("")
   const [deliveryDate, setDeliveryDate] = useState("")
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState("")
-  const [pickupAddress, setPickupAddress] = useState("")
-  const [pickupInstructions, setPickupInstructions] = useState("")
+  // ONE address per order. The schema carries a single address (pickupAddress /
+  // pickupAddressId + lat/lng/landmark) and the delivery leg already reads it —
+  // src/app/api/laundry/executive/jobs/route.ts maps `address: o.pickupAddress`
+  // for BOTH job types. So a delivery-only order stores its address here too,
+  // which is what puts an address in front of the delivery executive; before
+  // this, a walk-in + delivery order reached them with no address at all.
+  const [orderAddressId, setOrderAddressId] = useState("")
   const [savedAddresses, setSavedAddresses] = useState<AddressRow[]>([])
   const [addressesLoading, setAddressesLoading] = useState(false)
-  const [payType, setPayType] = useState<PayType>("PAY_NOW")
-  const [payTypeTouched, setPayTypeTouched] = useState(false)
-  // Laundry Instructions were removed from this screen. The state stays because
-  // the express/TAT logic below reads it, but it must start EMPTY: the old
-  // default pre-selected one of the handling options on every order, and with
-  // no UI left to uncheck it that would silently attach an instruction nobody
-  // asked for.
-  const [quickNotes] = useState<string[]>([])
-  const [otherInstructions, setOtherInstructions] = useState("")
-  const [attachments, setAttachments] = useState<{ url: string; kind: string }[]>([])
-  const [uploading, setUploading] = useState<string | null>(null)
   const [creatingCust, setCreatingCust] = useState(false)
 
   const [stores, setStores] = useState<StoreInfo[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
-  const isPickup = orderType === "HOME_PICKUP"
-  const showPickupFields = isPickup || pickupRequired
-  const showDeliveryFields = deliveryRequired
+  // Pickup Required IS the home pickup. There is no separate order type to keep
+  // in step with it, so the two can no longer disagree.
+  const isPickup = pickupRequired
   const selectedStore = stores.find((s) => s.id === selectedStoreId)
+  const selectedAddress = savedAddresses.find((a) => a.id === orderAddressId) || null
+  const orderAddressText = selectedAddress ? formatAddress(selectedAddress) : ""
+  const fulfilment: FulfilmentState = {
+    pickupRequired, deliveryRequired,
+    addressText: orderAddressText, addressId: orderAddressId,
+    landmark: selectedAddress?.landmark ?? null, lat: selectedAddress?.latitude ?? null, lng: selectedAddress?.longitude ?? null,
+    pickupDate, pickupTimeSlot, deliveryDate, deliveryTimeSlot,
+  }
+  const fulfilmentFields = fulfilmentPayload(fulfilment)
+  const orderType = fulfilmentFields.orderType
+  const needsAddress = fulfilmentNeedsAddress(fulfilment)
 
   const loadMasters = useCallback(async () => {
     if (!currentBusinessId) return { svc: 0, grm: 0 }
@@ -224,11 +227,10 @@ export default function LaundryNewOrder() {
 
   const maxTat = useMemo(() => {
     const hrs = selectedServices.map((s) => s.defaultTurnaroundHours).filter((h) => h > 0)
-    const base = hrs.length ? Math.max(...hrs) : 0
-    return quickNotes.includes("Express Service") && base > 0 ? Math.max(4, Math.round(base / 2)) : base
-  }, [selectedServices, quickNotes])
+    return hrs.length ? Math.max(...hrs) : 0
+  }, [selectedServices])
 
-  const customerType = useMemo(() => (orderType === "CORPORATE" ? "CORPORATE" : orderType === "SUBSCRIPTION" ? "SUBSCRIPTION" : orderType === "HOME_PICKUP" ? "PICKUP" : "WALK_IN"), [orderType])
+  const customerType = orderType === "HOME_PICKUP" ? "PICKUP" : "WALK_IN"
   const totalPieces = useMemo(() => lineItems.reduce((s, l) => s + l.quantity, 0), [lineItems])
 
   // Express Delivery config (Charges & Rules). Hidden entirely if disabled.
@@ -286,16 +288,6 @@ export default function LaundryNewOrder() {
       .then((j) => { if (!cancel) setMembership(j.success ? j.data : null) }).catch(() => { if (!cancel) setMembership(null) })
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
-  // Auto-pick the payment preference from the customer (operator can still change
-  // it): active subscription → Subscription; Corporate account → Pay After Service;
-  // otherwise Pay Now. Never overrides a manual choice for the current customer.
-  useEffect(() => { setPayTypeTouched(false) }, [selectedCustomer])
-  useEffect(() => {
-    if (payTypeTouched) return
-    if (subInfo) setPayType("SUBSCRIPTION")
-    else if ((selectedCustomer?.accountType || "").toUpperCase() === "CORPORATE") setPayType("PAY_AFTER")
-    else setPayType("PAY_NOW")
-  }, [subInfo, selectedCustomer, payTypeTouched])
   // Customer 360 lifecycle summary (read-only) for the selected customer.
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null)
   const [lcLoading, setLcLoading] = useState(false)
@@ -310,37 +302,24 @@ export default function LaundryNewOrder() {
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
 
-  // Fetch full addresses when customer is selected; auto-populate pickup address
+  // The customer's saved addresses ARE the address list — the operator selects
+  // one, never retypes house/street/area/city/PIN/GPS. The customer's own
+  // pickup-default (falling back to their default, then the first) is
+  // preselected, so the common case needs no interaction at all.
   useEffect(() => {
-    if (!currentBusinessId || !selectedCustomer) { setSavedAddresses([]); return }
-    // Immediate fallback: use address from search results
-    const searchAddr = selectedCustomer.addresses?.[0]
-    if (searchAddr) {
-      const addrStr = [searchAddr.addressLine1, searchAddr.area, searchAddr.city].filter(Boolean).join(", ")
-      if (addrStr) setPickupAddress(addrStr)
-    }
+    if (!currentBusinessId || !selectedCustomer) { setSavedAddresses([]); setOrderAddressId(""); return }
     setAddressesLoading(true)
+    setOrderAddressId("")
     fetch(`/api/laundry/customers/${selectedCustomer.id}/addresses?businessId=${currentBusinessId}`).then((r) => r.json())
       .then((j) => {
         const addrs: AddressRow[] = j.success ? j.data || [] : []
         setSavedAddresses(addrs)
-        if (addrs.length > 0) {
-          const def = addrs.find((a: AddressRow) => a.isPickupDefault) || addrs[0]
-          const addrStr = [def.addressLine1, def.area, def.city].filter(Boolean).join(", ")
-          if (addrStr) setPickupAddress(addrStr)
-        }
-      }).catch(() => { /* address fetch failed — fallback already applied */ })
+        const def = addrs.find((a) => a.isPickupDefault) || addrs.find((a) => a.isDefault) || addrs[0]
+        if (def?.id) setOrderAddressId(def.id)
+      })
+      .catch(() => setSavedAddresses([]))
       .finally(() => setAddressesLoading(false))
   }, [currentBusinessId, selectedCustomer])
-
-  // Auto-populate pickup address when switching to HOME_PICKUP with saved addresses
-  useEffect(() => {
-    if (isPickup && savedAddresses.length > 0 && !pickupAddress) {
-      const def = savedAddresses.find((a: AddressRow) => a.isPickupDefault) || savedAddresses[0]
-      const addrStr = [def.addressLine1, def.area, def.city].filter(Boolean).join(", ")
-      if (addrStr) setPickupAddress(addrStr)
-    }
-  }, [isPickup, savedAddresses, pickupAddress])
 
   const subPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -393,11 +372,25 @@ export default function LaundryNewOrder() {
   const removeLine = (uid: string) => setLineItems((p) => p.filter((l) => l.uid !== uid))
   const setLineQty = (uid: string, q: number) => setLineItems((p) => p.map((l) => (l.uid === uid ? { ...l, quantity: Math.max(1, q) } : l)))
 
+  // Still computed from the services' own turnaround — Order Details, reports
+  // and the workstations read expectedDeliveryDate, so it must keep being
+  // written. What was removed is ASKING the operator for it: no manual date, no
+  // override, no reason. It is derived or it is nothing.
   const expectedDelivery = useMemo(() => {
-    if (overrideDelivery && customDeliveryDate) return new Date(customDeliveryDate)
     if (maxTat === 0) return null
     const d = new Date(now); d.setHours(d.getHours() + maxTat); return d
-  }, [maxTat, overrideDelivery, customDeliveryDate, now])
+  }, [maxTat, now])
+
+  // Today, and the earliest honest delivery day. Delivery cannot be promised
+  // before the garments can be ready, so the floor is the services' own TAT
+  // measured from the pickup (the garments cannot be washed before they are
+  // collected) or from now for a counter drop-off. Same laundry-tat helpers the
+  // storefront uses — not a second delivery-promise rule.
+  const todayKey = dayKey(now)
+  const earliestDeliveryKey = useMemo(
+    () => earliestDeliveryDayKey(pickupRequired && pickupDate ? new Date(pickupDate) : now, selectedServices),
+    [pickupRequired, pickupDate, selectedServices, now],
+  )
 
   const handleSearch = async () => {
     if (!searchQuery.trim() || !currentBusinessId) return
@@ -467,44 +460,31 @@ export default function LaundryNewOrder() {
     } finally { setCreatingCust(false); console.groupEnd() }
   }
 
-  const handleUpload = async (kind: string, files: FileList | null) => {
-    if (!files?.length || !currentBusinessId) return
-    setUploading(kind)
-    try {
-      for (const file of Array.from(files)) {
-        const category = kind === "garment" ? "garments" : kind === "pickup" ? "delivery" : "documents"
-        const fd = new FormData(); fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document"); fd.append("category", category)
-        const res = await fetch("/api/uploads", { method: "POST", body: fd })
-        const json = await res.json(); const url = json?.data?.url || json?.data?.uploadPath || json?.url
-        if (json.success && url) setAttachments((p) => [...p, { url, kind }])
-        else toast({ title: "Upload failed", description: json.error || "Try again", variant: "destructive" })
-      }
-    } catch { toast({ title: "Upload failed", variant: "destructive" }) } finally { setUploading(null) }
-  }
-
-  const specialInstructions = useMemo(() => [...quickNotes, otherInstructions.trim()].filter(Boolean).join("; "), [quickNotes, otherInstructions])
-
   const handleSubmit = async (action: "create" | "draft" | "audit") => {
     if (!currentBusinessId || !selectedStoreId) { toast({ title: "Error", description: "No business or store selected", variant: "destructive" }); return }
     if (!selectedCustomer) { toast({ title: "Error", description: "Select or create a customer first", variant: "destructive" }); return }
     if (lineItems.length === 0) { toast({ title: "Add a garment", description: "Add at least one garment to the order.", variant: "destructive" }); return }
+    // A switched-off leg is never validated (Pickup = No asks for nothing).
+    const fErr = fulfilmentError(fulfilment)
+    if (fErr) { toast({ title: "Fulfilment incomplete", description: fErr, variant: "destructive" }); return }
     // Weight is captured at Store Audit, never here — booking records quantities only.
     setSubmitting(true)
     try {
       const payload = {
-        businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id, orderType,
+        businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id,
         services: selectedServices.map((s) => ({ serviceId: s.id, serviceName: s.name, turnaroundHours: s.defaultTurnaroundHours })),
         items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity })),
-        isExpress: express || quickNotes.includes("Express Service"),
+        isExpress: express,
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
-        deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
-        paymentPreference: payTypeToPreference(payType),
-        pickupRequired: !isPickup ? pickupRequired : undefined,
-        deliveryRequired,
-        pickupDate: showPickupFields ? pickupDate : null, pickupTimeSlot: showPickupFields ? pickupTimeSlot : null,
-        deliveryDate: showDeliveryFields ? deliveryDate : null, deliveryTimeSlot: showDeliveryFields ? deliveryTimeSlot : null,
-        pickupAddress: showPickupFields ? pickupAddress : null, pickupInstructions: showPickupFields ? pickupInstructions : null,
-        specialInstructions, notes: null, createdBy: user?.name || "counter",
+        // orderType + both requirement flags + the schedules + the one address,
+        // from the shared rule. A leg that is off contributes nulls, so a
+        // walk-in can never carry a stale pickup date.
+        //
+        // paymentPreference is deliberately NOT sent: Payment Collection owns
+        // payment, after Store Audit fixes the amount. The server applies its
+        // own default.
+        ...fulfilmentFields,
+        notes: null, createdBy: user?.name || "counter",
       }
       const res = await fetch("/api/laundry/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const json = await res.json()
@@ -756,33 +736,23 @@ export default function LaundryNewOrder() {
             </CardContent>
           </Card>
 
-          {/* Order Type + Services */}
-          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-5">
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={ShoppingBag} title="Order Type" />
-              <CardContent className="px-5 pb-5 pt-0">
-                <RadioGroup value={orderType} onValueChange={setOrderType} className="space-y-3.5">
-                  {ORDER_TYPES.map((ot) => (
-                    <div key={ot.value} className="flex items-center space-x-2"><RadioGroupItem value={ot.value} id={`ot-${ot.value}`} className="text-blue-600" /><Label htmlFor={`ot-${ot.value}`} className="text-sm cursor-pointer">{ot.label}</Label></div>
-                  ))}
-                </RadioGroup>
-                {/* Delivery speed — only when Express is enabled in Charges & Rules */}
-                {expressCfg.enabled && (
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Delivery Speed</p>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => setExpress(false)} className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium ${!express ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>Normal</button>
-                      <button type="button" onClick={() => setExpress(true)} className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium ${express ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>Express{expressCfg.hours ? ` · ${expressCfg.hours}h` : ""}</button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
+          {/* Garments & Services — the order itself */}
+          <div className="grid grid-cols-1">
             <Card id="laundry-order-garments" className="rounded-xl border-slate-200 shadow-sm scroll-mt-24">
               <CardHead icon={Shirt} title="Garments &amp; Services" note={seeding ? "· loading demo data…" : undefined}
                 right={<Button type="button" size="sm" onClick={openAddGarment} disabled={garments.length === 0} className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-3.5 w-3.5" /> Add Garment</Button>} />
               <CardContent className="px-5 pb-5 pt-0">
+                {/* Delivery speed — only when Express is enabled in Charges & Rules.
+                    It is a property of the work, not an order type. */}
+                {expressCfg.enabled && (
+                  <div className="mb-3 flex items-center gap-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Delivery Speed</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setExpress(false)} className={`rounded-lg border px-3 py-1 text-xs font-medium ${!express ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>Normal</button>
+                      <button type="button" onClick={() => setExpress(true)} className={`rounded-lg border px-3 py-1 text-xs font-medium ${express ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>Express{expressCfg.hours ? ` · ${expressCfg.hours}h` : ""}</button>
+                    </div>
+                  </div>
+                )}
                 {lineItems.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center">
                     <Shirt className="h-7 w-7 text-slate-300 mx-auto mb-2" />
@@ -888,92 +858,111 @@ export default function LaundryNewOrder() {
             </DialogContent>
           </Dialog>
 
-          {/* Expected Delivery + Pickup */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={Clock} title="Expected Delivery" />
-              <CardContent className="px-5 pb-5 pt-0 space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-slate-500">Order Created</span><span className="font-medium text-slate-700">{fmtDateTime(now)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Estimated Delivery</span><span className="text-emerald-600 font-semibold">{expectedDelivery ? fmtDateTime(expectedDelivery) : "Select services"}</span></div>
-                <p className="text-[11px] text-slate-400 -mt-1">(Based on max. turnaround time)</p>
-                <div className="flex items-center gap-5 pt-1"><span className="text-slate-500">Override Allowed</span>
-                  <RadioGroup value={overrideDelivery ? "yes" : "no"} onValueChange={(v) => setOverrideDelivery(v === "yes")} className="flex items-center gap-4">
-                    <div className="flex items-center space-x-1.5"><RadioGroupItem value="yes" id="ov-yes" className="text-blue-600" /><Label htmlFor="ov-yes" className="text-sm cursor-pointer">Yes</Label></div>
-                    <div className="flex items-center space-x-1.5"><RadioGroupItem value="no" id="ov-no" className="text-blue-600" /><Label htmlFor="ov-no" className="text-sm cursor-pointer">No</Label></div>
-                  </RadioGroup>
-                </div>
-                <div className="space-y-1 pt-1">
-                  <Label className="text-xs text-slate-500">Reason (Required if overridden)</Label>
-                  <Textarea value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} disabled={!overrideDelivery} placeholder="Enter reason for override" className="min-h-[60px] bg-slate-50 border-slate-200" />
-                  {overrideDelivery && <Input type="date" value={customDeliveryDate} onChange={(e) => setCustomDeliveryDate(e.target.value)} className="bg-slate-50 border-slate-200" />}
-                </div>
-              </CardContent>
-            </Card>
+          {/* ── FULFILMENT ────────────────────────────────────────────────────
+              Two questions, four real combinations, one card. Answering "No"
+              shows nothing further — the walk-in who collects their own clothes
+              never sees a scheduling field.
 
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={Truck} title="Pickup Details" note={isPickup ? "(Home Pickup)" : "(Optional)"} />
-              <CardContent className="px-5 pb-5 pt-0 space-y-3">
-                {!isPickup && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-500">Pickup Required</span>
+              These are requirements on the order, not order types: the existing
+              pickupRequired / deliveryRequired booleans and the existing
+              pickup/delivery date + slot fields already carry all four cases. */}
+          <Card className="rounded-xl border-slate-200 shadow-sm">
+            <CardHead icon={Truck} title="Fulfilment" note="· pickup and delivery are optional" />
+            <CardContent className="px-5 pb-5 pt-0 space-y-4">
+              {/* ONE address for the order. The schema holds a single address and
+                  the delivery leg already reads it, so pickup and delivery share
+                  it rather than the screen pretending two can be stored. */}
+              {needsAddress && (
+                <div className="space-y-1.5 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                  <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                    {addressLabel(fulfilment)}
+                  </Label>
+                  {addressesLoading ? (
+                    <p className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading saved addresses…</p>
+                  ) : savedAddresses.length > 0 ? (
+                    <>
+                      {/* Saved addresses only — the operator never retypes house,
+                          street, area, city, PIN or GPS. */}
+                      <Select value={orderAddressId} onValueChange={setOrderAddressId}>
+                        <SelectTrigger className="bg-white border-slate-200 h-auto py-2 text-left"><SelectValue placeholder="Select address" /></SelectTrigger>
+                        <SelectContent>
+                          {savedAddresses.map((a) => <SelectItem key={a.id} value={a.id || ""}>{addressChoiceLabel(a)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      {pickupRequired && deliveryRequired && <p className="text-[11px] text-slate-500">Collected from and delivered to this address.</p>}
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-amber-700">
+                      {selectedCustomer ? "This customer has no saved address. Add one in Customers, then reopen this order." : "Select a customer to choose an address."}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* ── Pickup ── */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-700">Pickup Required</span>
                     <div className="flex gap-2">
+                      {/* Default No: the walk-in counter case stays one click. */}
+                      <button type="button" onClick={() => { setPickupRequired(false); setPickupDate(""); setPickupTimeSlot("") }} className={`px-3 py-1 text-xs rounded border ${!pickupRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
                       <button type="button" onClick={() => setPickupRequired(true)} className={`px-3 py-1 text-xs rounded border ${pickupRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>Yes</button>
-                      <button type="button" onClick={() => { setPickupRequired(false); setPickupDate(""); setPickupTimeSlot(""); setPickupAddress(""); setPickupInstructions("") }} className={`px-3 py-1 text-xs rounded border ${!pickupRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
                     </div>
                   </div>
-                )}
-                {(isPickup || pickupRequired) && (
-                  <>
+                  {pickupRequired ? (
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label><Input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
-                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Time Slot</Label>
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label>
+                        <Input type="date" min={todayKey} value={pickupDate} onChange={(e) => { setPickupDate(e.target.value); setPickupTimeSlot("") }} className="bg-slate-50 border-slate-200" /></div>
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Slot</Label>
                         <Select value={pickupTimeSlot} onValueChange={setPickupTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                          <SelectContent>{pickupSlots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                          <SelectContent>
+                            {/* A slot that has STARTED is still collectable; only
+                                a finished one is gone (laundry-slots rule). */}
+                            {pickupSlots.map((s) => { const gone = slotHasEnded(s, pickupDate, now); return <SelectItem key={s} value={s} disabled={gone}>{s}{gone ? " — ended" : ""}</SelectItem> })}
+                          </SelectContent></Select>
                       </div>
+                      <p className="col-span-2 text-[11px] text-slate-500">The garments are collected from the customer — this order waits for pickup instead of going straight to Store Audit.</p>
                     </div>
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
-                      <div className="flex gap-1">
-                        <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Enter pickup address" className="bg-slate-50 border-slate-200 flex-1" />
-                        {savedAddresses.length > 0 && (
-                          <select className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
-                            <option value="" disabled>Change…</option>
-                            {savedAddresses.map((a: AddressRow) => <option key={a.id} value={a.id}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
-                          </select>
-                        )}
-                        {addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
-                      </div>
-                    </div>
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Special Instructions</Label><Input value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} placeholder="e.g. Call before arrival" className="bg-slate-50 border-slate-200" /></div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={Navigation} title="Delivery Details" note="(Optional)" />
-              <CardContent className="px-5 pb-5 pt-0 space-y-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-500">Delivery Required</span>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setDeliveryRequired(true)} className={`px-3 py-1 text-xs rounded border ${deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>Yes</button>
-                    <button type="button" onClick={() => { setDeliveryRequired(false); setDeliveryDate(""); setDeliveryTimeSlot("") }} className={`px-3 py-1 text-xs rounded border ${!deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
-                  </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">Garments are with the store.</p>
+                  )}
                 </div>
-                {deliveryRequired && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Date</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Time Slot</Label>
-                      <Select value={deliveryTimeSlot} onValueChange={setDeliveryTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                        <SelectContent>{deliverySlots.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+
+                {/* ── Delivery ── */}
+                <div className="space-y-3 md:border-l md:pl-5 border-slate-100">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-700">Delivery Required</span>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => { setDeliveryRequired(false); setDeliveryDate(""); setDeliveryTimeSlot("") }} className={`px-3 py-1 text-xs rounded border ${!deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
+                      <button type="button" onClick={() => setDeliveryRequired(true)} className={`px-3 py-1 text-xs rounded border ${deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>Yes</button>
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Summary + Payment + Notes */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                  {deliveryRequired ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Date</Label>
+                        {/* Cannot be promised before the work can be done. */}
+                        <Input type="date" min={earliestDeliveryKey} value={deliveryDate} onChange={(e) => { setDeliveryDate(e.target.value); setDeliveryTimeSlot("") }} className="bg-slate-50 border-slate-200" /></div>
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Slot</Label>
+                        <Select value={deliveryTimeSlot} onValueChange={setDeliveryTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
+                          <SelectContent>
+                            {/* Nothing may be promised in a slot already under way. */}
+                            {deliverySlots.map((s) => { const gone = slotIsPast(s, deliveryDate, now); return <SelectItem key={s} value={s} disabled={gone}>{s}{gone ? " — passed" : ""}</SelectItem> })}
+                          </SelectContent></Select>
+                      </div>
+                      <p className="col-span-2 text-[11px] text-slate-500">This is the customer&apos;s promise. Dispatch assigns the executive later.</p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">Customer collects from the store.</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          {/* Order Summary. Payment is deliberately absent — Store Audit fixes
+              the amount and Payment Collection takes the money. */}
+          <div className="grid grid-cols-1">
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={FileText} title="Order Summary" />
               <CardContent className="px-5 pb-5 pt-0">
@@ -998,24 +987,6 @@ export default function LaundryNewOrder() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={CreditCard} title="Customer Type" />
-              <CardContent className="px-5 pb-5 pt-0">
-                <RadioGroup value={payType} onValueChange={(v) => { setPayType(v as PayType); setPayTypeTouched(true) }} className="space-y-2">
-                  {PAY_TYPES.map((p) => {
-                    const disabled = p.value === "SUBSCRIPTION" && !subInfo
-                    return (
-                      <label key={p.value} htmlFor={`ct-${p.value}`} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"} ${payType === p.value ? "border-blue-500 bg-blue-50/50" : "border-slate-200"}`}>
-                        <RadioGroupItem value={p.value} id={`ct-${p.value}`} disabled={disabled} className="text-blue-600 mt-0.5" />
-                        <span className="min-w-0"><span className="text-sm font-medium text-slate-800 block">{p.label}{p.value === "SUBSCRIPTION" && subInfo ? ` · ${subInfo.planName}` : ""}</span><span className="text-[11px] text-slate-500 leading-snug">{disabled ? "No active subscription for this customer." : p.hint}</span></span>
-                      </label>
-                    )
-                  })}
-                </RadioGroup>
-                <p className="mt-3 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] text-amber-700 text-center leading-snug">Amount is finalised at Store Audit — payment collected there (or before delivery for Pay After Service).</p>
-              </CardContent>
-            </Card>
-
           </div>
         </div>
 
@@ -1028,17 +999,17 @@ export default function LaundryNewOrder() {
         <Card className="rounded-xl border-slate-200 shadow-sm">
           <CardHead icon={Info} title="Quick Summary" />
           <CardContent className="px-5 pb-5 pt-0 space-y-3.5 text-sm">
-            <div><p className="text-xs text-slate-400">Order Type</p><p className="font-semibold text-slate-800">{ORDER_TYPES.find((o) => o.value === orderType)?.label}</p></div>
-            <div className="border-t border-slate-100 pt-3">
+            <div>
               <p className="text-xs text-slate-400 mb-1.5">Garments ({totalPieces}) · Services ({selectedServices.length})</p>
               {selectedServices.length === 0 ? <p className="text-slate-400 text-xs">None</p> : <ul className="space-y-1">{selectedServices.map((s) => <li key={s.id} className="text-sm text-slate-700 flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{s.name}</li>)}</ul>}
             </div>
             <div className="border-t border-slate-100 pt-3 flex items-center justify-between"><p className="text-xs text-slate-400">Estimated Total</p><p className="text-lg font-bold text-blue-700">{inr(grandTotal)}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Est. Delivery</p><p className="font-semibold text-slate-800">{expectedDelivery ? fmtDateTime(expectedDelivery) : "—"}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{isPickup || pickupRequired ? (pickupDate || "Required") : "Not Required"}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Delivery</p><p className="font-semibold text-slate-800">{deliveryRequired ? (deliveryDate || "Required") : "Not Required"}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Customer Type</p><p className="font-semibold text-slate-800">{PAY_TYPES.find((p) => p.value === payType)?.label}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Order Status</p><Badge variant="outline" className="mt-1 border-amber-300 text-amber-700 bg-amber-50">Pending Store Audit</Badge></div>
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{pickupRequired ? [pickupDate, pickupTimeSlot].filter(Boolean).join(" · ") || "Required" : "Not Required"}</p></div>
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Delivery</p><p className="font-semibold text-slate-800">{deliveryRequired ? [deliveryDate, deliveryTimeSlot].filter(Boolean).join(" · ") || "Required" : "Not Required"}</p></div>
+            {/* A pickup order is NOT at the store yet, so it does not start at
+                Store Audit — the order engine starts it awaiting pickup. */}
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Order Status</p><Badge variant="outline" className="mt-1 border-amber-300 text-amber-700 bg-amber-50">{pickupRequired ? "Awaiting Pickup" : "Pending Store Audit"}</Badge></div>
           </CardContent>
         </Card>
         </div>
