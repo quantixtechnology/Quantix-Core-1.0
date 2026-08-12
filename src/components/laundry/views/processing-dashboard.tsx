@@ -27,7 +27,8 @@ interface WorkRow {
   due: string | null; dueSlot: string | null; overdue: boolean
 }
 interface Dash {
-  kpis: { ordersReceived: number; awaitingProcessing: number; inProgress: number; qcPending: number; readyForDispatch: number; completed: number; inTransit: number }
+  activity: { received: number; completed: number; returned: number }
+  workloadNow: { inTransit: number; awaitingBarcode: number; awaitingProcessing: number; inProgress: number; qcPending: number; readyForDispatch: number }
   flow: FlowStage[]
   workload: WorkRow[]
   attention: { overdue: number; qcPending: number; awaitingProcessing: number; readyForDispatch: number }
@@ -42,7 +43,7 @@ const longDate = (d: Date) => d.toLocaleDateString("en-IN", { weekday: "short", 
 const timeOf = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—")
 
 /** The window the operator picked, in THEIR timezone — not the server's. */
-function resolveRange(key: RangeKey, custom: string): { from: Date; to: Date; label: string } {
+function resolveRange(key: RangeKey, customFrom: string, customTo: string): { from: Date; to: Date; label: string } {
   const today = startOfDay(new Date())
   switch (key) {
     case "YESTERDAY": { const f = addDays(today, -1); return { from: f, to: today, label: longDate(f) } }
@@ -54,9 +55,13 @@ function resolveRange(key: RangeKey, custom: string): { from: Date; to: Date; la
       return { from: f, to: addDays(f, 7), label: `${longDate(f)} – ${longDate(addDays(f, 6))}` }
     }
     case "CUSTOM": {
-      const d = custom ? new Date(`${custom}T00:00:00`) : today
-      const f = Number.isNaN(d.getTime()) ? today : startOfDay(d)
-      return { from: f, to: addDays(f, 1), label: longDate(f) }
+      const a = new Date(`${customFrom}T00:00:00`)
+      const b = new Date(`${customTo}T00:00:00`)
+      const f = Number.isNaN(a.getTime()) ? today : startOfDay(a)
+      // `to` is exclusive, so the end day is included by adding one.
+      const t = Number.isNaN(b.getTime()) ? addDays(f, 1) : addDays(startOfDay(b), 1)
+      const single = dayKey(f) === dayKey(addDays(t, -1))
+      return { from: f, to: t, label: single ? longDate(f) : `${longDate(f)} – ${longDate(addDays(t, -1))}` }
     }
     default: return { from: today, to: addDays(today, 1), label: `Today · ${longDate(today)}` }
   }
@@ -66,11 +71,17 @@ export function ProcessingDashboard() {
   const { currentBusinessId } = useAuthStore()
   const { setLaundryPage } = useAdminStore()
   const [range, setRange] = useState<RangeKey>("TODAY")
-  const [custom, setCustom] = useState(dayKey(new Date()))
+  // Custom is a RANGE. The draft is held separately so a half-typed range never
+  // refetches, and Apply is the only thing that commits it.
+  const [customFrom, setCustomFrom] = useState(dayKey(new Date()))
+  const [customTo, setCustomTo] = useState(dayKey(new Date()))
+  const [draft, setDraft] = useState({ from: dayKey(new Date()), to: dayKey(new Date()) })
+  const [showCustom, setShowCustom] = useState(false)
   const [data, setData] = useState<Dash | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const win = useMemo(() => resolveRange(range, custom), [range, custom])
+  const win = useMemo(() => resolveRange(range, customFrom, customTo), [range, customFrom, customTo])
+  const draftInvalid = draft.from && draft.to ? draft.from > draft.to : true
 
   const load = useCallback(() => {
     if (!currentBusinessId) return
@@ -84,7 +95,8 @@ export function ProcessingDashboard() {
   }, [currentBusinessId, win.from, win.to])
   useEffect(() => { load() }, [load])
 
-  const k = data?.kpis
+  const act = data?.activity
+  const w = data?.workloadNow
   const a = data?.attention
 
   return (
@@ -100,14 +112,13 @@ export function ProcessingDashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {([["TODAY", "Today"], ["YESTERDAY", "Yesterday"], ["TOMORROW", "Tomorrow"], ["WEEK", "This Week"], ["CUSTOM", "Custom"]] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setRange(key)}
+            <button key={key} onClick={() => { if (key === "CUSTOM") { setDraft({ from: customFrom, to: customTo }); setShowCustom(true) } else { setRange(key); setShowCustom(false) } }}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${range === key ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               {label}
             </button>
           ))}
           {range === "CUSTOM" && (
-            <input type="date" value={custom} onChange={(e) => setCustom(e.target.value)}
-              className="h-8 rounded-lg border border-slate-200 px-2 text-xs outline-none focus:border-blue-500" />
+            <span className="text-xs font-medium text-slate-600">{win.label}</span>
           )}
           <Button variant="outline" size="sm" className="h-8 gap-1" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -115,21 +126,70 @@ export function ProcessingDashboard() {
         </div>
       </div>
 
+      {showCustom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowCustom(false)}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-slate-800">Custom date range</p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Start Date</label>
+                <input type="date" value={draft.from} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
+                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">End Date</label>
+                <input type="date" value={draft.to} min={draft.from || undefined}
+                  onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
+                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
+              </div>
+            </div>
+            {/* Both mandatory, and start may not follow end. Apply stays disabled
+                rather than accepting a range and quietly correcting it. */}
+            {draftInvalid && (
+              <p className="mt-2 text-[11px] font-medium text-rose-600">
+                {!draft.from || !draft.to ? "Both dates are required." : "The start date cannot be after the end date."}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowCustom(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+              <button disabled={draftInvalid}
+                onClick={() => { setCustomFrom(draft.from); setCustomTo(draft.to); setRange("CUSTOM"); setShowCustom(false) }}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading && !data ? (
         <div className="py-20 text-center text-slate-400"><Loader2 className="inline h-5 w-5 animate-spin" /></div>
       ) : !data ? (
         <p className="py-20 text-center text-sm text-slate-400">Could not load the dashboard.</p>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {/* Received and Completed are windowed; the rest are live floor
-                state, which is what a supervisor acts on right now. */}
-            <Kpi label="Orders Received" value={k!.ordersReceived} hint="in this period" icon={PackageCheck} onClick={() => setLaundryPage("processing-centers")} />
-            <Kpi label="Awaiting Processing" value={k!.awaitingProcessing} hint="garments" icon={Clock} tone="amber" onClick={() => setLaundryPage("audit-barcode")} />
-            <Kpi label="In Progress" value={k!.inProgress} hint="garments on the floor" icon={Factory} onClick={() => setLaundryPage("ws-sorting")} />
-            <Kpi label="QC Pending" value={k!.qcPending} hint="garments" icon={ClipboardCheck} tone="amber" onClick={() => setLaundryPage("ws-qc")} />
-            <Kpi label="Ready for Dispatch" value={k!.readyForDispatch} hint="orders" icon={Truck} tone="emerald" onClick={() => setLaundryPage("processing-centers")} />
-            <Kpi label="Completed" value={k!.completed} hint="in this period" icon={PackageCheck} tone="emerald" />
+          {/* A — ACTIVITY in the selected window. These are events that happened. */}
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Activity · {win.label}</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Kpi label="Orders Received" value={act!.received} hint="taken in by the centre" icon={PackageCheck} />
+              <Kpi label="Orders Completed" value={act!.completed} hint="processing finished" icon={ClipboardCheck} tone="emerald" />
+              <Kpi label="Dispatched to Store" value={act!.returned} hint="sent back" icon={Truck} tone="emerald" />
+            </div>
+          </div>
+
+          {/* B — WORKLOAD NOW. Deliberately NOT date-filtered: an order received
+              yesterday and still being washed today belongs here. */}
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              On the floor now <span className="font-normal normal-case text-slate-400">— current state, any arrival date</span>
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <Kpi label="In Transit" value={w!.inTransit} hint="orders arriving" icon={Truck} onClick={() => setLaundryPage("processing-centers")} />
+              <Kpi label="Awaiting Barcode" value={w!.awaitingBarcode} hint="orders" icon={Clock} tone="amber" onClick={() => setLaundryPage("audit-barcode")} />
+              <Kpi label="Awaiting Processing" value={w!.awaitingProcessing} hint="garments" icon={Clock} tone="amber" onClick={() => setLaundryPage("audit-barcode")} />
+              <Kpi label="In Progress" value={w!.inProgress} hint="garments" icon={Factory} onClick={() => setLaundryPage("ws-sorting")} />
+              <Kpi label="QC Pending" value={w!.qcPending} hint="garments" icon={ClipboardCheck} tone="amber" onClick={() => setLaundryPage("ws-qc")} />
+              <Kpi label="Ready for Dispatch" value={w!.readyForDispatch} hint="orders" icon={Truck} tone="emerald" onClick={() => setLaundryPage("processing-centers")} />
+            </div>
           </div>
 
           <Card className="rounded-xl border-slate-200"><CardContent className="p-4">

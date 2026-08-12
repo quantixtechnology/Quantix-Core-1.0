@@ -1,9 +1,22 @@
 // GET /api/laundry/processing/dashboard?businessId=&from=&to=
 //
-// One query set for the Processing Center supervisor's screen. Every number is
-// counted from the SAME tables the operational queues read — LaundryOrderItem
-// .processingStage for garments, LaundryOrder.status for packages — so a KPI
-// can never disagree with the screen it links to.
+// TWO CLOCKS, deliberately.
+//
+//   ACTIVITY  — what HAPPENED in the selected window (received, completed,
+//               returned). Date-filtered.
+//   WORKLOAD  — what is SITTING in the Processing Center right now. NEVER
+//               date-filtered: an order received yesterday and still being
+//               washed today belongs in today's washing count, and hiding it
+//               because of its received date is how a floor loses track of work.
+//
+// Every number is counted from the SAME tables the operational queues read, so
+// a KPI can never disagree with the screen it links to.
+//
+// One thing the first version got wrong: garment processingStage is only set
+// AFTER Barcode Generation. Orders still in transit, or received but not yet
+// barcoded, have no stage at all — so a dashboard that counted only stages
+// reported zeros while the console clearly showed work waiting. Those two
+// order-level buckets are now counted explicitly.
 //
 // Nothing here is invented. Where a figure cannot be derived from existing data
 // it is simply absent rather than shown as zero, because a confident zero is
@@ -54,7 +67,8 @@ export async function GET(request: Request) {
     const itemScope = { order: { businessId: biz.id } }
 
     const [
-      grouped, receivedOrders, readyForDispatch, completedInWindow, inTransit, workloadRaw, overdue,
+      grouped, receivedOrders, readyForDispatch, completedInWindow, returnedInWindow, inTransit,
+      awaitingBarcodeOrders, workloadRaw, overdue,
     ] = await Promise.all([
       // Garment distribution — the same source the workstation queues use.
       prisma.laundryOrderItem.groupBy({
@@ -67,8 +81,15 @@ export async function GET(request: Request) {
       // the order row keeps no "received at processing" timestamp.
       prisma.laundryOrderEvent.count({ where: { businessId: biz.id, action: "RECEIVE_AT_PROCESSING", createdAt: inWindow } }),
       prisma.laundryOrder.count({ where: { ...orderScope, status: "READY_FOR_DELIVERY" } }),
-      prisma.laundryOrder.count({ where: { ...orderScope, status: { in: ["DELIVERED", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY"] }, updatedAt: inWindow } }),
+      // Completed and returned are EVENTS, so they come from the event log with
+      // the window applied — updatedAt would count any incidental edit.
+      prisma.laundryOrderEvent.count({ where: { businessId: biz.id, action: "COMPLETE_PROCESSING", createdAt: inWindow } }),
+      prisma.laundryOrderEvent.count({ where: { businessId: biz.id, action: "DISPATCH_TO_STORE", createdAt: inWindow } }),
+      // LIVE, not windowed — packages physically heading to the centre.
       prisma.laundryOrder.count({ where: { ...orderScope, status: "IN_TRANSIT_TO_PROCESSING" } }),
+      // Received but not yet barcoded: real work on the floor with NO
+      // processingStage, which is exactly what the stage counts were missing.
+      prisma.laundryOrder.count({ where: { ...orderScope, items: { some: { processingStage: "RECEIVED", barcodeGenerated: false } } } }),
       // Orders on the floor now, with their promise so the list can be ordered
       // by what is due rather than by what was created.
       prisma.laundryOrder.findMany({
@@ -126,14 +147,20 @@ export async function GET(request: Request) {
       success: true,
       data: {
         window: { from: from.toISOString(), to: to.toISOString() },
-        kpis: {
-          ordersReceived: receivedOrders,
-          awaitingProcessing: stage("RECEIVED"),
+        // A: what happened in the selected window.
+        activity: {
+          received: receivedOrders,
+          completed: completedInWindow,
+          returned: returnedInWindow,
+        },
+        // B: what is on the floor RIGHT NOW, whatever day it arrived.
+        workloadNow: {
+          inTransit,                                    // orders (heading here)
+          awaitingBarcode: awaitingBarcodeOrders,       // orders (received, not barcoded)
+          awaitingProcessing: stage("RECEIVED"),        // garments
           inProgress: WORKING.reduce((n, s) => n + stage(s), 0),
           qcPending: stage("QC"),
-          readyForDispatch,
-          completed: completedInWindow,
-          inTransit,
+          readyForDispatch,                             // orders
         },
         flow: FLOW.map((f) => ({ ...f, count: stage(f.key) })),
         workload,

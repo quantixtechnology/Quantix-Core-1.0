@@ -7,6 +7,65 @@ const API = read('src/app/api/laundry/processing/dashboard/route.ts')
 const UI = read('src/components/laundry/views/processing-dashboard.tsx')
 const STORE = read('src/stores/admin-store.ts')
 
+describe('two clocks: activity is windowed, workload is not', () => {
+  it('activity counts events inside the window', () => {
+    expect(API).toContain('action: "RECEIVE_AT_PROCESSING", createdAt: inWindow')
+    expect(API).toContain('action: "COMPLETE_PROCESSING", createdAt: inWindow')
+    expect(API).toContain('action: "DISPATCH_TO_STORE", createdAt: inWindow')
+  })
+
+  // An order received yesterday and still washing today must appear today.
+  it('workload counts are NOT date-filtered', () => {
+    const wl = API.slice(API.indexOf('workloadNow: {'), API.indexOf('flow: FLOW'))
+    expect(wl).not.toContain('inWindow')
+  })
+
+  // processingStage is only set after Barcode Generation, so stage counts alone
+  // reported zeros while the console plainly showed work waiting.
+  it('counts the two order-level buckets that have no stage yet', () => {
+    expect(API).toContain('status: "IN_TRANSIT_TO_PROCESSING"')
+    expect(API).toContain('processingStage: "RECEIVED", barcodeGenerated: false')
+  })
+
+  it('the UI keeps the two sections apart and says so', () => {
+    expect(UI).toContain('Activity · {win.label}')
+    expect(UI).toContain('current state, any arrival date')
+  })
+
+  it('completion is read from events, not an incidental updatedAt', () => {
+    expect(API).not.toContain('updatedAt: inWindow')
+  })
+})
+
+describe('the custom range is a real range', () => {
+  it('takes a start and an end', () => {
+    expect(UI).toContain('Start Date')
+    expect(UI).toContain('End Date')
+    expect(UI).toContain('setCustomFrom(draft.from); setCustomTo(draft.to)')
+  })
+
+  it('refuses an inverted or incomplete range', () => {
+    expect(UI).toContain('draft.from > draft.to')
+    expect(UI).toContain('Both dates are required.')
+    expect(UI).toContain('The start date cannot be after the end date.')
+    expect(UI).toContain('disabled={draftInvalid}')
+  })
+
+  it('only Apply commits it — a half-typed range never refetches', () => {
+    expect(UI).toContain('const [draft, setDraft]')
+    expect(UI).toContain('>Apply<')
+    expect(UI).toContain('>Cancel<')
+  })
+
+  it('includes the end day, since `to` is exclusive', () => {
+    expect(UI).toContain('addDays(startOfDay(b), 1)')
+  })
+
+  it('shows the range in words', () => {
+    expect(UI).toContain('`${longDate(f)} – ${longDate(addDays(t, -1))}`')
+  })
+})
+
 describe('the date selector drives everything', () => {
   it('defaults to Today', () => {
     expect(UI).toContain('useState<RangeKey>("TODAY")')
@@ -25,6 +84,10 @@ describe('the date selector drives everything', () => {
   it('sends the window to the API and refetches when it changes', () => {
     expect(UI).toContain('from: win.from.toISOString(), to: win.to.toISOString()')
     expect(UI).toContain('}, [currentBusinessId, win.from, win.to])')
+  })
+
+  it('Today remains the default', () => {
+    expect(UI).toContain('useState<RangeKey>("TODAY")')
   })
 
   it('the API honours the window and falls back to today', () => {
