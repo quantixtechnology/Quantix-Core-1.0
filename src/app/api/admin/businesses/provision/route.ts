@@ -93,7 +93,14 @@ export const POST = withMiddleware({
  * GET /api/admin/businesses/provision?businessId=...
  * Get provisioning status
  */
-export const GET = withMiddleware({ requiredPermission: 'businesses:view' })(
+// SECURITY: same gap as the POST above — `requiredPermission` alone is only
+// enforced inside withMiddleware's requireAuth branch, so this reported a
+// tenant's provisioning progress to anyone who asked.
+export const GET = withMiddleware({
+  requireAuth: true,
+  requirePlatformAdmin: true,
+  requiredPermission: 'businesses:view',
+})(
   async (req) => {
     try {
       const url = new URL(req.url)

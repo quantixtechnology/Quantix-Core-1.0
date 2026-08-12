@@ -21,8 +21,16 @@ import { getReservedHostPrefixes } from '@/lib/product-hosts';
  * businessType is NOT required - it comes from Product Selection
  * productCode is NOT required - it comes from Product Selection
  */
+// SECURITY: creating a tenant is a platform-administration action, so it is
+// gated the same way as Provision Workspace and Owner Account.
+// requirePlatformAdmin resolves from User.platformRole, which no tenant role can
+// hold — an authenticated business owner or staff member gets 403, not access to
+// create businesses. The only caller is the Super Admin wizard, which already
+// sends the auth header.
 export const POST = withMiddleware({
-  requireAuth: false,
+  requireAuth: true,
+  requirePlatformAdmin: true,
+  requiredPermission: 'businesses:create',
 })(async (req) => {
   try {
     const body = await req.json();

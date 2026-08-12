@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Package } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/admin-fetch'
 
 interface ProductInfo {
   code: string
@@ -44,7 +45,8 @@ export function ProductSelectionStep({
   async function fetchProducts() {
     try {
       setLoading(true)
-      const response = await fetch('/api/admin/businesses/products')
+      // The products route is platform-admin gated, so it needs the admin token.
+      const response = await fetch('/api/admin/businesses/products', { headers: getAuthHeaders() })
       const result = await response.json()
 
       if (!result.success) {

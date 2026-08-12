@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Package } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/admin-fetch'
 
 interface Props {
   onProductSelect: (productCode: string) => void
@@ -15,7 +16,8 @@ export function ProductSelectionStep({ onProductSelect }: Props) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/admin/businesses/products')
+    // The products route is platform-admin gated, so it needs the admin token.
+    fetch('/api/admin/businesses/products', { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((result) => {
         setProducts(result.data || [])

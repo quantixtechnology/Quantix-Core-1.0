@@ -7,7 +7,15 @@
 import { withMiddleware } from '@/lib/middleware'
 import { getAvailableProductsForCreation } from '@/lib/business-product-assignment'
 
-export const GET = withMiddleware({ requiredPermission: 'businesses:create' })(
+// SECURITY: the header above already said "Super Admin only" — the guard just
+// never enforced it, because `requiredPermission` is checked inside
+// withMiddleware's requireAuth branch. This exposed the platform product/plan
+// catalogue publicly.
+export const GET = withMiddleware({
+  requireAuth: true,
+  requirePlatformAdmin: true,
+  requiredPermission: 'businesses:create',
+})(
   async (req) => {
     try {
       const products = await getAvailableProductsForCreation()

@@ -10,7 +10,14 @@ import {
   validateProductAssignment,
 } from '@/lib/business-product-assignment'
 
-export const POST = withMiddleware({ requiredPermission: 'businesses:create' })(
+// SECURITY: assigning a product + plan to a business is platform licensing —
+// it decides what a tenant is entitled to. Same gap as the provisioning routes:
+// `requiredPermission` alone is inert without requireAuth.
+export const POST = withMiddleware({
+  requireAuth: true,
+  requirePlatformAdmin: true,
+  requiredPermission: 'businesses:create',
+})(
   async (req) => {
     try {
       const body = await req.json()
