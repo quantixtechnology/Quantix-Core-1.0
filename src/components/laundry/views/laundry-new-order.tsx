@@ -32,6 +32,7 @@ import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode } from "@/lib/india"
 import { statusLabel } from "@/lib/laundry-workflow"
 import { LaundryGarmentSelect } from "@/components/laundry/garment-select"
+import { Customer360Panel } from "./customer-360-panel"
 
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In" },
@@ -58,7 +59,6 @@ const payTypeToPreference = (t: PayType) => (t === "SUBSCRIPTION" ? "SUBSCRIPTIO
 // Laundry Instructions — standard handling options that travel with the order
 // through every stage (stored in the SAME specialInstructions field, no backend
 // change). "Express Service" keeps the existing express pricing/turnaround link.
-const QUICK_NOTES = ["Starch", "Separate Whites", "Gentle Wash", "Steam Press", "Delicate Fabric", "Express Service", "Hanger Required", "Fold Only"]
 // Slots are configured per business (Settings → Pickup & Delivery Time Slots);
 // these are only the fallback until the config loads.
 const FALLBACK_PICKUP_SLOTS = generateSlots(DEFAULT_PICKUP_SLOT)
@@ -154,7 +154,12 @@ export default function LaundryNewOrder() {
   const [addressesLoading, setAddressesLoading] = useState(false)
   const [payType, setPayType] = useState<PayType>("PAY_NOW")
   const [payTypeTouched, setPayTypeTouched] = useState(false)
-  const [quickNotes, setQuickNotes] = useState<string[]>(["Separate Whites"])
+  // Laundry Instructions were removed from this screen. The state stays because
+  // the express/TAT logic below reads it, but it must start EMPTY: the old
+  // default pre-selected one of the handling options on every order, and with
+  // no UI left to uncheck it that would silently attach an instruction nobody
+  // asked for.
+  const [quickNotes] = useState<string[]>([])
   const [otherInstructions, setOtherInstructions] = useState("")
   const [attachments, setAttachments] = useState<{ url: string; kind: string }[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
@@ -1011,50 +1016,16 @@ export default function LaundryNewOrder() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={CheckCircle2} title="Laundry Instructions" />
-              <CardContent className="px-5 pb-5 pt-0 space-y-3">
-                <div className="space-y-2.5">
-                  {QUICK_NOTES.map((n) => (
-                    <label key={n} className="flex items-center gap-2 text-sm cursor-pointer"><Checkbox checked={quickNotes.includes(n)} onCheckedChange={() => setQuickNotes((p) => p.includes(n) ? p.filter((x) => x !== n) : [...p, n])} className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" /> {n}</label>
-                  ))}
-                </div>
-                <div className="space-y-1 pt-1"><Label className="text-xs text-slate-600">Other Instructions</Label><Textarea value={otherInstructions} onChange={(e) => setOtherInstructions(e.target.value)} placeholder="Enter any other instructions" className="min-h-[70px] bg-slate-50 border-slate-200" /></div>
-              </CardContent>
-            </Card>
           </div>
-
-          {/* Attachments */}
-          <Card className="rounded-xl border-slate-200 shadow-sm">
-            <CardHead icon={Paperclip} title="Attachments" note="(Optional)" />
-            <CardContent className="px-5 pb-5 pt-0">
-              <p className="text-xs text-slate-500 mb-3">Upload images (if any)</p>
-              <div className="flex flex-wrap items-center gap-3">
-                {[{ kind: "garment", label: "Upload Garment Photos", icon: ImagePlus }, { kind: "pickup", label: "Upload Pickup Photo", icon: Truck }, { kind: "other", label: "Upload Other Files", icon: Upload }].map((u) => (
-                  <label key={u.kind} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm cursor-pointer text-blue-700 hover:bg-blue-50 hover:border-blue-200 shadow-sm">
-                    {uploading === u.kind ? <Loader2 className="h-4 w-4 animate-spin" /> : <u.icon className="h-4 w-4" />} {u.label}
-                    <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => handleUpload(u.kind, e.target.files)} />
-                  </label>
-                ))}
-                <span className="text-[11px] text-slate-400 ml-auto">Supports: JPG, PNG, PDF (Max 5MB each)</span>
-              </div>
-              {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {attachments.map((a, i) => (
-                    <div key={i} className="relative h-16 w-16 rounded-lg border overflow-hidden group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={a.url} alt={a.kind} className="h-full w-full object-cover" />
-                      <button onClick={() => setAttachments((p) => p.filter((_, x) => x !== i))} className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 opacity-0 group-hover:opacity-100"><X className="h-3 w-3 text-white" /></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* RIGHT — Quick Summary */}
-        <Card className="rounded-xl border-slate-200 shadow-sm xl:sticky xl:top-4">
+        {/* RIGHT — Customer 360 above the summary. It answers "who is this
+            customer", which the operator wants BEFORE confirming, and it fills
+            the space the removed Instructions/Attachments cards left. */}
+        <div className="space-y-4 xl:sticky xl:top-4">
+        <Customer360Panel customerId={selectedCustomer?.id || null} businessId={currentBusinessId} />
+
+        <Card className="rounded-xl border-slate-200 shadow-sm">
           <CardHead icon={Info} title="Quick Summary" />
           <CardContent className="px-5 pb-5 pt-0 space-y-3.5 text-sm">
             <div><p className="text-xs text-slate-400">Order Type</p><p className="font-semibold text-slate-800">{ORDER_TYPES.find((o) => o.value === orderType)?.label}</p></div>
@@ -1070,6 +1041,7 @@ export default function LaundryNewOrder() {
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Order Status</p><Badge variant="outline" className="mt-1 border-amber-300 text-amber-700 bg-amber-50">Pending Store Audit</Badge></div>
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* Footer actions */}
