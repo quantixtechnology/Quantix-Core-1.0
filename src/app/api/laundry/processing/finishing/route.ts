@@ -149,13 +149,32 @@ export async function GET(request: Request) {
       else {
         const bag = await prisma.laundryBag.findFirst({
           where: { businessId: biz.id, OR: [{ bagNumber: c }, { qrValue: c }] },
-          select: { bagNumber: true, currentOrderId: true },
+          select: { id: true, bagNumber: true, currentOrderId: true },
         })
         if (bag) {
-          if (!bag.currentOrderId) {
-            return NextResponse.json({ success: false, error: `Bag ${bag.bagNumber} is not currently linked to any order.` }, { status: 409 })
+          // A bag's currentOrderId is a LIVE pointer, not a record of the past.
+          // If it still names an order that has been delivered or cancelled, the
+          // pointer is stale — following it sent the operator to a finished
+          // order and produced "This order has already been delivered" while a
+          // perfectly good bag sat in their hand.
+          //
+          // Clear it here so the bag becomes genuinely available again. This is
+          // the same release the handover would have done, just recovered late.
+          let live = bag.currentOrderId
+          if (live) {
+            const linked = await prisma.laundryOrder.findUnique({ where: { id: live }, select: { status: true } })
+            if (!linked || linked.status === "DELIVERED" || linked.status === "CANCELLED") {
+              await prisma.laundryBag.updateMany({
+                where: { id: bag.id, currentOrderId: live },
+                data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null },
+              }).catch(() => null)
+              live = null
+            }
           }
-          orderId = bag.currentOrderId
+          if (!live) {
+            return NextResponse.json({ success: false, error: `Bag ${bag.bagNumber} is not linked to an active order. Scan the processing packet, or assign this bag to the order first.` }, { status: 409 })
+          }
+          orderId = live
         } else {
           const pickupBag = await prisma.laundryPickupBag.findFirst({
             where: { businessId: biz.id, OR: [{ code: c }, { qrValue: c }] },

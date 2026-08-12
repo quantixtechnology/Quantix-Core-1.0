@@ -16,7 +16,8 @@ describe('historical ownership never blocks reuse', () => {
   // Test A — the reported bug. An AVAILABLE bag has currentOrderId = null, so
   // the old equality check rejected the very order that had just released it.
   it('a released bag can be re-scanned by the SAME order', () => {
-    expect(FINISHING).toContain('if (bag.status !== "AVAILABLE")')
+    // Occupancy is now computed (status AND a live linked order), then bound.
+    expect(FINISHING).toContain('let occupied = bag.status !== "AVAILABLE"')
     expect(FINISHING).toContain('assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId })')
   })
 
@@ -82,5 +83,39 @@ describe('destructive actions confirm first', () => {
   it('no status change runs without a confirmation', () => {
     expect(BAGS_UI).toContain('if (c && !window.confirm(')
     expect(BAGS_UI.indexOf('window.confirm')).toBeLessThan(BAGS_UI.indexOf('method: "PATCH"'))
+  })
+})
+
+// ── A pointer left by a finished order is not occupancy ─────────────────────
+// Scanning BAG-000001 at Fold said "This order has already been delivered":
+// the bag still pointed at an order delivered days earlier, so the station
+// loaded THAT order instead of the one in the operator's hand.
+describe('a stale currentOrderId never blocks a bag', () => {
+  const RESOLVE = read('src/app/api/laundry/processing/finishing/route.ts')
+
+  it('the scan checks whether the linked order is still live', () => {
+    expect(RESOLVE).toContain('linked.status === "DELIVERED" || linked.status === "CANCELLED"')
+  })
+
+  it('and clears the pointer, so the bag recovers itself', () => {
+    expect(RESOLVE).toContain('data: { status: "AVAILABLE", currentOrderId: null')
+  })
+
+  it('a bag pointing at a deleted order is treated the same', () => {
+    expect(RESOLVE).toContain('if (!linked ||')
+  })
+
+  it('the message tells the operator what to do next', () => {
+    expect(RESOLVE).toContain('is not linked to an active order. Scan the processing packet, or assign this bag to the order first.')
+  })
+
+  it('the bind path applies the same rule', () => {
+    expect(FINISHING).toContain('let occupied = bag.status !== "AVAILABLE"')
+    expect(FINISHING).toContain('occupied = false')
+  })
+
+  // Occupancy by a genuinely live order must still refuse.
+  it('a live order still holds the bag', () => {
+    expect(FINISHING).toContain('is currently assigned to another active order')
   })
 })

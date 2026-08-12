@@ -249,7 +249,21 @@ export async function assignFinishingBag(opts: {
       // Processing Center could never be reused by the very order it had just
       // carried.
       if (bag.currentOrderId !== orderId) {
-        if (bag.status !== "AVAILABLE") {
+        // "Occupied" means occupied by a LIVE order. A pointer left behind by a
+        // delivered or cancelled order is stale, not occupancy, and must not
+        // keep a physical bag out of service.
+        let occupied = bag.status !== "AVAILABLE"
+        if (occupied && bag.currentOrderId) {
+          const linked = await prisma.laundryOrder.findUnique({ where: { id: bag.currentOrderId }, select: { status: true } })
+          if (!linked || linked.status === "DELIVERED" || linked.status === "CANCELLED") {
+            await prisma.laundryBag.updateMany({
+              where: { id: bag.id, currentOrderId: bag.currentOrderId },
+              data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null },
+            }).catch(() => null)
+            occupied = false
+          }
+        }
+        if (occupied) {
           return { ok: false, error: `Bag ${bag.bagNumber} is currently assigned to another active order. Please use another available bag.`, code: "WRONG_ORDER" }
         }
         const assigned = await assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId })
