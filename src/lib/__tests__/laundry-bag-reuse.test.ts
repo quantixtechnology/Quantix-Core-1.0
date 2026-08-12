@@ -70,7 +70,9 @@ describe('destructive actions confirm first', () => {
   it('Damaged, Lost and Release each have their own wording', () => {
     expect(BAGS_UI).toContain('Mark Bag as Damaged?')
     expect(BAGS_UI).toContain('Mark Bag as Lost?')
-    expect(BAGS_UI).toContain('Release Bag?')
+    // AVAILABLE via the status menu is Reactivate; manual release keeps its own
+    // reason dialog, asserted separately below.
+    expect(BAGS_UI).toContain('Reactivate Bag?')
   })
 
   it('the wording says what will happen, not just "are you sure"', () => {

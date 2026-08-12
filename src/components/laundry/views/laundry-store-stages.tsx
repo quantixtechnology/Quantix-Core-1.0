@@ -37,6 +37,7 @@ import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
 import { DeliveryPromiseBadge, DeliveryPromiseCard } from "@/components/laundry/delivery-promise"
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
+import { TransportStageHistory, DeliveryStageHistory, HistoryToggle } from "@/components/laundry/stage-history"
 
 // Only fully-audited orders belong in Packing & QR. auditComplete is computed by
 // the orders API (has garments AND none left un-inspected). undefined (older
@@ -90,26 +91,40 @@ function useQueue(status: LaundryOrderStatus, filter?: (o: OrderRow) => boolean)
   return { orders, loading, search, setSearch, load }
 }
 
-function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, children, queue }: {
+// Statuses that mean the order has left Ready for Delivery. Module-level so the
+// array identity is stable and the history does not refetch on every render.
+const DELIVERY_HISTORY_STATUSES = ["DELIVERED", "OUT_FOR_DELIVERY"]
+
+function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, children, queue, history }: {
   status: LaundryOrderStatus; title: string; subtitle: string
   icon: React.ComponentType<{ className?: string }>
   selected: OrderRow | null
   onSelect: (o: OrderRow | null) => void
   children: React.ReactNode
   queue: ReturnType<typeof useQueue>
+  /** Optional "what already went through" pane. Stages without one are unchanged. */
+  history?: React.ReactNode
 }) {
   const { orders, loading, search, setSearch, load } = queue
+  const [showHistory, setShowHistory] = useState(false)
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><Icon className="h-5 w-5 text-blue-600" /> {title}</h2>
           <p className="text-sm text-muted-foreground">{subtitle} — {orders.length} order{orders.length === 1 ? "" : "s"}</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => load()} disabled={loading}>
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {history && <HistoryToggle value={showHistory} onChange={setShowHistory} />}
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => load()} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </div>
       </div>
+      {/* History replaces the working area rather than sitting beside it — the
+          operator is either working the queue or looking something up. */}
+      {history && showHistory ? <div className="rounded-xl border border-slate-200 bg-white p-4">{history}</div> : (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-4">
         <div className="space-y-2">
           <div className="relative">
@@ -149,6 +164,8 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
             : children}
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }
@@ -665,7 +682,8 @@ export function LaundryStoreReceive() {
 
   return (
     <QueueShell status="RETURN_IN_TRANSIT" title="Store Receive" subtitle="Confirm processed orders returned from the Processing Center"
-      icon={PackageCheck} selected={selected} onSelect={setSelected} queue={queue}>
+      icon={PackageCheck} selected={selected} onSelect={setSelected} queue={queue}
+      history={<TransportStageHistory businessId={currentBusinessId} stage="RETURN_RECEIVED" timeLabel="Received" />}>
       {/* Scan-to-receive: the configured return identifier → the returned order. */}
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4 space-y-2">
@@ -831,7 +849,10 @@ export function LaundryReadyForDelivery() {
 
   return (
     <QueueShell status="READY_FOR_DELIVERY" title="Ready for Delivery" subtitle="Final payment and customer handover / delivery"
-      icon={CheckCircle2} selected={selected} onSelect={openOrder} queue={queue}>
+      icon={CheckCircle2} selected={selected} onSelect={openOrder} queue={queue}
+      // Record only. Dispatch Center remains the assignment/inbox screen; this
+      // answers "what happened to that order", nothing more.
+      history={<DeliveryStageHistory businessId={currentBusinessId} statuses={DELIVERY_HISTORY_STATUSES} />}>
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
           <OrderHeader o={selected} />

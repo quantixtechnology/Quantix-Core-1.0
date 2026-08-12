@@ -16,6 +16,8 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { printHtmlDocument } from "@/lib/print-utils"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ChevronDown } from "lucide-react"
 
 interface Bag { id: string; bagNumber: string; qrValue: string; status: string; currentOrderNumber: string | null; currentServiceName: string | null; currentCustomerName: string | null; lastUsedAt: string | null; totalUsageCount: number; lastAssignmentId?: string | null }
 interface Assignment { id: string; orderNumber: string | null; serviceName: string | null; customerName: string | null; assignedAt: string; returnedAt: string | null; status: string }
@@ -109,7 +111,7 @@ export function LaundryBagManagement() {
   const STATUS_CONFIRM: Record<string, { title: string; body: string }> = {
     DAMAGED: { title: "Mark Bag as Damaged?", body: "will no longer be available for assignment." },
     LOST: { title: "Mark Bag as Lost?", body: "will be removed from active availability." },
-    AVAILABLE: { title: "Release Bag?", body: "will become AVAILABLE for another order." },
+    AVAILABLE: { title: "Reactivate Bag?", body: "will go back into service and can be assigned to an order." },
   }
 
   const setStatus = async (bag: Bag, status: string) => {
@@ -229,21 +231,49 @@ export function LaundryBagManagement() {
                   </div>
                   <p className="text-[11px] text-slate-400 truncate">{b.currentOrderNumber ? `${b.currentOrderNumber} \u00B7 ${b.currentServiceName || ""} \u00B7 ${b.currentCustomerName || ""}` : "Idle"} \u00B7 used {b.totalUsageCount}\u00D7</p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="History" onClick={() => openDetail(b)}><History className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Reprint label" onClick={() => printBagLabels([b])}><Printer className="h-4 w-4" /></Button>
-                  {canRelease && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="Manual Release"
-                      onClick={() => { setManualReleaseTarget(b); setManualReleaseReason("") }}>
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {b.status !== "DAMAGED" && b.status !== "LOST" ? (<>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-500" title="Mark damaged" onClick={() => setStatus(b, "DAMAGED")}><Wrench className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" title="Mark lost" onClick={() => setStatus(b, "LOST")}><XCircle className="h-4 w-4" /></Button>
-                  </>) : (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="Return to available" onClick={() => setStatus(b, "AVAILABLE")}><RotateCcw className="h-4 w-4" /></Button>
-                  )}
+                {/* ONE menu, not five icons. Small icons sitting side by side
+                    are easy to hit by accident, and "mark lost" is not something
+                    a stray click should be able to do. Every destructive item
+                    confirms inside setStatus / the release dialog. */}
+                <div className="shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 gap-1 text-xs">
+                        Actions <ChevronDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => openDetail(b)}>
+                        <History className="mr-2 h-4 w-4 text-slate-500" /> View History
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => printBagLabels([b])}>
+                        <Printer className="mr-2 h-4 w-4 text-slate-500" /> Print QR
+                      </DropdownMenuItem>
+                      {canRelease && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => { setManualReleaseTarget(b); setManualReleaseReason("") }}>
+                            <RotateCcw className="mr-2 h-4 w-4 text-emerald-600" /> Release Bag
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuSeparator />
+                      {b.status !== "DAMAGED" && b.status !== "LOST" ? (
+                        <>
+                          <DropdownMenuItem onClick={() => setStatus(b, "DAMAGED")}>
+                            <Wrench className="mr-2 h-4 w-4 text-amber-500" /> Mark Damaged
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setStatus(b, "LOST")}>
+                            <XCircle className="mr-2 h-4 w-4 text-rose-500" /> Mark Lost
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <DropdownMenuItem onClick={() => setStatus(b, "AVAILABLE")}>
+                          <RotateCcw className="mr-2 h-4 w-4 text-emerald-600" /> Reactivate Bag
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             )})}
