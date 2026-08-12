@@ -151,7 +151,13 @@ export function LaundryProcessingConsole() {
       const res = await fetch(`/api/laundry/orders/${orderId}/receive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actorName: user?.name || "operator" }) })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Receive failed", description: j.error, variant: "destructive" }); return }
-      toast({ title: `${noun} received`, description: `${j.data.transportCode || ""} · ${j.data.received} garment(s) → Barcode Generation.` })
+      // Say whether the bag was freed. A silent release is indistinguishable
+      // from no release, which is how this went unnoticed.
+      const freed = j.data?.bagsReleased || 0
+      toast({
+        title: `${noun} received`,
+        description: `${j.data.transportCode || ""} · ${j.data.received} garment(s) → Barcode Generation.${freed > 0 ? ` ${freed} bag(s) released.` : ""}`,
+      })
       openAuditBarcode(orderId)
     } catch { toast({ title: "Receive failed", variant: "destructive" }) } finally { setActing(false) }
   }

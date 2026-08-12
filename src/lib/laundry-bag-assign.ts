@@ -199,7 +199,19 @@ export async function releaseBagWithAudit(input: ReleaseInput): Promise<{ ok: tr
 
 // Release ALL bags carrying an order (e.g. AFTER_DELIVERY policy).
 export async function releaseBagsForOrder(lbId: string, orderId: string): Promise<number> {
-  const bags = await prisma.laundryBag.findMany({ where: { businessId: lbId, currentOrderId: orderId, status: { in: [...RELEASABLE] } }, select: { id: true, status: true } })
+  // Find the order's bags TWO ways. currentOrderId is the live pointer, but a
+  // bag can carry an order through an open LaundryBagAssignment while that
+  // pointer has already been moved or cleared — and a bag found only that way
+  // is exactly the one that would otherwise stay occupied for ever.
+  const [byPointer, openAssignments] = await Promise.all([
+    prisma.laundryBag.findMany({ where: { businessId: lbId, currentOrderId: orderId, status: { in: [...RELEASABLE] } }, select: { id: true, status: true } }),
+    prisma.laundryBagAssignment.findMany({ where: { businessId: lbId, orderId, status: "ASSIGNED" }, select: { bagId: true } }),
+  ])
+  const extraIds = openAssignments.map((a) => a.bagId).filter((id) => !byPointer.some((b) => b.id === id))
+  const byAssignment = extraIds.length
+    ? await prisma.laundryBag.findMany({ where: { id: { in: extraIds }, businessId: lbId, status: { in: [...RELEASABLE] } }, select: { id: true, status: true } })
+    : []
+  const bags = [...byPointer, ...byAssignment]
   if (!bags.length) return 0
   const now = new Date()
   await prisma.$transaction(async (tx) => {

@@ -33,8 +33,10 @@ export async function POST(request: Request) {
     // moment it is scanned in at the store (garments removed there). Manual
     // "receive returned bag" (→ AVAILABLE) always routes through the same
     // release. Both use the single release engine (history + usage preserved).
-    // PROCESSING is the Processing Center receive scan — the garments come out
-    // of the bag there, so it goes straight back into circulation.
+    // PROCESSING here IS the Processing Center receive scan — a person scanning
+    // the bag in at the PC — so the bag goes straight back into circulation.
+    // (The order-advance route is different: there PROCESSING is Store Audit's
+    // "approved" signal, which must NOT free a bag that is about to travel.)
     const FREED_BY_SCAN = new Set(["RECEIVED_AT_STORE", "PROCESSING"])
     const shouldRelease = toStatus === "AVAILABLE" ||
       (FREED_BY_SCAN.has(toStatus) && (await getBagReleaseStage(biz.id)) === "PROCESSING_RECEIVE")

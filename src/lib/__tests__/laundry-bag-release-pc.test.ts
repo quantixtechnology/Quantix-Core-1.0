@@ -74,7 +74,43 @@ describe('nothing releases early', () => {
     expect(ORDER_ADV).not.toMatch(/BAG_FREED[^)]*IN_TRANSIT/)
   })
 
-  it('the freeing statuses are exactly the points the garments leave the bag', () => {
-    expect(ORDER_ADV).toContain('const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING"])')
+  // The decisive correction: Store Audit fires this route with PROCESSING when
+  // an audit is APPROVED. Freeing on that signal releases the transit bag before
+  // it has travelled, so the order leaves the store in a bag the system already
+  // considers available.
+  it('Store Audit approval does NOT free the transit bag', () => {
+    expect(ORDER_ADV).toContain('const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT"])')
+    // Scoped to BAG_FREED — LIFECYCLE legitimately still lists PROCESSING as a
+    // status a bag may be ADVANCED to; it just must not trigger a release.
+    const freed = ORDER_ADV.slice(ORDER_ADV.indexOf('const BAG_FREED'), ORDER_ADV.indexOf('export async function POST'))
+    expect(freed).not.toContain('PROCESSING')
+  })
+
+  // A pickup bag IS emptied at the store, so those two stay.
+  it('a pickup bag emptied at the store is still freed there', () => {
+    expect(ORDER_ADV).toContain('"RECEIVED_AT_STORE", "UNDER_AUDIT"')
+  })
+})
+
+
+describe('the bag is found even when the live pointer has moved', () => {
+  it('releaseBagsForOrder also looks at open assignments', () => {
+    expect(ASSIGN).toContain('prisma.laundryBagAssignment.findMany({ where: { businessId: lbId, orderId, status: "ASSIGNED" }')
+  })
+
+  it('does not release the same bag twice', () => {
+    expect(ASSIGN).toContain('.filter((id) => !byPointer.some((b) => b.id === id))')
+  })
+
+  it('still honours the releasable statuses', () => {
+    expect(ASSIGN).toContain('status: { in: [...RELEASABLE] }')
+  })
+})
+
+describe('the receive tells the operator what happened', () => {
+  const CONSOLE = read('src/components/laundry/views/laundry-processing-console.tsx')
+  it('reports how many bags were freed', () => {
+    expect(CONSOLE).toContain('j.data?.bagsReleased || 0')
+    expect(CONSOLE).toContain('bag(s) released.')
   })
 })

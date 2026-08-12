@@ -9,14 +9,17 @@ import { getBagReleaseStage, releaseBagsForOrder } from "@/lib/laundry-bag-assig
 export const runtime = "nodejs"
 
 const LIFECYCLE = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "AVAILABLE"])
-// Store-arrival stages: the garments have been received/counted at the store, so
-// a PROCESSING_RECEIVE laundry's bag is emptied here and must be RELEASED (not just
-// advanced). This is the transition Store Audit fires (→ PROCESSING) — the
-// systemic point the release was previously never wired to.
-// Statuses that mean the garments have left the bag. PROCESSING is the
-// Processing Center receive; the store-side ones cover a bag that never went
-// out. Named for what they signify, not where they happen.
-const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING"])
+// A PICKUP bag is emptied at the STORE: the customer's garments come out when
+// the store receives and audits them, so that bag goes straight back into
+// circulation.
+//
+// PROCESSING is deliberately NOT here. Store Audit fires this route with
+// PROCESSING when an audit is approved, which means "audited, moving on" — not
+// "the Processing Center has it". Releasing on that signal frees the TRANSIT
+// bag before it has travelled, and the order would leave the store in a bag the
+// system already considers available. The real release happens when the
+// Processing Center receives the order (orders/[id]/receive).
+const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT"])
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
