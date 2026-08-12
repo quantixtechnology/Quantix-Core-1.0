@@ -83,7 +83,7 @@ export async function GET(request: Request) {
 
     const [
       grouped, completedEvents, receivedOrders, readyForDispatch, completedInWindow, returnedInWindow,
-      inTransit, awaitingBarcodeOrders, workloadRaw, returnInTransit, stillProcessing, overdue,
+      inTransit, awaitingBarcodeOrders, workloadRaw, returnedToStore, inReturnTransit, overdue,
     ] = await Promise.all([
       // Garment distribution — the same source the workstation queues use.
       // WHERE EACH GARMENT IS NOW → the pending half of every card.
@@ -144,8 +144,26 @@ export async function GET(request: Request) {
         },
         take: 200,
       }),
+      // RETURN TO STORE — order-level, and the only card whose completion is a
+      // TRANSITION rather than a resting state.
+      //
+      // Traced from the two endpoints that own the leg:
+      //   return-dispatch  PROCESSING → RETURN_IN_TRANSIT    action DISPATCH_TO_STORE
+      //   store-receive    RETURN_IN_TRANSIT → READY_FOR_DELIVERY  action RECEIVE_AT_STORE
+      //
+      // The previous version counted status === RETURN_IN_TRANSIT as completed.
+      // That is the state DURING the journey: the moment the store received the
+      // order it became READY_FOR_DELIVERY and matched neither condition, so a
+      // finished return reported 0 completed and 0 pending.
+      //
+      // Completed is therefore the RECEIVE_AT_STORE event inside the window —
+      // the return is complete when the store actually has it — which also makes
+      // the figure historical, so an order received yesterday counts yesterday
+      // and not today.
+      prisma.laundryOrderEvent.count({ where: { businessId: biz.id, action: "RECEIVE_AT_STORE", createdAt: inWindow } }),
+      // Pending is current state: dispatched and still travelling. An order still
+      // in PROCESSING has not entered the return leg and is deliberately absent.
       prisma.laundryOrder.count({ where: { ...orderScope, status: "RETURN_IN_TRANSIT" } }),
-      prisma.laundryOrder.count({ where: { ...orderScope, status: "PROCESSING" } }),
       // Past its promise and not yet out of the building.
       prisma.laundryOrder.count({
         where: { ...orderScope, status: { in: ["PROCESSING", "IN_TRANSIT_TO_PROCESSING", "RETURN_IN_TRANSIT"] }, promisedDeliveryDate: { lt: now } },
@@ -232,7 +250,7 @@ export async function GET(request: Request) {
         })),
         // Return to Store is order-level: pending = still in the centre, done =
         // already dispatched back and in transit. Both are existing statuses.
-        returnToStore: { completed: returnInTransit, pending: stillProcessing },
+        returnToStore: { completed: returnedToStore, pending: inReturnTransit },
         workload,
         attention: {
           overdue,

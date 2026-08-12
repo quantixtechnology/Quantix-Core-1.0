@@ -148,7 +148,8 @@ describe('the flow matches the real route through the centre', () => {
   it('ends at Return to Store, counted from orders not garments', () => {
     expect(UI).toContain('label: "Return to Store"')
     expect(UI).toContain('completed: data.returnToStore.completed')
-    expect(API).toContain('returnToStore: { completed: returnInTransit, pending: stillProcessing }')
+    // Superseded: completion is the RECEIVE_AT_STORE transition, not a status.
+    expect(API).toContain('returnToStore: { completed: returnedToStore, pending: inReturnTransit }')
   })
 
   it('every stage links to a page that exists', () => {
@@ -253,9 +254,11 @@ describe('each stage card splits completed from pending', () => {
     expect(API).toContain('done(f.key)')
   })
 
-  it('Return to Store uses order statuses, not a new one', () => {
+  // Superseded: PROCESSING has not entered the return leg, so it is not pending
+  // return. Completion is now the RECEIVE_AT_STORE event.
+  it('Return to Store uses existing statuses and actions, not a new one', () => {
     expect(API).toContain('status: "RETURN_IN_TRANSIT"')
-    expect(API).toContain('status: "PROCESSING"')
+    expect(API).toContain('action: "RECEIVE_AT_STORE"')
   })
 
   it('the card shows two figures, not a ratio or a percentage', () => {
@@ -349,5 +352,81 @@ describe('the two-garment case behaves correctly', () => {
   it('pending is not derived by subtraction', () => {
     expect(API).toContain('const pending = (s: string) => at(s,')
     expect(API).not.toMatch(/pending[^\n]*received[^\n]*-[^\n]*completed/i)
+  })
+})
+
+// ── Return to Store ─────────────────────────────────────────────────────────
+// Traced from the two endpoints that own the leg:
+//   return-dispatch  PROCESSING → RETURN_IN_TRANSIT       action DISPATCH_TO_STORE
+//   store-receive    RETURN_IN_TRANSIT → READY_FOR_DELIVERY  action RECEIVE_AT_STORE
+describe('Return to Store counts the transition, not a resting state', () => {
+  it('completed reads the RECEIVE_AT_STORE event', () => {
+    expect(API).toContain('action: "RECEIVE_AT_STORE", createdAt: inWindow')
+  })
+
+  // The 0/0 bug: once the store received it the order became
+  // READY_FOR_DELIVERY and matched neither old condition.
+  it('no longer treats RETURN_IN_TRANSIT as completed', () => {
+    expect(API).not.toContain('returnToStore: { completed: returnInTransit')
+  })
+
+  it('completed is date-filtered, so a return is counted on the day it happened', () => {
+    const q = API.slice(API.indexOf('action: "RECEIVE_AT_STORE"'))
+    expect(q.slice(0, 120)).toContain('inWindow')
+  })
+
+  it('pending is the order still travelling', () => {
+    expect(API).toContain('status: "RETURN_IN_TRANSIT" } }),')
+  })
+
+  it('an order still in PROCESSING is not pending return', () => {
+    const block = API.slice(API.indexOf('// RETURN TO STORE'), API.indexOf('// Past its promise'))
+    expect(block).not.toContain('status: "PROCESSING"')
+  })
+
+  it('it is order-level — garment counts cannot affect it', () => {
+    expect(API).toContain('returnToStore: { completed: returnedToStore, pending: inReturnTransit }')
+    const block = API.slice(API.indexOf('// RETURN TO STORE'), API.indexOf('// Past its promise'))
+    expect(block).not.toContain('laundryOrderItem')
+  })
+})
+
+describe('Return to Store — the scenarios', () => {
+  // Modelled on the real records: an event log for completions, current status
+  // for pending.
+  const completedIn = (events: { action: string; day: string }[], day: string) =>
+    events.filter((e) => e.action === 'RECEIVE_AT_STORE' && e.day === day).length
+  const pendingNow = (orders: { status: string }[]) =>
+    orders.filter((o) => o.status === 'RETURN_IN_TRANSIT').length
+
+  it('1 — one order returned today → 1 / 0', () => {
+    expect(completedIn([{ action: 'RECEIVE_AT_STORE', day: 'today' }], 'today')).toBe(1)
+    expect(pendingNow([{ status: 'READY_FOR_DELIVERY' }])).toBe(0)
+  })
+
+  it('2 — one order in return transit → 0 / 1', () => {
+    expect(completedIn([], 'today')).toBe(0)
+    expect(pendingNow([{ status: 'RETURN_IN_TRANSIT' }])).toBe(1)
+  })
+
+  it('3 — one completed and one pending → 1 / 1', () => {
+    expect(completedIn([{ action: 'RECEIVE_AT_STORE', day: 'today' }], 'today')).toBe(1)
+    expect(pendingNow([{ status: 'RETURN_IN_TRANSIT' }, { status: 'READY_FOR_DELIVERY' }])).toBe(1)
+  })
+
+  it('4 — returned yesterday counts yesterday, not today', () => {
+    const ev = [{ action: 'RECEIVE_AT_STORE', day: 'yesterday' }]
+    expect(completedIn(ev, 'today')).toBe(0)
+    expect(completedIn(ev, 'yesterday')).toBe(1)
+  })
+
+  // 5 — the order's CURRENT status is READY_FOR_DELIVERY, yet it still counts
+  // for the day its return transition happened.
+  it('5 — a store-received order still counts historically', () => {
+    expect(completedIn([{ action: 'RECEIVE_AT_STORE', day: 'today' }], 'today')).toBe(1)
+  })
+
+  it('7 — an order still PROCESSING is not pending return', () => {
+    expect(pendingNow([{ status: 'PROCESSING' }])).toBe(0)
   })
 })
