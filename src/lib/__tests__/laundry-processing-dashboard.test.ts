@@ -375,8 +375,9 @@ describe('Return to Store counts the transition, not a resting state', () => {
     expect(q.slice(0, 120)).toContain('inWindow')
   })
 
-  it('pending is the order still travelling', () => {
-    expect(API).toContain('status: "RETURN_IN_TRANSIT" } }),')
+  // Superseded: pending is now the GARMENTS in orders still travelling.
+  it('pending is the garments still travelling', () => {
+    expect(API).toContain('status: "RETURN_IN_TRANSIT" }')
   })
 
   it('an order still in PROCESSING is not pending return', () => {
@@ -384,10 +385,12 @@ describe('Return to Store counts the transition, not a resting state', () => {
     expect(block).not.toContain('status: "PROCESSING"')
   })
 
-  it('it is order-level — garment counts cannot affect it', () => {
+  // Superseded: an order can carry several services, so this card counts
+  // garments like every other stage. The order is never split.
+  it('it is service-level, matching the other stages', () => {
     expect(API).toContain('returnToStore: { completed: returnedToStore, pending: inReturnTransit }')
     const block = API.slice(API.indexOf('// RETURN TO STORE'), API.indexOf('// Past its promise'))
-    expect(block).not.toContain('laundryOrderItem')
+    expect(block).toContain('laundryOrderItem')
   })
 })
 
@@ -428,5 +431,86 @@ describe('Return to Store — the scenarios', () => {
 
   it('7 — an order still PROCESSING is not pending return', () => {
     expect(pendingNow([{ status: 'PROCESSING' }])).toBe(0)
+  })
+})
+
+// ── The flow counts SERVICES/GARMENTS, never orders ─────────────────────────
+// One customer order routinely carries several services after Store Audit — a
+// shirt to Wash & Fold, a blanket to Dry Cleaning. The order is never split;
+// only the reporting unit matters here.
+describe('Return to Store is counted in services, not orders', () => {
+  it('resolves the returned orders, then counts their garments', () => {
+    expect(API).toContain('action: "RECEIVE_AT_STORE", createdAt: inWindow')
+    expect(API).toContain('prisma.laundryOrderItem.count({ where: { orderId: { in: returnedOrderIds')
+  })
+
+  it('pending counts garments in orders still travelling back', () => {
+    expect(API).toContain('order: { businessId: biz.id, status: "RETURN_IN_TRANSIT" }')
+  })
+
+  it('no longer counts LaundryOrder records for this card', () => {
+    const block = API.slice(API.indexOf('// RETURN TO STORE'), API.indexOf('// Past its promise'))
+    expect(block).not.toContain('laundryOrder.count')
+  })
+
+  it('the card no longer claims a different unit from the rest', () => {
+    expect(UI).not.toContain('unit="orders"')
+  })
+
+  it('the section says what it counts', () => {
+    expect(UI).toContain('Service Processing Flow')
+    expect(UI).toContain('Counted in garments/services — one order may carry several')
+  })
+
+  it('distinct orders, so one order is not counted twice', () => {
+    expect(API).toContain('distinct: ["orderId"]')
+  })
+})
+
+describe('a two-service order reports 2 everywhere, including Return', () => {
+  // Shirt → Wash & Fold, Blanket → Dry Cleaning. ONE order, TWO services.
+  const ORDER = 'ord-1'
+  const items = [
+    { id: 'i1', orderId: ORDER, service: 'Wash & Fold' },
+    { id: 'i2', orderId: ORDER, service: 'Dry Cleaning' },
+  ]
+  const returnedOrderIds = [{ orderId: ORDER }]
+  const returnedGarments = items.filter((i) => returnedOrderIds.some((r) => r.orderId === i.orderId)).length
+
+  it('Return to Store completed = 2, not 1', () => {
+    expect(returnedGarments).toBe(2)
+    expect(returnedGarments).not.toBe(returnedOrderIds.length)
+  })
+
+  it('two services in one order never collapse to 1', () => {
+    expect(new Set(items.map((i) => i.orderId)).size).toBe(1)
+    expect(items.length).toBe(2)
+  })
+
+  // Matches the garment stages, which already count this way.
+  it('the flow adds up: Received 2 → Wash 1 + Dry Clean 1 → Return 2', () => {
+    const wash = items.filter((i) => i.service === 'Wash & Fold').length
+    const dry = items.filter((i) => i.service === 'Dry Cleaning').length
+    expect(wash).toBe(1)
+    expect(dry).toBe(1)
+    expect(wash + dry).toBe(returnedGarments)
+  })
+
+  it('a return outside the window contributes nothing', () => {
+    const outOfWindow: { orderId: string }[] = []
+    expect(items.filter((i) => outOfWindow.some((r) => r.orderId === i.orderId)).length).toBe(0)
+  })
+})
+
+describe('the other stages are untouched', () => {
+  it('still read their own event history', () => {
+    expect(API).toContain('action: { in: FORWARD_ACTIONS }')
+    expect(API).toContain('by: ["fromStage"]')
+  })
+
+  it('and no new model was introduced', () => {
+    const schema = readFileSync(join(process.cwd(), 'prisma/schema.prisma'), 'utf8')
+    expect(schema).not.toContain('model LaundryServiceFlow')
+    expect(schema).not.toContain('model LaundryReturnEvent')
   })
 })

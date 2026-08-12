@@ -196,7 +196,11 @@ export function ProcessingDashboard() {
           </div>
 
           <Card className="rounded-xl border-slate-200"><CardContent className="p-4">
-            <p className="mb-4 text-[11px] font-bold uppercase tracking-wide text-slate-400">Production Flow</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Service Processing Flow</p>
+            {/* One order can carry several services after Store Audit, so every
+                stage here counts SERVICES/GARMENTS — including Return to Store.
+                Saying so stops the flow being read as an order count. */}
+            <p className="mb-4 text-[11px] text-slate-400">Counted in garments/services — one order may carry several</p>
             {/* The real route through the centre. Washing/Dry Cleaning and
                 Ironing/Folding are PARALLEL branches — a garment takes one of
                 each pair, never both in sequence — so they sit side by side and
@@ -221,7 +225,7 @@ export function ProcessingDashboard() {
               </div>
               <Merge />
               {/* Order-level terminal, not a garment stage. */}
-              <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore.completed + data.returnToStore.pending, completed: data.returnToStore.completed, pending: data.returnToStore.pending }} go={setLaundryPage} unit="orders" />
+              <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore.completed + data.returnToStore.pending, completed: data.returnToStore.completed, pending: data.returnToStore.pending }} go={setLaundryPage} />
             </div>
           </CardContent></Card>
 
