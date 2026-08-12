@@ -195,21 +195,21 @@ export function ProcessingDashboard() {
             </div>
           </div>
 
-          <Card className="rounded-xl border-slate-200"><CardContent className="p-4">
+          <Card className="rounded-xl border-slate-200"><CardContent className="p-3 sm:p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Service Processing Flow</p>
             {/* One order can carry several services after Store Audit, so every
                 stage here counts SERVICES/GARMENTS — including Return to Store.
                 Saying so stops the flow being read as an order count. */}
-            <p className="mb-4 text-[11px] text-slate-400">Counted in garments/services — one order may carry several</p>
+            <p className="mb-3 text-[10px] text-slate-400">Counted in garments/services — one order may carry several</p>
             {/* The real route through the centre. Washing/Dry Cleaning and
                 Ironing/Folding are PARALLEL branches — a garment takes one of
                 each pair, never both in sequence — so they sit side by side and
                 merge, rather than being strung into a single line. */}
-            <div className="mx-auto flex max-w-2xl flex-col items-center">
+            <div className="mx-auto flex max-w-xl flex-col items-center">
               <Node stage={byKey(data.flow, "RECEIVED")} go={setLaundryPage} />
               <Down />
               <Split />
-              <div className="grid w-full grid-cols-2 gap-3">
+              <div className="grid w-full grid-cols-2 gap-2 sm:gap-3">
                 <Node stage={byKey(data.flow, "WASH")} go={setLaundryPage} />
                 <Node stage={byKey(data.flow, "DRYCLEAN")} go={setLaundryPage} />
               </div>
@@ -219,7 +219,7 @@ export function ProcessingDashboard() {
               <Node stage={byKey(data.flow, "SORTING")} go={setLaundryPage} />
               <Down />
               <Split />
-              <div className="grid w-full grid-cols-2 gap-3">
+              <div className="grid w-full grid-cols-2 gap-2 sm:gap-3">
                 <Node stage={byKey(data.flow, "IRON")} go={setLaundryPage} />
                 <Node stage={byKey(data.flow, "FOLD")} go={setLaundryPage} />
               </div>
@@ -227,6 +227,10 @@ export function ProcessingDashboard() {
               {/* Order-level terminal, not a garment stage. */}
               <Node stage={{ key: "RETURN", label: "Return to Store", page: "processing-centers", count: data.returnToStore.completed + data.returnToStore.pending, completed: data.returnToStore.completed, pending: data.returnToStore.pending }} go={setLaundryPage} />
             </div>
+            <p className="mt-3 border-t border-slate-100 pt-2 text-center text-[10px] leading-snug text-slate-400">
+              Each figure is the number of garments/services that passed through that stage during the selected period.
+              Pending is what is sitting there now.
+            </p>
           </CardContent></Card>
 
           {(a!.overdue > 0 || a!.qcPending > 0 || a!.awaitingProcessing > 0 || a!.readyForDispatch > 0) && (
@@ -303,42 +307,47 @@ export function ProcessingDashboard() {
 function Node({ stage, go, unit = "garments" }: { stage: FlowStage; go: (p: never) => void; unit?: string }) {
   return (
     <button onClick={() => go(stage.page as never)}
-      className="w-full max-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white text-center transition-colors hover:border-blue-400">
-      <p className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{stage.label}</p>
-      <div className="grid grid-cols-2">
-        <div className="bg-emerald-600 px-2 py-1.5 text-white">
-          <p className="text-xl font-bold leading-tight tabular-nums">{stage.completed}</p>
-          <p className="text-[9px] font-semibold uppercase tracking-wide opacity-90">Completed</p>
+      className="w-full max-w-[220px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-colors hover:border-blue-400">
+      {/* Navy title, brand-aligned. The status colours are indicators, not the
+          card's identity, so they stay quieter than the blue frame. */}
+      <p className="truncate px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">{stage.label}</p>
+      <div className="grid grid-cols-2 border-t border-slate-100">
+        {/* Tinted panels rather than saturated blocks: the NUMBER carries the
+            information, so it keeps the strong colour and the fill recedes. */}
+        <div className="bg-emerald-50 px-1 py-1.5 text-center">
+          <p className="text-lg font-bold leading-none tabular-nums text-emerald-700">{stage.completed}</p>
+          <p className="mt-0.5 text-[8px] font-semibold uppercase tracking-wide text-emerald-600/80">Completed</p>
         </div>
-        <div className="bg-amber-500 px-2 py-1.5 text-white">
-          <p className="text-xl font-bold leading-tight tabular-nums">{stage.pending}</p>
-          <p className="text-[9px] font-semibold uppercase tracking-wide opacity-90">Pending</p>
+        <div className="border-l border-slate-100 bg-amber-50 px-1 py-1.5 text-center">
+          <p className="text-lg font-bold leading-none tabular-nums text-amber-700">{stage.pending}</p>
+          <p className="mt-0.5 text-[8px] font-semibold uppercase tracking-wide text-amber-600/80">Pending</p>
         </div>
       </div>
-      <p className="py-1 text-[9px] text-slate-400">{unit}</p>
+      <span className="sr-only">{unit}</span>
     </button>
   )
 }
+
 const byKey = (flow: FlowStage[], k: string): FlowStage =>
   flow.find((f) => f.key === k) ?? { key: k, label: k, page: "processing-centers", count: 0, completed: 0, pending: 0 }
 
 /** Connectors. Plain CSS rules — a diagram this small needs no chart library. */
-function Down() { return <div className="h-5 w-px bg-slate-300" /> }
+function Down() { return <div className="h-3 w-px bg-blue-200" /> }
 function Split() {
   return (
     <div className="w-full max-w-2xl">
-      <div className="mx-auto h-3 w-px bg-slate-300" />
-      <div className="mx-auto h-px w-1/2 bg-slate-300" />
-      <div className="mx-auto flex w-1/2 justify-between"><div className="h-3 w-px bg-slate-300" /><div className="h-3 w-px bg-slate-300" /></div>
+      <div className="mx-auto h-2 w-px bg-blue-200" />
+      <div className="mx-auto h-px w-1/2 bg-blue-200" />
+      <div className="mx-auto flex w-1/2 justify-between"><div className="h-2 w-px bg-blue-200" /><div className="h-2 w-px bg-blue-200" /></div>
     </div>
   )
 }
 function Merge() {
   return (
     <div className="w-full max-w-2xl">
-      <div className="mx-auto flex w-1/2 justify-between"><div className="h-3 w-px bg-slate-300" /><div className="h-3 w-px bg-slate-300" /></div>
-      <div className="mx-auto h-px w-1/2 bg-slate-300" />
-      <div className="mx-auto h-3 w-px bg-slate-300" />
+      <div className="mx-auto flex w-1/2 justify-between"><div className="h-2 w-px bg-blue-200" /><div className="h-2 w-px bg-blue-200" /></div>
+      <div className="mx-auto h-px w-1/2 bg-blue-200" />
+      <div className="mx-auto h-2 w-px bg-blue-200" />
     </div>
   )
 }

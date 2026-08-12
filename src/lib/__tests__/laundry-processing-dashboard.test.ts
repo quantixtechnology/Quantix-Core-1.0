@@ -271,10 +271,28 @@ describe('each stage card splits completed from pending', () => {
     expect(card).not.toContain('progress')
   })
 
-  it('uses the application success and warning colours', () => {
-    expect(UI).toContain('bg-emerald-600')
-    expect(UI).toContain('bg-amber-500')
-    expect(UI).toContain('text-white')
+  // Superseded: solid saturated blocks replaced by tinted panels with strong
+  // text, so the NUMBER carries the signal and the fill recedes.
+  it('uses subtle success/warning tints with strong text', () => {
+    expect(UI).toContain('bg-emerald-50')
+    expect(UI).toContain('text-emerald-700')
+    expect(UI).toContain('bg-amber-50')
+    expect(UI).toContain('text-amber-700')
+  })
+
+  it('no longer paints large saturated blocks', () => {
+    const card = UI.slice(UI.indexOf('function Node('), UI.indexOf('const byKey'))
+    expect(card).not.toContain('bg-emerald-600')
+    expect(card).not.toContain('bg-amber-500')
+  })
+
+  it('connectors stay subtle and brand-aligned', () => {
+    expect(UI).toContain('bg-blue-200')
+    expect(UI).not.toContain('bg-slate-300')
+  })
+
+  it('keeps the closing explanation', () => {
+    expect(UI).toContain('passed through that stage during the selected period')
   })
 })
 
