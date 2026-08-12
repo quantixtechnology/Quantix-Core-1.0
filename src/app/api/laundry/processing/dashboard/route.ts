@@ -76,16 +76,28 @@ export async function GET(request: Request) {
     const itemScope = { order: { businessId: biz.id } }
 
     const [
-      grouped, receivedOrders, readyForDispatch, completedInWindow, returnedInWindow, inTransit,
-      awaitingBarcodeOrders, workloadRaw, returnInTransit, stillProcessing, overdue,
+      grouped, completedEvents, receivedOrders, readyForDispatch, completedInWindow, returnedInWindow,
+      inTransit, awaitingBarcodeOrders, workloadRaw, returnInTransit, stillProcessing, overdue,
     ] = await Promise.all([
       // Garment distribution — the same source the workstation queues use.
-      // Grouped by stage AND status so each card can show DONE against
-      // still-to-do. Both fields already exist on the item — processingStatus is
-      // WAITING | IN_PROGRESS | DONE | REJECTED — so nothing new is invented.
+      // WHERE EACH GARMENT IS NOW → the pending half of every card.
       prisma.laundryOrderItem.groupBy({
         by: ["processingStage", "processingStatus"],
         where: { ...itemScope, processingStage: { not: null } },
+        _count: { _all: true },
+      }),
+      // WHAT WAS FINISHED, and when → the completed half.
+      //
+      // processingStage only says where a garment is RIGHT NOW: the moment it
+      // finishes Washing it moves to the next stage, so "at WASH and DONE" is
+      // almost always empty. That is why every card read 0 completed. The real
+      // record of a stage being finished is LaundryItemEvent — action COMPLETE
+      // or QC_PASS, with fromStage naming the stage that was completed — which
+      // the workstations already write. Counting those inside the window also
+      // makes Completed genuinely date-filtered.
+      prisma.laundryItemEvent.groupBy({
+        by: ["fromStage"],
+        where: { businessId: biz.id, action: { in: ["COMPLETE", "QC_PASS"] }, fromStage: { not: null }, createdAt: inWindow },
         _count: { _all: true },
       }),
       // Packages the PC actually took in during the window. Counted from the
@@ -127,9 +139,13 @@ export async function GET(request: Request) {
     // Everything still at this stage, whatever its status — the figure the
     // workstation queue shows.
     const stage = (s: string) => at(s, () => true)
-    const done = (s: string) => at(s, (st) => st === "DONE")
+    // Completed = finished DURING the window, from the event log.
+    const done = (s: string) => completedEvents.find((e) => e.fromStage === s)?._count._all ?? 0
     // REJECTED is neither done nor waiting to be done; it is an exception the QC
     // screens handle, so it is excluded from both rather than inflating pending.
+    // Pending = still sitting at this stage now, whatever day it arrived. Live
+    // by design (see the two-clocks note above); REJECTED is an exception the QC
+    // screens own and belongs in neither figure.
     const pending = (s: string) => at(s, (st) => st === "WAITING" || st === "IN_PROGRESS" || st === null)
 
     // Customer names live on the platform Customer table; one lookup for the page.
@@ -187,7 +203,15 @@ export async function GET(request: Request) {
         // Garment counts per stage, plus the order-level terminal. Return to
         // Store is not a garment stage — it is the package waiting to go back —
         // so it is counted from order status, the same way the console lists it.
-        flow: FLOW.map((f) => ({ ...f, count: stage(f.key), completed: done(f.key), pending: pending(f.key) })),
+        flow: FLOW.map((f) => ({
+          ...f,
+          count: stage(f.key),
+          // "Received to PC" has no COMPLETE event of its own — the receive IS
+          // the completion — so it uses the same handover count the Activity
+          // card shows, keeping the two consistent.
+          completed: f.key === "RECEIVED" ? receivedOrders : done(f.key),
+          pending: pending(f.key),
+        })),
         // Return to Store is order-level: pending = still in the centre, done =
         // already dispatched back and in transit. Both are existing statuses.
         returnToStore: { completed: returnInTransit, pending: stillProcessing },

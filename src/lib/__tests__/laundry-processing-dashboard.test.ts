@@ -208,9 +208,34 @@ describe('quick actions reuse existing screens', () => {
 
 // ── Completed vs Pending on every card ──────────────────────────────────────
 describe('each stage card splits completed from pending', () => {
-  it('reads the existing processingStatus, inventing nothing', () => {
-    expect(API).toContain("st === \"DONE\"")
+  it('pending reads the existing processingStatus, inventing nothing', () => {
     expect(API).toContain('st === "WAITING" || st === "IN_PROGRESS"')
+  })
+
+  // THE 0/0 BUG. processingStage says where a garment is NOW, so once it
+  // finishes Washing it has left that stage — "at WASH and DONE" is empty, and
+  // every Completed read zero.
+  it('completed comes from the item EVENT log, not the current stage', () => {
+    expect(API).toContain('prisma.laundryItemEvent.groupBy')
+    expect(API).toContain('action: { in: ["COMPLETE", "QC_PASS"] }')
+    expect(API).toContain('by: ["fromStage"]')
+    expect(API).toContain('completedEvents.find((e) => e.fromStage === s)')
+  })
+
+  // Which also makes Completed genuinely date-filtered.
+  it('completions are counted inside the selected window', () => {
+    const q = API.slice(API.indexOf('prisma.laundryItemEvent.groupBy'))
+    expect(q.slice(0, 400)).toContain('createdAt: inWindow')
+  })
+
+  it('Received to PC uses the same handover count as the Activity card', () => {
+    expect(API).toContain('f.key === "RECEIVED" ? receivedOrders : done(f.key)')
+  })
+
+  it('no new model or duplicate stage tracking was added', () => {
+    const schema = readFileSync(join(process.cwd(), 'prisma/schema.prisma'), 'utf8')
+    expect(schema).not.toContain('model LaundryProductionFlow')
+    expect(schema).not.toContain('model ProcessingStageCount')
   })
 
   // REJECTED is an exception the QC screens handle; counting it as pending
@@ -221,7 +246,8 @@ describe('each stage card splits completed from pending', () => {
   })
 
   it('every stage carries both numbers', () => {
-    expect(API).toContain('completed: done(f.key), pending: pending(f.key)')
+    expect(API).toContain('pending: pending(f.key)')
+    expect(API).toContain('done(f.key)')
   })
 
   it('Return to Store uses order statuses, not a new one', () => {
@@ -243,5 +269,18 @@ describe('each stage card splits completed from pending', () => {
     expect(UI).toContain('bg-emerald-600')
     expect(UI).toContain('bg-amber-500')
     expect(UI).toContain('text-white')
+  })
+})
+
+
+describe('loading never shows a false zero', () => {
+  it('waits for the query rather than rendering 0/0', () => {
+    expect(UI).toContain('{loading ? (')
+    expect(UI).toContain('Loading…')
+  })
+
+  it('a real zero is still shown once the query returns', () => {
+    expect(UI).toContain('{stage.completed}')
+    expect(UI).toContain('{stage.pending}')
   })
 })

@@ -161,8 +161,10 @@ export function ProcessingDashboard() {
         </div>
       )}
 
-      {loading && !data ? (
-        <div className="py-20 text-center text-slate-400"><Loader2 className="inline h-5 w-5 animate-spin" /></div>
+      {/* A stale card is a lie and a zeroed card is a worse one, so the whole
+          body waits while a new window is being fetched. */}
+      {loading ? (
+        <div className="py-20 text-center text-sm text-slate-400"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div>
       ) : !data ? (
         <p className="py-20 text-center text-sm text-slate-400">Could not load the dashboard.</p>
       ) : (
