@@ -4,22 +4,24 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { getBagReleaseStage, releaseBagsForOrder } from "@/lib/laundry-bag-assign"
+import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
 const LIFECYCLE = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "AVAILABLE"])
-// A PICKUP bag is emptied at the STORE: the customer's garments come out when
-// the store receives and audits them, so that bag goes straight back into
-// circulation.
+// A BAG IS RELEASED BY A PHYSICAL HANDOVER, NEVER BY AN ORDER STATUS.
 //
-// PROCESSING is deliberately NOT here. Store Audit fires this route with
-// PROCESSING when an audit is approved, which means "audited, moving on" — not
-// "the Processing Center has it". Releasing on that signal frees the TRANSIT
-// bag before it has travelled, and the order would leave the store in a bag the
-// system already considers available. The real release happens when the
-// Processing Center receives the order (orders/[id]/receive).
-const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT"])
+// This route only ADVANCES a bag's status alongside the order. It used to also
+// release on certain statuses, which meant an order moving to PROCESSING freed
+// a bag that was still in a van. The four real release points each live with
+// their own handover action:
+//
+//   pickup received at the store   → bags/receive-at-store
+//   Processing Center receives     → orders/[id]/receive
+//   store receives the return leg  → orders/[id]/store-receive
+//   delivery bag comes back        → bags/delivery-return
+//
+// An explicit AVAILABLE is still honoured — that is a person saying so.
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,12 +34,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const toStatus = String(b.toStatus || "").trim()
     if (!LIFECYCLE.has(toStatus)) return NextResponse.json({ error: "Invalid lifecycle status." }, { status: 400 })
 
-    // Configurable release: a PROCESSING_RECEIVE laundry releases its bags the moment
-    // the order is received/audited at the store — the same release engine, just
-    // fired at this stage instead of at delivery. AFTER_DELIVERY laundries keep
-    // advancing the bag through the lifecycle (released later at delivery).
-    if ((toStatus === "AVAILABLE") ||
-        (BAG_FREED.has(toStatus) && (await getBagReleaseStage(order.businessId)) === "PROCESSING_RECEIVE")) {
+    // Only an explicit AVAILABLE releases here.
+    if (toStatus === "AVAILABLE") {
       const released = await releaseBagsForOrder(order.businessId, id)
       return NextResponse.json({ success: true, advanced: released, released: true })
     }

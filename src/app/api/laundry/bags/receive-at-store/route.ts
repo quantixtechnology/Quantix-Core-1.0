@@ -20,6 +20,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireStoreAdmin, resolveStoreScope } from "@/lib/laundry-store-admin-auth"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
+import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -105,8 +106,11 @@ export async function POST(request: Request) {
 
     const exception = condition !== "OK"
     const now = new Date()
-    // Bag custody: the store now owns the bag.
-    if (reusable) await prisma.laundryBag.update({ where: { id: reusable.id }, data: { status: "RECEIVED_AT_STORE" } }).catch(() => null)
+    // SCENARIO 1 — the customer's garments come out of the pickup bag right
+    // here, so the bag is finished with this order and goes back into
+    // circulation immediately. It must not stay assigned through audit, payment
+    // and processing: a different bag carries the order onward.
+    if (reusable) await releaseBagsForOrder(lbId, order.id).catch(() => 0)
     if (pickupBag) await prisma.laundryPickupBag.update({ where: { id: pickupBag.id }, data: { status: "RECEIVED_AT_STORE", receivedAt: now, receivedBy: receiver } }).catch(() => null)
 
     // Order custody: transit → store audit (atomic, only from a receivable state).

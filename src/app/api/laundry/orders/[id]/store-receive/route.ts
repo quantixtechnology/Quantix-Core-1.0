@@ -8,7 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { advanceBagsForOrder } from "@/lib/laundry-bag-assign"
+import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { ensureDeliveryVerification } from "@/lib/laundry-verification"
 import { notifyDeliveryOtpGenerated } from "@/lib/laundry-notify"
@@ -62,7 +62,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }).catch(() => null)
 
     // Keep the reusable bags' lifecycle in step with the order (display accuracy).
-    await advanceBagsForOrder(biz.id, order.id, "READY_FOR_DELIVERY")
+    // SCENARIO 3 — the bag that carried processed garments back from the
+    // Processing Center is emptied here, so it is free now. It must NOT wait for
+    // Ready for Delivery or the delivery run: a different bag carries the order
+    // to the customer.
+    const bagsReleased = await releaseBagsForOrder(biz.id, order.id).catch(() => 0)
     // Processing packages remain RELEASED (received at store, awaiting delivery).
     await syncPackageLifecycle(order.id, biz.id).catch(() => null)
 
@@ -77,7 +81,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       console.error("[laundry-order-store-receive] delivery verification init failed:", e)
     }
 
-    return NextResponse.json({ success: true, mode, data: { orderNumber: order.orderNumber, transport: ref, transportCode: ref.code } })
+    return NextResponse.json({ success: true, mode, data: { orderNumber: order.orderNumber, transport: ref, transportCode: ref.code, bagsReleased } })
   } catch (e) {
     console.error("[laundry-order-store-receive] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
