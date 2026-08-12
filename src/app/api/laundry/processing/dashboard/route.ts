@@ -50,6 +50,12 @@ const FLOW: { key: string; label: string; page: string }[] = [
 // Garments actively being worked — everything between intake and dispatch.
 const WORKING = ["WASH", "DRYCLEAN", "SORTING", "IRON", "FOLD"]
 
+// Every action that means "this garment finished the stage in fromStage and
+// moved on". Collected from the actual workstation writes, not assumed — see
+// the note on the event query below. REJECT and QC_FAIL are deliberately absent:
+// failed work is not completed work. START / PAUSE / RESUME are not exits.
+const FORWARD_ACTIONS = ["COMPLETE", "QC_PASS", "SORTING_BAG_ASSIGNED", "MOVED_TO_PROCESSING"]
+
 export async function GET(request: Request) {
   try {
     const u = new URL(request.url)
@@ -88,16 +94,28 @@ export async function GET(request: Request) {
       }),
       // WHAT WAS FINISHED, and when → the completed half.
       //
-      // processingStage only says where a garment is RIGHT NOW: the moment it
-      // finishes Washing it moves to the next stage, so "at WASH and DONE" is
-      // almost always empty. That is why every card read 0 completed. The real
-      // record of a stage being finished is LaundryItemEvent — action COMPLETE
-      // or QC_PASS, with fromStage naming the stage that was completed — which
-      // the workstations already write. Counting those inside the window also
-      // makes Completed genuinely date-filtered.
+      // processingStage only says where a garment is RIGHT NOW, so a garment
+      // that finished Sorting has already left it. History lives in
+      // LaundryItemEvent, and the decisive detail is that DIFFERENT WORKSTATIONS
+      // WRITE DIFFERENT ACTIONS for the same idea of "finished here":
+      //
+      //   RECEIVED  → MOVED_TO_PROCESSING      (items/[id]/process)
+      //   SORTING   → SORTING_BAG_ASSIGNED     (processing/sorting)
+      //   WASH / DRYCLEAN / IRON / FOLD → COMPLETE
+      //   QC        → QC_PASS (or COMPLETE)
+      //
+      // Filtering on COMPLETE/QC_PASS alone therefore made Sorting invisible —
+      // which is exactly the reported 0 while Washing and Dry Cleaning had work.
+      // fromStage is what identifies the stage in every case, so the set below
+      // is "actions that mean the garment LEFT that stage going forward".
       prisma.laundryItemEvent.groupBy({
         by: ["fromStage"],
-        where: { businessId: biz.id, action: { in: ["COMPLETE", "QC_PASS"] }, fromStage: { not: null }, createdAt: inWindow },
+        where: {
+          businessId: biz.id,
+          action: { in: FORWARD_ACTIONS },
+          fromStage: { not: null },
+          createdAt: inWindow,
+        },
         _count: { _all: true },
       }),
       // Packages the PC actually took in during the window. Counted from the
@@ -206,10 +224,10 @@ export async function GET(request: Request) {
         flow: FLOW.map((f) => ({
           ...f,
           count: stage(f.key),
-          // "Received to PC" has no COMPLETE event of its own — the receive IS
-          // the completion — so it uses the same handover count the Activity
-          // card shows, keeping the two consistent.
-          completed: f.key === "RECEIVED" ? receivedOrders : done(f.key),
+          // Garment-level throughout, including Received: MOVED_TO_PROCESSING
+          // carries fromStage RECEIVED, so the same rule covers it and the card
+          // counts garments like every other production stage.
+          completed: done(f.key),
           pending: pending(f.key),
         })),
         // Return to Store is order-level: pending = still in the centre, done =

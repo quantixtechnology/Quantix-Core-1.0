@@ -217,7 +217,8 @@ describe('each stage card splits completed from pending', () => {
   // every Completed read zero.
   it('completed comes from the item EVENT log, not the current stage', () => {
     expect(API).toContain('prisma.laundryItemEvent.groupBy')
-    expect(API).toContain('action: { in: ["COMPLETE", "QC_PASS"] }')
+    // Superseded: COMPLETE/QC_PASS alone missed Sorting. See FORWARD_ACTIONS.
+    expect(API).toContain('action: { in: FORWARD_ACTIONS }')
     expect(API).toContain('by: ["fromStage"]')
     expect(API).toContain('completedEvents.find((e) => e.fromStage === s)')
   })
@@ -228,8 +229,10 @@ describe('each stage card splits completed from pending', () => {
     expect(q.slice(0, 400)).toContain('createdAt: inWindow')
   })
 
-  it('Received to PC uses the same handover count as the Activity card', () => {
-    expect(API).toContain('f.key === "RECEIVED" ? receivedOrders : done(f.key)')
+  // Superseded: production stages are garment-level (§9), and
+  // MOVED_TO_PROCESSING carries fromStage RECEIVED, so one rule covers it.
+  it('Received to PC is counted like every other stage', () => {
+    expect(API).toContain('completed: done(f.key)')
   })
 
   it('no new model or duplicate stage tracking was added', () => {
@@ -282,5 +285,69 @@ describe('loading never shows a false zero', () => {
   it('a real zero is still shown once the query returns', () => {
     expect(UI).toContain('{stage.completed}')
     expect(UI).toContain('{stage.pending}')
+  })
+})
+
+// ── The reported case: Sorting showed 0 while Washing/Dry Cleaning had work ──
+describe('stage completion is counted from every forward action, not just COMPLETE', () => {
+  // TRACED from the actual writes, not assumed:
+  //   RECEIVED → MOVED_TO_PROCESSING   (items/[id]/process)
+  //   SORTING  → SORTING_BAG_ASSIGNED  (processing/sorting)
+  //   WASH/DRYCLEAN/IRON/FOLD → COMPLETE
+  //   QC       → QC_PASS
+  it('includes the action each workstation actually writes', () => {
+    for (const a of ['COMPLETE', 'QC_PASS', 'SORTING_BAG_ASSIGNED', 'MOVED_TO_PROCESSING']) {
+      expect(API).toContain(`"${a}"`)
+    }
+  })
+
+  it('Sorting is no longer invisible', () => {
+    expect(API).toContain('SORTING_BAG_ASSIGNED')
+    // The old filter, which caused the reported zero.
+    expect(API).not.toContain('action: { in: ["COMPLETE", "QC_PASS"] }')
+  })
+
+  it('failed work is never counted as completed', () => {
+    const set = API.slice(API.indexOf('const FORWARD_ACTIONS'), API.indexOf('\n', API.indexOf('const FORWARD_ACTIONS')))
+    for (const a of ['REJECT', 'QC_FAIL', 'START', 'PAUSE', 'RESUME']) expect(set).not.toContain(a)
+  })
+
+  it('fromStage identifies the stage in every case', () => {
+    expect(API).toContain('by: ["fromStage"]')
+    expect(API).toContain('fromStage: { not: null }')
+  })
+
+  // §9 — production stages are garment-level, including Received.
+  it('Received to PC counts garments, via its own exit event', () => {
+    expect(API).toContain('completed: done(f.key)')
+    expect(API).not.toContain('f.key === "RECEIVED" ? receivedOrders')
+  })
+})
+
+describe('the two-garment case behaves correctly', () => {
+  // Shirt → Sorting → Washing; Blanket → Sorting → Dry Cleaning.
+  // Both left Sorting, so Sorting completed = 2 even though neither is there now.
+  const events = [
+    { fromStage: 'RECEIVED', action: 'MOVED_TO_PROCESSING' }, { fromStage: 'RECEIVED', action: 'MOVED_TO_PROCESSING' },
+    { fromStage: 'SORTING', action: 'SORTING_BAG_ASSIGNED' }, { fromStage: 'SORTING', action: 'SORTING_BAG_ASSIGNED' },
+    { fromStage: 'WASH', action: 'COMPLETE' },
+    { fromStage: 'DRYCLEAN', action: 'COMPLETE' },
+    { fromStage: 'WASH', action: 'REJECT' },   // must not count
+  ]
+  const FORWARD = ['COMPLETE', 'QC_PASS', 'SORTING_BAG_ASSIGNED', 'MOVED_TO_PROCESSING']
+  const completed = (s: string) => events.filter((e) => e.fromStage === s && FORWARD.includes(e.action)).length
+
+  it('Received to PC = 2', () => expect(completed('RECEIVED')).toBe(2))
+  it('Sorting = 2, though both garments have moved on', () => expect(completed('SORTING')).toBe(2))
+  it('Washing = 1', () => expect(completed('WASH')).toBe(1))
+  it('Dry Cleaning = 1', () => expect(completed('DRYCLEAN')).toBe(1))
+  it('a rejected garment is not counted', () => expect(completed('WASH')).not.toBe(2))
+  it('stages nothing reached stay at 0', () => expect(completed('FOLD')).toBe(0))
+
+  // §7 — pending must come from current state, never received-minus-completed,
+  // because branches make that arithmetic wrong.
+  it('pending is not derived by subtraction', () => {
+    expect(API).toContain('const pending = (s: string) => at(s,')
+    expect(API).not.toMatch(/pending[^\n]*received[^\n]*-[^\n]*completed/i)
   })
 })
