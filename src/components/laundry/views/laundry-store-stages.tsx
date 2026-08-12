@@ -51,6 +51,10 @@ interface OrderRow {
   id: string; orderNumber: string; status: string; orderType: string; createdAt: string
   grandTotal: number; amountPaid: number; balanceDue: number; paymentStatus: string
   expectedDeliveryDate: string | null; itemCount: number; customerId?: string | null
+  // The promise frozen at booking — what the customer was actually told.
+  promisedDeliveryDate?: string | null; promisedDeliveryTimeSlot?: string | null
+  promisedBackupDeliveryDate?: string | null; promisedBackupDeliveryTimeSlot?: string | null
+  deliveryDate?: string | null; deliveryTimeSlot?: string | null
   auditComplete?: boolean
   deliveryOtp?: string | null; deliveryVerificationMethod?: string | null
   pickupOtp?: string | null; pickupVerificationMethod?: string | null
@@ -737,7 +741,20 @@ export function LaundryReadyForDelivery() {
   const openOrder = async (o: OrderRow | null) => {
     setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
     setOtp(""); setVerifyMethod(o?.deliveryVerificationMethod === "NAME" ? "NAME" : "OTP")
-    setDelForm({ address: "", date: new Date().toISOString().split("T")[0], timeSlot: "", assignNow: false, executiveId: "" })
+    // INHERIT THE CUSTOMER'S PROMISE. It was captured at booking and frozen; the
+    // operator re-picking it from scratch is both wasted work and a chance to
+    // silently change what the customer was told. A business reschedule
+    // (deliveryDate) wins over the promise, because that is the newer decision;
+    // today is only the last resort when neither exists.
+    const promisedDate = o?.deliveryDate || o?.promisedDeliveryDate || null
+    const promisedSlot = o?.deliveryTimeSlot || o?.promisedDeliveryTimeSlot || ""
+    setDelForm({
+      address: "",
+      date: promisedDate ? String(promisedDate).split("T")[0] : new Date().toISOString().split("T")[0],
+      timeSlot: promisedSlot,
+      assignNow: false,
+      executiveId: "",
+    })
     setDelAddresses([])
     if (o && currentBusinessId) {
       // Only the executives who serve THIS order's store (plus All-Stores
@@ -852,6 +869,13 @@ export function LaundryReadyForDelivery() {
                     <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label>
                       <select value={delForm.timeSlot} onChange={(e) => setDelForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white">
                         <option value="">Select slot…</option>
+                        {/* The promised slot may not be in the generated list —
+                            slot config can change after booking. Show it anyway,
+                            or the inherited value would silently blank and the
+                            operator would be back to re-picking it. */}
+                        {delForm.timeSlot && !deliverySlots.includes(delForm.timeSlot) && (
+                          <option value={delForm.timeSlot}>{delForm.timeSlot} — customer&apos;s promised slot</option>
+                        )}
                         {deliverySlots.map((s) => {
                           const past = slotIsPast(s, delForm.date)
                           const full = deliveryFullSlots.includes(s)
