@@ -41,8 +41,18 @@ export async function GET(request: Request) {
         deliveryRequired: true, deliveryExecutiveId: true, deliveryAssignedAt: true,
         deliveryAcceptance: true, deliveryAcceptedAt: true, deliveryCompletedAt: true, deliveredAt: true,
         fieldStatus: true,
+        // The promise drives the running order of the day.
+        promisedDeliveryDate: true, promisedDeliveryTimeSlot: true,
+        deliveryDate: true, deliveryTimeSlot: true,
       },
-      orderBy: { createdAt: "desc" },
+      // A dispatch queue is a RUNNING ORDER, not a feed: the van leaves in
+      // promised-slot order, so the earliest commitment must be at the top.
+      // createdAt sorted by when the order was TAKEN, which says nothing about
+      // when it is due. Slot strings are "HH:MM-HH:MM", so they sort correctly
+      // as text. History keeps newest-first, which is what a log wants.
+      orderBy: scope === "history"
+        ? [{ createdAt: "desc" as const }]
+        : [{ promisedDeliveryDate: "asc" as const }, { promisedDeliveryTimeSlot: "asc" as const }, { createdAt: "asc" as const }],
       take: scope === "history" ? 50 : 20,
     })
 

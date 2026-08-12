@@ -238,6 +238,10 @@ describe("Gate 3b: Sidebar ↔ RBAC synchronization (1:1)", () => {
       if (sk.startsWith("customer_app.")) continue
       // Screens reached programmatically (drill-downs / headers), not nav:
       if (["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"].includes(sk)) continue
+      // Routable but deliberately out of the default nav — the bag is bound to
+      // the order at Sorting, so a second Assign Bags screen invites two staff
+      // to disagree about which bag an order is in. See HIDDEN_BY_DESIGN.
+      if (sk === "store_ops.pickup_bags") continue
       if (!navKeySet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])
@@ -636,6 +640,10 @@ describe("Gate 8: Sidebar-registry consistency", () => {
     for (const sk of allScreens) {
       if (sk.startsWith("customer_app.")) continue
       if (["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"].includes(sk)) continue
+      // Routable but deliberately out of the default nav — the bag is bound to
+      // the order at Sorting, so a second Assign Bags screen invites two staff
+      // to disagree about which bag an order is in. See HIDDEN_BY_DESIGN.
+      if (sk === "store_ops.pickup_bags") continue
       if (!permSet.has(sk)) missing.push(sk)
     }
     expect(missing).toEqual([])

@@ -111,6 +111,17 @@ const MOBILE_ONLY_SCREENS = new Set(["customer_app.customers", "customer_app.inv
 const PROGRAMMATIC_SCREENS = new Set(["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"])
 
 /**
+ * Registered, routable, and deliberately OUT of the default navigation.
+ *
+ * store_ops.pickup_bags ("Assign Bags") was superseded: the bag is bound to the
+ * order at Sorting, where the garments physically go into it, so a second
+ * assignment screen only lets two staff disagree about which bag an order is
+ * in. The screen and its API are intact and a tenant can re-add it through
+ * Navigation Manager — it is hidden, not removed, so it is not an orphan.
+ */
+const HIDDEN_BY_DESIGN = new Set(["store_ops.pickup_bags"])
+
+/**
  * Registered screens that have NO navigation item, NO route AND NO workstation
  * definition — i.e. unreachable orphans that must be cleaned up. Screens that
  * are mobile-only or reached programmatically are intentionally excluded.
@@ -119,7 +130,7 @@ export function findOrphanRegisteredScreens(): string[] {
   const navKeys = defaultNavigationConfig().flatMap((s) => s.items.map((i) => i.screenKey))
   const reachable = new Set<string>(navKeys.filter((k) => isValidScreenKey(k)))
   return allScreenKeys().filter((sk) => {
-    if (MOBILE_ONLY_SCREENS.has(sk) || PROGRAMMATIC_SCREENS.has(sk)) return false
+    if (MOBILE_ONLY_SCREENS.has(sk) || PROGRAMMATIC_SCREENS.has(sk) || HIDDEN_BY_DESIGN.has(sk)) return false
     return !reachable.has(sk)
   })
 }

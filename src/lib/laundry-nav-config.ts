@@ -264,7 +264,15 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "store_ops.store_audit", displayName: "Store Audit" },
         { screenKey: "store_ops.payment_collection", displayName: "Payment Collection" },
         { screenKey: "store_ops.pickup_scheduler", displayName: "Pickup Scheduler", icon: "Calendar" },
-        { screenKey: "store_ops.pickup_bags", displayName: "Assign Bags", icon: "Package" },
+        // "Assign Bags" is intentionally NOT in the default navigation. The bag
+        // is bound to the order where the garments physically go into it — at
+        // Sorting in the Processing Center ("1 order = 1 bag") — so a second
+        // place to assign bags only invites two staff to disagree about which
+        // bag an order is in.
+        //
+        // HIDDEN, NOT DELETED: the screen, its route and its API are untouched,
+        // and a tenant that still needs it can add it back through Navigation
+        // Manager. Nothing that already depends on it breaks.
         { screenKey: "store_ops.packing_qr", displayName: "Packing & QR" },
         { screenKey: "store_ops.transit", displayName: "Transit / Dispatch" },
         { screenKey: "store_ops.store_receive", displayName: "Store Receive" },

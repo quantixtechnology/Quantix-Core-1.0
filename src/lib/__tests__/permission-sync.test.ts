@@ -143,9 +143,13 @@ describe("permission-sync: registry ↔ nav cross-check", () => {
     const permsFromNav = [...new Set(navKeys)]
     const mobileOnly = ["customer_app.customers", "customer_app.invitation", "customer_app.subscription", "customer_app.orders"]
     const programmatic = ["laundry.order_detail", "laundry.inbox", "laundry.subscription_plans", "laundry.charges_rules", "laundry.pricing_simulator"]
+    // Registered and routable, deliberately out of the default nav: the bag is
+    // bound to the order at Sorting, so a second Assign Bags screen is a way for
+    // two staff to disagree about which bag an order is in. See HIDDEN_BY_DESIGN.
+    const hiddenByDesign = ["store_ops.pickup_bags"]
     const uncovered: string[] = []
     for (const sk of allScreenKeys()) {
-      if (mobileOnly.includes(sk) || programmatic.includes(sk)) continue
+      if (mobileOnly.includes(sk) || programmatic.includes(sk) || hiddenByDesign.includes(sk)) continue
       if (!permsFromNav.includes(sk)) uncovered.push(sk)
     }
     expect(uncovered).toEqual([])
