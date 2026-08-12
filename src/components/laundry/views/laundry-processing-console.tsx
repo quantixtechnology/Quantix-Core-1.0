@@ -183,6 +183,46 @@ export function LaundryProcessingConsole() {
   }
 
   // Dispatch a completed order back to its origin store.
+  /**
+   * SCAN AND GO. One dialog per order is fine for one order and unworkable for a
+   * hundred: the operator would open, scan, confirm and close a hundred times.
+   *
+   * Here they scan a bag (or an order code) and that order dispatches
+   * immediately, with the scanned bag as the return container. The dialog stays
+   * for the manual path — a bag that will not scan, or a packet-only order.
+   */
+  const [dispatchScan, setDispatchScan] = useState("")
+  const [dispatchBusy, setDispatchBusy] = useState(false)
+
+  const scanDispatch = async (raw?: string) => {
+    const q = (raw ?? dispatchScan).trim()
+    if (!q || !currentBusinessId) return
+    setDispatchBusy(true)
+    try {
+      // First try the scanned code as one of THIS list's orders — a bag already
+      // bound to a completed order is the common case and needs no lookup.
+      const local = readyToReturn.find(
+        (o) => o.transportCode?.toUpperCase() === q.toUpperCase() || o.orderNumber.toUpperCase() === q.toUpperCase(),
+      )
+      if (local) {
+        await returnToStore(local.id, q)
+        setDispatchScan("")
+        return
+      }
+      // Otherwise ask the transport resolver, which understands packet QRs and
+      // order numbers as well as bag codes.
+      const j = await fetch(`/api/laundry/transport/resolve?businessId=${encodeURIComponent(currentBusinessId)}&code=${encodeURIComponent(q)}&direction=PROCESSING_TO_STORE`).then((r) => r.json())
+      if (!j.success || !j.data?.orderId) {
+        toast({ title: "Not found", description: j.error || `"${q}" does not match an order ready to dispatch.`, variant: "destructive" })
+        return
+      }
+      await returnToStore(j.data.orderId, q)
+      setDispatchScan("")
+    } catch {
+      toast({ title: "Dispatch failed", variant: "destructive" })
+    } finally { setDispatchBusy(false) }
+  }
+
   const returnToStore = async (orderId: string, bagCode?: string) => {
     if (!currentBusinessId) return
     setActing(true)
@@ -286,7 +326,26 @@ export function LaundryProcessingConsole() {
       {/* Ready to return to store */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Undo2 className="h-[18px] w-[18px] text-emerald-600" /> Completed — Dispatch to Store <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{readyToReturn.length}</Badge>{histToggle("dispatch")}</CardTitle></CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="pt-0">
+          {/* Scan and go — one scan dispatches that order. At a hundred orders
+              the per-row dialog is the bottleneck, not the network. The field
+              keeps focus so a wedge scanner can fire continuously. */}
+          {!hist.dispatch && readyToReturn.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-2.5">
+              <div className="relative min-w-0 flex-1">
+                <QrIcon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  autoFocus value={dispatchScan} onChange={(e) => setDispatchScan(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanDispatch() } }}
+                  placeholder="Scan bag or order to dispatch…"
+                  className="h-10 pl-8 font-mono text-sm bg-white" />
+              </div>
+              <BagScanButton label="Scan" size="sm" onScan={(c) => scanDispatch(c)} closeOnScan className="h-10" />
+              <Button size="sm" className="h-10 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={dispatchBusy || !dispatchScan.trim()} onClick={() => scanDispatch()}>
+                {dispatchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Dispatch
+              </Button>
+            </div>
+          )}
           {hist.dispatch ? <TransportHistory businessId={currentBusinessId} stage="RETURN_DISPATCHED" timeLabel="Dispatched" mode={returnTransportMode} /> : loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : readyToReturn.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No completed orders waiting. Orders appear when every garment has passed QC.</p>
           ) : (
