@@ -31,6 +31,7 @@ import { Switch } from '@/components/ui/switch'
 import {
   ArrowLeft, ArrowRight, Loader2, Check, Building2, Boxes, ClipboardCheck, Rocket, Server,
   Save, KeyRound, ShieldCheck, ExternalLink, Globe, Smartphone, Apple, Lock, HardDrive, Activity,
+  Eye, EyeOff,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
@@ -85,6 +86,23 @@ function Field({ label, value, mono }: { label: string; value?: string | number 
 }
 function Lbl({ children }: { children: React.ReactNode }) {
   return <label className="text-xs text-muted-foreground">{children}</label>
+}
+// Password field with a visibility toggle. Only ever holds a password being
+// SET — the stored one is a bcrypt hash and is never sent to the browser, so
+// there is nothing here that could reveal an existing password.
+function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <Input type={show ? 'text' : 'password'} value={value} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)} autoComplete="new-password" className="pr-9" />
+      <button type="button" onClick={() => setShow((s) => !s)} tabIndex={-1}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
+  )
 }
 // Read-only digital-asset card (Deployment Status).
 function AssetCard({ icon: Icon, title, status, detail, managed = true }: { icon: React.ElementType; title: string; status: string; detail?: string; managed?: boolean }) {
@@ -240,17 +258,68 @@ export function BusinessManagementWizard({ businessId }: Props) {
       }
       const res = await fetch('/api/admin/businesses/provision', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ businessId: bizId, ownerPassword: form.ownerPassword || undefined, confirmPassword: form.ownerPasswordConfirm || undefined }),
+        // Owner identity travels with the password: the owner user is created
+        // HERE, so anything the Super Admin typed on the Business Setup form
+        // has to reach this call or it is silently dropped (which is what
+        // happened to Owner Name before).
+        body: JSON.stringify({
+          businessId: bizId,
+          ownerPassword: form.ownerPassword || undefined,
+          confirmPassword: form.ownerPasswordConfirm || undefined,
+          ownerName: form.ownerName || undefined,
+          ownerEmail: form.ownerEmail || form.contactEmail || undefined,
+          ownerPhone: form.ownerPhone || form.contactPhone || undefined,
+        }),
       })
       const json = await res.json()
       if (!res.ok || json.success === false) throw new Error(json.data?.error || json.error || 'Provisioning failed')
       const temp = json.data?.ownerTempPassword
+      // The Super Admin's chosen password has been hashed and stored; drop the
+      // plain text from state rather than leaving it in the form.
+      setForm((p) => ({ ...p, ownerPassword: '', ownerPasswordConfirm: '' }))
       toast.success(temp ? `Provisioned. Temp owner password: ${temp}` : 'Provisioned')
       load(bizId)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Provisioning failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // ── Owner Account — UPDATE the existing owner user, never create one ──────
+  // Sends only what the Super Admin actually filled in. Blank password fields
+  // mean "leave the password alone", which is why they start empty and are
+  // cleared again on success — the existing password is never shown or sent.
+  const [savingOwner, setSavingOwner] = useState(false)
+  const saveOwnerAccount = async () => {
+    if (!bizId) return
+    if ((form.ownerPassword || form.ownerPasswordConfirm) && form.ownerPassword !== form.ownerPasswordConfirm) {
+      toast.error('Passwords do not match'); return
+    }
+    setSavingOwner(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${bizId}/owner`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          name: form.ownerName ?? undefined,
+          phone: form.ownerPhone ?? undefined,
+          email: form.ownerEmail ?? undefined,
+          password: form.ownerPassword || undefined,
+          confirmPassword: form.ownerPasswordConfirm || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.success === false) throw new Error(json.error || 'Failed to save owner account')
+      // Never keep a plain-text password in component state after the save.
+      setForm((p) => ({ ...p, ownerPassword: '', ownerPasswordConfirm: '' }))
+      toast.success(json.sessionsRevoked
+        ? 'Owner account updated. Existing owner sessions were signed out.'
+        : 'Owner account updated')
+      load(bizId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save owner account')
+    } finally {
+      setSavingOwner(false)
     }
   }
 
@@ -398,9 +467,12 @@ export function BusinessManagementWizard({ businessId }: Props) {
               <Card className="p-6 space-y-4">
                 <h3 className="font-semibold text-sm">Contact &amp; Legal</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><Lbl>Owner Name</Lbl><Input value={form.ownerName ?? ''} onChange={(e) => set('ownerName', e.target.value)} /></div>
-                  <div><Lbl>Owner Email{isCreate ? ' *' : ''}</Lbl><Input value={form.contactEmail ?? ''} onChange={(e) => set('contactEmail', e.target.value)} /></div>
-                  <div><Lbl>Owner Phone{isCreate ? ' *' : ''}</Lbl><Input value={form.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} /></div>
+                  {/* Business contact details. Owner identity (name / phone /
+                      email / password) lives in Owner Account below — one place,
+                      one save. The Owner Name that used to sit here was never
+                      sent by this card's save, so it silently did nothing. */}
+                  <div><Lbl>Contact Email{isCreate ? ' *' : ''}</Lbl><Input value={form.contactEmail ?? ''} onChange={(e) => set('contactEmail', e.target.value)} /></div>
+                  <div><Lbl>Contact Phone{isCreate ? ' *' : ''}</Lbl><Input value={form.contactPhone ?? ''} onChange={(e) => set('contactPhone', e.target.value)} /></div>
                   <div><Lbl>Support Email</Lbl><Input value={form.supportEmail ?? ''} onChange={(e) => set('supportEmail', e.target.value)} /></div>
                   <div><Lbl>Support Phone</Lbl><Input value={form.supportPhone ?? ''} onChange={(e) => set('supportPhone', e.target.value)} /></div>
                   <div className="sm:col-span-2"><Lbl>Address</Lbl><Input value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} /></div>
@@ -418,19 +490,43 @@ export function BusinessManagementWizard({ businessId }: Props) {
                 <h3 className="font-semibold text-sm flex items-center gap-2"><KeyRound className="size-4" /> Owner Account</h3>
                 {isCreate ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div><Lbl>Initial Owner Password</Lbl><Input type="password" value={form.ownerPassword ?? ''} onChange={(e) => set('ownerPassword', e.target.value)} autoComplete="new-password" /></div>
-                    <div><Lbl>Confirm Password</Lbl><Input type="password" value={form.ownerPasswordConfirm ?? ''} onChange={(e) => set('ownerPasswordConfirm', e.target.value)} autoComplete="new-password" /></div>
-                    <p className="sm:col-span-2 text-xs text-muted-foreground">Set at provisioning. The owner must change it on first login. (Leave blank to auto-generate a temporary password.)</p>
+                    <div><Lbl>Owner Name</Lbl><Input value={form.ownerName ?? ''} onChange={(e) => set('ownerName', e.target.value)} placeholder="Owner's full name" /></div>
+                    <div><Lbl>Owner Phone</Lbl><Input value={form.ownerPhone ?? form.contactPhone ?? ''} onChange={(e) => set('ownerPhone', e.target.value)} placeholder="+91XXXXXXXXXX" /></div>
+                    <div className="sm:col-span-2"><Lbl>Owner Email / Login ID</Lbl><Input value={form.ownerEmail ?? form.contactEmail ?? ''} onChange={(e) => set('ownerEmail', e.target.value)} placeholder="owner@email.com" /></div>
+                    <div><Lbl>Password</Lbl><PasswordInput value={form.ownerPassword ?? ''} onChange={(v) => set('ownerPassword', v)} /></div>
+                    <div><Lbl>Confirm Password</Lbl><PasswordInput value={form.ownerPasswordConfirm ?? ''} onChange={(v) => set('ownerPasswordConfirm', v)} /></div>
+                    <p className="sm:col-span-2 text-xs text-muted-foreground">
+                      The owner account is created at <b>Provision Workspace</b> with exactly these details. A password you set here is the owner&apos;s real
+                      password — they can sign in with it and are not forced to change it. Leave both blank to auto-generate a temporary one instead.
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
+                    {/* Editable account management — the SAME owner user is
+                        updated; changing the email never creates a second one. */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Field label="Owner Email" value={biz?.ownerEmail} />
-                      <Field label="Login ID" value={biz?.ownerLoginId} mono />
-                      <Field label="Last Login" value={biz?.ownerLastLogin ? new Date(biz.ownerLastLogin).toLocaleString('en-IN') : 'Never'} />
-                      <Field label="Account Status" value={biz?.ownerIsActive === false ? 'Suspended' : 'Active'} />
+                      <div><Lbl>Owner Name</Lbl><Input value={form.ownerName ?? ''} onChange={(e) => set('ownerName', e.target.value)} /></div>
+                      <div><Lbl>Owner Phone</Lbl><Input value={form.ownerPhone ?? ''} onChange={(e) => set('ownerPhone', e.target.value)} /></div>
+                      <div className="sm:col-span-2"><Lbl>Owner Email / Login ID</Lbl><Input value={form.ownerEmail ?? ''} onChange={(e) => set('ownerEmail', e.target.value)} /></div>
+                      {/* Blank = leave the password unchanged. The stored value
+                          is a hash and is never sent to the browser. */}
+                      <div><Lbl>New Password</Lbl><PasswordInput value={form.ownerPassword ?? ''} onChange={(v) => set('ownerPassword', v)} placeholder="Leave blank to keep current" /></div>
+                      <div><Lbl>Confirm Password</Lbl><PasswordInput value={form.ownerPasswordConfirm ?? ''} onChange={(v) => set('ownerPasswordConfirm', v)} placeholder="Leave blank to keep current" /></div>
                     </div>
-                    <Button variant="outline" size="sm" className="gap-1" onClick={resetOwnerPassword}><KeyRound className="size-3" /> Reset Password (forces change)</Button>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t pt-3">
+                      <Field label="Login ID" value={biz?.ownerLoginId} mono />
+                      <Field label="Account Status" value={biz?.ownerIsActive === false ? 'Suspended' : 'Active'} />
+                      <Field label="Last Login" value={biz?.ownerLastLogin ? new Date(biz.ownerLastLogin).toLocaleString('en-IN') : 'Never'} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Changing the password or the email signs the owner out of existing sessions so the new credentials take effect.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" className="gap-1" onClick={saveOwnerAccount} disabled={savingOwner}>
+                        {savingOwner ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />} Save Changes
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1" onClick={resetOwnerPassword}><KeyRound className="size-3" /> Reset Password (auto-generate, forces change)</Button>
+                    </div>
                   </div>
                 )}
               </Card>

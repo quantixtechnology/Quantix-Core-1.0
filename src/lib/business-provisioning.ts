@@ -8,12 +8,20 @@ import { db } from '@/lib/db'
 import { getCompleteProductProfile } from '@/lib/product-management'
 import { ProductProvisionerRegistry, provisionWithRegistry } from '@/lib/product-provisioner-registry'
 import { hashPassword, generateTempPassword } from '@/lib/password-utils'
+import { normaliseEmail, mustChangePasswordFor } from '@/lib/owner-account'
 
 /** Options threaded into a provisioning run. */
 export interface ProvisionOptions {
   // Initial Business Owner password set by the Super Admin during provisioning.
   // If omitted, a temporary password is generated and returned so it can be shared.
   ownerPassword?: string
+  // Owner identity as the Super Admin entered it on the Business Creation form.
+  // Each falls back to the business record, which is what happened before these
+  // existed — the owner's name defaulted to the BUSINESS name, so an entered
+  // Owner Name was collected and then silently dropped.
+  ownerName?: string
+  ownerEmail?: string
+  ownerPhone?: string
 }
 
 export interface ProvisioningStep {
@@ -341,13 +349,30 @@ async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions
 
   // Initial owner password: the Super Admin sets it during provisioning. If none
   // was supplied, generate a temporary one (surfaced via the provisioning result).
-  // Either way the owner must change it on first login (mustChangePassword).
   let rawPassword = opts.ownerPassword
+  const adminChosePassword = !!rawPassword
   if (!rawPassword) {
     rawPassword = generateTempPassword()
     ownerCtx.tempPassword = rawPassword
   }
   const passwordHash = await hashPassword(rawPassword)
+
+  // Owner identity as entered by the Super Admin, falling back to the business
+  // record. Email is normalised because login matches it lowercased.
+  const ownerEmail = normaliseEmail(opts.ownerEmail || business.contactEmail)
+  const ownerName = opts.ownerName?.trim() || business.name
+  const ownerPhone = opts.ownerPhone?.trim() || business.contactPhone || ''
+
+  // A chosen email must not collide with another account, or the login lookup
+  // (loginId first, then email) becomes ambiguous. Fail loudly here rather than
+  // hitting a bare unique-constraint error mid-provisioning.
+  const clash = await db.user.findFirst({
+    where: { OR: [{ email: ownerEmail }, { loginId: ownerEmail }] },
+    select: { id: true },
+  })
+  if (clash) {
+    throw new Error(`Owner email "${ownerEmail}" already belongs to another user`)
+  }
 
   // Create owner user account
   // Use unique loginId based on email + business ID to avoid collisions
@@ -355,15 +380,19 @@ async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions
 
   const ownerUser = await db.user.create({
     data: {
-      email: business.contactEmail,
+      email: ownerEmail,
       loginId,
-      name: business.name,
-      phone: business.contactPhone || '',
+      name: ownerName,
+      phone: ownerPhone,
       isActive: true,
       authProvider: 'PASSWORD',
       passwordHash,
       hasPassword: true,
-      mustChangePassword: true, // force change on first login
+      // A password the Super Admin typed is a real credential they will hand
+      // over, not a temporary one — forcing a rotation would defeat "the owner
+      // can log in with the configured password". A generated one still must
+      // be changed on first login.
+      mustChangePassword: mustChangePasswordFor(adminChosePassword ? 'ADMIN_SET' : 'GENERATED'),
       emailVerified: true, // owner identity verified by the Super Admin
       createdBy: 'PROVISIONING',
     },

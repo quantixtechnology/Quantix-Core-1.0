@@ -6,12 +6,23 @@
 
 import { withMiddleware } from '@/lib/middleware'
 import { provisionBusiness, getProvisioningStatus } from '@/lib/business-provisioning'
+import { validateOwnerAccount } from '@/lib/owner-account'
 
-export const POST = withMiddleware({ requiredPermission: 'businesses:create' })(
+// SECURITY: `requiredPermission` is only enforced inside withMiddleware's
+// `requireAuth` branch, so this route was previously reachable unauthenticated.
+// That is not acceptable now that it sets the owner's email and password —
+// requireAuth + requirePlatformAdmin make it platform-staff-only, matching the
+// Owner Account editor. requirePlatformAdmin resolves from User.platformRole,
+// which no tenant role can hold.
+export const POST = withMiddleware({
+  requireAuth: true,
+  requirePlatformAdmin: true,
+  requiredPermission: 'businesses:create',
+})(
   async (req) => {
     try {
       const body = await req.json()
-      const { businessId, ownerPassword, confirmPassword } = body
+      const { businessId, ownerPassword, confirmPassword, ownerName, ownerEmail, ownerPhone } = body
 
       if (!businessId) {
         return new Response(
@@ -23,25 +34,33 @@ export const POST = withMiddleware({ requiredPermission: 'businesses:create' })(
         )
       }
 
-      // Initial owner password is optional; when provided it must be confirmed
-      // and meet the minimum length. (If omitted, provisioning generates a temp.)
-      if (ownerPassword !== undefined && ownerPassword !== null && ownerPassword !== '') {
-        if (typeof ownerPassword !== 'string' || ownerPassword.length < 6) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Owner password must be at least 6 characters' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          )
-        }
-        if (confirmPassword !== undefined && confirmPassword !== ownerPassword) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Passwords do not match' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          )
-        }
+      // Owner identity + initial password, validated by the SAME rules the
+      // Owner Account editor uses, so a password accepted at creation would be
+      // accepted later and vice versa. All fields are optional: when omitted,
+      // provisioning falls back to the business record and generates a temp
+      // password.
+      const invalid = validateOwnerAccount({
+        name: ownerName ?? undefined,
+        email: ownerEmail ?? undefined,
+        password: ownerPassword ?? undefined,
+        // Confirmation is only meaningful when one was supplied; the wizard
+        // always sends it alongside a password.
+        confirmPassword: ownerPassword ? (confirmPassword ?? ownerPassword) : undefined,
+      })
+      if (invalid) {
+        return new Response(
+          JSON.stringify({ success: false, error: invalid }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        )
       }
 
       // Trigger provisioning
-      const result = await provisionBusiness(businessId, { ownerPassword: ownerPassword || undefined })
+      const result = await provisionBusiness(businessId, {
+        ownerPassword: ownerPassword || undefined,
+        ownerName: ownerName || undefined,
+        ownerEmail: ownerEmail || undefined,
+        ownerPhone: ownerPhone || undefined,
+      })
 
       return new Response(
         JSON.stringify({
