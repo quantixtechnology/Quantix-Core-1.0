@@ -101,17 +101,31 @@ export async function assignBagToOrder(opts: {
 // A reusable bag is a company asset — reserved ONLY while carrying an order. When
 // it is RELEASED it returns to AVAILABLE: cleared of the order links, ready for
 // the next pickup. WHEN the release happens is CONFIGURABLE per laundry
-// (reusableBagReleaseStage: STORE_RECEIVE | AFTER_DELIVERY) — the release logic
+// (reusableBagReleaseStage: PROCESSING_RECEIVE | AFTER_DELIVERY) — the release logic
 // itself is identical. History is NEVER lost — it lives in LaundryBagAssignment
 // (closed as RETURNED) and LaundryBagRelease (append-only audit). No manual
 // reset.
 const RELEASABLE = ["ASSIGNED", "COLLECTED", "RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "OUT_FOR_DELIVERY"] as const
 
-export type BagReleaseStage = "STORE_RECEIVE" | "AFTER_DELIVERY"
+/**
+ * When a reusable bag goes back into circulation.
+ *
+ * PROCESSING_RECEIVE — the moment the Processing Center scans it in. This
+ * matches the physical reality: the garments come out of the bag there, so the
+ * bag is free long before the order is finished. It is the default.
+ *
+ * AFTER_DELIVERY — the bag travels with the order all the way to the customer.
+ *
+ * "STORE_RECEIVE" is the legacy stored value. It fired on store ARRIVAL, which
+ * the name never conveyed, and its status set already included PROCESSING —
+ * so it is read as PROCESSING_RECEIVE rather than migrated, keeping existing
+ * tenants on the behaviour closest to what they had.
+ */
+export type BagReleaseStage = "PROCESSING_RECEIVE" | "AFTER_DELIVERY"
 
 export async function getBagReleaseStage(lbId: string): Promise<BagReleaseStage> {
   const b = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { reusableBagReleaseStage: true } })
-  return b?.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "STORE_RECEIVE"
+  return b?.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "PROCESSING_RECEIVE"
 }
 
 // Core: return one bag to AVAILABLE + close its open assignment (history).

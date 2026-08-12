@@ -29,12 +29,15 @@ export async function POST(request: Request) {
     const bag = await prisma.laundryBag.findFirst({ where: { businessId: biz.id, OR: [{ bagNumber: code }, { qrValue: code }] } })
     if (!bag) return NextResponse.json({ success: false, error: `Bag "${code}" not found.` }, { status: 404 })
 
-    // Configurable release: on STORE_RECEIVE laundries the bag is RELEASED the
+    // Configurable release: on PROCESSING_RECEIVE laundries the bag is RELEASED the
     // moment it is scanned in at the store (garments removed there). Manual
     // "receive returned bag" (→ AVAILABLE) always routes through the same
     // release. Both use the single release engine (history + usage preserved).
+    // PROCESSING is the Processing Center receive scan — the garments come out
+    // of the bag there, so it goes straight back into circulation.
+    const FREED_BY_SCAN = new Set(["RECEIVED_AT_STORE", "PROCESSING"])
     const shouldRelease = toStatus === "AVAILABLE" ||
-      (toStatus === "RECEIVED_AT_STORE" && (await getBagReleaseStage(biz.id)) === "STORE_RECEIVE")
+      (FREED_BY_SCAN.has(toStatus) && (await getBagReleaseStage(biz.id)) === "PROCESSING_RECEIVE")
     if (shouldRelease) {
       const orderId = bag.currentOrderId
       await releaseBag(biz.id, bag.id) // no-op if already released

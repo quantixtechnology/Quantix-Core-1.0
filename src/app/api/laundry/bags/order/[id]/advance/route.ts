@@ -10,10 +10,13 @@ export const runtime = "nodejs"
 
 const LIFECYCLE = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "AVAILABLE"])
 // Store-arrival stages: the garments have been received/counted at the store, so
-// a STORE_RECEIVE laundry's bag is emptied here and must be RELEASED (not just
+// a PROCESSING_RECEIVE laundry's bag is emptied here and must be RELEASED (not just
 // advanced). This is the transition Store Audit fires (→ PROCESSING) — the
 // systemic point the release was previously never wired to.
-const STORE_ARRIVAL = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING"])
+// Statuses that mean the garments have left the bag. PROCESSING is the
+// Processing Center receive; the store-side ones cover a bag that never went
+// out. Named for what they signify, not where they happen.
+const BAG_FREED = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING"])
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,12 +29,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const toStatus = String(b.toStatus || "").trim()
     if (!LIFECYCLE.has(toStatus)) return NextResponse.json({ error: "Invalid lifecycle status." }, { status: 400 })
 
-    // Configurable release: a STORE_RECEIVE laundry releases its bags the moment
+    // Configurable release: a PROCESSING_RECEIVE laundry releases its bags the moment
     // the order is received/audited at the store — the same release engine, just
     // fired at this stage instead of at delivery. AFTER_DELIVERY laundries keep
     // advancing the bag through the lifecycle (released later at delivery).
     if ((toStatus === "AVAILABLE") ||
-        (STORE_ARRIVAL.has(toStatus) && (await getBagReleaseStage(order.businessId)) === "STORE_RECEIVE")) {
+        (BAG_FREED.has(toStatus) && (await getBagReleaseStage(order.businessId)) === "PROCESSING_RECEIVE")) {
       const released = await releaseBagsForOrder(order.businessId, id)
       return NextResponse.json({ success: true, advanced: released, released: true })
     }

@@ -1,5 +1,7 @@
 // GET/PUT /api/laundry/bag-settings — the reusable-bag release policy.
-//   reusableBagReleaseStage: STORE_RECEIVE (default) | AFTER_DELIVERY
+//   reusableBagReleaseStage: PROCESSING_RECEIVE (default) | AFTER_DELIVERY
+// Legacy rows may still hold "STORE_RECEIVE"; getBagReleaseStage() reads that
+// as PROCESSING_RECEIVE, so no migration is needed.
 // Controls WHEN a reusable bag returns to AVAILABLE; the release logic itself is
 // identical for both. No engine redesign needed to switch policy per laundry.
 import { NextResponse } from "next/server"
@@ -14,9 +16,9 @@ export async function GET(request: Request) {
   const guard = await requireLaundryPermission(request, businessId, "laundry.settings.view")
   if (!guard.ok) return guard.res
   const biz = await resolveLaundryBusiness(businessId!)
-  if (!biz) return NextResponse.json({ success: true, data: { reusableBagReleaseStage: "STORE_RECEIVE" } })
+  if (!biz) return NextResponse.json({ success: true, data: { reusableBagReleaseStage: "PROCESSING_RECEIVE" } })
   const b = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { reusableBagReleaseStage: true } })
-  return NextResponse.json({ success: true, data: { reusableBagReleaseStage: b?.reusableBagReleaseStage || "STORE_RECEIVE" } })
+  return NextResponse.json({ success: true, data: { reusableBagReleaseStage: b?.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "PROCESSING_RECEIVE" } })
 }
 
 export async function PUT(request: Request) {
@@ -25,7 +27,7 @@ export async function PUT(request: Request) {
   if (!guard.ok) return guard.res
   const biz = await resolveLaundryBusiness(b.businessId)
   if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
-  const stage = b.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "STORE_RECEIVE"
+  const stage = b.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "PROCESSING_RECEIVE"
   await prisma.laundryBusiness.update({ where: { id: biz.id }, data: { reusableBagReleaseStage: stage } })
   return NextResponse.json({ success: true, data: { reusableBagReleaseStage: stage } })
 }

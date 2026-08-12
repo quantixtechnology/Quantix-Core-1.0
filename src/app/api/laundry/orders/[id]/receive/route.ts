@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
 import { transportNoun, transportRefLabel } from "@/lib/laundry-transport"
+import { getBagReleaseStage, releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -72,7 +73,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
     }).catch(() => null)
 
-    return NextResponse.json({ success: true, mode, data: { received, totalItems: order.items.length, transport: ref, transportCode: ref.code } })
+    // REUSABLE BAG RELEASE. The Processing Center has the garments now, so the
+    // bag it travelled in is free — it must not wait for processing, QC, the
+    // return leg or delivery. Uses the single release engine, which closes the
+    // assignment and keeps the history, so the bag still shows this order and
+    // this receive event.
+    //
+    // The ORDER is untouched by this: it carries on to Processing, QC, Store
+    // and Delivery exactly as before.
+    let bagsReleased = 0
+    if ((await getBagReleaseStage(order.businessId).catch(() => "PROCESSING_RECEIVE")) === "PROCESSING_RECEIVE") {
+      bagsReleased = await releaseBagsForOrder(order.businessId, order.id).catch(() => 0)
+    }
+
+    return NextResponse.json({ success: true, mode, data: { received, totalItems: order.items.length, transport: ref, transportCode: ref.code, bagsReleased } })
   } catch (e) {
     console.error("[laundry-order-receive] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

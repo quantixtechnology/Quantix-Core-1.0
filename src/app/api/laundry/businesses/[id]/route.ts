@@ -47,7 +47,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(status !== undefined && { status }),
         ...(defaultServiceRadius !== undefined && { defaultServiceRadius: defaultServiceRadius ? parseFloat(defaultServiceRadius) : null }),
         ...(defaultDailyCapacity !== undefined && { defaultDailyCapacity: defaultDailyCapacity ? parseFloat(defaultDailyCapacity) : null }),
-        ...(reusableBagReleaseStage !== undefined && { reusableBagReleaseStage: reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "STORE_RECEIVE" }),
+        ...(reusableBagReleaseStage !== undefined && { reusableBagReleaseStage: reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "PROCESSING_RECEIVE" }),
       },
     })
 

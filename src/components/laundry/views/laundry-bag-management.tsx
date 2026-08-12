@@ -68,7 +68,7 @@ export function LaundryBagManagement() {
   const [busy, setBusy] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[]; custody: any[] } | null>(null)
-  const [releaseStage, setReleaseStage] = useState<string>("STORE_RECEIVE")
+  const [releaseStage, setReleaseStage] = useState<string>("PROCESSING_RECEIVE")
   const [savingStage, setSavingStage] = useState(false)
   const [manualReleaseTarget, setManualReleaseTarget] = useState<Bag | null>(null)
   const [manualReleaseReason, setManualReleaseReason] = useState("")
@@ -206,7 +206,7 @@ export function LaundryBagManagement() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           {[
-            { v: "STORE_RECEIVE", t: "Release at Store Receive", d: "Bag freed when scanned in at the store (recommended)" },
+            { v: "PROCESSING_RECEIVE", t: "Release at Processing Center Receive", d: "Bag freed the moment the Processing Center scans it in — the garments come out there (recommended)" },
             { v: "AFTER_DELIVERY", t: "Release after Delivery", d: "Bag stays with the order until it's delivered" },
           ].map((o) => (
             <button key={o.v} onClick={() => saveReleaseStage(o.v)} className={`text-left rounded-lg border p-3 w-full sm:w-56 transition-colors ${releaseStage === o.v ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
