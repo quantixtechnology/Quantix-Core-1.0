@@ -16,6 +16,7 @@ import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
+import { SubscriptionUsageSheet } from "./subscription-usage-sheet"
 import type { WebNav } from "./storefront-website"
 import { GoogleAddressPicker } from "./google/address-picker"
 import type { DeliveryAddress } from "@/stores/cart-store"
@@ -116,6 +117,9 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
       if (j.success) { toast.success("Subscription request cancelled"); refreshSummary() } else toast.error(j.error || "Could not cancel")
     } catch { toast.error("Could not cancel") } finally { setCancelingPending(false) }
   }
+  // "Active — View Plan" → the usage popup. Reads the same endpoint pickup
+  // scheduling uses, so the numbers are identical by construction.
+  const [usageOpen, setUsageOpen] = useState(false)
   const refreshSummary = useCallback(() => {
     // Detect the logged-in customer's subscription via the auth token (works for
     // email-OTP customers with no phone). Phone is only a guest fallback.
@@ -227,7 +231,13 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
                   const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
                   const pendingForPlan = subSummary?.pending && subSummary.pending.planId === p.id ? subSummary.pending : null
                   const btn = isActivePlan ? (
-                    <button onClick={() => nav.go("orders")} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50">✓ Active — View Plan</button>
+                    <div className="space-y-1">
+                      <button onClick={() => setUsageOpen(true)} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Active — View Plan</button>
+                      {/* One small line, only when the balance is known. */}
+                      {subSummary?.active?.remaining != null && (
+                        <p className="text-[10px] text-center font-medium text-gray-500">{subSummary.active.remaining} clothes remaining</p>
+                      )}
+                    </div>
                   ) : pendingForPlan ? (
                     // One pending request per plan — Subscribe is replaced by Pay Now + Cancel.
                     <div className="space-y-1">
@@ -314,6 +324,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
 
       {activeService && <ServiceSheet allServices={services} service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
       {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} token={token} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
+      {usageOpen && <SubscriptionUsageSheet businessId={currentBusinessId} token={token} phone={authCustomer?.phone} brandColor={brandColor} onClose={() => setUsageOpen(false)} />}
     </div>
   )
 }

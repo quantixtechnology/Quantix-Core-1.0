@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma"
 import { createHmac } from "crypto"
 import { grantAllowance } from "@/lib/laundry-subscription-server"
 import { generateMembershipNumber } from "@/lib/laundry-codes"
+import { subscriptionBalance } from "@/lib/laundry-subscription-balance"
 
 export function cycleEnd(cycle: string, from: Date): Date {
   const d = new Date(from)
@@ -175,16 +176,21 @@ export async function applyPaymentToPurchase(purchaseId: string, amount: number)
 // plus any pending purchase due. Used by My Account + admin customer detail.
 export async function customerSubscriptionSummary(businessId: string, customerId: string) {
   const [activeSub, pending] = await Promise.all([
-    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
+    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true, totalCredits: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
     prisma.subscriptionPurchase.findFirst({ where: { businessId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING"] } }, orderBy: { createdAt: "desc" } }),
   ])
   let pendingPlanName: string | null = null
   if (pending) { const p = await prisma.subscriptionPlan.findUnique({ where: { id: pending.planId }, select: { name: true } }); pendingPlanName = p?.name || null }
-  const used = activeSub ? activeSub.usages.reduce((s, u) => s + (u.creditsUsed || 0), 0) : 0
+  // Same function the pickup-scheduling entitlement check uses, so the
+  // storefront card and the usage popup can never show different figures.
+  const balance = activeSub
+    ? subscriptionBalance({ totalCredits: activeSub.totalCredits, planTotalCredits: activeSub.plan.totalCredits, usages: activeSub.usages })
+    : null
   return {
-    active: activeSub ? {
+    active: activeSub && balance ? {
       planName: activeSub.plan.name, status: "ACTIVE",
-      allowance: activeSub.totalCredits, used, remaining: Math.max(0, activeSub.totalCredits - used),
+      allowance: balance.allowance, used: balance.used, remaining: balance.remaining,
+      fullyUsed: balance.fullyUsed,
       maxOrders: activeSub.plan.maxOrdersPerCycle,
       cycleStart: activeSub.currentPeriodStart, cycleEnd: activeSub.currentPeriodEnd,
     } : null,
