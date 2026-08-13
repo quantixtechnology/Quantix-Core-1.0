@@ -57,6 +57,9 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   const [editingStore, setEditingStore] = useState<Store | null>(null)
   // Server refusals shown in place — the dialog stays open so entered store
   // information is never lost while the user goes to add a Processing Center.
+  // Plan store limit + live count, from the same calculation the create
+  // endpoint enforces. Every location type consumes one slot.
+  const [storeUsage, setStoreUsage] = useState<{ used: number; allowed: number | null; remaining: number | null; exceeded: boolean; retail: number; processingCenters: number; both: number } | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -82,8 +85,12 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   const fetchStores = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/laundry/businesses/${businessId}/stores`)
-      if (res.ok) setStores(await res.json())
+      const res = await fetch(`/api/laundry/businesses/${businessId}/stores?withUsage=1`)
+      if (res.ok) {
+        const j = await res.json()
+        setStores(j.stores ?? [])
+        setStoreUsage(j.storeUsage ?? null)
+      }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
@@ -184,9 +191,34 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Stores ({stores.length})</h2>
-        <Button size="sm" onClick={openCreate}><Plus className="mr-1 h-4 w-4" /> Add Store</Button>
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-lg font-medium">Stores ({stores.length})</h2>
+          {/* Every location type — Retail, Processing Center and Both — uses
+              one slot of the same plan limit. */}
+          {storeUsage?.allowed != null && (
+            <span className={`text-sm font-medium ${storeUsage.exceeded ? "text-red-600" : "text-slate-500"}`}>
+              {storeUsage.used} / {storeUsage.allowed} used
+              {storeUsage.exceeded && " · limit reached"}
+            </span>
+          )}
+        </div>
+        <Button size="sm" onClick={openCreate} disabled={!!storeUsage?.exceeded}
+          title={storeUsage?.exceeded ? `Your plan allows ${storeUsage.allowed} store locations and all ${storeUsage.allowed} are currently in use.` : undefined}>
+          <Plus className="mr-1 h-4 w-4" /> Add Store
+        </Button>
       </div>
+
+      {/* The server refuses too — this only saves a wasted round trip. Nothing
+          is deleted or deactivated when the limit is reached. */}
+      {storeUsage?.exceeded && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-semibold text-amber-900">Store limit reached</p>
+          <p className="text-xs text-amber-800 leading-snug mt-0.5">
+            Your plan allows {storeUsage.allowed} store location{storeUsage.allowed === 1 ? "" : "s"} and all {storeUsage.allowed} are
+            currently in use. Contact Quantix to increase capacity. Existing stores are unaffected.
+          </p>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">

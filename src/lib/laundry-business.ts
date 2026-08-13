@@ -18,6 +18,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { generateBusinessCode } from "@/lib/laundry-codes"
+import { ensureScalingLimitForNewBusiness } from "@/lib/laundry-scaling-limits"
 
 // ── Debug helper (env-var gated) ─────────────────────────────────────────────
 const DEBUG = process.env.DEBUG_LAUNDRY_RESOLUTION === "true"
@@ -103,6 +104,10 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
       select: { id: true, platformBusinessId: true, businessCode: true },
     })
     if (DEBUG) console.log("[resolveLaundryBusiness] created →", created.id)
+    // A brand-new workspace gets its plan limits. This is the ONLY moment it
+    // runs — the helper returns immediately if a row already exists, so the
+    // resolve path (called on every laundry request) never rewrites limits.
+    await ensureScalingLimitForNewBusiness(created.id, created.platformBusinessId)
     return created
   } catch (e) {
     if (DEBUG) console.log("[resolveLaundryBusiness] create() threw — racing?")

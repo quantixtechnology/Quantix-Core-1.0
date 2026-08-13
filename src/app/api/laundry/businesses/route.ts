@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateBusinessCode } from "@/lib/laundry-codes"
 import { hashPassword, generateTempPassword } from "@/lib/password-utils"
+import { ensureScalingLimitForNewBusiness } from "@/lib/laundry-scaling-limits"
 
 export const runtime = "nodejs"
 
@@ -217,9 +218,10 @@ export async function POST(request: Request) {
       data: { businessId: business.id },
     })
 
-    await prisma.laundryScalingLimit.create({
-      data: { businessId: business.id },
-    })
+    // Seeded from the plan's branchLimit — the number the plan selector shows.
+    // Previously created bare, so storesAllowed fell to the default of 1 no
+    // matter which plan the business was sold.
+    await ensureScalingLimitForNewBusiness(business.id, business.platformBusinessId)
 
     await prisma.laundryBrandingConfig.create({
       data: { businessId: business.id },

@@ -5,6 +5,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { assertValidStoreLocation } from "@/lib/core/store"
 import { processingAssignmentRefusal, requiresProcessingCenterAssignment } from "@/lib/laundry-store-eligibility"
+import { computeStoreUsage } from "@/lib/laundry-storage"
 
 export const runtime = "nodejs"
 
@@ -25,6 +26,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }) : []
     // A legacy row simply has no processingCenter — the list renders that as
     // "Required". No extra flag is needed to say the same thing twice.
+    //
+    // The bare array stays the default response — five other screens consume
+    // it. `?withUsage=1` opts into the envelope, so the Stores screen can show
+    // "2 / 5 used" from the SAME count the create endpoint enforces without
+    // changing the contract for everyone else.
+    if (new URL(request.url).searchParams.get("withUsage") === "1") {
+      const storeUsage = resolved ? await computeStoreUsage(resolved.id) : null
+      return NextResponse.json({ stores, storeUsage })
+    }
     return NextResponse.json(stores)
   } catch (error) {
     console.error("Error fetching laundry stores:", error)
@@ -66,9 +76,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Laundry workspace not found" }, { status: 404 })
     }
 
-    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId: laundryBusinessId } })
-    if (limits && limits.storesUsed >= limits.storesAllowed) {
-      return NextResponse.json({ error: `Store limit reached (${limits.storesAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
+    // Store limit — counted from the ACTUAL LaundryStore rows. The old check
+    // read LaundryScalingLimit.storesUsed, a counter incremented on create and
+    // never decremented on delete, so it drifted permanently above reality.
+    // Every location type consumes the same slot: Retail, Processing Center and
+    // Both alike. There is no separate Processing Center quota.
+    const usage = await computeStoreUsage(laundryBusinessId)
+    if (usage.allowed != null && usage.used >= usage.allowed) {
+      return NextResponse.json({
+        error: `Store limit reached. Your plan allows ${usage.allowed} store location${usage.allowed === 1 ? "" : "s"} and all ${usage.allowed} are currently in use.`,
+        code: "STORE_LIMIT_REACHED",
+        usage,
+      }, { status: 403 })
     }
 
     // ── Processing Center assignment — BACKEND enforcement ───────────────
