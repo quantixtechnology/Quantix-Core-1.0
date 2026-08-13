@@ -217,6 +217,30 @@ describe('the check is server-side and shared', () => {
     expect(read('src/lib/laundry-executive-auth.ts')).toContain('platformBusinessId')
   })
 
+  it('the branding resolver no longer falls back to the oldest laundry business', () => {
+    // THE OTHER HALF of the production bypass, and the half that explains the
+    // screenshot: resolveTenantForHost() answered an unknown host with
+    // `laundryBusiness.findFirst(orderBy createdAt asc)`, so every hostname that
+    // belongs to nobody served the FIRST tenant's name, logo and colours and
+    // scoped its login to that tenant.
+    const t = read('src/lib/laundry-executive-tenant.ts')
+    expect(t).toContain('classifyHostTenant')
+    expect(t).toContain('if (kind.kind !== "non-tenant") return null')
+    // The dev fallback is still there — it is now unreachable from a tenant host.
+    expect(t).toContain('orderBy: { createdAt: "asc" }')
+  })
+
+  it('both PWA logins refuse a tenant-shaped host they cannot serve', () => {
+    // Without this the token is minted first and the boundary only bites on the
+    // NEXT request — a valid session for the wrong tenant.
+    const exec = read('src/app/api/laundry/executive/auth/login/route.ts')
+    expect(exec).toContain('classifyHostTenant(request)')
+    expect(exec).toContain('status: 403')
+    const store = read('src/app/api/laundry/store-admin/auth/login/route.ts')
+    expect(store).toContain('sessionMatchesHostTenant(request, assign.businessId)')
+    expect(store).toContain('status: 403')
+  })
+
   it('no new table, role or auth system', () => {
     const lib = read('src/lib/pwa-tenant-boundary.ts')
     expect(lib).not.toContain('createAccessToken')

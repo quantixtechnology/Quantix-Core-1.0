@@ -8,6 +8,7 @@
 // business picker. Reuses the existing tenant pipeline for ALL three apps.
 import { prisma } from "@/lib/prisma"
 import { resolveTenantFromHostname } from "@/lib/tenant-resolver"
+import { classifyHostTenant } from "@/lib/pwa-tenant-boundary"
 
 const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 export const EXEC_HOST_PREFIX = "delivery."
@@ -51,6 +52,22 @@ async function resolveTenantForHost(host: string): Promise<ExecTenant | null> {
       platformBusinessId = biz?.id ?? null
     }
   }
+
+  // THE PRODUCTION BYPASS. When the host named no business this used to fall
+  // back to the OLDEST laundry business on the platform — so any hostname that
+  // did not exist (wildcard DNS means every one of them reaches us) served that
+  // tenant's name, logo and colours, and scoped its login to that tenant. That
+  // is why delivery.ohhmomos.<base> — a host belonging to nobody — rendered
+  // "Laundry & Drycleaners – Sector 2" and accepted its executive.
+  //
+  // The fallback is a single-tenant DEVELOPMENT convenience, so it now survives
+  // only on a host that names no tenant at all (localhost, laundry.<base>).
+  // A tenant-shaped host that resolves to nothing resolves to NOTHING.
+  if (!platformBusinessId) {
+    const kind = await classifyHostTenant(stripped)
+    if (kind.kind !== "non-tenant") return null
+  }
+
   const lb = platformBusinessId
     ? await prisma.laundryBusiness.findFirst({ where: { platformBusinessId }, select: { id: true, platformBusinessId: true } })
     : await prisma.laundryBusiness.findFirst({ where: { platformBusinessId: { not: null } }, orderBy: { createdAt: "asc" }, select: { id: true, platformBusinessId: true } })

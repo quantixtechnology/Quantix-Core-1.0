@@ -8,6 +8,7 @@ import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { STORE_ADMIN_ROLES, isCrossTenantRole } from "@/lib/laundry-store-admin-auth"
 import { resolveImageUrl } from "@/lib/image-url"
+import { sessionMatchesHostTenant, TENANT_MISMATCH_MESSAGE } from "@/lib/pwa-tenant-boundary"
 
 
 async function mintToken(userId: string) {
@@ -60,6 +61,15 @@ export async function POST(request: Request) {
 
     const biz = await resolveLaundryBusiness(assign.businessId)
     if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
+
+    // The host is the tenant boundary, and it applies at LOGIN — otherwise a
+    // Business A store admin gets a valid token on store.<B> and only discovers
+    // it when every subsequent call 401s. Platform administrators returned
+    // above and are unaffected. On a host that names no tenant (localhost,
+    // laundry.<base>) nothing is constrained, exactly as before.
+    if (!(await sessionMatchesHostTenant(request, assign.businessId))) {
+      return NextResponse.json({ error: TENANT_MISMATCH_MESSAGE }, { status: 403 })
+    }
     // Business-wide assignment: no fixed store, so the app opens on a picker
     // showing THIS business's stores only.
     const store = assign.storeId

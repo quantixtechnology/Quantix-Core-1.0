@@ -7,6 +7,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveExecutiveTenant } from "@/lib/laundry-executive-tenant"
+import { classifyHostTenant, TENANT_MISMATCH_MESSAGE } from "@/lib/pwa-tenant-boundary"
 
 export const runtime = "nodejs"
 
@@ -25,6 +26,18 @@ export async function POST(request: Request) {
     // The tenant is inferred from the host (white-label deployment). When it
     // resolves, scope the lookup to that business so mobile is per-tenant.
     const tenant = await resolveExecutiveTenant(request).catch(() => null)
+
+    // A delivery.<something> host is addressing ONE tenant. If it names a tenant
+    // we cannot serve — an unregistered hostname, or a business that has no
+    // laundry — we must not fall through to an UNSCOPED lookup that would let an
+    // executive of any other business sign in here. Only a host that names no
+    // tenant (localhost, laundry.<base>) keeps the unscoped behaviour.
+    if (!tenant) {
+      const kind = await classifyHostTenant(request)
+      if (kind.kind !== "non-tenant") {
+        return NextResponse.json({ error: TENANT_MISMATCH_MESSAGE }, { status: 403 })
+      }
+    }
 
     // Active executives matching the identifier (mobile OR employee code) with
     // a linked login account. Employee codes are matched case-insensitively
