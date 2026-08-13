@@ -96,3 +96,44 @@ export function isReservedHostPrefix(prefix: string): boolean {
 export function getReservedHostPrefixes(): string[] {
   return [...PLATFORM_RESERVED_PREFIXES, ...PRODUCT_HOST_PREFIXES]
 }
+
+// ============================================================================
+// Application boundary: the Quantix Platform app vs a tenant/product app.
+//
+// The two are different applications that happen to share one deployment and
+// one login endpoint. A tenant user authenticating against the platform host
+// must not receive a platform session — the boundary is enforced at login,
+// not by hiding UI.
+// ============================================================================
+
+/** Prefixes that serve the Quantix PLATFORM application. */
+const PLATFORM_APP_PREFIXES = ['app', 'admin'] as const
+
+/**
+ * Is this host the Quantix Platform application?
+ *
+ * True for app.<base> / admin.<base> and the bare <base>. False for product
+ * workspaces (laundry.<base>, commerce.<base>), tenant storefronts, custom
+ * domains, and anything unrecognised — a host we cannot classify is NOT
+ * treated as the platform, so an unknown host can never gain platform access.
+ *
+ * localhost and IP hosts return false: local development keeps working
+ * unchanged, and the platform host is a deployed-DNS concept.
+ */
+export function isPlatformAppHost(host: string | null | undefined, base: string): boolean {
+  if (!host) return false
+  const h = host.split(':')[0].toLowerCase().trim()
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || /^[\d.]+$/.test(h)) return false
+  const b = (base || '').toLowerCase().trim()
+  if (!b) return false
+  if (h === b) return true
+  const prefix = hostPrefix(h, b)
+  return !!prefix && (PLATFORM_APP_PREFIXES as readonly string[]).includes(prefix)
+}
+
+/** The workspace host a tenant should be sent to, e.g. laundry.<base>. */
+export function productHostForCode(productCode: string | null | undefined, base: string): string | null {
+  if (!productCode || !base) return null
+  const prefix = productCode.toLowerCase()
+  return PRODUCT_HOST_PREFIXES.has(prefix) ? `${prefix}.${base}` : null
+}

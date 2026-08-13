@@ -20,6 +20,9 @@
 import { db } from '@/lib/db';
 import { createAccessToken } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
+import { isPlatformAppHost } from '@/lib/product-hosts';
+
+const STOREFRONT_BASE = (process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || '').toLowerCase().trim();
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 60;
 
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
     // Validate the presented token (access OR refresh — both live in this table).
     const tokenRecord = await db.refreshToken.findUnique({
       where: { token: presented },
-      include: { user: { select: { id: true, isActive: true } } },
+      include: { user: { select: { id: true, isActive: true, platformRole: true } } },
     });
 
     if (!tokenRecord) {
@@ -63,6 +66,21 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+    // Same application boundary as login: a token minted on a product origin
+    // must not be exchangeable for one on the PLATFORM host. Without this a
+    // tenant user could sign in at laundry.<base> and then swap that token for
+    // an app.<base> session. Platform APIs still check the ROLE, so this was
+    // not privilege escalation — but the boundary belongs in one place.
+    const exchangeHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+    const platformRoles = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
+    const isPlatformUser = !!tokenRecord.user.platformRole && platformRoles.includes(tokenRecord.user.platformRole);
+    if (isPlatformAppHost(exchangeHost, STOREFRONT_BASE) && !isPlatformUser) {
+      return NextResponse.json(
+        { success: false, error: 'This account belongs to a business workspace. Please use your business login.', code: 'TENANT_ACCOUNT_ON_PLATFORM_HOST' },
+        { status: 403 }
+      );
+    }
+
     if (!tokenRecord.user.isActive) {
       return NextResponse.json(
         { success: false, error: 'Account is deactivated.' },

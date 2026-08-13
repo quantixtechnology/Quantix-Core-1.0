@@ -12,9 +12,13 @@ import { logPlatformEvent } from '@/lib/platform-audit';
 import { isPlatformOwnerEmail } from '@/lib/permissions';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
+import { isPlatformAppHost, productHostForCode } from '@/lib/product-hosts';
 
 const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 20 };
 const REFRESH_TOKEN_EXPIRY_DAYS = 60;
+
+// Deployed base domain — the same env the proxy classifies hosts with.
+const STOREFRONT_BASE = (process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || '').toLowerCase().trim();
 
 const PLATFORM_ROLES = [
   'QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM',
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
         select: {
           role: true, storeId: true,
           business: {
-            select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
+            select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true, productCode: true },
           },
           store: { select: { id: true, name: true } },
         },
@@ -165,6 +169,35 @@ export async function POST(request: Request) {
       // becomes Super Admin — enforces exactly one platform owner.
       role = 'QUANTIX_SUPER_ADMIN';
       isPlatformAdmin = true;
+    }
+
+    // ── Application boundary: platform host vs tenant workspace ─────────────
+    // app.<base> is the Quantix PLATFORM application. Credentials are verified
+    // above exactly as before, but a tenant user gets NO session here — the
+    // refusal happens BEFORE any token is minted, so there is nothing to
+    // replay, and no localStorage or URL edit can manufacture platform access.
+    //
+    // Every existing platform role keeps its access: isPlatformAdmin is set for
+    // the whole PLATFORM_ROLES list (Super Admin, Platform Admin, Sales,
+    // Support, Deployment, Finance), so this only refuses tenant/business roles.
+    //
+    // Product hosts (laundry.<base>, commerce.<base>), tenant storefronts,
+    // custom domains and localhost are unaffected — the check only fires on the
+    // platform host itself.
+    const requestHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+    if (isPlatformAppHost(requestHost, STOREFRONT_BASE) && !isPlatformAdmin) {
+      const workspaceHost = productHostForCode(
+        user.businessUsers[0]?.business?.productCode ?? null,
+        STOREFRONT_BASE,
+      );
+      console.log(`[login] REFUSED platform host for tenant role=${role} user=${user.id}`);
+      return NextResponse.json({
+        success: false,
+        error: 'This account belongs to a business workspace. Please use your business login.',
+        code: 'TENANT_ACCOUNT_ON_PLATFORM_HOST',
+        // Where they should actually sign in, when their product is known.
+        redirectTo: workspaceHost ? `https://${workspaceHost}` : null,
+      }, { status: 403 });
     }
 
     console.log(`[login] SUCCESS — user=${user.id}, email=${user.email}, role=${role}, isPlatformAdmin=${isPlatformAdmin}`);
