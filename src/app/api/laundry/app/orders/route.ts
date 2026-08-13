@@ -11,6 +11,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { POST as createOrder } from "@/app/api/laundry/orders/route"
 import { INTERNAL_HEADER, INTERNAL_TOKEN } from "@/lib/laundry-rbac"
 import { assertLaundryBookingOpen } from "@/lib/laundry-availability"
+import { customerFacingStoreWhere } from "@/lib/laundry-store-eligibility"
 
 export const runtime = "nodejs"
 
@@ -48,7 +49,9 @@ export async function POST(request: Request) {
   const cust = await prisma.customer.findUnique({ where: { id: sess.customerId }, select: { preferredStoreId: true } })
   let storeId = b.storeId as string | undefined
   if (!storeId && cust?.preferredStoreId) storeId = cust.preferredStoreId
-  if (!storeId) storeId = (await prisma.laundryStore.findFirst({ where: { laundryBusinessId: biz.id }, select: { id: true } }))?.id
+  // Customer-facing fallback: an active RETAIL/BOTH store only. A Processing
+  // Center is internal, so a customer's order is never filed against one.
+  if (!storeId) storeId = (await prisma.laundryStore.findFirst({ where: { laundryBusinessId: biz.id, isActive: true, ...customerFacingStoreWhere }, select: { id: true } }))?.id
   if (!storeId) return NextResponse.json({ error: "No store available to accept this order" }, { status: 409 })
 
   // Delegate to the FROZEN order-creation handler (auto-applies subscription).

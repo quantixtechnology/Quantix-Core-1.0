@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { checkAddressServiceability } from "@/lib/core/address-serviceability"
+import { customerFacingStoreWhere } from "@/lib/laundry-store-eligibility"
 
 export interface LaundryStoreResolution {
   ok: boolean
@@ -49,7 +50,11 @@ export async function resolveLaundryStoreForPickup(input: {
 }): Promise<LaundryStoreResolution> {
   const legacy = async (): Promise<LaundryStoreResolution> => {
     const store = await prisma.laundryStore.findFirst({
-      where: { laundryBusinessId: input.laundryBusinessId, isActive: true },
+      // No coordinates → no distance to compute, but the store picked here is
+      // still the CUSTOMER's store, so a Processing Center is not a candidate.
+      // Without this the "first active store" fallback could file a customer's
+      // order against an internal facility.
+      where: { laundryBusinessId: input.laundryBusinessId, isActive: true, ...customerFacingStoreWhere },
       select: { id: true },
     })
     if (!store) return { ok: false, storeId: null, error: "No active store configured", status: 400 }

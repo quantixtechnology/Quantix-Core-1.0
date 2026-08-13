@@ -12,6 +12,7 @@
 import { db } from "@/lib/db"
 import { prisma } from "@/lib/prisma"
 import type { ServiceLocation } from "./service-location"
+import { customerFacingStoreWhere } from "@/lib/laundry-store-eligibility"
 
 /**
  * Load every customer-facing service location for a business as the shared
@@ -34,7 +35,13 @@ export async function loadServiceLocations(businessId: string): Promise<ServiceL
 
   if (laundry) {
     const stores = await prisma.laundryStore.findMany({
-      where: { laundryBusinessId: laundry.id, isActive: true },
+      // CUSTOMER-FACING ONLY. A Processing Center is an internal operations
+      // location: it has coordinates and is active, so without this it was
+      // returned as a customer's "nearest store". Excluded here — at the one
+      // place laundry stores enter the shared engine — so every customer flow
+      // that computes distance is covered by a single rule. Nothing about the
+      // distance, radius or coordinate logic below changes.
+      where: { laundryBusinessId: laundry.id, isActive: true, ...customerFacingStoreWhere },
     })
     return stores.map((s): ServiceLocation => ({
       id: s.id,
