@@ -4,7 +4,7 @@
 // an owner-role employee can never be deactivated or demoted here.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit } from "@/lib/laundry-rbac"
+import { requireLaundryPermission, rbacAudit, isBusinessOwnerRole } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -23,7 +23,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ us
   const currentAssignment = await prisma.laundryAccessAssignment.findFirst({
     where: { businessId: platformBusinessId, userId }, include: { role: { select: { isOwner: true } } },
   })
-  const isOwnerEmployee = bu.role === "LAUNDRY_OWNER" || !!currentAssignment?.role.isOwner
+  // Same owner relationship the permission resolver uses. Checking only
+  // LAUNDRY_OWNER here left a Super-Admin-provisioned owner (CLIENT_OWNER)
+  // demotable to an employee role — the one thing this guard exists to prevent.
+  const isOwnerEmployee = isBusinessOwnerRole(bu.role) || !!currentAssignment?.role.isOwner
 
   // The Business Owner never loses access.
   if (isOwnerEmployee && (b.active === false || (b.roleId !== undefined && b.roleId !== currentAssignment?.roleId))) {
@@ -54,8 +57,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ us
       create: { businessId: platformBusinessId, userId, roleId: role.id, storeId, active: true, assignedBy: guard.ctx.userName },
       update: { roleId: role.id, storeId, active: true },
     })
-    // Keep the legacy BusinessUser role coherent with owner status.
-    if (role.isOwner && bu.role !== "LAUNDRY_OWNER") await prisma.businessUser.update({ where: { id: bu.id }, data: { role: "LAUNDRY_OWNER" } })
+    // Keep the BusinessUser role coherent with owner status. An existing owner
+    // (either marker) is left as-is — rewriting CLIENT_OWNER would churn the
+    // relationship the platform side reads.
+    if (role.isOwner && !isBusinessOwnerRole(bu.role)) await prisma.businessUser.update({ where: { id: bu.id }, data: { role: "LAUNDRY_OWNER" } })
     if (b.roleId !== undefined) await rbacAudit(platformBusinessId, "ROLE_ASSIGNED", { roleId: role.id, targetUserId: userId, actorName: guard.ctx.userName, detail: { role: role.name } })
   }
 

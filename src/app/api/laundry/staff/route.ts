@@ -8,7 +8,7 @@
 // POST /api/laundry/staff              — create employee (+ optional role/store), returns temp password
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit } from "@/lib/laundry-rbac"
+import { requireLaundryPermission, rbacAudit, isBusinessOwnerRole } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
 
 export const runtime = "nodejs"
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
   const platformBusinessId = guard.platformBusinessId
   const laundryBusinessId = guard.ctx.laundryBusinessId
 
-  const [members, assignments, stores, execs] = await Promise.all([
+  const [members, assignments, stores, execs, ownerRoles] = await Promise.all([
     prisma.businessUser.findMany({
       where: { businessId: platformBusinessId, role: { not: "CUSTOMER" } },
       include: { user: { select: { id: true, email: true, name: true, phone: true, isActive: true, lastLoginAt: true, createdAt: true } } },
@@ -40,6 +40,13 @@ export async function GET(request: Request) {
     prisma.laundryDeliveryExecutive.findMany({
       where: { businessId: laundryBusinessId, userId: { not: null } },
       select: { userId: true },
+    }),
+    // The existing Business Owner system role, so the owner row names the same
+    // role Roles & Permissions shows rather than a hardcoded string.
+    prisma.laundryAccessRole.findMany({
+      where: { businessId: platformBusinessId, isOwner: true, isActive: true },
+      select: { id: true, name: true, isOwner: true },
+      take: 1,
     }),
   ])
   const aByUser = new Map(assignments.map((a) => [a.userId, a]))
@@ -60,8 +67,16 @@ export async function GET(request: Request) {
   // auto-provisioned one from an admin-created one with certainty, and removing
   // it destroys data to fix a display problem. Executives never read it —
   // their session resolves via RefreshToken -> LaundryDeliveryExecutive.
+  // The Business Owner's role is not an assignment — it comes from the
+  // owner relationship on BusinessUser (CLIENT_OWNER / LAUNDRY_OWNER), which is
+  // exactly how resolveUserPermissions grants them full access. Reading the
+  // role name from the assignment alone is what printed "—" against the owner:
+  // they have every permission and no LaundryAccessAssignment row.
+  const ownerSystemRole = ownerRoles.find((r) => r.isOwner) ?? null
+
   const data = members.filter((bu) => !execUserIds.has(bu.userId) || aByUser.has(bu.userId)).map((bu) => {
     const a = aByUser.get(bu.userId)
+    const owner = a?.role.isOwner ?? isBusinessOwnerRole(bu.role)
     return {
       userId: bu.userId,
       businessUserId: bu.id,
@@ -71,10 +86,12 @@ export async function GET(request: Request) {
       active: bu.isActive && bu.user.isActive,
       lastLoginAt: bu.user.lastLoginAt,
       createdAt: bu.user.createdAt,
-      roleId: a?.roleId ?? null,
-      roleCode: a?.role.code ?? null,
-      roleName: a?.role.name ?? null,
-      isOwner: a?.role.isOwner ?? bu.role === "LAUNDRY_OWNER",
+      roleId: a?.roleId ?? (owner ? ownerSystemRole?.id ?? null : null),
+      roleCode: a?.role.code ?? (owner ? "BUSINESS_OWNER" : null),
+      // Falls back to the literal name only if the system role has not been
+      // seeded yet — the owner is still shown as the owner either way.
+      roleName: a?.role.name ?? (owner ? ownerSystemRole?.name ?? "Business Owner" : null),
+      isOwner: owner,
       storeId: a?.storeId ?? null,
       storeName: a?.storeId ? storeName.get(a.storeId) ?? null : null,
     }

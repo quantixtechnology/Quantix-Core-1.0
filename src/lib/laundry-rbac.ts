@@ -17,8 +17,36 @@ export function isInternalCall(request: Request): boolean {
   return process.env.NODE_ENV !== "production" && process.env.LAUNDRY_RBAC_TEST_BYPASS === "1"
 }
 
+/**
+ * BusinessUser roles that mean "this person owns this business".
+ *
+ * There are two, because two creation paths exist and both are legitimate:
+ *   CLIENT_OWNER  — written by Super Admin Business Creation → Provisioning
+ *                   (business-provisioning.ts) and by createBusiness().
+ *   LAUNDRY_OWNER — written by the laundry-native business route and whenever
+ *                   an owner role is assigned in Roles & Permissions.
+ *
+ * Only LAUNDRY_OWNER used to count. An owner created by the Super Admin wizard
+ * therefore matched nothing here, fell through to resolveUnassignedPermissions()
+ * and got NO ACCESS AT ALL — which is why the Staff page showed "—" against the
+ * Business Owner and every screen was denied. The Business Owner system role
+ * existed and was correct; nobody resolved to it.
+ *
+ * Both are BUSINESS-scoped (see ROLES in constants.ts). Neither grants anything
+ * platform-wide: platform authority comes from User.platformRole, which these
+ * users do not have.
+ */
+export const OWNER_BUSINESS_ROLES = ["CLIENT_OWNER", "LAUNDRY_OWNER"] as const
+
 export function isOwnerRole(businessRole: string | null | undefined): boolean {
-  return businessRole === "LAUNDRY_OWNER" || (!!businessRole && isPlatformRole(businessRole))
+  if (!businessRole) return false
+  // Platform staff (support mode) also resolve as owner within the tenant.
+  return (OWNER_BUSINESS_ROLES as readonly string[]).includes(businessRole) || isPlatformRole(businessRole)
+}
+
+/** True for the tenant's own owner — NOT for platform staff in support mode. */
+export function isBusinessOwnerRole(businessRole: string | null | undefined): boolean {
+  return !!businessRole && (OWNER_BUSINESS_ROLES as readonly string[]).includes(businessRole)
 }
 
 export interface ResolvedPermissions { isOwner: boolean; permissions: Set<string>; levels: Map<string, number>; roleCode: string; roleName: string; source: "owner" | "assigned" | "legacy" }
@@ -44,8 +72,16 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
   // Platform identity always has highest priority — no LaundryAccessAssignment
   // may reduce a Platform Super Admin's permissions.
   if (isOwnerRole(businessRole)) {
-    const code = businessRole === "LAUNDRY_OWNER" ? "BUSINESS_OWNER" : (businessRole || "BUSINESS_OWNER")
-    const name = businessRole === "LAUNDRY_OWNER" ? "Business Owner" : (ROLES[businessRole as keyof typeof ROLES]?.label || businessRole || "Business Owner")
+    // The tenant's owner resolves to the EXISTING Business Owner system role —
+    // the same BUSINESS_OWNER shown in Roles & Permissions. No role is created,
+    // duplicated, or copied permission-by-permission; the owner simply holds
+    // every screen at EDIT, which is what that role already means.
+    // Platform staff in support mode keep their own platform label.
+    const owner = isBusinessOwnerRole(businessRole)
+    const code = owner ? "BUSINESS_OWNER" : (businessRole || "BUSINESS_OWNER")
+    const name = owner
+      ? "Business Owner"
+      : (ROLES[businessRole as keyof typeof ROLES]?.label || businessRole || "Business Owner")
     return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: code, roleName: name, source: "owner" }
   }
 
