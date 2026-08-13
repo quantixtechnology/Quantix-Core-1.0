@@ -4,7 +4,7 @@ import { generateStoreCode } from "@/lib/laundry-codes"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { assertValidStoreLocation } from "@/lib/core/store"
-import { processingAssignmentRefusal, requiresProcessingCenterAssignment, needsProcessingCenterBackfill } from "@/lib/laundry-store-eligibility"
+import { processingAssignmentRefusal, requiresProcessingCenterAssignment } from "@/lib/laundry-store-eligibility"
 
 export const runtime = "nodejs"
 
@@ -23,9 +23,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       // second round trip. Internal view — every store type is returned.
       include: { processingCenter: { select: { id: true, storeCode: true, storeName: true, city: true, isActive: true } } },
     }) : []
-    // `needsProcessingCenter` marks legacy rows that predate the rule. They are
-    // surfaced, never auto-assigned.
-    return NextResponse.json(stores.map((s) => ({ ...s, needsProcessingCenter: needsProcessingCenterBackfill(s) })))
+    // A legacy row simply has no processingCenter — the list renders that as
+    // "Required". No extra flag is needed to say the same thing twice.
+    return NextResponse.json(stores)
   } catch (error) {
     console.error("Error fetching laundry stores:", error)
     return NextResponse.json({ error: "Failed to fetch laundry stores" }, { status: 500 })

@@ -28,17 +28,30 @@ export const CUSTOMER_FACING_STORE_TYPES = [STORE_TYPE_RETAIL, STORE_TYPE_BOTH] 
 /**
  * Prisma `where` fragment for customer-facing stores.
  *
- * Written as "not a processing centre" rather than "in [RETAIL, BOTH]" on
- * purpose: the column is a free String with a RETAIL_STORE default, and legacy
- * or future rows carrying some other value are retail-ish by intent. Only
- * PROCESSING_CENTER is genuinely disqualifying, so an unrecognised value keeps
- * serving customers instead of silently emptying a tenant's store list.
+ * Two conditions, both required:
+ *   • not a PROCESSING_CENTER — that is an internal location
+ *   • operationally complete — a retail-only store must know where its
+ *     garments are processed. A BOTH store processes its own, so it needs no
+ *     assignment and always qualifies.
+ *
+ * "not PROCESSING_CENTER" rather than "in [RETAIL, BOTH]" on purpose: the
+ * column is a free String with a RETAIL_STORE default, so an unrecognised
+ * legacy value is treated as retail rather than silently vanishing.
  */
-export const customerFacingStoreWhere = { storeType: { not: STORE_TYPE_PROCESSING } } as const
+export const customerFacingStoreWhere = {
+  storeType: { not: STORE_TYPE_PROCESSING },
+  OR: [
+    { storeType: STORE_TYPE_BOTH },
+    { processingCenterStoreId: { not: null } },
+  ] as { storeType?: string; processingCenterStoreId?: { not: null } }[],
+}
 
 /** Same rule, for filtering rows already in memory. */
-export function isCustomerFacingStore(store: { storeType?: string | null }): boolean {
-  return store.storeType !== STORE_TYPE_PROCESSING
+export function isCustomerFacingStore(store: { storeType?: string | null; processingCenterStoreId?: string | null }): boolean {
+  if (store.storeType === STORE_TYPE_PROCESSING) return false
+  // A self-processing location is complete by definition.
+  if (store.storeType === STORE_TYPE_BOTH) return true
+  return !!store.processingCenterStoreId
 }
 
 // ============================================================================
@@ -66,12 +79,6 @@ export function isProcessingCapable(store: { storeType?: string | null; isActive
 export function requiresProcessingCenterAssignment(storeType?: string | null): boolean {
   return storeType !== STORE_TYPE_PROCESSING && storeType !== STORE_TYPE_BOTH
 }
-
-/** Prisma `where` for the locations that may be OFFERED as a processing centre. */
-export const processingCapableStoreWhere = {
-  isActive: true,
-  storeType: { in: [STORE_TYPE_PROCESSING, STORE_TYPE_BOTH] },
-} as const
 
 export const NO_PROCESSING_CENTER =
   "Every Retail Store must be assigned to a Processing Center before it can become active. This determines where garments from this store will be processed."
@@ -132,13 +139,4 @@ export function resolveProcessingCenterId(store: {
 }): string | null {
   if (!requiresProcessingCenterAssignment(store.storeType)) return store.id
   return store.processingCenterStoreId ?? null
-}
-
-/** Legacy stores that predate the rule — surfaced, never auto-assigned. */
-export function needsProcessingCenterBackfill(store: {
-  storeType?: string | null
-  isActive?: boolean
-  processingCenterStoreId?: string | null
-}): boolean {
-  return !!store.isActive && requiresProcessingCenterAssignment(store.storeType) && !store.processingCenterStoreId
 }

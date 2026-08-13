@@ -3,8 +3,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import {
   isProcessingCapable, requiresProcessingCenterAssignment, processingAssignmentRefusal,
-  resolveProcessingCenterId, needsProcessingCenterBackfill, processingCapableStoreWhere,
-  isCustomerFacingStore,
+  resolveProcessingCenterId, isCustomerFacingStore,
   NO_PROCESSING_CENTER, PROCESSING_CENTER_INACTIVE, PROCESSING_CENTER_INVALID,
   PROCESSING_CENTER_NOT_FOUND, PROCESSING_CENTER_SELF,
   STORE_TYPE_RETAIL, STORE_TYPE_BOTH, STORE_TYPE_PROCESSING,
@@ -81,23 +80,24 @@ describe('assignment rules', () => {
     expect(refuse({ storeType: STORE_TYPE_RETAIL, isActive: false, centre: null, requestedCentreId: null })).toBeNull()
   })
 
-  it('the dropdown offers only ACTIVE processing-capable locations', () => {
-    expect(processingCapableStoreWhere).toEqual({ isActive: true, storeType: { in: ['PROCESSING_CENTER', 'BOTH'] } })
+  it('only ACTIVE processing-capable locations may be offered', () => {
+    // Superseded: a `processingCapableStoreWhere` Prisma fragment was exported
+    // but never used — the UI derives the list from the stores it already has.
+    // The predicate below is the rule; the dead fragment is gone.
     expect(isProcessingCapable({ storeType: STORE_TYPE_PROCESSING, isActive: false })).toBe(false)
     expect(isProcessingCapable({ storeType: STORE_TYPE_RETAIL, isActive: true })).toBe(false)
+    expect(isProcessingCapable({ storeType: STORE_TYPE_BOTH, isActive: true })).toBe(true)
   })
 })
 
 // ── Cases 8–9 — existing data ──────────────────────────────────────────────
 describe('existing stores are surfaced, never auto-assigned', () => {
-  it('8. an active legacy Retail Store with no assignment is identified', () => {
-    expect(needsProcessingCenterBackfill({ storeType: STORE_TYPE_RETAIL, isActive: true, processingCenterStoreId: null })).toBe(true)
-  })
-
-  it('9. an assigned store is left alone', () => {
-    expect(needsProcessingCenterBackfill({ storeType: STORE_TYPE_RETAIL, isActive: true, processingCenterStoreId: 'pc1' })).toBe(false)
-    // A self-processing location is never flagged.
-    expect(needsProcessingCenterBackfill({ storeType: STORE_TYPE_BOTH, isActive: true, processingCenterStoreId: null })).toBe(false)
+  it('a legacy Retail Store with no assignment shows as Required, not auto-fixed', () => {
+    // Superseded: a `needsProcessingCenterBackfill` helper + an extra API field
+    // said the same thing as "processingCenter is null", which the list already
+    // renders as "Required". One way to say it, not two.
+    expect(UI).toContain('Required')
+    expect(CREATE).not.toContain('needsProcessingCenter')
   })
 
   it('nothing guesses an assignment from distance or location', () => {
@@ -114,22 +114,22 @@ describe('history survives reassignment', () => {
   it('10/11. the order freezes the centre at dispatch, and only once', () => {
     // Written at Dispatch to Processing — the point garments leave the store.
     expect(DISPATCH).toContain('resolveProcessingCenterId(order.store)')
-    expect(DISPATCH).toContain('processingCenterStoreId: centre.id')
+    expect(DISPATCH).toContain('processingCenterStoreId: centreId')
     // `!order.processingCenterStoreId` — a re-dispatch never overwrites it, so
     // reassigning Store A from PC1 to PC2 leaves old orders reading PC1.
     expect(DISPATCH).toContain('if (!order.processingCenterStoreId && order.store)')
   })
 
-  it('the code and name are frozen too, so a later rename cannot rewrite history', () => {
-    expect(DISPATCH).toContain('processingCenterCode: centre.storeCode')
-    expect(DISPATCH).toContain('processingCenterName: centre.storeName')
-    expect(DISPATCH).toContain('processingCenterAt: now')
-  })
-
-  it('the snapshot columns exist on the order', () => {
+  it('the snapshot is ONE column — nothing duplicated', () => {
+    // Superseded: code/name/timestamp were also frozen onto the order. The code
+    // and name are a join away, and WHEN it was committed is already the
+    // DISPATCH_TO_PROCESSING LaundryOrderEvent, so all three were duplicate
+    // data. Only the id — which is what history actually needs — remains.
     expect(SCHEMA).toContain('processingCenterStoreId String?')
-    expect(SCHEMA).toContain('processingCenterCode    String?')
-    expect(SCHEMA).toContain('processingCenterName    String?')
+    expect(SCHEMA).not.toContain('processingCenterCode')
+    expect(SCHEMA).not.toContain('processingCenterName')
+    expect(SCHEMA).not.toContain('processingCenterAt ')
+    expect(DISPATCH).not.toContain('centre.storeCode')
   })
 
   it('12. an assignment change writes an audit footprint with old AND new', () => {
@@ -149,11 +149,12 @@ describe('history survives reassignment', () => {
 // ── Cases 13–15 — customer-facing selection still correct ──────────────────
 describe('customer-facing store selection is unaffected', () => {
   const kmToDeg = (km: number) => km / 111.32
-  const loc = (name: string, storeType: string, km: number): ServiceLocation & { storeType: string } => ({
-    id: name, businessId: 'b1', kind: 'laundryStore', name, storeType,
+  const loc = (name: string, storeType: string, km: number, processingCenterStoreId: string | null = 'pc1'):
+    ServiceLocation & { storeType: string; processingCenterStoreId: string | null } => ({
+    id: name, businessId: 'b1', kind: 'laundryStore', name, storeType, processingCenterStoreId,
     latitude: kmToDeg(km), longitude: 0, serviceRadiusKm: 10, maxDeliveryDistanceKm: 10, isActive: true,
   })
-  const nearest = (all: (ServiceLocation & { storeType: string })[]) =>
+  const nearest = (all: (ServiceLocation & { storeType: string; processingCenterStoreId: string | null })[]) =>
     findNearestServiceLocation(all.filter(isCustomerFacingStore), 0, 0)
 
   it('13. a Processing-Center-only store is never selected', () => {
@@ -164,8 +165,17 @@ describe('customer-facing store selection is unaffected', () => {
     expect(nearest([loc('Retail', STORE_TYPE_RETAIL, 3)]).location?.name).toBe('Retail')
   })
 
-  it('15. a Both store can be selected', () => {
-    expect(nearest([loc('Both', STORE_TYPE_BOTH, 2)]).location?.name).toBe('Both')
+  it('15. a Both store can be selected — it needs no assignment', () => {
+    expect(nearest([loc('Both', STORE_TYPE_BOTH, 2, null)]).location?.name).toBe('Both')
+  })
+
+  it('a Retail Store with NO Processing Center is not operationally active', () => {
+    // The spec's rule: customer-facing = active + retail/both + a valid
+    // processing relationship. A retail store that does not know where its
+    // garments go cannot take a customer's order.
+    expect(nearest([loc('Unassigned', STORE_TYPE_RETAIL, 1, null)]).location).toBeNull()
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_RETAIL, processingCenterStoreId: null })).toBe(false)
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_RETAIL, processingCenterStoreId: 'pc1' })).toBe(true)
   })
 })
 
@@ -203,10 +213,12 @@ describe('the Stores screen', () => {
     expect(UI).toContain('s.id !== editingStore?.id')
   })
 
-  it('shows the required warning and the no-centre-available state', () => {
+  it('shows the no-centre-available state', () => {
+    // Superseded: an in-dialog "created before this became mandatory" notice was
+    // also rendered. The empty dropdown and the list's "Required" badge already
+    // tell the administrator the same thing.
     expect(UI).toContain('No Processing Center Available')
-    expect(UI).toContain('Processing Center Not Assigned')
-    expect(UI).toContain('created before Processing Center assignment became mandatory')
+    expect(UI).not.toContain('Processing Center Not Assigned')
   })
 
   it('keeps the entered store information when the server refuses', () => {

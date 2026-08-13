@@ -28,45 +28,57 @@ const CORE = read('src/lib/core/service-location.ts')
 const CUSTOMER = { lat: 0, lng: 0 }
 const kmToDeg = (km: number) => km / 111.32
 
-const store = (name: string, storeType: string, km: number, isActive = true): ServiceLocation & { storeType: string } => ({
-  id: name, businessId: 'b1', kind: 'laundryStore', name, storeType,
+// Retail stores carry an assignment by default: a retail store is only
+// customer-facing once it knows where its garments are processed (see the
+// "operationally complete" rule). Pass null to model an unassigned one.
+type Loc = ServiceLocation & { storeType: string; processingCenterStoreId: string | null }
+const store = (name: string, storeType: string, km: number, isActive = true, processingCenterStoreId: string | null = 'pc1'): Loc => ({
+  id: name, businessId: 'b1', kind: 'laundryStore', name, storeType, processingCenterStoreId,
   latitude: kmToDeg(km), longitude: 0,
   serviceRadiusKm: 10, maxDeliveryDistanceKm: 10, isActive,
 })
 
 /** The shipped rule, then the shipped distance function — nothing re-implemented. */
-const nearestEligible = (all: (ServiceLocation & { storeType: string })[]) =>
+const nearestEligible = (all: Loc[]) =>
   findNearestServiceLocation(all.filter(isCustomerFacingStore), CUSTOMER.lat, CUSTOMER.lng)
 
 // ── The rule ───────────────────────────────────────────────────────────────
 describe('eligibility uses the existing storeType', () => {
-  it('1. RETAIL_STORE is eligible', () => {
-    expect(isCustomerFacingStore({ storeType: STORE_TYPE_RETAIL })).toBe(true)
+  it('1. RETAIL_STORE is eligible once it has a Processing Center', () => {
+    // Superseded: a retail store used to qualify on type alone. It must now
+    // also be operationally complete — it cannot take a customer's order
+    // without knowing where the garments go.
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_RETAIL, processingCenterStoreId: 'pc1' })).toBe(true)
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_RETAIL, processingCenterStoreId: null })).toBe(false)
   })
 
-  it('2. BOTH (retail + processing) is eligible', () => {
-    expect(isCustomerFacingStore({ storeType: STORE_TYPE_BOTH })).toBe(true)
+  it('2. BOTH (retail + processing) is eligible with no assignment', () => {
+    // It processes its own work, so there is nothing to assign.
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_BOTH, processingCenterStoreId: null })).toBe(true)
   })
 
   it('3. PROCESSING_CENTER is excluded', () => {
-    expect(isCustomerFacingStore({ storeType: STORE_TYPE_PROCESSING })).toBe(false)
+    expect(isCustomerFacingStore({ storeType: STORE_TYPE_PROCESSING, processingCenterStoreId: null })).toBe(false)
   })
 
   it('only these two types are customer-facing', () => {
     expect(CUSTOMER_FACING_STORE_TYPES).toEqual(['RETAIL_STORE', 'BOTH'])
   })
 
-  it('an unrecognised or missing type keeps serving customers', () => {
-    // The column is a free String defaulting to RETAIL_STORE; only
-    // PROCESSING_CENTER disqualifies, so a legacy value cannot empty a
-    // tenant's store list.
-    expect(isCustomerFacingStore({ storeType: 'FRANCHISE' })).toBe(true)
-    expect(isCustomerFacingStore({ storeType: null })).toBe(true)
-    expect(isCustomerFacingStore({})).toBe(true)
+  it('an unrecognised type is treated as retail, not silently dropped', () => {
+    // The column is a free String defaulting to RETAIL_STORE, so an unknown
+    // value follows the retail rule rather than vanishing from the storefront.
+    expect(isCustomerFacingStore({ storeType: 'FRANCHISE', processingCenterStoreId: 'pc1' })).toBe(true)
+    expect(isCustomerFacingStore({ storeType: 'FRANCHISE', processingCenterStoreId: null })).toBe(false)
   })
 
-  it('the query fragment excludes exactly the processing centre', () => {
-    expect(customerFacingStoreWhere).toEqual({ storeType: { not: 'PROCESSING_CENTER' } })
+  it('the query fragment carries both conditions', () => {
+    // Superseded: it used to be the store-type exclusion alone.
+    expect(customerFacingStoreWhere.storeType).toEqual({ not: 'PROCESSING_CENTER' })
+    expect(customerFacingStoreWhere.OR).toEqual([
+      { storeType: 'BOTH' },
+      { processingCenterStoreId: { not: null } },
+    ])
   })
 })
 

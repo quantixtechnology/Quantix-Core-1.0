@@ -63,26 +63,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // store for a centre. The store's current assignment is copied onto the
     // order now, so reassigning the store later cannot rewrite what already
     // happened. Written once — a re-dispatch never overwrites the original.
+    // A BOTH store resolves to itself; no fake self-assignment row is created.
     if (!order.processingCenterStoreId && order.store) {
       const centreId = resolveProcessingCenterId(order.store)
       if (centreId) {
-        const centre = await prisma.laundryStore.findUnique({
-          where: { id: centreId },
-          select: { id: true, storeCode: true, storeName: true },
-        })
-        if (centre) {
-          await prisma.laundryOrder.update({
-            where: { id: order.id },
-            data: {
-              processingCenterStoreId: centre.id,
-              // Code and name frozen too: renaming the centre later must not
-              // change what this record says happened.
-              processingCenterCode: centre.storeCode,
-              processingCenterName: centre.storeName,
-              processingCenterAt: now,
-            },
-          }).catch(() => null)
-        }
+        await prisma.laundryOrder.update({
+          where: { id: order.id },
+          data: { processingCenterStoreId: centreId },
+        }).catch(() => null)
       }
     }
 

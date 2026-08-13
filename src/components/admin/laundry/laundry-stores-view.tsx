@@ -45,8 +45,6 @@ type Store = {
   processingCenterStoreId: string | null
   processingCenterAssignedAt: string | null
   processingCenter: { id: string; storeCode: string; storeName: string; city: string | null; isActive: boolean } | null
-  /** Legacy row: active retail with no assignment. Surfaced, never auto-fixed. */
-  needsProcessingCenter?: boolean
 }
 
 export function LaundryStoresView({ businessId }: { businessId: string }) {
@@ -341,16 +339,12 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 {needsCentre ? (
                   <Section title="Processing Center Assignment">
                     {processingCentres.length === 0 ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                         <p className="text-sm font-semibold text-amber-900">No Processing Center Available</p>
                         <p className="text-xs text-amber-800 leading-snug">
-                          This business does not currently have an active Processing Center. Create a Processing Center
-                          or a Retail + Processing location before activating this store.
+                          This business has no active Processing Center. Add a store with Store Type
+                          &ldquo;Processing Center&rdquo; or &ldquo;Both&rdquo; before activating this store.
                         </p>
-                        <Button size="sm" variant="outline" className="gap-1 border-amber-300"
-                          onClick={() => setForm(p => ({ ...p, storeType: "PROCESSING_CENTER" }))}>
-                          <Plus className="h-3.5 w-3.5" /> Make this a Processing Center
-                        </Button>
                       </div>
                     ) : (
                       <>
@@ -369,25 +363,10 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                         <p className="text-[11px] text-slate-500 mt-1">
                           Where garments from this store are processed. Different stores may use different centres.
                         </p>
-                        {editingStore?.needsProcessingCenter && !form.processingCenterStoreId && (
-                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
-                            <p className="text-xs font-semibold text-amber-900">Processing Center Not Assigned</p>
-                            <p className="text-[11px] text-amber-800 leading-snug">
-                              This store was created before Processing Center assignment became mandatory.
-                              Assign a Processing Center before continuing operations.
-                            </p>
-                          </div>
-                        )}
                       </>
                     )}
                   </Section>
-                ) : (
-                  <Section title="Processing Center Assignment">
-                    <p className="text-xs text-slate-500">
-                      This location processes its own garments — no separate Processing Center is needed.
-                    </p>
-                  </Section>
-                )}
+                ) : null}
 
                 {saveError && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">

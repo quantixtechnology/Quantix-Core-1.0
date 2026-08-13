@@ -4696,16 +4696,15 @@ model LaundryOrder {
   billedAt                  DateTime? // when the financial snapshot was persisted
 
   // ── Processing Center — FROZEN when the order is committed to processing ──
-  // Snapshotted at Dispatch to Processing, the point the order physically
-  // leaves the store for a centre. Reading the store's CURRENT assignment
-  // instead would rewrite history: reassigning Store A from PC1 to PC2 would
-  // make every past order look as if it had been processed at PC2. The code and
-  // name are frozen alongside the id so a later rename of the centre does not
-  // change what the record says happened.
+  // Written once at Dispatch to Processing, the point the order physically
+  // leaves the store. Reading the store's CURRENT assignment instead would
+  // rewrite history: reassigning Store A from PC1 to PC2 would make every past
+  // order look as if it had been processed at PC2.
+  //
+  // ONE column. The centre's code and name are a join away, and WHEN it was
+  // committed is already the DISPATCH_TO_PROCESSING LaundryOrderEvent — copying
+  // either here would be duplicate data.
   processingCenterStoreId String?
-  processingCenterCode    String?
-  processingCenterName    String?
-  processingCenterAt      DateTime?
 
   // ── Store Audit (Stage 2) — inspection captured against the garments the
   //    order already carries; the audit does not re-enter garments. ──
