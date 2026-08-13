@@ -22,14 +22,14 @@ export async function GET(request: Request) {
       where: { businessId: biz.id, ...(includeInactive ? {} : { isActive: true }) },
       include: {
         category: { select: { id: true, name: true } },
-        // Compatible garment-category ids drive the Add Garments default scope.
-        compatibleCategories: { select: { categoryId: true } },
       },
       orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
     })
-    // Flatten compatibility to a simple id array for the client.
-    const shaped = data.map((s) => ({ ...s, compatibleCategoryIds: s.compatibleCategories.map((c) => c.categoryId) }))
-    return NextResponse.json({ success: true, data: shaped })
+    // Service → Compatible Categories is no longer read or exposed. Pricing is
+    // the single source of truth for which garments a service can be offered
+    // for: Garment Category → Garment → Service → Price. A service no longer
+    // carries a second, independently-editable answer that could conflict.
+    return NextResponse.json({ success: true, data })
   } catch (e) {
     console.error("[laundry-services] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

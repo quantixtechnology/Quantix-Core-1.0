@@ -6008,6 +6008,20 @@ model LaundryPacket {
 // Household). This is a SELECTION rule only — it never affects the actual
 // Service↔Garment pricing (LaundryPricingRule), orders, or processing routes.
 // A service with NO rows falls back to "show all garments" (backward-compat).
+// RETIRED — no longer read or written by any code path.
+//
+// This was "Compatible Categories": a SECOND answer to "which garments can this
+// service be offered for", maintained alongside Pricing. Two independently
+// editable answers can disagree (a service listing Men/Women/Kids while Pricing
+// holds Household → Blanket → Wash & Fold → ₹80), so the concept is gone.
+//
+// Pricing is the single source of truth: Garment Category → Garment → Service →
+// Price. An active pricing rule is what makes a garment available for a service
+// — which is what the customer catalogue always used anyway.
+//
+// The table is KEPT rather than dropped: it holds real tenant configuration, and
+// deleting production rows to remove a UI section is destructive with nothing to
+// gain. It is inert. Drop it in a later deliberate migration if wanted.
 model LaundryServiceGarmentCategory {
   id         String   @id @default(cuid())
   businessId String

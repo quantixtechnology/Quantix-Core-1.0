@@ -53,26 +53,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       },
     })
 
-    // ── Compatible garment categories (catalogue selection rule) ──────────────
-    // Replace the set. Validated tenant-scoped: the service and every category
-    // must belong to the resolved Laundry Business (no cross-tenant links).
-    // Never touches pricing rows, orders, or processing routes.
-    if (Array.isArray(b.compatibleCategoryIds) && b.businessId) {
-      const biz = await resolveLaundryBusiness(b.businessId)
-      if (biz && data.businessId === biz.id) {
-        const wanted = [...new Set(b.compatibleCategoryIds.map(String))] as string[]
-        const validCats = wanted.length
-          ? await prisma.laundryCategory.findMany({ where: { id: { in: wanted }, businessId: biz.id }, select: { id: true } })
-          : []
-        const validIds = new Set(validCats.map((c) => c.id))
-        await prisma.$transaction([
-          prisma.laundryServiceGarmentCategory.deleteMany({ where: { serviceId: id } }),
-          ...(validIds.size
-            ? [prisma.laundryServiceGarmentCategory.createMany({ data: [...validIds].map((categoryId) => ({ businessId: biz.id, serviceId: id, categoryId })) })]
-            : []),
-        ])
-      }
-    }
+    // Service → Compatible Categories was a SECOND answer to "which garments
+    // can this service be offered for", alongside Pricing. Two editable answers
+    // can disagree, so this one is gone: `compatibleCategoryIds` is no longer
+    // read or written, and a client that still sends it is simply ignored.
+    // Pricing is the single source of truth — Garment Category → Garment →
+    // Service → Price. Existing rows are left untouched (see the note in
+    // prisma/schema.prisma on LaundryServiceGarmentCategory).
     return NextResponse.json({ success: true, data })
   } catch (e) {
     console.error("[laundry-services] PUT", e)

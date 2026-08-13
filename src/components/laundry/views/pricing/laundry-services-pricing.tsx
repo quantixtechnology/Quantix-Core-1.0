@@ -20,7 +20,7 @@ import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
 import { tatLabel, toHours, fromHours } from "@/lib/laundry-tat"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[]; subscriptionEligible?: boolean; tatEnabled?: boolean; defaultTurnaroundHours?: number; tatUnit?: string | null }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; subscriptionEligible?: boolean; tatEnabled?: boolean; defaultTurnaroundHours?: number; tatUnit?: string | null }
 interface Category { id: string; name: string }
 
 // Configurable working stages a route can be composed from — ONLY the
@@ -73,19 +73,18 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...SVC_EMPTY })
   const [route, setRoute] = useState<string[]>([])
-  const [compatCats, setCompatCats] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
   // Only meaningful while the toggle is on; a blank box on a standard service
   // must never block saving.
   const tatInvalid = form.tatEnabled && !(Number(form.tatValue) > 0)
 
-  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
+  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setOpen(true) }
   const openEdit = (s: Service) => {
     // Show the value back in the unit it was saved in — a service stored as
     // "1 Day" must not reopen as "24 Hours".
     const shown = fromHours(s.defaultTurnaroundHours ?? 24, s.tatUnit)
-    setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT", subscriptionEligible: !!s.subscriptionEligible, tatEnabled: !!s.tatEnabled, tatValue: String(shown.value), tatUnit: shown.unit }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
+    setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT", subscriptionEligible: !!s.subscriptionEligible, tatEnabled: !!s.tatEnabled, tatValue: String(shown.value), tatUnit: shown.unit }); setRoute(parseRoute(s.processFlow)); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
   // Reorder WITHIN a group only (cleaning stages or finishing stages) — finishing
   // always sits after Sorting, so it can never swap places with a cleaning stage.
@@ -100,7 +99,6 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
     ;[c[from], c[to]] = [c[to], c[from]]
     return c
   })
-  const toggleCat = (id: string) => setCompatCats((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
   const save = async () => {
     if (!form.name.trim()) { toast.error("Service name is required"); return }
     if (tatInvalid) { toast.error("Enter a valid delivery time."); return }
@@ -116,7 +114,6 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
         // hours alone (PUT ignores undefined) so turning it back on restores
         // what the owner had, and the calculation ignores it meanwhile.
         ...(form.tatEnabled ? { defaultTurnaroundHours: toHours(Number(form.tatValue), form.tatUnit === "DAYS" ? "DAYS" : "HOURS"), tatUnit: form.tatUnit } : {}),
-        ...(edit ? { compatibleCategoryIds: compatCats } : {}),
       }
       const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
@@ -327,24 +324,6 @@ function ServicesList({ services, categories, businessId, loading, onChanged }: 
               )}
             </FormSection>
 
-            {/* ── Compatible Categories (edit only) ── */}
-            {edit && (
-              <FormSection title="Compatible Categories" subtitle="Garment categories shown by default when adding garments">
-                <p className="text-[13px] text-slate-400 -mt-1">Leave empty to show all garments. Existing prices are never affected.</p>
-                {categories.length === 0 ? (
-                  <p className="text-[14px] text-slate-400">No categories configured for this business.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((c) => (
-                      <button key={c.id} type="button" onClick={() => toggleCat(c.id)}
-                        className={`rounded-lg border px-3.5 h-10 text-[14px] font-medium transition-colors ${compatCats.includes(c.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </FormSection>
-            )}
           </div>
 
           {/* Sticky footer — always visible */}
@@ -454,32 +433,31 @@ function ManagePrices({ service, garments, categories, businessId, onBack, onGar
 
       <div className="flex justify-end"><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Prices</Button></div>
 
-      {addOpen && <AddGarmentsDialog garments={garments.filter((g) => !existingIds.has(g.id))} categories={categories} compatibleCategoryIds={service.compatibleCategoryIds || []} onAdd={(ids) => { addGarments(ids); setAddOpen(false) }} onClose={() => setAddOpen(false)} />}
+      {/* Every garment that does not yet have a price for this service. Adding
+          a price here is what makes the garment available for the service —
+          Pricing is the source of truth, so there is nothing else to filter by. */}
+      {addOpen && <AddGarmentsDialog garments={garments.filter((g) => !existingIds.has(g.id))} onAdd={(ids) => { addGarments(ids); setAddOpen(false) }} onClose={() => setAddOpen(false)} />}
       {createOpen && <CreateGarmentDialog businessId={businessId} onCreated={(g) => { onGarmentsChanged(); addGarments([g.id]); setCreateOpen(false) }} onClose={() => setCreateOpen(false)} />}
     </div>
   )
 }
 
-function AddGarmentsDialog({ garments, categories, compatibleCategoryIds, onAdd, onClose }: { garments: Garment[]; categories: Category[]; compatibleCategoryIds: string[]; onAdd: (ids: string[]) => void; onClose: () => void }) {
+function AddGarmentsDialog({ garments, onAdd, onClose }: { garments: Garment[]; onAdd: (ids: string[]) => void; onClose: () => void }) {
   const [q, setQ] = useState("")
   const [sel, setSel] = useState<Set<string>>(new Set())
-  // Backward-compatible: a service with no compatible categories has no scope
-  // to narrow to, so it always shows all garments.
-  const hasCompat = compatibleCategoryIds.length > 0
-  const [showAll, setShowAll] = useState(!hasCompat)
-  const compatSet = useMemo(() => new Set(compatibleCategoryIds), [compatibleCategoryIds])
-  const isCompatible = (g: Garment) => !!g.category?.id && compatSet.has(g.category.id)
 
-  // Scope = compatible garments (default) or all garments (Show all ON).
-  const scoped = useMemo(() => (showAll ? garments : garments.filter(isCompatible)), [garments, showAll, compatSet])
-  // Search within the current scope by garment name OR category name.
+  // Search by garment name OR category name. There is no compatible-category
+  // scope any more: giving a garment a price for this service is precisely what
+  // makes it available, so pre-filtering the picker by a second relationship
+  // would only hide garments the operator is entitled to price.
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    if (!s) return scoped
-    return scoped.filter((g) => g.name.toLowerCase().includes(s) || (g.category?.name || "").toLowerCase().includes(s))
-  }, [scoped, q])
+    const term = q.trim().toLowerCase()
+    if (!term) return garments
+    return garments.filter((g) => g.name.toLowerCase().includes(term) || (g.category?.name || "").toLowerCase().includes(term))
+  }, [garments, q])
 
-  // Group the visible garments by category for a readable list.
+  // Group the visible garments by category for a readable list. Category is a
+  // display grouping here — it grants nothing.
   const grouped = useMemo(() => {
     const map = new Map<string, { name: string; items: Garment[] }>()
     for (const g of filtered) {
@@ -492,39 +470,26 @@ function AddGarmentsDialog({ garments, categories, compatibleCategoryIds, onAdd,
   }, [filtered])
 
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const compatNames = categories.filter((c) => compatSet.has(c.id)).map((c) => c.name).join(", ")
 
   return (
     <Dialog open onOpenChange={onClose}><DialogContent className="sm:max-w-[440px]">
       <DialogHeader><DialogTitle>Add Garments</DialogTitle></DialogHeader>
       <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search garments or category…" className="pl-9" /></div>
 
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">{showAll ? "All garments" : hasCompat ? `Compatible garments${compatNames ? ` · ${compatNames}` : ""}` : "All garments"}</p>
-        {hasCompat && (
-          <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-            Show all garments <Switch checked={showAll} onCheckedChange={setShowAll} className="scale-90 data-[state=checked]:bg-blue-600" />
-          </label>
-        )}
-      </div>
-      {!hasCompat && <p className="text-[10px] text-slate-400 -mt-1">No garment compatibility configured — showing all garments. Set compatible categories in the service to narrow this list.</p>}
+      <p className="text-xs text-slate-500">{filtered.length} garment{filtered.length === 1 ? "" : "s"} available to price</p>
 
       <div className="max-h-[320px] overflow-y-auto -mx-1 px-1 space-y-2">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-400 py-4 text-center">{showAll ? "No garments" : "No compatible garments — enable “Show all garments” to add others."}</p>
+          <p className="text-sm text-slate-400 py-4 text-center">{q.trim() ? "No garments match your search." : "Every garment already has a price for this service."}</p>
         ) : grouped.map((grp) => (
           <div key={grp.name}>
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 px-2 mt-1">{grp.name}</p>
-            {grp.items.map((g) => {
-              const outside = showAll && hasCompat && !isCompatible(g)
-              return (
-                <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
-                  <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} />
-                  <span className="text-sm">{g.name}</span>
-                  {outside && <span className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">outside compatible categories</span>}
-                </label>
-              )
-            })}
+            {grp.items.map((g) => (
+              <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} />
+                <span className="text-sm">{g.name}</span>
+              </label>
+            ))}
           </div>
         ))}
       </div>
