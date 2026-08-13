@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { platformOnly } from "@/lib/platform-guard"
 
 // Canonical gateway definitions — source of truth for the plugin registry
 const GATEWAY_DEFINITIONS = [
@@ -41,6 +42,9 @@ async function seedPlugins() {
 }
 
 export async function GET(request: NextRequest) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     await seedPlugins();
 
@@ -62,6 +66,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     const body = (await request.json()) as {
       action: 'toggle_global' | 'assign_business' | 'set_can_configure' | 'set_active' | 'save_config' | 'assign_stores';

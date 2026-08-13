@@ -8,11 +8,16 @@
 import { NextResponse } from "next/server"
 import { SCREEN_MODULES, LEVEL_LABELS } from "@/lib/laundry-rbac-registry"
 import { resolveLicenceForBusiness } from "@/lib/laundry-licensing-server"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
+  // Tenant isolation: authenticated AND a member of THIS business —
+  // knowing a businessId is not authorization.
+  const _guard = await requireLaundryMember(request, businessId)
+  if (!_guard.ok) return _guard.res
   if (!businessId) {
     return NextResponse.json({ success: true, data: { modules: SCREEN_MODULES, levels: LEVEL_LABELS } })
   }

@@ -3,12 +3,17 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { computeBusinessUsage } from "@/lib/laundry-storage"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
     const businessId = new URL(request.url).searchParams.get("businessId")
+    // Tenant isolation: authenticated AND a member of THIS business —
+    // knowing a businessId is not authorization.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })

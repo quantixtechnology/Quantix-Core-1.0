@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 

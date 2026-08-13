@@ -6,10 +6,14 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTemplatePermissions, ROLE_META } from '@/lib/rbac/role-templates';
 import { allPermissionKeys } from '@/lib/rbac/permission-definitions';
+import { platformOnly } from "@/lib/platform-guard"
 
 type Ctx = { params: Promise<{ role: string }> };
 
 export async function GET(_req: Request, { params }: Ctx) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(_req)
+  if (_denied) return _denied
   const { role } = await params;
 
   if (!ROLE_META.find(r => r.id === role)) {
@@ -28,6 +32,9 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 export async function PUT(req: Request, { params }: Ctx) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   try {
     const { role } = await params;
     const body = await req.json() as { permissions: string[]; userId?: string; userEmail?: string; note?: string };
@@ -103,6 +110,9 @@ export async function PUT(req: Request, { params }: Ctx) {
 }
 
 export async function POST(req: Request, { params }: Ctx) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   try {
     const { role } = await params;
     const body = await req.json() as { cloneFrom: string; userId?: string };

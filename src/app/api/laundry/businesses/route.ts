@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { generateBusinessCode } from "@/lib/laundry-codes"
 import { hashPassword, generateTempPassword } from "@/lib/password-utils"
 import { ensureScalingLimitForNewBusiness } from "@/lib/laundry-scaling-limits"
+import { platformOnly } from "@/lib/platform-guard"
 
 export const runtime = "nodejs"
 
@@ -49,6 +50,10 @@ const STAGE_DEPARTMENT_ROLE: Record<string, { departmentCode: string; roleCode: 
 }
 
 export async function GET(request: Request) {
+  // Spans every tenant (list) / provisions a new one (create) — platform
+  // administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") || ""
@@ -81,6 +86,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Spans every tenant (list) / provisions a new one (create) — platform
+  // administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     const body = await request.json()
     const { businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address, plan, status } = body

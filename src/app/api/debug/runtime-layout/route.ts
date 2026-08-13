@@ -6,6 +6,7 @@
 // Public — no auth. TEMP: remove after routing confirmed stable.
 
 import { NextResponse } from 'next/server'
+import { platformOnly } from "@/lib/platform-guard"
 
 const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 const PLATFORM_HOSTS = new Set([
@@ -16,6 +17,9 @@ const PLATFORM_HOSTS = new Set([
 const RESERVED = new Set(['www', 'app', 'admin', 'api', 'mail'])
 
 export async function GET(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const host = req.headers.get('host') || req.headers.get('x-forwarded-host') || '(unknown)'
   const hostname = host.split(':')[0]
 

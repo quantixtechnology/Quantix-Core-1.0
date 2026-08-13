@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -12,6 +13,10 @@ export async function GET(request: Request) {
   try {
     const sp = new URL(request.url).searchParams
     const businessId = sp.get("businessId"); const customerId = sp.get("customerId")
+    // Tenant isolation: authenticated AND a member of THIS business —
+    // knowing a businessId is not authorization.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     if (!businessId || !customerId) return NextResponse.json({ error: "businessId and customerId are required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: [] })

@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { computeQuote, type PricingRule } from "@/lib/laundry-billing"
 import { applyChargesConfig } from "@/lib/laundry-billing-server"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -17,6 +18,10 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { businessId, storeId, customerType, weekend, express, pickup, delivery, items } = body
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    // Tenant isolation: authenticated AND a member of THIS business —
+    // knowing a businessId is not authorization.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     if (!Array.isArray(items)) return NextResponse.json({ error: "items must be an array" }, { status: 400 })
 
     const biz = await resolveLaundryBusiness(businessId)

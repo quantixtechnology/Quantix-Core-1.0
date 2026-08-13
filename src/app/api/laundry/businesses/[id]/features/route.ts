@@ -2,12 +2,16 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { ensureCrmDefaults, CRM_FEATURE_KEY } from "@/lib/laundry-crm"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: rawId } = await params
+    // Tenant isolation: a businessId in the URL is not authorization.
+    const _guard = await requireLaundryMember(request, rawId)
+    if (!_guard.ok) return _guard.res
     // Accept the LaundryBusiness id OR the linked platform Business id — the
     // Super Admin wizard works with platform ids. 404 for non-laundry
     // businesses lets callers (e.g. the wizard feature card) self-hide.
@@ -26,6 +30,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: rawId } = await params
+    // Tenant isolation: a businessId in the URL is not authorization.
+    const _guard = await requireLaundryMember(request, rawId)
+    if (!_guard.ok) return _guard.res
     const biz = await resolveLaundryBusiness(rawId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const id = biz.id

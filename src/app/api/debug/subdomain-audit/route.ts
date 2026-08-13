@@ -8,8 +8,12 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 export async function GET(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const { searchParams } = new URL(req.url)
   const slug = searchParams.get('slug')
   const bizCode = searchParams.get('businessCode')

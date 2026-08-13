@@ -8,10 +8,14 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 const LEGACY_REGEX = /^(STR-\d{3,}|STO-|BUS-.*-\d{3}$)/
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     // ── 1. Business + Store counts ────────────────────────────────────────
     const businesses = await db.business.findMany({

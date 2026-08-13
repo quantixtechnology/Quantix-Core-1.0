@@ -9,8 +9,12 @@ import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join, resolve } from 'path';
 import { db } from '@/lib/db';
 import { UPLOAD_ROOT } from '@/lib/upload-root';
+import { platformOnly } from "@/lib/platform-guard"
 
 export async function GET(req: NextRequest) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const { searchParams } = new URL(req.url);
   const businessCode = searchParams.get('businessCode');
   const businessId   = searchParams.get('businessId');

@@ -4,12 +4,16 @@
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { seedLaundryDemo } from "@/lib/laundry-seed"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
     const { businessId } = await request.json()
+    // Seeding writes into a tenant — membership required.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: `No laundry workspace matches businessId "${businessId}"` }, { status: 404 })

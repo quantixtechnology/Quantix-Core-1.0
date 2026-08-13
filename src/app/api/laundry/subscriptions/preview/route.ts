@@ -12,6 +12,7 @@ import { resolveOrderBilling, orderTypeToCustomerType } from "@/lib/laundry-bill
 import { explodePieces } from "@/lib/laundry-order-items"
 import { computeCoverage, type SubForCoverage, type CoverLine } from "@/lib/laundry-subscription-consumption"
 import { subscriptionCoverageRules, coverageUnitOf } from "@/lib/laundry-subscription-server"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -21,6 +22,10 @@ export async function POST(request: Request) {
     const b = await request.json().catch(() => ({}))
     const { businessId, customerId, storeId, orderType, express, items } = b
     if (!businessId || !Array.isArray(items) || items.length === 0) return NextResponse.json({ success: true, data: { covered: false, lines: [], coveredAmount: 0, extraAmount: 0 } })
+    // Tenant isolation: authenticated AND a member of THIS business —
+    // knowing a businessId is not authorization.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: { covered: false, lines: [], coveredAmount: 0, extraAmount: 0 } })
     const platformId = biz.platformBusinessId || businessId

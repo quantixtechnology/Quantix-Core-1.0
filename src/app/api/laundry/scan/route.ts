@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { stageLabel, departmentFor } from "@/lib/laundry-processing"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -18,6 +19,11 @@ export async function GET(request: Request) {
       include: { order: { select: { id: true, orderNumber: true, status: true, businessId: true, storeId: true, customerId: true, grandTotal: true, expectedDeliveryDate: true } } },
     })
     if (!item) return NextResponse.json({ success: false, error: `No garment found for barcode "${code}"` }, { status: 404 })
+
+    // Tenant isolation: a GAR barcode is not authorization — the caller must
+    // be a member of the business that owns the scanned garment.
+    const _guard = await requireLaundryMember(request, item.order.businessId)
+    if (!_guard.ok) return _guard.res
 
     const [store, customer, business, events] = await Promise.all([
       item.order.storeId ? prisma.laundryStore.findUnique({ where: { id: item.order.storeId }, select: { storeName: true, storeCode: true } }) : null,

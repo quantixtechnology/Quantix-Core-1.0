@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { STORE_CODE_REGEX, isValidStoreCode } from '@/lib/migrations/backfill-store-codes'
+import { platformOnly } from "@/lib/platform-guard"
 
 const LEGACY_PATTERNS = [/^STR-\d{3,}$/, /^STO-/, /^BUS-.*-\d{3}$/]
 
@@ -19,6 +20,9 @@ function expectedCode(businessCode: string, seq: number): string {
 }
 
 export async function GET(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const { searchParams } = new URL(req.url)
   const filterCode = searchParams.get('businessCode')
 

@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const businessId = body.businessId as string | undefined
     if (!businessId) return NextResponse.json({ error: "businessId is required" }, { status: 400 })
+    // Seeding writes into a tenant — membership required.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
 
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })

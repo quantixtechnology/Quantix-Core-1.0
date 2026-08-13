@@ -6,8 +6,12 @@ import { db } from '@/lib/db'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { UPLOAD_ROOT } from '@/lib/upload-root'
+import { platformOnly } from "@/lib/platform-guard"
 
 export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   const { searchParams } = new URL(request.url)
   const slug        = searchParams.get('slug')
   const productSlug = searchParams.get('product')   // product slug or partial name

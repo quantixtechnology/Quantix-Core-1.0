@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,10 @@ function readBuildId(): string {
   return 'dev'
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   const buildId = readBuildId()
 
   return NextResponse.json(

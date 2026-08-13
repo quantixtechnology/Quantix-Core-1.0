@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateStoreCode } from "@/lib/laundry-codes"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    // Tenant isolation: a businessId in the URL is not authorization.
+    const _guard = await requireLaundryMember(request, id)
+    if (!_guard.ok) return _guard.res
     const body = await request.json()
     const { businessInfo, storeSetup, services, pricing, processingCenter } = body
 

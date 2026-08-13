@@ -3,6 +3,7 @@
 // event. The barcode VALUE is the permanent itemNumber (set at order creation).
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -13,6 +14,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const reprint = String(b.action || "").toUpperCase() === "REPRINT"
     const item = await prisma.laundryOrderItem.findUnique({ where: { id }, select: { id: true, orderId: true, itemNumber: true, barcode: true, order: { select: { businessId: true } } } })
     if (!item) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
+    // Tenant isolation: the caller must belong to the item's business.
+    const _guard = await requireLaundryMember(request, item.order.businessId)
+    if (!_guard.ok) return _guard.res
 
     await prisma.laundryOrderItem.update({ where: { id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date(), printCount: { increment: 1 }, lastPrintedBy: b.actorName || null } })
     await prisma.laundryItemEvent.create({ data: { itemId: id, orderId: item.orderId, businessId: item.order.businessId, action: reprint ? "BARCODE_REPRINT" : "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })

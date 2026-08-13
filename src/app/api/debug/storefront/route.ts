@@ -3,8 +3,12 @@
 // Remove this file after routing is confirmed working.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { platformOnly } from "@/lib/platform-guard"
 
 export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   const { searchParams } = new URL(request.url)
   const slug = searchParams.get('slug')
 

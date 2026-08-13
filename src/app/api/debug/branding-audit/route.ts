@@ -14,6 +14,7 @@ import { resolveImageUrl } from '@/lib/image-url'
 import { UPLOAD_ROOT } from '@/lib/upload-root'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 function fileExists(url: string | null): boolean {
   if (!url) return false
@@ -28,6 +29,9 @@ function fileExists(url: string | null): boolean {
 }
 
 export async function GET(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const { searchParams } = new URL(req.url)
   const slug = searchParams.get('slug') ?? undefined
 

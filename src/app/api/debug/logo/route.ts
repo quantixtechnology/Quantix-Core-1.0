@@ -5,8 +5,12 @@
 import { NextResponse } from 'next/server'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   const cwd = process.cwd()
 
   const projectPublicLogo   = join(cwd, 'public', 'quantix-logo.png')

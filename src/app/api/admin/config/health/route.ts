@@ -7,8 +7,12 @@
 import { NextResponse } from 'next/server'
 import { getProductionChecklist, validateProductionConfig } from '@/lib/config-validator'
 import { db } from '@/lib/db'
+import { platformOnly } from "@/lib/platform-guard"
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   const startTime = Date.now()
   const checks: Record<string, { healthy: boolean; message: string; duration?: number }> = {}
 

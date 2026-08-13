@@ -9,8 +9,12 @@ import { UPLOAD_ROOT } from '@/lib/upload-root';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join } from 'path';
 import os from 'os';
+import { platformOnly } from "@/lib/platform-guard"
 
 export async function GET(req: NextRequest) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   // Test: can the server write a small file to UPLOAD_ROOT?
   const testPath = join(UPLOAD_ROOT, '_limit_test_' + Date.now() + '.txt');
   let writeTest: { ok: boolean; error?: string } = { ok: false };

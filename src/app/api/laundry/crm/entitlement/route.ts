@@ -3,12 +3,17 @@
 // enabled, lazily initializes tenant CRM defaults (idempotent).
 import { NextResponse } from "next/server"
 import { resolveCrmAccess, ensureCrmDefaults } from "@/lib/laundry-crm"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
     const businessId = new URL(request.url).searchParams.get("businessId")
+    // Tenant isolation: authenticated AND a member of THIS business —
+    // knowing a businessId is not authorization.
+    const _guard = await requireLaundryMember(request, businessId)
+    if (!_guard.ok) return _guard.res
     const access = await resolveCrmAccess(businessId)
     if (!access) return NextResponse.json({ success: true, enabled: false })
     if (access.enabled) await ensureCrmDefaults(access.biz.id)

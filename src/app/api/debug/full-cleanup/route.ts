@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync, rmSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 async function d<T extends { count: number }>(
   label: string,
@@ -23,6 +24,9 @@ async function d<T extends { count: number }>(
 }
 
 export async function POST(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   try {
     const body = await req.json().catch(() => ({}))
     if (body?.confirm !== 'DELETE_ALL_BUSINESSES') {

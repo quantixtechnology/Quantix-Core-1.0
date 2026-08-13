@@ -4,8 +4,12 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { ROLE_META } from '@/lib/rbac/role-templates';
 import { getTemplatePermissions } from '@/lib/rbac/role-templates';
+import { platformOnly } from "@/lib/platform-guard"
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   try {
     const dbRecords = await db.rolePermission.findMany({
       select: { role: true, updatedAt: true, updatedBy: true, permissions: true },

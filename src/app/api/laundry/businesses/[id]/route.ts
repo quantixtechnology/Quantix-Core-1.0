@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    // Tenant isolation: a businessId in the URL is not authorization.
+    const _guard = await requireLaundryMember(request, id)
+    if (!_guard.ok) return _guard.res
     const resolved = await resolveLaundryBusiness(id)
     const business = resolved ? await prisma.laundryBusiness.findUnique({
       where: { id: resolved.id },
@@ -25,6 +29,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    // Tenant isolation: a businessId in the URL is not authorization.
+    const _guard = await requireLaundryMember(request, id)
+    if (!_guard.ok) return _guard.res
     const body = await request.json()
     const {
       businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address,

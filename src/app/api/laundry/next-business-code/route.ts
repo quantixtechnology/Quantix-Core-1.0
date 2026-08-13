@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { generateBusinessCode } from "@/lib/laundry-codes"
+import { requireLaundryMember } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 

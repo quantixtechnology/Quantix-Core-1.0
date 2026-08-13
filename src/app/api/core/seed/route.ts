@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
 import type { PlatformConfig, PlatformPlan, Customer, Category, Order } from '@prisma/client';
+import { platformOnly } from "@/lib/platform-guard"
 
 type SeedProduct = {
   id: string; name: string; slug: string;
@@ -22,7 +23,10 @@ type SeedOrderItem = {
   cgstAmount: number; sgstAmount: number; isVeg: boolean; unit: string;
 };
 
-export async function POST() {
+export async function POST(request: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(request)
+  if (_denied) return _denied
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ success: false, error: 'Seed endpoint is disabled in production' }, { status: 403 });
   }

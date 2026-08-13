@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync } from 'fs'
 import { resolve } from 'path'
+import { platformOnly } from "@/lib/platform-guard"
 
 function expectedCode(businessCode: string, seq: number): string {
   return `STR-${businessCode}-${String(seq).padStart(3, '0')}`
@@ -18,6 +19,9 @@ function resolveDbPath(databaseUrl: string | undefined): string | null {
 }
 
 export async function GET(req: Request) {
+  // Platform staff only — diagnostics/administration, never tenant-reachable.
+  const _denied = await platformOnly(req)
+  if (_denied) return _denied
   const { searchParams } = new URL(req.url)
   const filterCode = searchParams.get('businessCode')
 
