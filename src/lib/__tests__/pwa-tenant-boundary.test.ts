@@ -30,7 +30,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-import { resolveHostTenant, sessionMatchesHostTenant, TENANT_MISMATCH_MESSAGE } from '@/lib/pwa-tenant-boundary'
+import { resolveHostTenant, classifyHostTenant, sessionMatchesHostTenant, TENANT_MISMATCH_MESSAGE } from '@/lib/pwa-tenant-boundary'
 import { resolveExecutive } from '@/lib/laundry-executive-auth'
 
 const ROOT = join(__dirname, '../../..')
@@ -78,6 +78,7 @@ describe('the host names a tenant', () => {
                      'laundry.quantixtechnology.in', 'commerce.quantixtechnology.in',
                      'quantixtechnology.in', 'localhost:3000']) {
       expect(await resolveHostTenant(req(h))).toBeNull()
+      expect(await classifyHostTenant(req(h))).toEqual({ kind: 'non-tenant' })
     }
   })
 })
@@ -98,6 +99,26 @@ describe('a session must match the host tenant', () => {
     // Keeps localhost, app.<base> and product workspaces working exactly as
     // before — the session's own business governs there.
     expect(await sessionMatchesHostTenant(req('localhost:3000'), LAUNDRY_BIZ)).toBe(true)
+    expect(await sessionMatchesHostTenant(req('app.quantixtechnology.in'), LAUNDRY_BIZ)).toBe(true)
+    expect(await sessionMatchesHostTenant(req('laundry.quantixtechnology.in'), LAUNDRY_BIZ)).toBe(true)
+  })
+
+  it('THE PRODUCTION BYPASS — a tenant-shaped host that resolves to nothing is REFUSED', async () => {
+    // delivery.ohhmomos.<base> is not Ohh Momos (slug `ohhhmonos`), so it
+    // matched no DomainMapping and no Business. The first version treated that
+    // as "no tenant" and let the caller's own session through. Wildcard DNS
+    // means any invented subdomain lands here.
+    expect(await classifyHostTenant(req('delivery.ohhmomos.quantixtechnology.in')))
+      .toMatchObject({ kind: 'unknown-tenant' })
+    expect(await sessionMatchesHostTenant(req('delivery.ohhmomos.quantixtechnology.in'), LAUNDRY_BIZ)).toBe(false)
+  })
+
+  it('any invented tenant subdomain is refused, with or without a PWA prefix', async () => {
+    for (const h of ['delivery.doesnotexist.quantixtechnology.in',
+                     'store.doesnotexist.quantixtechnology.in',
+                     'doesnotexist.quantixtechnology.in']) {
+      expect(await sessionMatchesHostTenant(req(h), LAUNDRY_BIZ)).toBe(false)
+    }
   })
 
   it('a tenant host with no session business → refused', async () => {
@@ -118,6 +139,13 @@ describe('the reported failure, through the real executive resolver', () => {
     // Rahul Kumar on delivery.ohhmomos.* — the screenshot.
     asExecutiveOf('lb-laundry', LAUNDRY_BIZ)
     hostResolvesTo(COMMERCE_BIZ)
+    expect(await resolveExecutive(req('delivery.ohhmomos.quantixtechnology.in'))).toBeNull()
+  })
+
+  it('Laundry Executive → an UNRESOLVABLE tenant host → BLOCKED (the real production case)', async () => {
+    // Exactly production: the host resolves to no business at all.
+    asExecutiveOf('lb-laundry', LAUNDRY_BIZ)
+    // domainFindFirst + businessFindFirst both return null (beforeEach default)
     expect(await resolveExecutive(req('delivery.ohhmomos.quantixtechnology.in'))).toBeNull()
   })
 
@@ -163,8 +191,17 @@ describe('the check is server-side and shared', () => {
     expect(read('src/lib/laundry-store-admin-auth.ts')).toContain('sessionMatchesHostTenant(request')
     // The customer app scopes the profile lookup BY the host tenant, which both
     // enforces the boundary and picks the right profile for a two-tenant customer.
-    expect(read('src/lib/laundry-app-auth.ts')).toContain('resolveHostTenant(request)')
-    expect(read('src/lib/laundry-app-auth.ts')).toContain('businessId: hostTenant.platformBusinessId')
+    const app = read('src/lib/laundry-app-auth.ts')
+    expect(app).toContain('classifyHostTenant(request)')
+    expect(app).toContain('businessId: host.platformBusinessId')
+    // …and it refuses outright on a tenant-shaped host it cannot identify.
+    expect(app).toContain("host.kind === \"unknown-tenant\"")
+  })
+
+  it('the unresolvable-host case fails CLOSED in the shared helper', () => {
+    // The one line the production bypass turned on.
+    const lib = read('src/lib/pwa-tenant-boundary.ts')
+    expect(lib).toContain('if (host.kind === "unknown-tenant") return false')
   })
 
   it('no call site can skip it by passing a token', () => {

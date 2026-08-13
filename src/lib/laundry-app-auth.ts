@@ -8,7 +8,7 @@
 // (The former mobile-OTP tables/APIs/SMS were removed in the email migration.)
 // ============================================================================
 import { db } from "@/lib/db"
-import { resolveHostTenant } from "@/lib/pwa-tenant-boundary"
+import { classifyHostTenant } from "@/lib/pwa-tenant-boundary"
 
 export interface AppSession { customerId: string; businessId: string; userId: string; tokenId: string }
 
@@ -23,12 +23,15 @@ export async function resolveSession(request: Request): Promise<AppSession | nul
   // customer row regardless of host, which both accepted a session on another
   // business's PWA and could load the wrong profile for someone who shops with
   // two tenants.
-  const hostTenant = await resolveHostTenant(request)
+  const host = await classifyHostTenant(request)
+  // Tenant-shaped host we cannot identify → refuse, rather than fall back to
+  // the customer's own business (the production bypass).
+  if (host.kind === "unknown-tenant") return null
   const customer = await db.customer.findFirst({
     where: {
       userId: rt.userId,
       status: { not: "MERGED" },
-      ...(hostTenant ? { businessId: hostTenant.platformBusinessId } : {}),
+      ...(host.kind === "tenant" ? { businessId: host.platformBusinessId } : {}),
     },
     orderBy: { lastLoginAt: "desc" },
     select: { id: true, businessId: true },
