@@ -16,6 +16,8 @@ import { constants as FS } from 'fs';
 import { join } from 'path';
 import { withMiddleware } from '@/lib/middleware';
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
+import { prisma } from '@/lib/prisma';
+import { checkStorageAllowance, recordUpload } from '@/lib/storage-guard';
 
 const MAX_MB = 20;
 const MAX_SIZE = MAX_MB * 1024 * 1024;
@@ -70,6 +72,28 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
+    // ── Stage: storage quota ───────────────────────────────────────────────
+    // This endpoint wrote files to disk and recorded NOTHING, which is why the
+    // Storage Usage screen reported 0 B while the business plainly had files.
+    // It now both checks the allowance and writes the ledger. Uploads for the
+    // shared/platform scope are not business-owned and are left unmetered.
+    let laundryBusinessId: string | null = null;
+    if (businessId && businessId !== 'shared') {
+      const lb = await prisma.laundryBusiness.findFirst({
+        where: { OR: [{ id: businessId }, { platformBusinessId: businessId }] },
+        select: { id: true, platformBusinessId: true },
+      });
+      laundryBusinessId = lb?.id ?? null;
+      const platformId = lb?.platformBusinessId ?? businessId;
+      if (laundryBusinessId) {
+        const allowance = await checkStorageAllowance({ laundryBusinessId, platformBusinessId: platformId, incomingBytes: file.size });
+        if (!allowance.ok) {
+          log(`STAGE=quota BLOCKED business=${businessId} used=${allowance.usedBytes} limit=${allowance.limitBytes}`);
+          return NextResponse.json({ success: false, stage: 'quota', error: allowance.error, code: allowance.code }, { status: 413 });
+        }
+      }
+    }
+
     // ── Stage: ensure directory (mkdir -p under UPLOAD_ROOT) ───────────────
     let uploadDir: string;
     try {
@@ -101,6 +125,23 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     try { await access(filePath, FS.R_OK); } catch { /* non-fatal */ }
 
     const url = `/uploads/${folder}/${businessId}/${safeName}`;
+
+    // Ledger AFTER the write is confirmed, so a failed upload is never counted.
+    // Never throws — a bookkeeping error must not lose a file already saved.
+    if (laundryBusinessId) {
+      const lb = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { platformBusinessId: true } });
+      const platformId = lb?.platformBusinessId ?? businessId;
+      await recordUpload({
+        platformBusinessId: platformId,
+        originalName: file.name,
+        filename: safeName,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        uploadPath: url,
+        folder,
+      });
+    }
+
     log(`STAGE=done saved=${filePath} url=${url}`);
     return NextResponse.json({ success: true, url, filename: safeName });
   } catch (error) {

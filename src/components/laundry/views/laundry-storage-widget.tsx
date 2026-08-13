@@ -9,9 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { HardDrive, AlertTriangle, Loader2, FileStack, CalendarClock, CalendarDays } from "lucide-react"
 
+interface StoreUsage {
+  used: number; allowed: number | null; remaining: number | null; exceeded: boolean
+  retail: number; processingCenters: number; both: number
+}
 interface Usage {
   usedGB: number; usedMB: number; usedBytes: number
-  limitGB: number | null; remainingBytes: number | null
+  limitGB: number | null; limitBytes: number | null; remainingBytes: number | null
   percentUsed: number; nearingLimit: boolean; exceeded: boolean
   fileCount: number; uploadsToday: number; uploadsThisMonth: number
   byCategory: { category: string; label: string; bytes: number; mb: number; count: number }[]
@@ -33,13 +37,15 @@ const CAT_COLORS: Record<string, string> = {
 
 export function LaundryStorageWidget({ businessId }: { businessId: string }) {
   const [usage, setUsage] = useState<Usage | null>(null)
+  const [stores, setStores] = useState<StoreUsage | null>(null)
+  const [calculatedAt, setCalculatedAt] = useState<string | null>(null)
   const [plan, setPlan] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!businessId) return
     fetch(`/api/laundry/storage?businessId=${encodeURIComponent(businessId)}`).then((r) => r.json())
-      .then((j) => { if (j.success) { setUsage(j.data); setPlan(j.plan) } })
+      .then((j) => { if (j.success) { setUsage(j.data); setStores(j.stores ?? null); setCalculatedAt(j.calculatedAt ?? null); setPlan(j.plan) } })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [businessId])
@@ -63,17 +69,17 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
           <div className="space-y-5">
             <div>
               <div className="flex items-end justify-between mb-1.5">
-                <p className="text-2xl font-bold text-slate-800">{fmt(usage.usedBytes)} <span className="text-sm font-normal text-slate-400">/ {usage.limitGB != null ? `${usage.limitGB} GB` : "Unlimited"}</span></p>
-                <span className="text-sm font-semibold text-slate-500">{usage.limitGB != null ? `${usage.percentUsed}%` : ""}</span>
+                <p className="text-2xl font-bold text-slate-800">{fmt(usage.usedBytes)} <span className="text-sm font-normal text-slate-400">/ {usage.limitBytes != null ? fmt(usage.limitBytes) : "Unlimited"}</span></p>
+                <span className="text-sm font-semibold text-slate-500">{usage.limitBytes != null ? `${usage.percentUsed}%` : ""}</span>
               </div>
               <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${usage.limitGB != null ? Math.max(2, usage.percentUsed) : 4}%` }} />
+                <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${usage.limitBytes != null ? Math.max(2, usage.percentUsed) : 4}%` }} />
               </div>
               {usage.remainingBytes != null && !usage.exceeded && (
                 <p className="text-[11px] text-slate-400 mt-1.5">{fmt(usage.remainingBytes)} remaining</p>
               )}
               {usage.exceeded && (
-                <p className="text-[12px] text-red-600 mt-2 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Storage limit exceeded — new uploads are blocked. Upgrade your plan.</p>
+                <p className="text-[12px] text-red-600 mt-2 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> <b>OVER LIMIT</b> — new uploads are blocked. Nothing has been deleted; remove unused files or contact Quantix to increase the limit.</p>
               )}
               {usage.nearingLimit && !usage.exceeded && (
                 <p className="text-[12px] text-amber-600 mt-2 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> You&apos;ve used over 90% of your storage.</p>
@@ -94,6 +100,24 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
               ))}
             </div>
 
+            {/* Store locations — the SAME plan slot for every location type. */}
+            {stores && (
+              <div className="rounded-lg border border-slate-200 p-3">
+                <div className="flex items-end justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Store Locations</p>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {stores.used} / {stores.allowed ?? "—"}
+                    {stores.exceeded && <span className="ml-1.5 text-[11px] font-bold text-red-600">LIMIT REACHED</span>}
+                  </p>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
+                  <span>Retail Stores <b className="text-slate-800">{stores.retail}</b></span>
+                  <span>Processing Centers <b className="text-slate-800">{stores.processingCenters}</b></span>
+                  <span>Both <b className="text-slate-800">{stores.both}</b></span>
+                </div>
+              </div>
+            )}
+
             {/* Breakdown */}
             <div>
               <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Breakdown by Category</p>
@@ -113,6 +137,9 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
               )}
             </div>
           </div>
+        )}
+        {calculatedAt && (
+          <p className="mt-4 text-[10px] text-slate-400">Last calculated: {new Date(calculatedAt).toLocaleString("en-IN")}</p>
         )}
       </CardContent>
     </Card>

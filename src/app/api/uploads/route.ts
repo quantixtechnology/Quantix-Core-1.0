@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import crypto from 'crypto'
-import { limitBytesForPlan } from '@/lib/laundry-storage'
+import { checkStorageAllowance } from '@/lib/storage-guard'
 
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || './public/uploads'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -80,17 +80,16 @@ export async function POST(request: Request) {
       )
     }
 
-    // Tenant storage limit — block new uploads once the plan quota is reached.
-    const limit = limitBytesForPlan((business as { plan?: string | null }).plan)
-    if (limit !== null) {
-      const agg = await db.fileUpload.aggregate({ where: { businessId, status: 'COMPLETED' }, _sum: { size: true } })
-      const used = agg._sum.size || 0
-      if (used + file.size > limit) {
-        return NextResponse.json(
-          { success: false, error: 'Storage limit reached. Upgrade your plan to upload more files.', code: 'STORAGE_LIMIT' },
-          { status: 413 }
-        )
-      }
+    // Tenant storage limit — the ONE shared check. Blocks new uploads only;
+    // every non-upload operation continues to work at the limit.
+    const laundryBiz = await db.laundryBusiness.findFirst({ where: { platformBusinessId: businessId }, select: { id: true } })
+    const allowance = await checkStorageAllowance({
+      laundryBusinessId: laundryBiz?.id ?? null,
+      platformBusinessId: businessId,
+      incomingBytes: file.size,
+    })
+    if (!allowance.ok) {
+      return NextResponse.json({ success: false, error: allowance.error, code: allowance.code }, { status: 413 })
     }
 
     // Generate unique filename
