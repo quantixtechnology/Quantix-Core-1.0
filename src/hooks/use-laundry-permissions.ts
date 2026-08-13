@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 
-type Snapshot = { isOwner: boolean; perms: Set<string> }
+type Snapshot = { isOwner: boolean; perms: Set<string>; roleCode: string }
 const cache = new Map<string, Snapshot>()
 const inflight = new Map<string, Promise<Snapshot | null>>()
 const listeners = new Set<() => void>()
@@ -22,7 +22,7 @@ async function fetchPerms(businessId: string): Promise<Snapshot | null> {
       // API returns `levels` (Record<string, number>) — convert to Set of screen keys with VIEW+ level
       const levels: Record<string, number> = r.data.levels || {}
       const perms = new Set(Object.keys(levels).filter((k) => (levels[k] ?? 0) >= 1))
-      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms }
+      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms, roleCode: String(r.data.roleCode || "") }
       cache.set(businessId, snap)
       listeners.forEach((l) => l())
       return snap
@@ -53,8 +53,14 @@ export function useLaundryPermissions() {
   }, [currentBusinessId])
 
   const isOwner = snap?.isOwner ?? false
+  // Platform Super Admin, as resolved server-side by /api/laundry/rbac/me. Used
+  // only to reveal platform-administrator actions (e.g. deleting a staff user);
+  // the endpoints themselves re-verify. Unlike `can`, this defaults to FALSE
+  // while loading — a platform-only action must never flash into view for a
+  // tenant user.
+  const isPlatformSuperAdmin = snap?.roleCode === "QUANTIX_SUPER_ADMIN"
   // While permissions are still loading (snap === null) we allow, so the UI never
   // flashes "no access" for a legitimately-permitted user; the server enforces.
   const can = (key: string) => snap === null || isOwner || snap.perms.has(key)
-  return { can, isOwner, loading: snap === null }
+  return { can, isOwner, isPlatformSuperAdmin, loading: snap === null }
 }

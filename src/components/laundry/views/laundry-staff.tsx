@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Loader2, UsersRound, Plus, Search, Pencil, KeyRound, Power, Shield, Lock, Copy } from "lucide-react"
+import { Loader2, UsersRound, Plus, Search, Pencil, KeyRound, Power, Shield, Lock, Copy, Trash2, AlertTriangle } from "lucide-react"
 
 interface Emp {
   userId: string; businessUserId: string; email: string; name: string; phone: string | null
@@ -31,7 +31,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
   const { currentBusinessId } = useAuthStore()
   const businessId = bizProp || currentBusinessId
   const { toast } = useToast()
-  const { can } = useLaundryPermissions()
+  const { can, isPlatformSuperAdmin } = useLaundryPermissions()
 
   const [emps, setEmps] = useState<Emp[]>([])
   const [roles, setRoles] = useState<RoleOpt[]>([])
@@ -48,6 +48,9 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
   const [fPassword, setFPassword] = useState(""); const [fRoleId, setFRoleId] = useState(""); const [fStoreId, setFStoreId] = useState("")
   const [saving, setSaving] = useState(false)
   const [creds, setCreds] = useState<{ email: string; tempPassword: string } | null>(null)
+  // Deletion is a Quantix Super Admin action, confirmed before it runs.
+  const [deleting, setDeleting] = useState<Emp | null>(null)
+  const [deletingBusy, setDeletingBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!businessId) return
@@ -118,6 +121,23 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     setCreds({ email: j.data.email, tempPassword: j.data.tempPassword })
   }
 
+  const confirmDelete = async () => {
+    if (!deleting) return
+    setDeletingBusy(true)
+    try {
+      const res = await fetch(`/api/laundry/staff/${deleting.userId}?businessId=${encodeURIComponent(businessId || "")}`, { method: "DELETE" })
+      const j = await res.json().catch(() => ({}))
+      // On failure the list is left exactly as it was — the row is still there.
+      if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error || "Could not delete user", variant: "destructive" }); return }
+      toast({ title: "User deleted successfully." })
+      setDeleting(null)
+      if (businessId) clearRuntimeAuthCache(businessId)
+      load()
+    } catch {
+      toast({ title: "Delete failed", description: "Network error — nothing was changed.", variant: "destructive" })
+    } finally { setDeletingBusy(false) }
+  }
+
   const copyCreds = () => { if (creds) navigator.clipboard?.writeText(`${creds.email} / ${creds.tempPassword}`).then(() => toast({ title: "Copied" })).catch(() => {}) }
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Loading…</div>
@@ -159,6 +179,16 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
                     {can("laundry.staff.edit") && <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit" onClick={() => openEdit(e)}><Pencil className="h-3.5 w-3.5 text-slate-500" /></Button>}
                     {can("laundry.staff.edit") && <Button size="icon" variant="ghost" className="h-7 w-7" title="Reset password" onClick={() => resetPassword(e)}><KeyRound className="h-3.5 w-3.5 text-slate-500" /></Button>}
                     {can("laundry.staff.edit") && !e.isOwner && <Button size="icon" variant="ghost" className="h-7 w-7" title={e.active ? "Deactivate" : "Activate"} onClick={() => toggleActive(e)}><Power className={`h-3.5 w-3.5 ${e.active ? "text-rose-500" : "text-emerald-500"}`} /></Button>}
+                    {/* Quantix Super Admin only, and never for the owner — the
+                        server refuses both regardless of what is rendered. */}
+                    {isPlatformSuperAdmin && (
+                      e.isOwner ? (
+                        <Button size="icon" variant="ghost" className="h-7 w-7 cursor-not-allowed" disabled
+                          title="Business Owner cannot be deleted. Transfer ownership first."><Trash2 className="h-3.5 w-3.5 text-slate-300" /></Button>
+                      ) : (
+                        <Button size="icon" variant="ghost" className="h-7 w-7" title="Delete user" onClick={() => setDeleting(e)}><Trash2 className="h-3.5 w-3.5 text-rose-500" /></Button>
+                      )
+                    )}
                   </div>
                 </td>
               </tr>
@@ -204,6 +234,31 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button type="button" onClick={submit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white gap-1">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} {editing ? "Save" : "Create"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation — destructive, and explicit about what survives. */}
+      <Dialog open={!!deleting} onOpenChange={(o) => { if (!o && !deletingBusy) setDeleting(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-rose-600" /> Delete Staff Member?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="font-semibold text-slate-800">{deleting?.name}</p>
+              <p className="text-xs text-slate-500">{deleting?.email}</p>
+            </div>
+            <p className="text-sm text-slate-600 leading-snug">
+              This will permanently remove this user&apos;s access to the business. Their historical orders, garment records,
+              processing history and other business records will remain intact.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleting(null)} disabled={deletingBusy}>Cancel</Button>
+            <Button type="button" onClick={confirmDelete} disabled={deletingBusy} className="bg-rose-600 hover:bg-rose-700 text-white gap-1">
+              {deletingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete User
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
