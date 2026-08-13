@@ -21,6 +21,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { LaundryBusinessCreate } from "./laundry-business-create"
 import { LaundryLicensingCard } from "./laundry-licensing-card"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 
 type LaundryBusiness = {
   id: string
@@ -774,7 +775,8 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     try {
       const [bizRes, licRes] = await Promise.all([
         fetch(`/api/laundry/businesses/${businessId}`),
-        fetch(`/api/laundry/businesses/${businessId}/licensing`),
+        // Licensing is Super Admin only — the token is required.
+        fetch(`/api/laundry/businesses/${businessId}/licensing`, { headers: getAuthHeaders() }),
       ])
       if (bizRes.ok) {
         const d = await bizRes.json()
@@ -817,7 +819,7 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     try {
       const res = await fetch(`/api/laundry/businesses/${businessId}/licensing`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ [section]: data }),
       })
       if (res.ok) {

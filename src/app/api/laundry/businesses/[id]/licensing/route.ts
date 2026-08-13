@@ -1,7 +1,26 @@
+// Business Licensing / Resource Allocation — QUANTIX SUPER ADMIN ONLY.
+//
+// This endpoint decides what a tenant is entitled to: subscription plan,
+// provisioning state, operational config, and the scaling limits behind the
+// Store / User / Storage quotas. It is platform commercial administration, not
+// business self-service — no tenant role may read or write it.
+//
+// It previously had NO authentication of any kind: both verbs were reachable
+// unauthenticated, so anyone who knew a business id could read a tenant's
+// commercial terms and raise its own quotas.
+//
+// Guarded with requiredRoles: ['QUANTIX_SUPER_ADMIN'] rather than a permission
+// key on purpose — a permission is something a business role could later be
+// granted, and this access must never be grantable to a tenant.
 import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { withMiddleware } from "@/lib/middleware"
 
 export const runtime = "nodejs"
+
+/** Quantix Super Admin only. Not a permission — a role gate. */
+const superAdminOnly = withMiddleware({ requireAuth: true, requiredRoles: ["QUANTIX_SUPER_ADMIN"] })
 
 const DEFAULT_SUBSCRIPTION = {
   plan: "STARTER",
@@ -79,7 +98,8 @@ async function createAuditLog(businessId: string, actorName: string | null, ipAd
   }
 }
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return superAdminOnly(async () => {
   try {
     const { id } = await params
     const business = await prisma.laundryBusiness.findUnique({
@@ -113,15 +133,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     console.error("Error fetching licensing:", error)
     return NextResponse.json({ error: "Failed to fetch licensing" }, { status: 500 })
   }
+  })(request)
 }
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return superAdminOnly(async (req) => {
   try {
     const { id } = await params
-    const body = await request.json()
+    const body = await req.json()
     const { subscription, provisioning, operationalConfig, workflowQuality, scalingLimit, brandingConfig, platformProvisioning } = body
 
-    const ipAddress = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || null
+    const ipAddress = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null
 
     if (subscription) {
       const prev = await prisma.laundrySubscription.findUnique({ where: { businessId: id } })
@@ -276,4 +298,5 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     console.error("Error updating licensing:", error)
     return NextResponse.json({ error: "Failed to update licensing" }, { status: 500 })
   }
+  })(request)
 }

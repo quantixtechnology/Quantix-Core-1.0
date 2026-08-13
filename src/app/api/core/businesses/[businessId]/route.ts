@@ -43,6 +43,19 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
     }
 
     const body = (await req.json()) as UpdateBusinessRequest;
+
+    // Resource Allocation is PLATFORM territory. `resourceOverrides` carries the
+    // Store / User / Storage quota overrides, and this endpoint admits
+    // CLIENT_OWNER so a business can maintain its own name, branding and contact
+    // details — which meant a Business Owner could raise their own quotas by
+    // posting the field directly. The rest of the payload is unaffected.
+    if ((body as Record<string, unknown>).resourceOverrides !== undefined && !user.isPlatformAdmin) {
+      return NextResponse.json(
+        { success: false, error: 'Resource allocation can only be changed by Quantix.', code: 'PLATFORM_ONLY_FIELD' },
+        { status: 403 },
+      );
+    }
+
     const business = await updateBusiness(businessId, body);
 
     return NextResponse.json({ success: true, data: business, message: 'Business updated successfully' });
