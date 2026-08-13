@@ -21,21 +21,71 @@
 import { prisma } from "@/lib/prisma"
 
 /**
- * The store limit the business's plan grants, or null when it cannot be
- * determined (no product/plan assigned yet).
+ * Per-business resource overrides, stored as JSON on Business.settings under
+ * `resourceOverrides` — the exact shape Business Management → Resource
+ * Allocation writes. A blank field means "no override", not zero.
  */
-export async function planStoreLimit(platformBusinessId: string | null | undefined): Promise<number | null> {
-  if (!platformBusinessId) return null
+export interface ResourceOverrides { storageGB?: number; users?: number; stores?: number }
+
+export function parseResourceOverrides(settings: string | null | undefined): ResourceOverrides {
+  try {
+    const s = settings ? JSON.parse(settings) : {}
+    return (s?.resourceOverrides ?? {}) as ResourceOverrides
+  } catch {
+    return {} // malformed settings JSON → no override
+  }
+}
+
+export interface StoreLimitResolution {
+  planDefault: number | null
+  override: number | null
+  /** override ?? planDefault — what the business is actually entitled to. */
+  effective: number | null
+  planCode: string | null
+}
+
+/**
+ * THE effective store limit: business override first, plan default second.
+ *
+ * The plan's branchLimit is only a DEFAULT. When an administrator has given a
+ * business an explicit Stores / Branches override in Resource Allocation, that
+ * is the customer's real entitlement and it wins — a STARTER business granted 5
+ * stores has 5, not 1.
+ *
+ * This mirrors the Resource Allocation screen's own arithmetic (effective =
+ * override ?? plan default) and the storage precedent already in
+ * business-provisioning.ts. Store limits are resolved HERE and nowhere else, so
+ * the platform cannot end up with two definitions of "Store Limit".
+ */
+export async function resolveEffectiveStoreLimit(platformBusinessId: string | null | undefined): Promise<StoreLimitResolution> {
+  const empty: StoreLimitResolution = { planDefault: null, override: null, effective: null, planCode: null }
+  if (!platformBusinessId) return empty
+
   const business = await prisma.business.findUnique({
     where: { id: platformBusinessId },
-    select: { productCode: true, subscriptionPlanCode: true },
+    select: { productCode: true, subscriptionPlanCode: true, settings: true },
   })
-  if (!business?.productCode || !business.subscriptionPlanCode) return null
-  const plan = await prisma.productPlan.findUnique({
-    where: { productCode_code: { productCode: business.productCode, code: business.subscriptionPlanCode } },
-    select: { branchLimit: true },
-  })
-  return plan && plan.branchLimit > 0 ? plan.branchLimit : null
+  if (!business) return empty
+
+  const ov = parseResourceOverrides(business.settings).stores
+  // Same guard the Review UI applies: blank/invalid/<1 is not an override.
+  const override = typeof ov === "number" && Number.isFinite(ov) && ov >= 1 ? Math.floor(ov) : null
+
+  let planDefault: number | null = null
+  if (business.productCode && business.subscriptionPlanCode) {
+    const plan = await prisma.productPlan.findUnique({
+      where: { productCode_code: { productCode: business.productCode, code: business.subscriptionPlanCode } },
+      select: { branchLimit: true },
+    })
+    planDefault = plan && plan.branchLimit > 0 ? plan.branchLimit : null
+  }
+
+  return { planDefault, override, effective: override ?? planDefault, planCode: business.subscriptionPlanCode ?? null }
+}
+
+/** Convenience: just the number a new workspace should be seeded with. */
+export async function planStoreLimit(platformBusinessId: string | null | undefined): Promise<number | null> {
+  return (await resolveEffectiveStoreLimit(platformBusinessId)).effective
 }
 
 /**

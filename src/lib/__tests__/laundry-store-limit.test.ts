@@ -33,7 +33,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-import { ensureScalingLimitForNewBusiness, planStoreLimit } from '@/lib/laundry-scaling-limits'
+import { ensureScalingLimitForNewBusiness, planStoreLimit, resolveEffectiveStoreLimit, parseResourceOverrides } from '@/lib/laundry-scaling-limits'
 import { computeStoreUsage } from '@/lib/laundry-storage'
 
 const ROOT = join(__dirname, '../../..')
@@ -43,8 +43,11 @@ const RESOLVE = read('src/lib/laundry-business.ts')
 const UI = read('src/components/admin/laundry/laundry-stores-view.tsx')
 const SCHEMA = read('prisma/schema.prisma')
 
-const withPlan = (branchLimit: number) => {
-  mocks.businessFindUnique.mockResolvedValue({ productCode: 'LAUNDRY', subscriptionPlanCode: 'PRO' })
+const withPlan = (branchLimit: number, overrides?: Record<string, unknown>) => {
+  mocks.businessFindUnique.mockResolvedValue({
+    productCode: 'LAUNDRY', subscriptionPlanCode: 'PRO',
+    settings: overrides ? JSON.stringify({ resourceOverrides: overrides }) : null,
+  })
   mocks.planFindUnique.mockResolvedValue({ branchLimit })
 }
 
@@ -52,6 +55,70 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.scalingFindUnique.mockResolvedValue(null)
   mocks.scalingCreate.mockResolvedValue({})
+})
+
+// ── The effective limit: override beats the plan default ───────────────────
+describe('the business override is the real entitlement', () => {
+  it('an explicit Stores/Branches override WINS over the plan default', async () => {
+    // The exact case first missed: a STARTER business (plan default 1) that an
+    // administrator explicitly granted 5 stores has 5, not 1.
+    withPlan(1, { stores: 5 })
+    const r = await resolveEffectiveStoreLimit('pb1')
+    expect(r.planDefault).toBe(1)
+    expect(r.override).toBe(5)
+    expect(r.effective).toBe(5)
+  })
+
+  it('with no override the plan default applies', async () => {
+    withPlan(1)
+    const r = await resolveEffectiveStoreLimit('pb1')
+    expect(r.override).toBeNull()
+    expect(r.effective).toBe(1)
+  })
+
+  it('a blank / invalid / sub-1 override is NOT an override', async () => {
+    // Same guard the Resource Allocation screen applies.
+    for (const bad of [0, -3, null, undefined, 'five', NaN]) {
+      withPlan(1, { stores: bad })
+      const r = await resolveEffectiveStoreLimit('pb1')
+      expect(r.override).toBeNull()
+      expect(r.effective).toBe(1)
+    }
+  })
+
+  it('an override still applies when the plan has no default', async () => {
+    mocks.businessFindUnique.mockResolvedValue({
+      productCode: null, subscriptionPlanCode: null,
+      settings: JSON.stringify({ resourceOverrides: { stores: 4 } }),
+    })
+    const r = await resolveEffectiveStoreLimit('pb1')
+    expect(r.planDefault).toBeNull()
+    expect(r.effective).toBe(4)
+  })
+
+  it('malformed settings JSON falls back to the plan default', async () => {
+    mocks.businessFindUnique.mockResolvedValue({ productCode: 'LAUNDRY', subscriptionPlanCode: 'PRO', settings: '{not json' })
+    mocks.planFindUnique.mockResolvedValue({ branchLimit: 2 })
+    const r = await resolveEffectiveStoreLimit('pb1')
+    expect(r.effective).toBe(2)
+  })
+
+  it('the override is read from the EXISTING resourceOverrides field', () => {
+    // Business.settings.resourceOverrides — what Resource Allocation writes.
+    // No second override field is introduced.
+    expect(parseResourceOverrides(JSON.stringify({ resourceOverrides: { stores: 5 } })).stores).toBe(5)
+    expect(parseResourceOverrides(null)).toEqual({})
+    const src = read('src/lib/laundry-scaling-limits.ts')
+    expect(src).toContain('resourceOverrides')
+    expect(src).not.toContain('storeLimitOverride')
+  })
+
+  it('storage is NOT touched by this resolver', () => {
+    // storageGB has the same override bug; it is deliberately a separate task.
+    const src = read('src/lib/laundry-scaling-limits.ts')
+    expect(src).not.toContain('storageLimitMB')
+    expect(src).not.toContain('storageQuotaMB')
+  })
 })
 
 // ── Persistence at creation ────────────────────────────────────────────────
@@ -64,6 +131,12 @@ describe('the plan\'s Store Limit is persisted at creation', () => {
 
   it('Business created with Store Limit = 5 → storesAllowed 5', async () => {
     withPlan(5)
+    await ensureScalingLimitForNewBusiness('lb1', 'pb1')
+    expect(mocks.scalingCreate).toHaveBeenCalledWith({ data: { businessId: 'lb1', storesAllowed: 5 } })
+  })
+
+  it('a NEW business honours a configured override, not the plan default', async () => {
+    withPlan(1, { stores: 5 })
     await ensureScalingLimitForNewBusiness('lb1', 'pb1')
     expect(mocks.scalingCreate).toHaveBeenCalledWith({ data: { businessId: 'lb1', storesAllowed: 5 } })
   })
@@ -88,6 +161,13 @@ describe('the plan\'s Store Limit is persisted at creation', () => {
     expect(src).not.toContain('laundryScalingLimit.update')
     expect(src).not.toContain('laundryScalingLimit.upsert')
     expect(src).not.toContain('laundryScalingLimit.delete')
+  })
+
+  it('the backfill script uses the SAME resolver — one definition only', () => {
+    const script = read('scripts/backfill-store-limits.ts')
+    expect(script).toContain('resolveEffectiveStoreLimit')
+    // It must not re-derive the limit from the plan on its own.
+    expect(script).not.toContain('productPlan.findUnique')
   })
 
   it('both creation paths seed it', () => {
