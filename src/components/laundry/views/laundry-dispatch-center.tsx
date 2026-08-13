@@ -36,7 +36,13 @@ interface Job {
   completedAt: string | null
   bucket: string
 }
-interface DispatchJob extends Job { kind: Kind }
+// An order that needs BOTH pickup and delivery produces TWO jobs carrying the
+// SAME order id. `jobKey` ("pickup:<orderId>" / "delivery:<orderId>") is the
+// identity of the WORK ITEM and is what the UI selects and keys on; `id` stays
+// the LaundryOrder id and is what the API and navigation use. Keying the UI on
+// `id` alone made the two jobs one React row and one selection.
+interface DispatchJob extends Job { kind: Kind; jobKey: string }
+const jobKeyOf = (kind: Kind, orderId: string) => `${kind}:${orderId}`
 interface Exec {
   id: string; name: string; todaysPickups?: number; todaysDeliveries?: number
   // Eligibility inputs — this board holds ONE list covering every store, so the
@@ -142,8 +148,8 @@ export function LaundryDispatchCenter() {
         fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()),
       ])
       const merged: DispatchJob[] = [
-        ...(pu.success ? pu.data.map((j: Job) => ({ ...j, kind: "pickup" as const })) : []),
-        ...(dv.success ? dv.data.map((j: Job) => ({ ...j, kind: "delivery" as const })) : []),
+        ...(pu.success ? pu.data.map((j: Job) => ({ ...j, kind: "pickup" as const, jobKey: jobKeyOf("pickup", j.id) })) : []),
+        ...(dv.success ? dv.data.map((j: Job) => ({ ...j, kind: "delivery" as const, jobKey: jobKeyOf("delivery", j.id) })) : []),
       ]
       setJobs(merged)
       if (ex.success) setExecs(ex.data)
@@ -196,7 +202,7 @@ export function LaundryDispatchCenter() {
   // selected job's store are offered; a mixed-store selection leaves the
   // All-Stores executives.
   const bulkExecs = useMemo(
-    () => filterEligibleForStores(execs, filtered.filter((j) => selected.has(j.id) && !isFrozen(j)).map((j) => j.storeId)),
+    () => filterEligibleForStores(execs, filtered.filter((j) => selected.has(j.jobKey) && !isFrozen(j)).map((j) => j.storeId)),
     [execs, filtered, selected],
   )
 
@@ -217,7 +223,7 @@ export function LaundryDispatchCenter() {
   // ── Bulk — selection may mix pickups + deliveries; group by kind and issue one
   // call per type (each hits the same endpoint, updating the Orders directly). ──
   const bulkAssign = async (executiveId: string | null) => {
-    const chosen = filtered.filter((j) => selected.has(j.id) && !isFrozen(j))
+    const chosen = filtered.filter((j) => selected.has(j.jobKey) && !isFrozen(j))
     if (chosen.length === 0) return
     if (!executiveId && !confirm(`Clear assignment for ${chosen.length} selected job(s)?`)) return
     const groups: Record<Kind, string[]> = { pickup: [], delivery: [] }
@@ -235,11 +241,11 @@ export function LaundryDispatchCenter() {
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed") }
   }
 
-  const visibleIds = filtered.map((j) => j.id)
-  const selectableIds = filtered.filter((j) => !isFrozen(j)).map((j) => j.id)
-  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id))
+  // Selection is per WORK ITEM, so these are jobKeys, not order ids.
+  const selectableIds = filtered.filter((j) => !isFrozen(j)).map((j) => j.jobKey)
+  const allSelected = selectableIds.length > 0 && selectableIds.every((k) => selected.has(k))
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds))
-  const toggleOne = (id: string) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleOne = (jobKey: string) => setSelected((p) => { const n = new Set(p); n.has(jobKey) ? n.delete(jobKey) : n.add(jobKey); return n })
   const open = (id: string) => { setSelectedOrderId(id); setLaundryPage("order-detail") }
 
   if (loading) return <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading dispatch board…</div>
@@ -375,9 +381,9 @@ export function LaundryDispatchCenter() {
             const isDel = job.kind === "delivery"
             const frozen = isFrozen(job)
             return (
-              <Card key={job.id} className={`rounded-lg border ${selected.has(job.id) ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-white"} cursor-pointer hover:border-slate-300`} onClick={() => open(job.id)}>
+              <Card key={job.jobKey} className={`rounded-lg border ${selected.has(job.jobKey) ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-white"} cursor-pointer hover:border-slate-300`} onClick={() => open(job.id)}>
                 <CardContent className="p-1.5 flex items-center gap-1.5">
-                  <Checkbox checked={selected.has(job.id)} disabled={frozen} onCheckedChange={() => !frozen && toggleOne(job.id)} className="shrink-0" onClick={(e) => e.stopPropagation()} />
+                  <Checkbox checked={selected.has(job.jobKey)} disabled={frozen} onCheckedChange={() => !frozen && toggleOne(job.jobKey)} className="shrink-0" onClick={(e) => e.stopPropagation()} />
                   {/* Kind chip */}
                   <Badge variant="outline" className={`text-[9px] leading-none px-1 h-4 shrink-0 gap-0.5 ${isDel ? "border-violet-200 text-violet-700 bg-violet-50" : "border-amber-200 text-amber-700 bg-amber-50"}`}>
                     {isDel ? <PackageCheck className="h-2.5 w-2.5" /> : <Truck className="h-2.5 w-2.5" />}{isDel ? "DEL" : "PICK"}

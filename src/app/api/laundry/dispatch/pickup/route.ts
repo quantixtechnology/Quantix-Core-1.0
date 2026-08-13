@@ -10,7 +10,14 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, customerId, customerData, pickupAddress, pickupDate, pickupTimeSlot, services, notes, executiveId } = body
+    const { businessId, customerId, customerData, pickupAddress, pickupDate, pickupTimeSlot, services, notes, executiveId, deliveryRequired } = body
+    // Pickup and delivery are INDEPENDENT requirements. This route schedules a
+    // pickup, so it may only speak for pickupRequired; the delivery requirement
+    // is whatever the caller actually states, and false when they state nothing.
+    // It previously hardcoded deliveryRequired: true, which silently committed
+    // every scheduled pickup to a delivery nobody had asked for — including
+    // customers who intend to collect from the store.
+    const wantsDelivery = deliveryRequired === true
     if (!businessId || (!customerId && !customerData?.name))
       return NextResponse.json({ error: "businessId and customerId or customerData.name required" }, { status: 400 })
 
@@ -97,7 +104,9 @@ export async function POST(request: Request) {
         customerId: custId,
         orderType: "HOME_PICKUP",
         pickupRequired: true,
-        deliveryRequired: true,
+        // Never inferred from the pickup. A delivery is added later by
+        // /api/laundry/dispatch/delivery, which is the one place that sets it.
+        deliveryRequired: wantsDelivery,
         pickupAddress: pickupAddress || null,
         pickupDate: pickupDate ? new Date(pickupDate) : null,
         pickupTimeSlot: pickupTimeSlot || null,
