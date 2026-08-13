@@ -20,6 +20,7 @@ import { Loader2, Play, Pause, Check, Undo2, Factory, QrCode, RefreshCw, ScanLin
 import { stageLabel } from "@/lib/laundry-processing"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
+import { useScanSink } from "@/lib/hardware"
 
 type ContainerSummary = {
   id: string; code: string; status: string; orderId: string; orderNumber: string | null
@@ -53,6 +54,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
   const [containers, setContainers] = useState<ContainerSummary[]>([])
   const [active, setActive] = useState<ContainerDetail | null>(null)
   const [code, setCode] = useState("")
+  // Every container scan — wedge, camera or typed — arrives from the one engine.
   const [looking, setLooking] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -215,6 +217,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
     </div>
   )
 
+  const scanProps = useScanSink((c) => { setCode(""); void resolve(c) })
   return (
     <div className="px-4 lg:px-6 py-6 space-y-5">
       <div>
@@ -233,13 +236,14 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
           <div className="flex items-center gap-3 max-w-2xl">
             <div className="relative flex-1">
               <QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" />
+              {/* Scan sink: the shared engine dispatches the burst — Enter,
+                  Tab or no suffix — and calls resolve() once. */}
               <Input
-                ref={inputRef}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && resolve()}
                 placeholder={`${scanTarget} (${scanHint})`}
                 className="pl-10 h-11 bg-white border-blue-200 font-mono"
+                {...scanProps}
               />
             </div>
             <BagScanButton label="Scan with Camera" onScan={(c) => resolve(c)} disabled={looking} closeOnScan className="h-11" />

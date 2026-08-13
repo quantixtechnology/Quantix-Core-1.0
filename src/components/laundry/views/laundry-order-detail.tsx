@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { useScanSink } from "@/lib/hardware"
 import { useAdminStore } from "@/stores/admin-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -106,6 +107,7 @@ export function LaundryOrderDetail() {
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [scanCode, setScanCode] = useState("")
+  // Item barcode → the same engine every other station uses.
   const [assigning, setAssigning] = useState<"pickup" | "delivery" | null>(null)
   const [receiving, setReceiving] = useState(false)
   // Permanent deletion — Super Admin only (server also enforces).
@@ -161,8 +163,8 @@ export function LaundryOrderDetail() {
     }
   }
 
-  const scan = async () => {
-    const code = scanCode.trim()
+  const scan = async (raw?: string) => {
+    const code = (raw ?? scanCode).trim()
     if (!code) return
     const j = await fetch(`/api/laundry/scan?barcode=${encodeURIComponent(code)}`).then((r) => r.json()).catch(() => null)
     if (!j?.success) return
@@ -251,6 +253,7 @@ export function LaundryOrderDetail() {
     </div>
   )
 
+  const itemScan = useScanSink((c) => { setScanCode(""); void scan(c) })
   return (
     <div className="px-1 lg:px-2 py-2 space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -460,7 +463,7 @@ export function LaundryOrderDetail() {
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm flex items-center gap-2"><Shirt className="h-4 w-4 text-blue-600" /> Garments ({order.items.length})</CardTitle>            <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input value={scanCode} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && scan()} placeholder="Scan item barcode…" className="h-8 w-[180px] rounded-md border border-slate-200 pl-7 pr-2 text-xs font-mono" />
+              <input value={scanCode} onChange={(e) => setScanCode(e.target.value)} placeholder="Scan item barcode…" className="h-8 w-[180px] rounded-md border border-slate-200 pl-7 pr-2 text-xs font-mono" {...itemScan} />
             </div>
           </CardHeader>
           <CardContent className="p-0">

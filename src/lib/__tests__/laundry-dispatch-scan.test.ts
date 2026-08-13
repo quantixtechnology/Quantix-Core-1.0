@@ -11,8 +11,14 @@ describe('Dispatch to Store is scan-and-go', () => {
     expect(CONSOLE).toContain('const scanDispatch = async')
   })
 
-  it('Enter dispatches, so a wedge scanner needs no button', () => {
-    expect(CONSOLE).toContain('if (e.key === "Enter") { e.preventDefault(); scanDispatch() }')
+  it('a scan dispatches, so a wedge scanner needs no button', () => {
+    // Superseded: the field used to handle its own Enter, which made Enter the
+    // only terminator that worked and hid the scan from diagnostics. It is now
+    // a scan sink on the shared engine, so Enter, Tab and a no-suffix scanner
+    // all dispatch — see laundry-scan-sink.test.ts.
+    expect(CONSOLE).toContain('const dispatchScanProps = useScanSink(')
+    expect(CONSOLE).toContain('void scanDispatch(c)')
+    expect(CONSOLE).toContain('{...dispatchScanProps}')
   })
 
   it('the field autofocuses and clears, so scans can run back to back', () => {

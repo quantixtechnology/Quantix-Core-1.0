@@ -21,6 +21,7 @@ import { Loader2, PackageCheck, Factory, ArrowRight, ArrowRightLeft, Barcode as 
 import { stageLabel } from "@/lib/laundry-processing"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { useScanSink } from "@/lib/hardware"
 import QRCode from "qrcode"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useTransportModes } from "@/hooks/use-transport-modes"
@@ -192,6 +193,12 @@ export function LaundryProcessingConsole() {
    * for the manual path — a bag that will not scan, or a packet-only order.
    */
   const [dispatchScan, setDispatchScan] = useState("")
+  // Two scan surfaces on one screen. The dispatch box only exists while there
+  // is something ready to return, and only that sink is armed then — otherwise
+  // it would hold the scanner while invisible and a receive scan would vanish
+  // into it. Focusing either box takes the scanner, so the operator's attention
+  // decides, exactly as it does physically.
+  const dispatchArmed = !hist.dispatch && readyToReturn.length > 0
   const [dispatchBusy, setDispatchBusy] = useState(false)
 
   const scanDispatch = async (raw?: string) => {
@@ -246,6 +253,8 @@ export function LaundryProcessingConsole() {
     </div>
   )
 
+  const receiveScan = useScanSink((c) => { setCode(""); void lookupAndReceive(c) })
+  const dispatchScanProps = useScanSink((c) => { setDispatchScan(""); void scanDispatch(c) }, { enabled: dispatchArmed })
   return (
     <div className="px-4 lg:px-6 py-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -259,7 +268,7 @@ export function LaundryProcessingConsole() {
       {/* QR / manual entry — ONE box; Transport Setup decides what it accepts. */}
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm"><CardContent className="p-4">
         <div className="flex items-center gap-3 max-w-2xl">
-          <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupAndReceive()} placeholder={transportScanPlaceholder(transportMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
+          <div className="relative flex-1"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={transportScanPlaceholder(transportMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" {...receiveScan} /></div>
           <BagScanButton label="Scan with Camera" onScan={(c) => lookupAndReceive(c)} disabled={looking} closeOnScan className="h-11" />
           <Button onClick={() => lookupAndReceive()} disabled={looking || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{looking ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
         </div>
@@ -330,13 +339,13 @@ export function LaundryProcessingConsole() {
           {/* Scan and go — one scan dispatches that order. At a hundred orders
               the per-row dialog is the bottleneck, not the network. The field
               keeps focus so a wedge scanner can fire continuously. */}
-          {!hist.dispatch && readyToReturn.length > 0 && (
+          {dispatchArmed && (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-2.5">
               <div className="relative min-w-0 flex-1">
                 <QrIcon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   autoFocus value={dispatchScan} onChange={(e) => setDispatchScan(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanDispatch() } }}
+                  {...dispatchScanProps}
                   placeholder="Scan bag or order to dispatch…"
                   className="h-10 pl-8 font-mono text-sm bg-white" />
               </div>

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ScanLine, Camera, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScanEngine } from "@/lib/hardware"
-import type { ScanSource, ScanStatus } from "@/lib/hardware"
+import { ScanEngine, useScanSink } from "@/lib/hardware"
+import type { ScanStatus } from "@/lib/hardware"
 
 type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> }
 type DetectorCtor = new (o?: { formats?: string[] }) => Detector
@@ -15,59 +15,39 @@ const formats = ["code_128", "code_39", "code_93", "codabar", "ean_13", "ean_8",
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect: (code: string) => void; departmentLabel: string }) {
-  const inputRef = useRef<HTMLInputElement>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [handling, setHandling] = useState(false)
 
-  // Duplicate scan guard: ignore identical codes within 2 s.
-  const lastCode = useRef("")
-  const lastTime = useRef(0)
-  const guard = (code: string): boolean => {
-    const now = Date.now()
-    if (code === lastCode.current && now - lastTime.current < 2000) return true
-    lastCode.current = code; lastTime.current = now
-    return false
-  }
-
   // This component is the one barcode surface every workstation renders, so
-  // routing it through the shared ScanEngine puts every screen on the engine
-  // without touching a single workflow. The engine classifies the input
-  // (USB / Bluetooth wedge, camera, manual), dedupes and records diagnostics,
-  // then hands the code back through the attachment below — which runs the
-  // exact same submit pipeline as before.
-  const onDetectRef = useRef(onDetect)
-  onDetectRef.current = onDetect
+  // binding it to the shared ScanEngine puts Washing, Dry Cleaning, Dry & QC
+  // and Sorting on the engine without touching a single workflow. The engine
+  // classifies the input (USB / Bluetooth wedge, camera, manual), applies the
+  // one deduplication window and records diagnostics; the workstation's own
+  // handler runs from its dispatch, exactly as before.
+  //
+  // The field is a scan sink: without that marker the engine stands aside for
+  // it — it is an <input> and permanently focused — and Enter would be the only
+  // terminator that ever worked. There is no private duplicate guard here any
+  // more; that is the engine's job and it belongs in one place.
   const handlingRef = useRef(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const [scanStatus, setScanStatus] = useState<ScanStatus>("MANUAL_ENTRY")
 
-  useEffect(() => {
-    const detach = ScanEngine.attach((e) => {
-      handlingRef.current = true
-      setHandling(true)
-      Promise.resolve(onDetectRef.current(e.code)).finally(() => {
-        handlingRef.current = false
-        setHandling(false)
-        if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus() }
-      })
+  const scanProps = useScanSink((code) => {
+    if (handlingRef.current) return
+    handlingRef.current = true
+    setHandling(true)
+    Promise.resolve(onDetect(code)).finally(() => {
+      handlingRef.current = false
+      setHandling(false)
+      if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus() }
     })
+  }, { inputRef })
+
+  useEffect(() => {
     setScanStatus(ScanEngine.status())
-    const unsub = ScanEngine.subscribe(setScanStatus)
-    return () => { detach(); unsub() }
+    return ScanEngine.subscribe(setScanStatus)
   }, [])
-
-  const submit = useCallback((code: string, source?: ScanSource) => {
-    const c = code.trim().toUpperCase()
-    if (!c || handlingRef.current || guard(c)) return
-    ScanEngine.submit(c, source)
-  }, [])
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      const code = inputRef.current?.value?.trim() ?? ""
-      if (code) submit(code)
-    }
-  }, [submit])
 
   const inputId = "laundry-barcode-scanner-input"
 
@@ -109,11 +89,10 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
           <ScanLine className="h-5 w-5 text-blue-500 shrink-0" />
           <input
             id={inputId}
-            ref={inputRef}
             autoFocus
             className="block w-full h-11 rounded-lg border border-blue-200 bg-white px-4 text-sm font-mono text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
             placeholder={`Scan barcode for ${departmentLabel}…`}
-            onKeyDown={handleKeyDown}
+            {...scanProps}
           />
           <Button
             size="sm"
@@ -130,7 +109,7 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
 
       {cameraOpen && (
         <CameraScanner
-          onDetected={(code: string) => { setCameraOpen(false); submit(code, "CAMERA") }}
+          onDetected={(code: string) => { setCameraOpen(false); ScanEngine.submit(code.trim().toUpperCase(), "CAMERA") }}
           onClose={() => setCameraOpen(false)}
         />
       )}

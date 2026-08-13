@@ -7,6 +7,8 @@
 // implementation behind either engine touches no workflow.
 
 export { ScanEngine } from "./scan-engine"
+export { useScanSink } from "./use-scan-sink"
+export type { ScanSinkProps, UseScanSinkOptions } from "./use-scan-sink"
 export { PrintEngine, renderAndPrint } from "./print-engine"
 export type { PrintJob, TrackedJob, PrintJobStatus, PrinterConnectivity } from "./print-engine"
 export { diagnostics } from "./diagnostics"

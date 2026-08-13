@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScanLine, Camera, Keyboard, Settings2, Loader2 } from "lucide-react"
+import { ScanEngine, useScanSink } from "@/lib/hardware"
 
 type ScannerMode = "auto" | "camera" | "usb" | "bluetooth"
 const MODE_KEY = "quantix_bag_scanner_mode"
@@ -59,21 +60,30 @@ function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () =>
   const [mode, setMode] = useState<ScannerMode>(getScannerMode())
   const [showSettings, setShowSettings] = useState(false)
   const useCamera = mode === "auto" ? isMobileDevice() && !!getBarcodeDetector() : mode === "camera"
-  const [manual, setManual] = useState("")
   const [handling, setHandling] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const handlingRef = useRef(false)
 
-  const submit = useCallback(async (code: string) => {
+  // The bag/QR surface shared by Store Audit, Pickup Bags, Bag Management,
+  // Sorting, Console & Receive and Transit. It runs on the same ScanEngine as
+  // every other station: the field is a scan sink, so Enter, Tab and a scanner
+  // with no suffix all arrive, deduplicated and recorded once.
+  //
+  // Opening this dialog takes the scanner from the screen underneath — the
+  // engine gives it to the most recent attachment — and closing hands it back.
+  const run = useCallback(async (code: string) => {
     const c = code.trim()
-    if (!c || handling) return
+    if (!c || handlingRef.current) return
+    handlingRef.current = true
     setHandling(true)
     try { await onScan(c) } finally {
+      handlingRef.current = false
       if (closeOnScan) { onClose(); return }
       // Allow immediate rescanning — clear + refocus rather than closing.
-      setManual(""); setHandling(false)
-      setTimeout(() => inputRef.current?.focus(), 30)
+      setHandling(false)
+      setTimeout(() => scanProps.ref.current?.focus(), 30)
     }
-  }, [onScan, handling, closeOnScan, onClose])
+  }, [onScan, closeOnScan, onClose])
+  const scanProps = useScanSink(run)
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -98,13 +108,13 @@ function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () =>
         )}
 
         {useCamera ? (
-          <CameraScan onDetected={submit} />
+          <CameraScan onDetected={(c) => ScanEngine.submit(c.trim().toUpperCase(), "CAMERA")} />
         ) : (
           <div className="space-y-2 text-center py-2">
             <div className="mx-auto w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center"><Keyboard className="h-6 w-6 text-blue-600" /></div>
             <p className="text-sm text-slate-600">Scan the bag QR now — the USB/Bluetooth scanner enters it automatically.</p>
             {/* Focused capture field: keyboard-wedge scanners type here + Enter. */}
-            <Input ref={inputRef} autoFocus value={manual} onChange={(e) => setManual(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") submit(manual) }} placeholder="Waiting for scan…" className="h-11 text-center font-mono text-[15px]" />
+            <Input autoFocus placeholder="Waiting for scan…" className="h-11 text-center font-mono text-[15px] uppercase" {...scanProps} />
             {handling && <p className="text-xs text-slate-400 flex items-center justify-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Processing…</p>}
           </div>
         )}

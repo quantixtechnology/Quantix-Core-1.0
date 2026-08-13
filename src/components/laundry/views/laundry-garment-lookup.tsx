@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Barcode as BarcodeIcon, Search, Loader2, User, MapPin, ShoppingBag, Clock, CheckCircle, XCircle, AlertTriangle, Camera, ScanLine } from "lucide-react"
 import { Barcode } from "./barcode"
 import { CopyButton } from "@/components/ui/copy-button"
-import { ScanEngine } from "@/lib/hardware"
+import { useScanSink } from "@/lib/hardware"
 
 interface ScanResult {
   item: {
@@ -150,41 +150,11 @@ export function LaundryGarmentLookup() {
   }, [scanMode, result])
 
   // POS behaviour: while scan mode is on, a wedge scanner lands ANYWHERE on the
-  // page — no field to click first, and the listener stays live scan after scan
-  // until the operator leaves scan mode or the screen. The focused input above
-  // still works; this only covers the case where focus has drifted, which at a
-  // counter is most of the time.
-  useEffect(() => {
-    if (!scanMode) return
-    ScanEngine.start()
-    return ScanEngine.attach((e) => {
-      const q = e.code.trim().toUpperCase()
-      if (!q || scanGuard(q)) return
-      setCode(q)
-      search(q)
-    })
-  }, [scanMode, search])
-
-  // Duplicate scan guard for scanner mode
-  const lastCode = useRef("")
-  const lastTime = useRef(0)
-  const scanGuard = (code: string): boolean => {
-    const now = Date.now()
-    if (code === lastCode.current && now - lastTime.current < 2000) return true
-    lastCode.current = code; lastTime.current = now
-    return false
-  }
-
-  const handleScanInput = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      const val = e.currentTarget.value.trim().toUpperCase()
-      if (!val || scanGuard(val)) return
-      setCode(val)
-      search(val)
-      e.currentTarget.value = ""
-    }
-  }, [search])
+  // page — no field to click first, and the sink stays live scan after scan
+  // until the operator leaves scan mode or the screen. The same binding every
+  // other Laundry OS station uses, so Enter, Tab and a no-suffix scanner all
+  // arrive here, deduplicated and recorded once.
+  const scanProps = useScanSink((q) => { setCode(q); void search(q) }, { enabled: scanMode, inputRef: scanInputRef })
 
   const stageColor = (stage: string) => {
     const map: Record<string, string> = {
@@ -205,12 +175,15 @@ export function LaundryGarmentLookup() {
       {scanMode && (
         <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 -mx-1">
           <ScanLine className="h-5 w-5 text-emerald-600 shrink-0" />
+          {/* data-scan-sink: this field exists for the scanner, so the engine
+              must not stand aside for it the way it does for a real text field.
+              Without the marker it is a focused <input>, the engine defers on
+              every scan, and nothing is ever dispatched or recorded. */}
           <input
-            ref={scanInputRef}
             autoFocus
             className="flex-1 bg-transparent border-none outline-none text-sm font-mono text-emerald-900 placeholder:text-emerald-500/70"
             placeholder="Ready — scan a garment (no need to click here)"
-            onKeyDown={handleScanInput}
+            {...scanProps}
           />
           {/* Live for as long as scan mode is on: many scans, no reactivation. */}
           <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-100 text-[10px] gap-1.5">

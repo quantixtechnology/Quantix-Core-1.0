@@ -29,6 +29,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { useScanSink } from "@/lib/hardware"
 import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
 import { printHtmlDocument } from "@/lib/print-utils"
@@ -363,6 +364,7 @@ interface PackHistoryRow {
 export function LaundryPacking() {
   const { currentBusinessId, user } = useAuthStore()
   const { setLaundryPage } = useAdminStore()
+  // Bag/packet QR arrives through the shared engine — Enter, Tab or no suffix.
   const [tab, setTab] = useState<"pending" | "history">("pending")
   // Incomplete-audit orders never appear in the Packing queue.
   const queue = useQueue("READY_FOR_PROCESSING", auditReadyForPacking)
@@ -473,6 +475,7 @@ export function LaundryPacking() {
     )
   }
 
+  const packScan = useScanSink((c) => { void runPack(c) })
   return (
     <div>{Tabs}
     <QueueShell status="READY_FOR_PROCESSING" title="Packing & QR" subtitle={mode === "BAG" ? "Pack the audited order and scan its laundry bag" : "Pack the audited order and generate its package QR"}
@@ -509,7 +512,7 @@ export function LaundryPacking() {
                 <div className="space-y-2 mt-2">
                   <p className="text-sm text-slate-500">Scan the reusable bag holding this order{mode === "BOTH" ? " — the bag QR is an equally valid package identifier." : "."}</p>
                   <div className="flex gap-2">
-                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) runPack(v) } }} /></div>
+                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" {...packScan} /></div>
                     <BagScanButton label="Scan" size="sm" onScan={(c) => runPack(c)} disabled={busy} closeOnScan className="h-10" />
                   </div>
                 </div>
@@ -581,6 +584,7 @@ export function LaundryDispatch() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Dispatch failed"); setBusy(false) }
   }
 
+  const dispatchScan = useScanSink((c) => { void dispatchByScan(c) })
   return (
     <QueueShell status="PACKED" title="Transit to Processing" subtitle={`Dispatch packed ${mode === "BAG" ? "bags" : "packages"} to the Processing Center`}
       icon={Truck} selected={selected} onSelect={openOrder} queue={queue}>
@@ -605,7 +609,7 @@ export function LaundryDispatch() {
             <div className="space-y-2">
               <p className="text-sm text-slate-500">Scan the bag assigned to this order to dispatch it.</p>
               <div className="flex gap-2">
-                <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" onKeyDown={(e) => { if (e.key === "Enter") { const v = (e.target as HTMLInputElement).value.trim(); if (v) dispatchByScan(v) } }} /></div>
+                <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" {...dispatchScan} /></div>
                 <BagScanButton label="Scan" size="sm" onScan={(c) => dispatchByScan(c)} disabled={busy} closeOnScan className="h-10" />
               </div>
             </div>
@@ -680,6 +684,7 @@ export function LaundryStoreReceive() {
     await receiveOrder(orderId)
   }
 
+  const receiveScan = useScanSink((c) => { setCode(""); void resolveAndReceive(c) })
   return (
     <QueueShell status="RETURN_IN_TRANSIT" title="Store Receive" subtitle="Confirm processed orders returned from the Processing Center"
       icon={PackageCheck} selected={selected} onSelect={setSelected} queue={queue}
@@ -688,7 +693,7 @@ export function LaundryStoreReceive() {
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4 space-y-2">
           <div className="flex items-center gap-3 max-w-2xl">
-            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resolveAndReceive()} placeholder={transportScanPlaceholder(returnMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" /></div>
+            <div className="relative flex-1"><QrCode className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" /><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={transportScanPlaceholder(returnMode)} className="pl-10 h-11 bg-white border-blue-200 font-mono" {...receiveScan} /></div>
             <BagScanButton label="Camera" onScan={(c) => resolveAndReceive(c)} disabled={busy} closeOnScan className="h-11" />
             <Button onClick={() => resolveAndReceive()} disabled={busy || !code.trim()} className="h-11 gap-2 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
           </div>

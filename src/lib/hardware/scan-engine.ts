@@ -23,15 +23,46 @@ import { eventLog } from "./event-log"
 const MAX_WEDGE_GAP_MS = 35
 /** Shorter bursts are indistinguishable from ordinary typing. */
 const MIN_WEDGE_LENGTH = 4
+/**
+ * A finished burst that never sent a terminator is flushed after this long.
+ *
+ * Some wedges are configured with no suffix at all, and until now those scans
+ * simply evaporated: the characters were classified, no Enter ever arrived, and
+ * the buffer sat there until the next keystroke reset it. Three times the
+ * maximum wedge gap is far longer than any pause WITHIN a burst and far shorter
+ * than an operator notices.
+ */
+const WEDGE_IDLE_FLUSH_MS = 3 * MAX_WEDGE_GAP_MS
 /** A scanner that has said nothing for this long is treated as gone. */
 const SCANNER_IDLE_MS = 5 * 60 * 1000
 /** Identical code inside this window is one physical scan, not two. */
 const DUPLICATE_WINDOW_MS = 900
 
+/**
+ * A field marked as a scan sink exists ONLY to catch a scanner, so the engine
+ * must not stand aside for it.
+ *
+ * Deferring to a focused field is right for a customer name, an address or a
+ * price — those are being typed by a person. But Garment Lookup's Scan Mode bar
+ * is a scanner target that also happens to be an <input>, and it is focused
+ * permanently while Scan Mode is on. The engine therefore deferred to it on
+ * every scan, dispatched nothing, and recorded nothing: the "always listening"
+ * path was unreachable on the one screen built around it.
+ *
+ * A DOM marker and nothing more — no flag, no setting, no registry.
+ */
+const SCAN_SINK_SELECTOR = "[data-scan-sink]"
+
+function isScanSink(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !!el?.closest?.(SCAN_SINK_SELECTOR)
+}
+
 /** A field that is already receiving the keystrokes handles its own Enter. */
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (!el || !el.tagName) return false
+  if (isScanSink(el)) return false
   const tag = el.tagName.toUpperCase()
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true
 }
@@ -59,6 +90,9 @@ class ScanEngineImpl {
   private bufStartedAt = 0
   private lastKeyAt = 0
   private gaps: number[] = []
+  /** Where the burst in progress is landing — an ordinary field is never flushed. */
+  private bufIntoEditable = false
+  private idleTimer: ReturnType<typeof setTimeout> | null = null
 
   private lastDispatch: { code: string; at: number } = { code: "", at: 0 }
 
@@ -78,6 +112,7 @@ class ScanEngineImpl {
   stop() {
     this.detachKeys?.()
     this.detachKeys = null
+    this.cancelIdleFlush()
     this.started = false
   }
 
@@ -90,7 +125,10 @@ class ScanEngineImpl {
    */
   private observeKey(e: KeyboardEvent) {
     const now = Date.now()
-    if (e.key === "Enter") {
+    // Enter and Tab are the two suffixes a wedge is configured with; a scanner
+    // sending Tab used to end the burst with no dispatch at all, silently.
+    if (e.key === "Enter" || e.key === "Tab") {
+      this.cancelIdleFlush()
       const looksLikeScan = this.buf.length >= MIN_WEDGE_LENGTH && this.isFastBurst()
       // autoDetect off pins the ladder to whatever the administrator chose —
       // timing is still measured for diagnostics, but never promotes a rung.
@@ -106,9 +144,15 @@ class ScanEngineImpl {
       //   • the burst must be mechanically fast, so human typing never matches;
       //   • an editable element that has focus handles its own Enter — that
       //     field is already receiving the characters and will submit them.
+      //     A [data-scan-sink] is not such a field: it exists for the scanner.
       if (looksLikeScan && this.autoDetect && !isEditable(e.target)) {
         const code = this.buf
         this.resetBuffer()
+        // Mark the key as consumed. The sink's own handler reads
+        // defaultPrevented and stands down, so one physical scan produces
+        // exactly one submit — and a Tab suffix no longer moves focus off the
+        // scan bar between garments.
+        e.preventDefault()
         this.submit(code)
         return
       }
@@ -121,6 +165,35 @@ class ScanEngineImpl {
     else this.gaps.push(now - this.lastKeyAt)
     this.buf += e.key
     this.lastKeyAt = now
+    // Remember where the burst is landing: a burst typed into an ordinary field
+    // must never be flushed out from under the person typing it.
+    this.bufIntoEditable = isEditable(e.target)
+    this.scheduleIdleFlush()
+  }
+
+  /**
+   * A wedge with NO suffix finishes by simply stopping. Nothing else on a
+   * keyboard produces four or more characters at mechanical speed and then
+   * falls silent, so a burst that goes quiet is a completed barcode.
+   *
+   * Both guards from the terminator path still apply — the burst must be fast,
+   * and it must not be landing in an ordinary editable field.
+   */
+  private scheduleIdleFlush() {
+    this.cancelIdleFlush()
+    if (!this.autoDetect || typeof setTimeout !== "function") return
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null
+      if (this.bufIntoEditable) return
+      if (this.buf.length < MIN_WEDGE_LENGTH || !this.isFastBurst()) return
+      const code = this.buf
+      this.resetBuffer()
+      this.submit(code)
+    }, WEDGE_IDLE_FLUSH_MS)
+  }
+
+  private cancelIdleFlush() {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
   }
 
   private isFastBurst(): boolean {
@@ -133,6 +206,7 @@ class ScanEngineImpl {
     this.buf = ""
     this.gaps = []
     this.bufStartedAt = 0
+    this.bufIntoEditable = false
   }
 
   private noteWedgeSeen(at: number) {
@@ -289,6 +363,7 @@ class ScanEngineImpl {
 
   /** Test seam — forget everything learned about the attached hardware. */
   resetForTests() {
+    this.cancelIdleFlush()
     this.attachments = []
     this.wedgeLastSeenAt = null
     this.knownScannerConnection = null
