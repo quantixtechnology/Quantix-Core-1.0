@@ -15,7 +15,7 @@ export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 export async function POST(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const b = await request.json().catch(() => ({}))
   const items = Array.isArray(b.items) ? b.items : []

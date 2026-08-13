@@ -13,7 +13,7 @@ async function own(customerId: string, addressId: string) {
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ addressId: string }> }) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const { addressId } = await params
   const addr = await own(sess.customerId, addressId)
@@ -48,7 +48,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ addr
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ addressId: string }> }) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const { addressId } = await params
   const addr = await own(sess.customerId, addressId)

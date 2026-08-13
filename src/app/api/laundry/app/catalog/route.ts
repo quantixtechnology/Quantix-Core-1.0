@@ -8,7 +8,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const biz = await resolveLaundryBusiness(sess.businessId)
   if (!biz) return NextResponse.json({ success: true, data: { services: [] } })

@@ -10,14 +10,14 @@ export const runtime = "nodejs"
 const ADDR_TYPES = new Set(["HOME", "OFFICE", "OTHER"])
 
 export async function GET(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const addresses = await prisma.address.findMany({ where: { customerId: sess.customerId }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] })
   return NextResponse.json({ success: true, data: addresses })
 }
 
 export async function POST(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const b = await request.json().catch(() => ({}))
   if (!b.addressLine1?.trim()) return NextResponse.json({ error: "Address Line 1 is required" }, { status: 400 })

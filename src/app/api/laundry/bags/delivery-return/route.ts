@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     // Dual auth: Store PWA staff (store-scoped) OR desktop admin (permission).
     let bizId: string | null = null
     let actorName: string | null = null
-    const sa = await resolveStoreAdmin(bearerToken(request))
+    const sa = await resolveStoreAdmin(request)
     if (sa) {
       const scope = await resolveStoreScope(sa, request)
       if (!scope) return NextResponse.json({ success: false, error: "No store selected" }, { status: 403 })

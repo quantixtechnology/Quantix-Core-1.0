@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
-    const session = await resolveExecutive(bearerToken(request))
+    const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const e = await prisma.laundryDeliveryExecutive.findUnique({ where: { id: session.executiveId }, include: { store: { select: { storeName: true } } } })
     if (!e) return NextResponse.json({ error: "Executive not found" }, { status: 404 })

@@ -9,7 +9,7 @@ import { parseMeta, parseTags, mergeMeta, customerStats, type CommPrefs } from "
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const c = await prisma.customer.findUnique({ where: { id: sess.customerId }, include: { addresses: { orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] } } })
   if (!c) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const b = await request.json().catch(() => ({}))
   const c = await prisma.customer.findUnique({ where: { id: sess.customerId }, select: { metadata: true } })

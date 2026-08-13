@@ -13,6 +13,7 @@ import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { bearerToken } from "@/lib/laundry-executive-auth"
 import { resolveStoreTenant } from "@/lib/laundry-executive-tenant"
+import { sessionMatchesHostTenant } from "@/lib/pwa-tenant-boundary"
 
 export { bearerToken }
 
@@ -60,7 +61,8 @@ export interface StoreAdminSession {
   roleName?: string
 }
 
-export async function resolveStoreAdmin(token: string | null): Promise<StoreAdminSession | null> {
+export async function resolveStoreAdmin(request: Request): Promise<StoreAdminSession | null> {
+  const token = bearerToken(request)
   if (!token) return null
   const rt = await prisma.refreshToken.findFirst({ where: { token, expiresAt: { gte: new Date() } }, select: { userId: true } })
   if (!rt?.userId) return null
@@ -90,6 +92,10 @@ export async function resolveStoreAdmin(token: string | null): Promise<StoreAdmi
   const biz = await resolveLaundryBusiness(assign.businessId)
   if (!biz) return null
 
+  // Host boundary: a Store Admin of Business A must not be accepted on
+  // Business B's store host. assign.businessId is already the platform id.
+  if (!(await sessionMatchesHostTenant(request, assign.businessId))) return null
+
   const base = {
     userId: rt.userId, isSuperAdmin: false,
     platformBusinessId: assign.businessId, businessId: biz.id,
@@ -117,7 +123,7 @@ export async function resolveStoreAdmin(token: string | null): Promise<StoreAdmi
  * scope survives only on a host that names no tenant.
  */
 export async function requireStoreAdmin(request: Request): Promise<{ ok: true; session: StoreAdminSession } | { ok: false; res: NextResponse }> {
-  const session = await resolveStoreAdmin(bearerToken(request))
+  const session = await resolveStoreAdmin(request)
   if (!session) return { ok: false, res: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) }
 
   if (session.scope === "PLATFORM") {

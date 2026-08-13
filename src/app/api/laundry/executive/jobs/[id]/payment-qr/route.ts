@@ -13,7 +13,7 @@ const RZP = "https://api.razorpay.com/v1"
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const session = await resolveExecutive(bearerToken(request))
+    const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
     const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, orderNumber: true, grandTotal: true, amountPaid: true, balanceDue: true, deliveryExecutiveId: true } })

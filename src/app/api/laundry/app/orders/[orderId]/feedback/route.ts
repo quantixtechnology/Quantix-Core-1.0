@@ -9,7 +9,7 @@ import { submitOrderFeedback, sanitizeRating } from "@/lib/laundry-feedback"
 export const runtime = "nodejs"
 
 export async function POST(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const { orderId } = await params
   const b = await request.json().catch(() => ({}))

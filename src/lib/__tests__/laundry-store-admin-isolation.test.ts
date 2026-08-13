@@ -43,6 +43,16 @@ const NON_ADMIN_PLATFORM_ROLES = [
   'DEPLOYMENT_TEAM', 'FINANCE_TEAM',
 ]
 
+
+// Superseded: resolveStoreAdmin used to take a bare token string. It now takes
+// the Request, because comparing the session's business with the HOST is the
+// tenant boundary. A request with no tenant host resolves to no host tenant, so
+// every expectation below is unchanged.
+const req = (host?: string) =>
+  new Request('http://x/api/laundry/store-admin/me', {
+    headers: { authorization: 'Bearer tok', ...(host ? { host } : {}) },
+  })
+
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.refreshFindFirst.mockResolvedValue({ userId: 'u-1' })
@@ -86,14 +96,14 @@ describe('who may cross a tenant boundary', () => {
 describe('session resolution', () => {
   it('gives a Super Admin an unrestricted session', async () => {
     mocks.userFindUnique.mockResolvedValue({ isActive: true, platformRole: 'QUANTIX_SUPER_ADMIN' })
-    expect(await resolveStoreAdmin('tok')).toMatchObject({ isSuperAdmin: true, scope: 'PLATFORM' })
+    expect(await resolveStoreAdmin(req())).toMatchObject({ isSuperAdmin: true, scope: 'PLATFORM' })
   })
 
   // The reported bug, as a test: these accounts used to receive every business.
   it.each(NON_ADMIN_PLATFORM_ROLES)('does not hand %s an unrestricted session', async (role) => {
     mocks.userFindUnique.mockResolvedValue({ isActive: true, platformRole: role })
     // No store assignment → refused outright rather than promoted.
-    expect(await resolveStoreAdmin('tok')).toBeNull()
+    expect(await resolveStoreAdmin(req())).toBeNull()
   })
 
   it('pins store staff to the one store their assignment binds', async () => {
@@ -101,7 +111,7 @@ describe('session resolution', () => {
     mocks.assignFindMany.mockResolvedValue([
       { storeId: 'store-1', businessId: 'pb-1', role: { code: 'STORE_MANAGER', name: 'Store Manager', isActive: true } },
     ])
-    const s = await resolveStoreAdmin('tok')
+    const s = await resolveStoreAdmin(req())
     expect(s).toMatchObject({ isSuperAdmin: false, scope: 'STORE', businessId: 'lb-1', storeId: 'store-1' })
   })
 
@@ -110,18 +120,18 @@ describe('session resolution', () => {
     mocks.assignFindMany.mockResolvedValue([
       { storeId: 'store-1', businessId: 'pb-1', role: { code: 'ACCOUNTANT', name: 'Accountant', isActive: true } },
     ])
-    expect(await resolveStoreAdmin('tok')).toBeNull()
+    expect(await resolveStoreAdmin(req())).toBeNull()
     expect(STORE_ADMIN_ROLES.has('ACCOUNTANT')).toBe(false)
   })
 
   it('refuses a deactivated user', async () => {
     mocks.userFindUnique.mockResolvedValue({ isActive: false, platformRole: 'QUANTIX_SUPER_ADMIN' })
-    expect(await resolveStoreAdmin('tok')).toBeNull()
+    expect(await resolveStoreAdmin(req())).toBeNull()
   })
 
   it('refuses an unknown token', async () => {
     mocks.refreshFindFirst.mockResolvedValue(null)
-    expect(await resolveStoreAdmin('tok')).toBeNull()
+    expect(await resolveStoreAdmin(req())).toBeNull()
   })
 })
 
@@ -133,7 +143,7 @@ describe('business-wide managers', () => {
   it('gets BUSINESS scope with no store pinned', async () => {
     mocks.userFindUnique.mockResolvedValue({ isActive: true, platformRole: null })
     mocks.assignFindMany.mockResolvedValue(businessWide)
-    const s = await resolveStoreAdmin('tok')
+    const s = await resolveStoreAdmin(req())
     expect(s).toMatchObject({ scope: 'BUSINESS', businessId: 'lb-1' })
     expect(s?.storeId).toBeUndefined()
   })
@@ -142,7 +152,7 @@ describe('business-wide managers', () => {
     mocks.userFindUnique.mockResolvedValue({ isActive: true, platformRole: null })
     mocks.assignFindMany.mockResolvedValue(businessWide)
     mocks.storeFindFirst.mockResolvedValue(null)
-    expect(await resolveStoreAdmin('tok')).toBeNull()
+    expect(await resolveStoreAdmin(req())).toBeNull()
   })
 
   // The narrower grant is the safer reading of a contradictory setup.
@@ -152,7 +162,7 @@ describe('business-wide managers', () => {
       ...businessWide,
       { storeId: 'store-7', businessId: 'pb-1', role: { code: 'STORE_MANAGER', name: 'Store Manager', isActive: true } },
     ])
-    expect(await resolveStoreAdmin('tok')).toMatchObject({ scope: 'STORE', storeId: 'store-7' })
+    expect(await resolveStoreAdmin(req())).toMatchObject({ scope: 'STORE', storeId: 'store-7' })
   })
 
   it('may pick any store of its own business', async () => {

@@ -10,7 +10,7 @@ import { subscriptionLedger } from "@/lib/laundry-subscription-server"
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
   const subs = await prisma.customerSubscription.findMany({

@@ -24,7 +24,7 @@ const ALLOWED: Record<string, { action: string; note: (n?: string) => string }> 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const session = await resolveExecutive(bearerToken(request))
+    const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const b = await request.json().catch(() => ({}))
     const status = String(b.status || "")

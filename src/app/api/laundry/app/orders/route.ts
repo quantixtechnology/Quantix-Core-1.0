@@ -16,7 +16,7 @@ import { customerFacingStoreWhere } from "@/lib/laundry-store-eligibility"
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const orders = await prisma.laundryOrder.findMany({
     where: { customerId: sess.customerId },
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const b = await request.json().catch(() => ({}))
   if (!Array.isArray(b.items) || b.items.length === 0) return NextResponse.json({ error: "Add at least one garment" }, { status: 400 })

@@ -22,7 +22,7 @@ const TRACK: { status: string; label: string }[] = [
 ]
 
 export async function GET(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
-  const sess = await resolveSession(bearerToken(request))
+  const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const { orderId } = await params
   const order = await prisma.laundryOrder.findFirst({

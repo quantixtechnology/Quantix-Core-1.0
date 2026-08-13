@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
-    const session = await resolveExecutive(bearerToken(request))
+    const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const type = new URL(request.url).searchParams.get("type") || "pickup"
     const lbId = session.businessId

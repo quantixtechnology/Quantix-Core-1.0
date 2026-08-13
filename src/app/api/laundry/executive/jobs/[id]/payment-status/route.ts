@@ -17,7 +17,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const session = await resolveExecutive(bearerToken(request))
+    const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const qrCodeId = new URL(request.url).searchParams.get("qrCodeId")
 
