@@ -29,8 +29,13 @@ export interface ScannerStatusInput {
 
 export interface ScannerStatus {
   state: ScannerVerification
-  /** Dashboard tile wording. */
+  /**
+   * Dashboard tile headline. It names WHAT WAS VERIFIED — a scan — so the
+   * green light beside it cannot be read as "the scanner is plugged in".
+   */
   tile: string
+  /** Second line under the tile: the evidence, kept separate from the claim. */
+  tileNote: string
   /** Scanner page wording. */
   status: string
   /** True once a scan has ever been received: the tile's green light. */
@@ -41,19 +46,27 @@ export const NOT_VERIFIED_DETAIL = "No barcode scan has been received on this te
 
 export function scannerStatus(i: ScannerStatusInput, formatTime: (iso: string) => string): ScannerStatus {
   if (!i.lastScanAt) {
-    return { state: "NOT_VERIFIED", tile: "Not Verified", status: "Scanner Not Verified", verified: false }
+    return {
+      state: "NOT_VERIFIED",
+      tile: "Not Verified",
+      tileNote: NOT_VERIFIED_DETAIL,
+      status: "Scanner Not Verified",
+      verified: false,
+    }
   }
   const at = formatTime(i.lastScanAt)
   // Both remaining states are verified — the scanner HAS proven itself here.
   // "Awaiting Scan" says only that nothing has come in lately; it is never a
   // claim that the scanner has been unplugged, because that is unknowable.
-  if (i.recentlyScanned) {
-    return { state: "VERIFIED", tile: `Verified · last ${at}`, status: "Scanner Verified", verified: true }
-  }
+  //
+  // The headline is "Scan Verified", not "Verified": what has been verified is
+  // a SCAN. Reading the tile aloud should leave nobody thinking the cable has
+  // been checked.
   return {
-    state: "AWAITING_SCAN",
-    tile: `Verified · last ${at}`,
-    status: `Awaiting Scan · last successful scan ${at}`,
+    state: i.recentlyScanned ? "VERIFIED" : "AWAITING_SCAN",
+    tile: "Scan Verified",
+    tileNote: `Last scan: ${at}`,
+    status: i.recentlyScanned ? "Scanner Verified" : `Awaiting Scan · last successful scan ${at}`,
     verified: true,
   }
 }

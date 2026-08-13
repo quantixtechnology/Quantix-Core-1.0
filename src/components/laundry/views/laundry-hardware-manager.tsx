@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import {
   ScanEngine, PrintEngine, diagnostics, eventLog, hardwareHealth,
-  scannerStatus, physicalConnection, PHYSICAL_CONNECTION_NOTE, NOT_VERIFIED_DETAIL,
+  scannerStatus, physicalConnection, PHYSICAL_CONNECTION_NOTE,
   probeCapabilities, capabilityLabel, isSecureContext, CAPABILITY_NOTES,
   discoverDevices, deviceSummary, watchDeviceChanges,
   requestUsbDevice, requestHidDevice, requestSerialPort,
@@ -279,7 +279,7 @@ export function LaundryHardwareManager() {
                 said "Active" off that evidence and went on saying it with the
                 scanner unplugged. */}
             <Tile label="Barcode Scanner" ok={scan.verified} warn={!scan.verified}
-              value={scan.tile} note={scan.verified ? undefined : NOT_VERIFIED_DETAIL} icon={ScanLine} />
+              value={scan.tile} note={scan.tileNote} icon={ScanLine} />
             <Tile label="Printer" ok={diag.printer.lastPrintAt !== null} warn={diag.printer.lastPrintAt === null}
               value={diag.printer.lastPrintAt ? `Printed ${time(diag.printer.lastPrintAt)}` : "Browser print available · physical printer not verified"} icon={Printer} />
             <Tile label="Camera" ok={camera.count > 0} warn={camera.permission !== "granted"}

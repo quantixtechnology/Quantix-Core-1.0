@@ -28,6 +28,7 @@ describe('what the terminal may claim', () => {
     expect(s.state).toBe('NOT_VERIFIED')
     expect(s.verified).toBe(false)
     expect(s.tile).toBe('Not Verified')
+    expect(s.tileNote).toBe(NOT_VERIFIED_DETAIL)
     expect(s.status).toBe('Scanner Not Verified')
     expect(NOT_VERIFIED_DETAIL).toBe('No barcode scan has been received on this terminal.')
   })
@@ -37,7 +38,10 @@ describe('what the terminal may claim', () => {
     expect(s.state).toBe('VERIFIED')
     expect(s.verified).toBe(true)
     expect(s.status).toBe('Scanner Verified')
-    expect(s.tile).toBe(`Verified · last ${at(SCAN_AT)}`)
+    // The tile names what was verified — a SCAN — and keeps the evidence on
+    // its own line, so the green dot beside it cannot be read as "plugged in".
+    expect(s.tile).toBe('Scan Verified')
+    expect(s.tileNote).toBe(`Last scan: ${at(SCAN_AT)}`)
   })
 
   it('Test 2 — unplugged after a successful scan: still Verified, never Active', () => {
@@ -50,7 +54,8 @@ describe('what the terminal may claim', () => {
     expect(s.status).toBe(`Awaiting Scan · last successful scan ${at(SCAN_AT)}`)
     expect(s.status).not.toContain('Active')
     expect(s.status).not.toContain('Disconnected')
-    expect(s.tile).not.toContain('Active')
+    expect(s.tile).toBe('Scan Verified')
+    expect(s.tileNote).toBe(`Last scan: ${at(SCAN_AT)}`)
   })
 
   it('the word "Active" is gone from every scanner state', () => {
@@ -60,7 +65,7 @@ describe('what the terminal may claim', () => {
       { lastScanAt: SCAN_AT, recentlyScanned: true },
     ]) {
       const s = scannerStatus(input, at)
-      expect(`${s.tile} ${s.status}`).not.toMatch(/\bActive\b/)
+      expect(`${s.tile} ${s.tileNote} ${s.status}`).not.toMatch(/\bActive\b/)
     }
   })
 
@@ -104,9 +109,16 @@ describe('physical connection is reported only where it can be observed', () => 
 })
 
 describe('Hardware Manager shows exactly that', () => {
-  it('the dashboard tile no longer says Active', () => {
+  it('the dashboard tile reads "Scan Verified" over "Last scan: <time>"', () => {
     expect(HW).not.toContain('`Active · last ${time(diag.scanner.lastScanAt)}`')
-    expect(HW).toContain('value={scan.tile}')
+    expect(HW).toContain('value={scan.tile} note={scan.tileNote}')
+  })
+
+  it('the tile never states a device claim, only a scan claim', () => {
+    const s = scannerStatus({ lastScanAt: SCAN_AT, recentlyScanned: true }, at)
+    for (const word of ['Connected', 'Plugged', 'Online', 'Active', 'Present']) {
+      expect(`${s.tile} ${s.tileNote}`, word).not.toContain(word)
+    }
   })
 
   it('the Scanner page carries the physical-connection row and its explanation', () => {
