@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Plus, Pencil, Trash2, Store, Factory, MapPin } from "lucide-react"
+import { requiresProcessingCenterAssignment } from "@/lib/laundry-store-eligibility"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -41,6 +42,11 @@ type Store = {
   serviceRadiusKm: number | null
   dailyCapacityKg: number | null
   isActive: boolean
+  processingCenterStoreId: string | null
+  processingCenterAssignedAt: string | null
+  processingCenter: { id: string; storeCode: string; storeName: string; city: string | null; isActive: boolean } | null
+  /** Legacy row: active retail with no assignment. Surfaced, never auto-fixed. */
+  needsProcessingCenter?: boolean
 }
 
 export function LaundryStoresView({ businessId }: { businessId: string }) {
@@ -51,9 +57,14 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingStore, setEditingStore] = useState<Store | null>(null)
+  // Server refusals shown in place — the dialog stays open so entered store
+  // information is never lost while the user goes to add a Processing Center.
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
   const [form, setForm] = useState({
     storeName: "",
     storeType: "RETAIL_STORE",
+    processingCenterStoreId: "",
     managerName: "",
     mobile: "",
     email: "",
@@ -91,7 +102,8 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
 
   const openCreate = () => {
     setEditingStore(null)
-    setForm({ storeName: "", storeType: "RETAIL_STORE", managerName: "", mobile: "", email: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "", googlePlaceId: "", formattedAddress: "", serviceRadiusKm: "", dailyCapacityKg: "", isActive: true })
+    setForm({ storeName: "", storeType: "RETAIL_STORE", processingCenterStoreId: "", managerName: "", mobile: "", email: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "", googlePlaceId: "", formattedAddress: "", serviceRadiusKm: "", dailyCapacityKg: "", isActive: true })
+    setSaveError(null)
     setDialogOpen(true)
   }
 
@@ -114,9 +126,20 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
       serviceRadiusKm: store.serviceRadiusKm?.toString() || "",
       dailyCapacityKg: store.dailyCapacityKg?.toString() || "",
       isActive: store.isActive,
+      processingCenterStoreId: store.processingCenterStoreId || "",
     })
+    setSaveError(null)
     setDialogOpen(true)
   }
+
+  // Locations that may be OFFERED as a Processing Center: ACTIVE, and either a
+  // Processing Center or a Retail + Processing location. Never a retail-only
+  // store, never an inactive one. The store being edited is excluded — it
+  // cannot process its own work unless its type says so.
+  const processingCentres = stores.filter(
+    (s) => s.isActive && (s.storeType === "PROCESSING_CENTER" || s.storeType === "BOTH") && s.id !== editingStore?.id,
+  )
+  const needsCentre = form.storeType !== "PROCESSING_CENTER" && form.storeType !== "BOTH"
 
   const handleSave = async () => {
     const url = editingStore
@@ -124,11 +147,17 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
       : `/api/laundry/businesses/${businessId}/stores`
     const method = editingStore ? "PUT" : "POST"
 
+    setSaveError(null)
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
     if (res.ok) {
       setDialogOpen(false)
       fetchStores()
+      return
     }
+    // The backend is the authority. Show exactly what it refused, and keep the
+    // dialog open so the entered store information is never lost.
+    const j = await res.json().catch(() => ({}))
+    setSaveError(j.error || "Could not save this store.")
   }
 
   const handleDelete = async (id: string) => {
@@ -138,11 +167,19 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   }
 
   const handleToggleActive = async (store: Store) => {
-    await fetch(`/api/laundry/stores/${store.id}`, {
+    const res = await fetch(`/api/laundry/stores/${store.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !store.isActive }),
     })
+    if (!res.ok) {
+      // Activating a retail store with no Processing Center is refused
+      // server-side; say why instead of failing silently.
+      const j = await res.json().catch(() => ({}))
+      setToggleError(j.error || "Could not change this store's status.")
+      return
+    }
+    setToggleError(null)
     fetchStores()
   }
 
@@ -161,6 +198,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Processing Center</TableHead>
                 <TableHead>Manager</TableHead>
                 <TableHead>Mobile</TableHead>
                 <TableHead>Radius</TableHead>
@@ -171,9 +209,9 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-400">Loading...</TableCell></TableRow>
               ) : stores.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No stores yet</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-400">No stores yet</TableCell></TableRow>
               ) : stores.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-mono text-xs">{s.storeCode}</TableCell>
@@ -188,6 +226,21 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                         : s.storeType === "BOTH" ? "Retail + Processing"
                         : "Retail Store"}
                     </Badge>
+                  </TableCell>
+                  {/* WHERE this store's garments are processed. A location
+                      that processes its own work says so rather than naming
+                      itself twice. */}
+                  <TableCell>
+                    {!requiresProcessingCenterAssignment(s.storeType) ? (
+                      <span className="text-xs text-slate-500">Self</span>
+                    ) : s.processingCenter ? (
+                      <span className="text-xs text-slate-700">
+                        {s.processingCenter.storeName}
+                        <span className="block font-mono text-[10px] text-slate-400">{s.processingCenter.storeCode}</span>
+                      </span>
+                    ) : (
+                      <Badge variant="outline" className="border-amber-300 text-amber-700 text-[10px]">Required</Badge>
+                    )}
                   </TableCell>
                   <TableCell>{s.managerName || "—"}</TableCell>
                   <TableCell>{s.mobile || "—"}</TableCell>
@@ -206,6 +259,13 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
           </Table>
         </CardContent>
       </Card>
+
+      {toggleError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+          <p className="text-sm font-semibold text-rose-900">Processing Center Required</p>
+          <p className="text-xs text-rose-800 leading-snug mt-0.5">{toggleError}</p>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         {/* Wide two-column form. The old modal was one narrow column, so on a
@@ -271,6 +331,70 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                     </div>
                   </div>
                 </Section>
+
+                {/* ── Processing Center assignment ─────────────────────────
+                    Only a retail-only store needs one: a Processing Center IS
+                    one, and a Retail + Processing location processes its own
+                    work. Never chosen by distance — this is an operational
+                    decision, and it stays the source of truth even when
+                    another centre is closer. */}
+                {needsCentre ? (
+                  <Section title="Processing Center Assignment">
+                    {processingCentres.length === 0 ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                        <p className="text-sm font-semibold text-amber-900">No Processing Center Available</p>
+                        <p className="text-xs text-amber-800 leading-snug">
+                          This business does not currently have an active Processing Center. Create a Processing Center
+                          or a Retail + Processing location before activating this store.
+                        </p>
+                        <Button size="sm" variant="outline" className="gap-1 border-amber-300"
+                          onClick={() => setForm(p => ({ ...p, storeType: "PROCESSING_CENTER" }))}>
+                          <Plus className="h-3.5 w-3.5" /> Make this a Processing Center
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Label>Processing Center *</Label>
+                        <Select value={form.processingCenterStoreId} onValueChange={v => setForm(p => ({ ...p, processingCenterStoreId: v }))}>
+                          <SelectTrigger><SelectValue placeholder="Select Processing Center" /></SelectTrigger>
+                          <SelectContent>
+                            {/* Active Processing Centers + active Retail + Processing only. */}
+                            {processingCentres.map(c => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.storeName}{c.city ? ` · ${c.city}` : ""} · {c.storeCode}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Where garments from this store are processed. Different stores may use different centres.
+                        </p>
+                        {editingStore?.needsProcessingCenter && !form.processingCenterStoreId && (
+                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                            <p className="text-xs font-semibold text-amber-900">Processing Center Not Assigned</p>
+                            <p className="text-[11px] text-amber-800 leading-snug">
+                              This store was created before Processing Center assignment became mandatory.
+                              Assign a Processing Center before continuing operations.
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </Section>
+                ) : (
+                  <Section title="Processing Center Assignment">
+                    <p className="text-xs text-slate-500">
+                      This location processes its own garments — no separate Processing Center is needed.
+                    </p>
+                  </Section>
+                )}
+
+                {saveError && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-sm font-semibold text-rose-900">Processing Center Required</p>
+                    <p className="text-xs text-rose-800 leading-snug mt-0.5">{saveError}</p>
+                  </div>
+                )}
 
                 <Section title="Manager">
                   <div className="grid grid-cols-2 gap-3">

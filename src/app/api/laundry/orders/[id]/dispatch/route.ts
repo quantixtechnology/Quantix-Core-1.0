@@ -11,6 +11,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
 import { transportNoun, transportRefLabel } from "@/lib/laundry-transport"
+import { resolveProcessingCenterId } from "@/lib/laundry-store-eligibility"
 
 export const runtime = "nodejs"
 
@@ -25,7 +26,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id, businessId: biz.id },
-      select: { id: true, orderNumber: true, status: true, packet: { select: { id: true } } },
+      select: {
+        id: true, orderNumber: true, status: true, packet: { select: { id: true } },
+        processingCenterStoreId: true,
+        // The store's CURRENT assignment — read once, here, and frozen below.
+        store: { select: { id: true, storeType: true, processingCenterStoreId: true } },
+      },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
@@ -51,6 +57,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       data: { status: "IN_TRANSIT_TO_PROCESSING" },
     })
     if (advanced.count === 0) return NextResponse.json({ error: `${noun} already dispatched` }, { status: 409 })
+
+    // ── Freeze the Processing Center on the order ────────────────────────────
+    // THIS is the operational commit point: the garments physically leave the
+    // store for a centre. The store's current assignment is copied onto the
+    // order now, so reassigning the store later cannot rewrite what already
+    // happened. Written once — a re-dispatch never overwrites the original.
+    if (!order.processingCenterStoreId && order.store) {
+      const centreId = resolveProcessingCenterId(order.store)
+      if (centreId) {
+        const centre = await prisma.laundryStore.findUnique({
+          where: { id: centreId },
+          select: { id: true, storeCode: true, storeName: true },
+        })
+        if (centre) {
+          await prisma.laundryOrder.update({
+            where: { id: order.id },
+            data: {
+              processingCenterStoreId: centre.id,
+              // Code and name frozen too: renaming the centre later must not
+              // change what this record says happened.
+              processingCenterCode: centre.storeCode,
+              processingCenterName: centre.storeName,
+              processingCenterAt: now,
+            },
+          }).catch(() => null)
+        }
+      }
+    }
 
     // Packet transit state is kept in step whenever the order carries a packet
     // (packet mode, or an order packed before the business switched to BAG).

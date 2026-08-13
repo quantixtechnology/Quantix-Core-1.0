@@ -4478,9 +4478,27 @@ model LaundryStore {
   statusOverride        StoreStatusOverride @default(AUTOMATIC)
   overrideExpiresAt     DateTime?
   businessHoursOverride String              @default("{}")
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
 
+  // ── Processing Center assignment (operational routing) ───────────────────
+  // Which location processes THIS store's garments. An administrative
+  // decision, never inferred from distance: once a store is assigned to a
+  // centre, that centre is the source of truth even if another is closer.
+  //
+  //   RETAIL_STORE      → MUST point at a processing-capable store to be ACTIVE
+  //   BOTH              → processes its own work; assignment stays null
+  //   PROCESSING_CENTER → is one; assignment stays null
+  //
+  // Nullable because legacy stores predate the rule: their data is left exactly
+  // as it is and they are blocked at ACTIVATION rather than silently assigned.
+  // SetNull on delete so removing a centre never deletes the stores it served —
+  // they simply become unassigned and cannot be re-activated until reassigned.
+  processingCenterStoreId    String?
+  processingCenterAssignedAt DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  processingCenter   LaundryStore?              @relation("StoreProcessingCenter", fields: [processingCenterStoreId], references: [id], onDelete: SetNull)
+  servedStores       LaundryStore[]             @relation("StoreProcessingCenter")
   laundryBusiness    LaundryBusiness            @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
   departments        LaundryDepartment[]
   assignments        LaundryUserAssignment[]
@@ -4491,6 +4509,7 @@ model LaundryStore {
   @@index([laundryBusinessId])
   @@index([storeCode])
   @@index([storeType])
+  @@index([processingCenterStoreId])
 }
 
 // Delivery Executive — a dedicated OPERATIONAL master for field pickup/delivery
@@ -4675,6 +4694,18 @@ model LaundryOrder {
   isExpress                 Boolean   @default(false)
   customerType              String? // resolved customer type used for pricing
   billedAt                  DateTime? // when the financial snapshot was persisted
+
+  // ── Processing Center — FROZEN when the order is committed to processing ──
+  // Snapshotted at Dispatch to Processing, the point the order physically
+  // leaves the store for a centre. Reading the store's CURRENT assignment
+  // instead would rewrite history: reassigning Store A from PC1 to PC2 would
+  // make every past order look as if it had been processed at PC2. The code and
+  // name are frozen alongside the id so a later rename of the centre does not
+  // change what the record says happened.
+  processingCenterStoreId String?
+  processingCenterCode    String?
+  processingCenterName    String?
+  processingCenterAt      DateTime?
 
   // ── Store Audit (Stage 2) — inspection captured against the garments the
   //    order already carries; the audit does not re-enter garments. ──
