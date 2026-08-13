@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import {
   ScanEngine, PrintEngine, diagnostics, eventLog, hardwareHealth,
+  scannerStatus, physicalConnection, PHYSICAL_CONNECTION_NOTE, NOT_VERIFIED_DETAIL,
   probeCapabilities, capabilityLabel, isSecureContext, CAPABILITY_NOTES,
   discoverDevices, deviceSummary, watchDeviceChanges,
   requestUsbDevice, requestHidDevice, requestSerialPort,
@@ -119,6 +120,15 @@ export function LaundryHardwareManager() {
   const printers = devices.filter((d) => d.kind.endsWith("PRINTER"))
   const scanners = devices.filter((d) => d.kind === "BARCODE_SCANNER")
   const scanner = scanners[0] ?? null
+
+  // ONE reading of the scanner's state, shared by the tile and the Scanner
+  // page so the two can never disagree. `recentlyScanned` is the engine's own
+  // window — no second timer, and no inference about the physical device.
+  const scan = scannerStatus(
+    { lastScanAt: diag.scanner.lastScanAt, recentlyScanned: ScanEngine.scannerPresent() },
+    time,
+  )
+  const physical = physicalConnection(scanner)
   const barcodePrinter = printers.find((p) => p.id === profile.printers.BARCODE) ?? null
 
   const bindRole = (role: PrinterRole, deviceId: string) => {
@@ -264,10 +274,12 @@ export function LaundryHardwareManager() {
       {tab === "dashboard" && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Proof, not capability. A keyboard-emulation scanner cannot be
-                enumerated, so "verified" means it has actually typed. */}
-            <Tile label="Barcode Scanner" ok={ScanEngine.everScanned()} warn={!ScanEngine.everScanned()}
-              value={ScanEngine.everScanned() ? `Active · last ${time(diag.scanner.lastScanAt)}` : "Presence not verified"} icon={ScanLine} />
+            {/* Proof, not capability, and proof of the PAST — a scan shows a
+                scanner was here, never that one is plugged in now. This tile
+                said "Active" off that evidence and went on saying it with the
+                scanner unplugged. */}
+            <Tile label="Barcode Scanner" ok={scan.verified} warn={!scan.verified}
+              value={scan.tile} note={scan.verified ? undefined : NOT_VERIFIED_DETAIL} icon={ScanLine} />
             <Tile label="Printer" ok={diag.printer.lastPrintAt !== null} warn={diag.printer.lastPrintAt === null}
               value={diag.printer.lastPrintAt ? `Printed ${time(diag.printer.lastPrintAt)}` : "Browser print available · physical printer not verified"} icon={Printer} />
             <Tile label="Camera" ok={camera.count > 0} warn={camera.permission !== "granted"}
@@ -334,14 +346,16 @@ export function LaundryHardwareManager() {
                 second answer alone made a working scanner read as
                 "Camera fallback". */}
             <Row k="Status" v={
-              ScanEngine.scannerPresent() ? "Scanner Verified · Active"
-                : ScanEngine.everScanned() ? `Scanner Verified · idle since ${when(diag.scanner.lastScanAt)}`
-                  : scanStatus === "CAMERA_READY" ? "Not verified · camera fallback available"
-                    : "Not verified · manual entry"
+              scan.verified ? scan.status
+                : scanStatus === "CAMERA_READY" ? "Scanner Not Verified · camera fallback available"
+                  : "Scanner Not Verified · manual entry"
             } />
-            {ScanEngine.everScanned() && !ScanEngine.scannerPresent() && (
-              <Row k="Input routing" v="Camera offered while the scanner is idle — scanning still works" />
+            {scan.state === "AWAITING_SCAN" && (
+              <Row k="Input routing" v="Camera offered while no scan has come in — scanning still works" />
             )}
+            {/* The row this page was missing. Everything above is scan
+                evidence; this is the question it cannot answer. */}
+            <Row k="Physical connection" v={physical.label} />
             <Row k="Connection" v={scanner ? `${scanner.connection} ${scanner.source === "WEBHID" ? "HID" : ""}`.trim() : "Keyboard emulation (no pairing needed)"} />
             <Row k="Type" v="Keyboard Emulation" />
             <Row k="Manufacturer" v={scanner?.manufacturer || "Unknown"} />
@@ -359,6 +373,7 @@ export function LaundryHardwareManager() {
               </Button>
               <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => runPrint("Barcode Test", barcodeTestHtml(), "BARCODE", true)} disabled={!!busy}>Scan Test Barcode</Button>
             </div>
+            {!physical.detectable && <Notice tone="info">{PHYSICAL_CONNECTION_NOTE}</Notice>}
             <Notice tone="info">
               A USB and a Bluetooth scanner are indistinguishable to a browser — both simply type. The connection above reads
               &ldquo;Bluetooth&rdquo; only when a Bluetooth scanner has actually been paired; otherwise it reports keyboard emulation
