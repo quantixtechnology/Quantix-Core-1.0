@@ -146,7 +146,13 @@ export function screenLabel(screenKey: string): string {
 
 const VIEW_ACTIONS = new Set(["view", "list", "search", "filter", "print", "export", "lookup"])
 const CREATE_ACTIONS = new Set(["create", "add", "new", "invite", "send", "import", "operate", "process", "complete", "pause", "resume", "pack", "dispatch", "receive", "deliver", "start", "progress", "collect", "convert"])
-const EDIT_ACTIONS = new Set(["edit", "update", "modify", "change", "cancel", "delete", "remove", "reject", "override", "refund", "adjust", "release", "merge", "reopen", "return", "approve", "deny", "assign_role"])
+// Compound action names have to be listed explicitly. An action this set does
+// not recognise falls through to VIEW, which is the safe default for a READ but
+// silently disarms a WRITE: "laundry.pricing.edit_pricing" guards fourteen
+// create/update/delete endpoints across Services, Categories, Garments and the
+// Pricing Matrix, and resolved to VIEW — so every role holding Pricing at
+// read-only, the Viewer included, could rewrite the tenant's masters.
+const EDIT_ACTIONS = new Set(["edit", "update", "modify", "change", "cancel", "delete", "remove", "reject", "override", "refund", "adjust", "release", "merge", "reopen", "return", "approve", "deny", "assign_role", "edit_pricing", "delete_rules"])
 
 export function actionToLevel(action: string): Level {
   if (EDIT_ACTIONS.has(action)) return Level.EDIT

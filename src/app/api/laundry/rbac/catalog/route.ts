@@ -1,10 +1,13 @@
 // GET /api/laundry/rbac/catalog[?businessId=] — the modules and screens that
 // Roles & Permissions may grant.
 //
-// With a businessId the catalog is filtered by the tenant's licence, so a
-// module they have not bought offers no permissions to hand out. Without one
-// the full registry is returned, which is what the platform-level tooling and
-// the seeder need.
+// The catalog is filtered by the tenant's licence, so a module they have not
+// bought offers no permissions to hand out.
+//
+// businessId is REQUIRED: the guard resolves the caller's membership of THAT
+// business, and knowing a businessId is not authorization. The unfiltered
+// branch below survives only for a caller who is already a member of a
+// business whose licence cannot be resolved — it is not a way in without one.
 import { NextResponse } from "next/server"
 import { SCREEN_MODULES, LEVEL_LABELS } from "@/lib/laundry-rbac-registry"
 import { resolveLicenceForBusiness } from "@/lib/laundry-licensing-server"

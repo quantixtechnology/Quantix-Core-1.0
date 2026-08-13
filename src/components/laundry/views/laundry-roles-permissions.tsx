@@ -57,13 +57,21 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
     setLoadError(null)
     try {
       const [c, r] = await Promise.all([
-        fetch(`/api/laundry/rbac/catalog`).then((x) => x.json()),
+        // The businessId is REQUIRED. Without it the catalog endpoint's tenant
+        // guard answers 400 Missing businessId, this screen silently kept an
+        // empty module list, and Roles & Permissions rendered with no screens
+        // to grant — for everyone, the Business Owner included. It also filters
+        // the catalog by the tenant's licence, which is the intended behaviour.
+        fetch(`/api/laundry/rbac/catalog?businessId=${businessId}`).then((x) => x.json()),
         fetch(`/api/laundry/rbac/roles?businessId=${businessId}`).then((x) => x.json()),
       ])
       if (c.success) {
         const modules = c.data.modules || c.data
         setModuleData(modules)
         setExpanded(new Set(modules.map((m: ModuleEntry) => m.key)))
+      } else {
+        // Never render an empty matrix as if the tenant had no screens.
+        setLoadError(c.error || "Could not load the permission catalog.")
       }
       if (r.success) setRoles(r.data)
       else if (r.error) setLoadError(r.error === "FORBIDDEN" ? "You don't have permission to view roles." : r.error)

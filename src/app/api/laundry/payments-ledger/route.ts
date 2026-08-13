@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   try {
     const u = new URL(request.url)
     const businessId = u.searchParams.get("businessId")
-    const guard = await requireLaundryLevel(request, businessId, "laundry.payment_collection", Level.VIEW)
+    const guard = await requireLaundryLevel(request, businessId, "store_ops.payment_collection", Level.VIEW)
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })

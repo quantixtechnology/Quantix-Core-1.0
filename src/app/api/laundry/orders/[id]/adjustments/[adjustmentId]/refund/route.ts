@@ -23,7 +23,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   try {
     const { id, adjustmentId } = await ctx.params
     const b = await request.json().catch(() => ({}))
-    const guard = await requireLaundryLevel(request, b.businessId, "laundry.payment_collection", Level.EDIT)
+    const guard = await requireLaundryLevel(request, b.businessId, "store_ops.payment_collection", Level.EDIT)
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })

@@ -57,13 +57,23 @@ describe('money is only called refunded once it is', () => {
 })
 
 describe('permissions reuse the existing financial screen', () => {
+  // Corrected: the screen key is store_ops.payment_collection. These endpoints
+  // named "laundry.payment_collection", which is not a registered screen, so
+  // the guard could never be satisfied and every role but the owner was denied
+  // Payments & Ledger and compensation.
   it('creating compensation needs EDIT on payment_collection', () => {
-    expect(POST_ADJ).toContain('"laundry.payment_collection", Level.EDIT')
-    expect(REFUND).toContain('"laundry.payment_collection", Level.EDIT')
+    expect(POST_ADJ).toContain('"store_ops.payment_collection", Level.EDIT')
+    expect(REFUND).toContain('"store_ops.payment_collection", Level.EDIT')
   })
 
   it('viewing needs only VIEW', () => {
-    expect(POST_ADJ).toContain('"laundry.payment_collection", Level.VIEW')
+    expect(POST_ADJ).toContain('"store_ops.payment_collection", Level.VIEW')
+  })
+
+  it('the screen key is one the registry actually defines', async () => {
+    const { isValidScreenKey } = await import('@/lib/laundry-rbac-registry')
+    expect(isValidScreenKey('store_ops.payment_collection')).toBe(true)
+    expect(isValidScreenKey('laundry.payment_collection')).toBe(false)
   })
 
   it('no new permission key or role was invented', () => {

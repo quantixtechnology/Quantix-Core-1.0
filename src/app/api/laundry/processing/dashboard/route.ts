@@ -60,7 +60,17 @@ export async function GET(request: Request) {
   try {
     const u = new URL(request.url)
     const businessId = u.searchParams.get("businessId")
-    const guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    // This IS the dashboard screen — the same laundry.dashboard the sidebar
+    // navigates to; which of the two dashboards renders is decided by whether
+    // the caller holds any processing screen, not by a second permission.
+    //
+    // It used to require laundry.orders.view, a screen neither Processing
+    // Manager nor Processing Staff is granted. So the Processing Center
+    // navigation appeared, the dashboard rendered, and its only request came
+    // back 403 — "Could not load the dashboard." The sibling Store dashboard
+    // (orders/stats) has always been guarded on laundry.dashboard; the two now
+    // agree, and each still filters what it returns per widget.
+    const guard = await requireLaundryPermission(request, businessId, "laundry.dashboard.view")
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })

@@ -8,7 +8,7 @@
 // of the adjustment that was never paid in the first place. Money already taken
 // can only come back as a refund, which is a separate, explicit action.
 //
-// Permission reuses the existing financial screen (laundry.payment_collection);
+// Permission reuses the existing financial screen (store_ops.payment_collection);
 // no new role and no new permission key.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
@@ -33,7 +33,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     const { id } = await ctx.params
     const businessId = new URL(request.url).searchParams.get("businessId")
     // Viewing the financial picture needs the same screen, at view level.
-    const guard = await requireLaundryLevel(request, businessId, "laundry.payment_collection", Level.VIEW)
+    const guard = await requireLaundryLevel(request, businessId, "store_ops.payment_collection", Level.VIEW)
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
@@ -78,7 +78,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const { id } = await ctx.params
     const b = await request.json().catch(() => ({}))
     // Issuing money back is an EDIT on the financial screen — a viewer cannot.
-    const guard = await requireLaundryLevel(request, b.businessId, "laundry.payment_collection", Level.EDIT)
+    const guard = await requireLaundryLevel(request, b.businessId, "store_ops.payment_collection", Level.EDIT)
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })

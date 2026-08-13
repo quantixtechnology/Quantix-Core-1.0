@@ -85,8 +85,15 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
     return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: code, roleName: name, source: "owner" }
   }
 
+  // ONE assignment decides access. When a user somehow holds more than one
+  // active assignment, findFirst returned an arbitrary row — so the same person
+  // could resolve to Processing Staff on one request and Store Manager on the
+  // next, which is the "second hidden permission list" that makes access look
+  // random. The most recently assigned role wins, deterministically: that is
+  // the one an administrator last chose for them.
   const assign = await prisma.laundryAccessAssignment.findFirst({
     where: { businessId: platformBusinessId, userId, active: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: { role: { include: { permissions: true } } },
   })
   if (assign && assign.role.isActive) {
@@ -130,6 +137,34 @@ export async function requireLaundryLevel(request: Request, businessIdInput: str
     return { ok: false, res: NextResponse.json({ error: "Permission denied", code: "FORBIDDEN", required: screenKey, level: requiredLevel }, { status: 403 }) }
   }
   return { ok: true, ctx, resolved, platformBusinessId: biz.platformBusinessId }
+}
+
+/**
+ * VIEW/CREATE/EDIT on ANY ONE of several screens.
+ *
+ * For the handful of endpoints that genuinely serve two screens. Roles &
+ * Permissions and Staff both have to read the role list — one to edit roles,
+ * the other to fill the "assign a role" dropdown — so requiring a single
+ * screen key put one of them permanently out of step with the sidebar:
+ * laundry.staff alone meant a Store Manager could read roles they cannot see
+ * a menu item for, while laundry.roles alone would have broken their Staff
+ * screen.
+ *
+ * It is the same check as requireLaundryLevel, evaluated against a small set
+ * instead of one key — no second mechanism, and never a way to reach a screen
+ * that neither key grants.
+ */
+export async function requireLaundryAnyLevel(request: Request, businessIdInput: string | null | undefined, screenKeys: string[], requiredLevel: Level): Promise<GuardOk | GuardFail> {
+  let last: GuardOk | GuardFail | null = null
+  for (const key of screenKeys) {
+    const g = await requireLaundryLevel(request, businessIdInput, key, requiredLevel)
+    if (g.ok) return g
+    last = g
+    // 401/404/400 are about the caller or the tenant, not the screen — trying
+    // another key cannot change them.
+    if (g.res.status !== 403) return g
+  }
+  return last as GuardFail
 }
 
 /**
@@ -201,4 +236,70 @@ export async function seedSystemRoles(platformBusinessId: string) {
     created.push(def.code)
   }
   return created
+}
+
+export interface SystemRoleRepair { code: string; added: string[]; raised: string[] }
+
+/**
+ * Bring a tenant's SYSTEM roles back in line with the catalog that defines them.
+ *
+ * seedSystemRoles() only ever CREATES: a role that already exists is skipped
+ * entirely. So a tenant seeded months ago keeps the definitions of that day
+ * forever, and every screen added to a system role since then is missing from
+ * their copy. That is not theoretical — in production Processing Staff and
+ * Processing Manager were both missing Sorting and Transit, and Counter
+ * Executive was missing New Order, while the Roles screen faithfully reported
+ * the smaller number. The role said 8 screens because the role WAS 8 screens.
+ *
+ * Deliberately ADDITIVE. It adds a missing screen and raises a level that sits
+ * below the definition; it never removes a screen and never lowers a level, so
+ * anything an administrator granted on top of the definition survives, and this
+ * can never take access away from someone mid-shift. Custom roles are not
+ * touched at all — they have no definition to be reconciled against — and the
+ * owner role holds no permission rows by design.
+ *
+ * Removing keys that are no longer registered at all (processing.drying,
+ * processing.packing, crm.templates …) is syncLaundryPermissions()' job, and
+ * stays there.
+ */
+export async function reconcileSystemRoles(platformBusinessId: string): Promise<SystemRoleRepair[]> {
+  const repairs: SystemRoleRepair[] = []
+  for (const def of SYSTEM_ROLES) {
+    if (def.isOwner) continue
+    const role = await prisma.laundryAccessRole.findFirst({
+      where: { businessId: platformBusinessId, code: def.code, isSystem: true },
+      select: { id: true, permissions: { select: { id: true, permKey: true, level: true, effect: true } } },
+    })
+    if (!role) continue
+
+    // The strongest level already held for each screen, however it was stored.
+    const held = new Map<string, { id: string; level: number }>()
+    for (const p of role.permissions) {
+      if (p.effect === "DENY") continue
+      const mapped = permKeyToScreenLevel(p.permKey)
+      const key = mapped?.screenKey || p.permKey
+      const lvl = mapped ? mapped.level : (p.level || 1)
+      const cur = held.get(key)
+      if (!cur || lvl > cur.level) held.set(key, { id: p.id, level: lvl })
+    }
+
+    const wanted = new Map(def.screens().map((sl) => [sl.screenKey, sl.level]))
+    const added: string[] = []
+    const raised: string[] = []
+    for (const [screenKey, level] of wanted) {
+      const cur = held.get(screenKey)
+      if (!cur) { added.push(screenKey); continue }
+      if (cur.level < level) raised.push(screenKey)
+    }
+    if (added.length) {
+      await prisma.laundryAccessPermission.createMany({
+        data: added.map((screenKey) => ({ roleId: role.id, permKey: screenKey, level: wanted.get(screenKey)!, effect: "ALLOW" })),
+      })
+    }
+    for (const screenKey of raised) {
+      await prisma.laundryAccessPermission.update({ where: { id: held.get(screenKey)!.id }, data: { permKey: screenKey, level: wanted.get(screenKey)! } })
+    }
+    if (added.length || raised.length) repairs.push({ code: def.code, added, raised })
+  }
+  return repairs
 }

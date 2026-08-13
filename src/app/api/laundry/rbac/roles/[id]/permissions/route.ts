@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryLevel, rbacAudit, Level } from "@/lib/laundry-rbac"
+import { requireLaundryAnyLevel, rbacAudit, Level, requireLaundryLevel } from "@/lib/laundry-rbac"
+import { ROLE_READ_SCREENS, ROLE_ADMIN_SCREEN } from "@/lib/laundry-rbac-screens"
 import { isValidScreenKey } from "@/lib/laundry-rbac-registry"
 
 export const runtime = "nodejs"
@@ -8,7 +9,7 @@ export const runtime = "nodejs"
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryLevel(request, businessId, "laundry.staff", Level.VIEW)
+  const guard = await requireLaundryAnyLevel(request, businessId, ROLE_READ_SCREENS, Level.VIEW)
   if (!guard.ok) return guard.res
   const role = await prisma.laundryAccessRole.findFirst({ where: { id, businessId: guard.platformBusinessId }, include: { permissions: true } })
   if (!role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
@@ -20,7 +21,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryLevel(request, b.businessId, "laundry.staff", Level.EDIT)
+  const guard = await requireLaundryLevel(request, b.businessId, ROLE_ADMIN_SCREEN, Level.EDIT)
   if (!guard.ok) return guard.res
   const role = await prisma.laundryAccessRole.findFirst({ where: { id, businessId: guard.platformBusinessId }, select: { id: true, isOwner: true, name: true } })
   if (!role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
