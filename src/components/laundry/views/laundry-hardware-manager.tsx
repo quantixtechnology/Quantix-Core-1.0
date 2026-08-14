@@ -24,11 +24,12 @@ import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import {
   Usb, Printer, ScanLine, Camera, RefreshCw, Wifi, WifiOff, CheckCircle2, XCircle,
-  AlertTriangle, Bluetooth, Plug, Loader2, Search, Download, Radar, ListChecks, Gauge, Settings,
+  AlertTriangle, Bluetooth, Plug, Loader2, Search, Download, Radar, ListChecks, Gauge, Settings, MonitorCheck,
 } from "lucide-react"
 import {
   ScanEngine, PrintEngine, diagnostics, eventLog, hardwareHealth,
   scannerStatus, physicalConnection, PHYSICAL_CONNECTION_NOTE,
+  readTerminalFacts, deviceApiResult, scannerResult, RESULT_LABEL, RESULT_TONE,
   probeCapabilities, capabilityLabel, isSecureContext, CAPABILITY_NOTES,
   discoverDevices, deviceSummary, watchDeviceChanges,
   requestUsbDevice, requestHidDevice, requestSerialPort,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/hardware"
 import type {
   HardwareDevice, PrinterRole, DiagnosticsSnapshot, DeviceProfile, TrackedJob,
+  TerminalFacts, HardwareResult,
   HardwareEvent, HardwareEventLevel, CameraInfo, BrowserCapabilities,
 } from "@/lib/hardware"
 
@@ -129,6 +131,16 @@ export function LaundryHardwareManager() {
     time,
   )
   const physical = physicalConnection(scanner)
+  // Facts the browser reports about itself. Read on mount so the server render
+  // and the first client render agree.
+  const [terminal, setTerminal] = useState<TerminalFacts>({ standalone: false, displayMode: "browser", browser: "Browser", secure: false, serviceWorker: false })
+  useEffect(() => {
+    const sync = () => setTerminal(readTerminalFacts())
+    sync()
+    const mq = window.matchMedia("(display-mode: standalone)")
+    mq.addEventListener("change", sync)
+    return () => mq.removeEventListener("change", sync)
+  }, [])
   // Pairing is a browser capability, never a permission. Every role sees the
   // same buttons in the same browser, and none of them in a browser without
   // the APIs — which is why this has to be stated rather than left blank.
@@ -313,6 +325,115 @@ export function LaundryHardwareManager() {
               icon={AlertTriangle} />
           </div>
 
+
+          {/* ── This terminal ──────────────────────────────────────────
+              Before anything about hardware: is this the right application,
+              in its own window, over HTTPS? Facts the browser reports about
+              itself — no token, no session, no tenant, no server call. */}
+          <Card className="rounded-xl border-slate-200">
+            <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><MonitorCheck className="h-[18px] w-[18px] text-blue-600" /> Laundry OS Terminal</CardTitle></CardHeader>
+            <CardContent className="space-y-1.5 text-xs">
+              <Row k="Application" v="Laundry OS" />
+              <Row k="Installation" v={terminal.standalone ? "Installed — running as an app" : "Running in a browser tab"} />
+              <Row k="Display mode" v={terminal.displayMode} />
+              <Row k="Browser" v={terminal.browser} />
+              <Row k="Secure (HTTPS)" v={terminal.secure ? "Secure" : "Not secure — device APIs stay unavailable"} />
+              <Row k="Service worker" v={terminal.serviceWorker ? "Active" : "Not controlling this page"} />
+            </CardContent>
+          </Card>
+
+          {/* ── Connected hardware ─────────────────────────────────────
+              Only what the browser can actually name. A browser cannot list
+              arbitrary USB devices — that is a security boundary, not a
+              fault — so this is "what Laundry OS has been granted", never
+              "what is plugged into this computer". The scanner sits at the
+              top because it is the one device proved by USE rather than by
+              enumeration. */}
+          <Card className="rounded-xl border-slate-200">
+            <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-[15px] font-semibold text-slate-800">Connected Hardware</CardTitle>
+              <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => setTab("discovery")}>
+                <Radar className="h-3 w-3" /> Scan for Hardware
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      {["Device", "Type", "Connection", "Status", "Manufacturer", "Model", "Product ID", "Last used", ""].map((h) => (
+                        <th key={h} className="text-left font-medium px-3 py-2 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {/* The barcode scanner, on its own terms. */}
+                    <tr>
+                      <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">Barcode Scanner</td>
+                      <td className="px-3 py-2 text-slate-500">Keyboard Emulation</td>
+                      <td className="px-3 py-2 text-slate-500">Keyboard</td>
+                      <td className="px-3 py-2"><ResultChip r={scannerResult(ScanEngine.everScanned())} labelOverride={scan.verified ? "Verified" : "Not verified"} /></td>
+                      <td className="px-3 py-2 text-slate-400">—</td>
+                      <td className="px-3 py-2 text-slate-400">—</td>
+                      <td className="px-3 py-2 text-slate-400">—</td>
+                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{diag.scanner.lastScanAt ? time(diag.scanner.lastScanAt) : "—"}</td>
+                      <td className="px-3 py-2"><button onClick={() => setTab("scanner")} className="text-blue-600 hover:underline">View Scanner</button></td>
+                    </tr>
+                    {devices.map((d) => (
+                      <tr key={d.id}>
+                        <td className="px-3 py-2 font-medium text-slate-800">{d.name}</td>
+                        <td className="px-3 py-2 text-slate-500">{d.kind.replace(/_/g, " ").toLowerCase()}</td>
+                        <td className="px-3 py-2 text-slate-500">{d.connection}</td>
+                        <td className="px-3 py-2"><ResultChip r={d.status === "ONLINE" ? "PASS" : "NOT_DETECTABLE"} labelOverride={d.status === "ONLINE" ? "Connected" : "Not reporting"} /></td>
+                        <td className="px-3 py-2 text-slate-500">{d.manufacturer || "—"}</td>
+                        <td className="px-3 py-2 text-slate-500">{d.model || d.product || "—"}</td>
+                        <td className="px-3 py-2 text-slate-500 font-mono">{d.productId != null ? `0x${d.productId.toString(16).padStart(4, "0")}` : "—"}</td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{d.lastSeenAt ? time(d.lastSeenAt) : "—"}</td>
+                        <td className="px-3 py-2"><button onClick={() => setTab(d.kind === "CAMERA" ? "camera" : "printer")} className="text-blue-600 hover:underline">Manage</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-3 py-2 text-[11px] leading-snug text-slate-400 border-t border-slate-100">
+                This lists hardware the browser can name: the print target, and any USB, HID or serial device you have granted
+                through its chooser. A browser is not allowed to enumerate everything plugged into the computer, so an absent
+                device is not a disconnected one. A keyboard-emulation barcode scanner never appears in those lists at all — its
+                row above is proved by a real scan reaching Laundry OS.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* ── Hardware test ──────────────────────────────────────────
+              Five answers, because "failed" and "cannot be seen from here"
+              are not the same thing and collapsing them reports working
+              hardware as broken. */}
+          <Card className="rounded-xl border-slate-200">
+            <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800">Hardware Test</CardTitle></CardHeader>
+            <CardContent className="space-y-1.5 text-xs">
+              <TestRow name="Barcode scanner" r={scannerResult(ScanEngine.everScanned())}
+                detail={ScanEngine.everScanned() ? `Last barcode ${diag.scanner.lastBarcode || "—"} at ${time(diag.scanner.lastScanAt)}` : "Scan any barcode on this terminal to prove it"}
+                action={<Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={testScanner} disabled={testingScan}>{testingScan ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />} Test</Button>} />
+              <TestRow name="Printer" r={diag.printer.lastPrintAt ? "PASS" : "NOT_DETECTABLE"}
+                detail={diag.printer.lastPrintAt ? `Last print ${time(diag.printer.lastPrintAt)}` : "Browser printing is always available; a physical printer is proved by printing"}
+                action={<Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => runPrint("Hardware Test", barcodeTestHtml(), "BARCODE", true)} disabled={!!busy}>Test</Button>} />
+              <TestRow name="Camera" r={!caps.camera ? "NOT_AVAILABLE" : camera.permission === "granted" ? "PASS" : camera.count ? "PERMISSION_REQUIRED" : "NOT_DETECTABLE"}
+                detail={camera.count ? `${camera.count} camera${camera.count === 1 ? "" : "s"} visible` : "No camera reported by this browser"}
+                action={<Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setTab("camera")}>Open</Button>} />
+              <TestRow name="WebUSB" r={deviceApiResult(caps.webUsb, devices.filter((d) => d.source === "WEBUSB").length)}
+                detail={caps.webUsb ? "Only devices you have granted appear" : "This browser does not implement WebUSB"}
+                action={caps.webUsb ? <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => pair(requestUsbDevice, "USB device")}>Connect</Button> : undefined} />
+              <TestRow name="WebHID" r={deviceApiResult(caps.webHid, devices.filter((d) => d.source === "WEBHID").length)}
+                detail={caps.webHid ? "Only devices you have granted appear" : "This browser does not implement WebHID"}
+                action={caps.webHid ? <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => pair(requestHidDevice, "HID device")}>Connect</Button> : undefined} />
+              <TestRow name="Web Serial" r={deviceApiResult(caps.webSerial, devices.filter((d) => d.source === "WEBSERIAL").length)}
+                detail={caps.webSerial ? "Only ports you have granted appear" : "This browser does not implement Web Serial"}
+                action={caps.webSerial ? <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => pair(requestSerialPort, "serial port")}>Connect</Button> : undefined} />
+              <TestRow name="Bluetooth" r={devices.some((d) => d.connection === "BLUETOOTH") ? "PASS" : caps.bluetooth ? "PERMISSION_REQUIRED" : "NOT_AVAILABLE"}
+                detail={devices.some((d) => d.connection === "BLUETOOTH") ? "A Bluetooth device is paired" : caps.bluetooth ? "Supported — no browser-visible device paired" : "This browser does not implement Web Bluetooth"} />
+            </CardContent>
+          </Card>
+
           <Card className="rounded-xl border-slate-200">
             <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800">Last Hardware Event</CardTitle></CardHeader>
             <CardContent className="text-sm">
@@ -484,6 +605,16 @@ export function LaundryHardwareManager() {
                 you want that.
               </Notice>
             )}
+            {/* Why the list can be short. "Nothing here" is a statement about
+                what has been GRANTED, not about what is plugged in. */}
+            {canPair && (
+              <Notice tone="info">
+                Your browser only lets Laundry OS see hardware after you grant it. Nothing is scanned silently: choose Pair USB,
+                Pair HID or Pair Serial, pick the device in the browser&rsquo;s own chooser, and it appears below. A device you
+                have not granted shows as <span className="font-semibold">permission required</span>, which is not the same as
+                disconnected — and a keyboard-emulation barcode scanner never appears in these lists at all, however well it works.
+              </Notice>
+            )}
             {discovery.length > 0 && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
                 {discovery.map((l, i) => <p key={i} className="text-xs text-slate-600">{l}</p>)}
@@ -649,6 +780,26 @@ function Tile({ label, value, note, ok, warn, icon: Icon }: { label: string; val
         <span className="text-sm font-semibold text-slate-800">{value}</span>
       </div>
       {note && <div className="mt-1 text-[11px] leading-snug text-slate-500">{note}</div>}
+    </div>
+  )
+}
+
+/** A hardware result, with only a true failure shown in red. */
+function ResultChip({ r, labelOverride }: { r: HardwareResult; labelOverride?: string }) {
+  const tone = RESULT_TONE[r]
+  const cls = tone === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : tone === "bad" ? "border-rose-200 bg-rose-50 text-rose-700"
+      : "border-slate-200 bg-slate-50 text-slate-500"
+  return <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${cls}`}>{labelOverride ?? RESULT_LABEL[r]}</span>
+}
+
+function TestRow({ name, r, detail, action }: { name: string; r: HardwareResult; detail: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span className="w-32 shrink-0 font-medium text-slate-700">{name}</span>
+      <ResultChip r={r} />
+      <span className="flex-1 text-slate-500">{detail}</span>
+      {action}
     </div>
   )
 }
