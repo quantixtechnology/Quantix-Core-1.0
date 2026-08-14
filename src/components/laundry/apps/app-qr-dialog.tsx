@@ -12,10 +12,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Download, Share2, Link as LinkIcon, Check, Loader2 } from "lucide-react"
+import { Download, Share2, Link as LinkIcon, Check, Loader2, Printer } from "lucide-react"
 import { toast } from "sonner"
 import {
-  qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE,
+  qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE, printQrImage,
 } from "@/lib/qr-export"
 
 export interface AppQrDialogProps {
@@ -51,6 +51,13 @@ export function AppQrDialog({ open, onOpenChange, url, businessName, appName }: 
     finally { setBusy(null) }
   }, [])
 
+  /** Print the QR itself — a hidden iframe, never a popup (popups froze the
+   *  app once already; see the label-print fix). */
+  const printQr = useCallback(() => {
+    if (!preview) return
+    printQrImage(preview, `${businessName} — ${appName}`, display)
+  }, [preview, businessName, appName, display])
+
   const copyLink = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(url)
@@ -63,7 +70,7 @@ export function AppQrDialog({ open, onOpenChange, url, businessName, appName }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:!max-w-[420px]">
         <DialogHeader className="text-left">
-          <DialogTitle className="text-base">Customer App QR</DialogTitle>
+          <DialogTitle className="text-base">{appName} QR</DialogTitle>
           <DialogDescription className="text-xs">Scan to open {businessName}</DialogDescription>
         </DialogHeader>
 
@@ -98,6 +105,9 @@ export function AppQrDialog({ open, onOpenChange, url, businessName, appName }: 
                 onClick={() => run("svg", () => downloadQrSvg(url, fileBase), "Downloaded SVG")}>
                 {busy === "svg" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} SVG
               </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={printQr} disabled={!preview}>
+                <Printer className="h-3.5 w-3.5" /> Print QR
+              </Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={copyLink}>
                 {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <LinkIcon className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy Link"}
               </Button>
@@ -120,7 +130,7 @@ export function AppQrDialog({ open, onOpenChange, url, businessName, appName }: 
           </div>
 
           <p className="text-[10px] text-slate-400 text-center">
-            Print for the counter, the entrance, visiting cards or posters. Scanning opens your branded customer app.
+            Print for the counter, the entrance, visiting cards or posters. Scanning opens {appName}.
           </p>
         </div>
       </DialogContent>

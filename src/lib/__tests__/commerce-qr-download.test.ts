@@ -189,3 +189,48 @@ describe('Laundry OS keeps working exactly as before', () => {
     expect(dlg).toContain('shareQr')
   })
 })
+
+// ── The dialog an operator actually sees ──────────────────────────────────
+describe('the QR dialog names the right app and offers the right actions', () => {
+  const DLG = read('src/components/laundry/apps/app-qr-dialog.tsx')
+  const CARD = read('src/components/shared/location-qr-card.tsx')
+
+  it('the title is the app in the dialog, not always the Customer App', () => {
+    // It was hardcoded, so Store Admin and Delivery Executive both opened a
+    // dialog headed "Customer App QR".
+    expect(DLG).toContain('<DialogTitle className="text-base">{appName} QR</DialogTitle>')
+    expect(DLG).not.toContain('>Customer App QR<')
+    expect(DLG).not.toContain('opens your branded customer app')
+  })
+
+  it('the app dialog shows QR, app name, URL, Download PNG, Print and Copy', () => {
+    expect(DLG).toContain('{appName}')
+    expect(DLG).toContain('{display}')          // the URL
+    expect(DLG).toContain('Download PNG')
+    expect(DLG).toContain('Print QR')
+    expect(DLG).toContain('Copy Link')
+  })
+
+  it('the store dialog shows Download PNG, Print and Open Maps', () => {
+    expect(CARD).toContain('Download PNG')
+    expect(CARD).toContain('Print QR')
+    expect(CARD).toContain('Open Maps')
+    expect(CARD).toContain('href={mapsUrl}')
+  })
+
+  it('printing uses a hidden iframe, never a popup', () => {
+    // A popup print froze the app once already (the label-print fix).
+    const lib = read('src/lib/qr-export.ts')
+    expect(lib).toContain('export function printQrImage')
+    expect(lib).toContain('document.createElement("iframe")')
+    // The comment explains why; the CODE must not call it.
+    const code = lib.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).not.toContain('window.open')
+  })
+
+  it('the printed sheet carries the QR itself, at print size', () => {
+    const lib = read('src/lib/qr-export.ts')
+    expect(lib).toContain('width: 74mm; height: 74mm')
+    expect(lib).toContain('img src="${dataUrl}"')
+  })
+})

@@ -92,3 +92,35 @@ export async function shareQr(value: string, fileBase: string, title: string, te
     return false
   }
 }
+
+/**
+ * Print a QR straight from the dialog.
+ *
+ * A hidden iframe, never window.open: a popup print froze the app once before
+ * (see the barcode label fix) and browsers increasingly block them anyway. The
+ * image is already a data: URL, so there is nothing to load and nothing to wait
+ * for beyond the frame itself.
+ */
+export function printQrImage(dataUrl: string, title: string, caption: string): void {
+  if (typeof document === "undefined") return
+  const frame = document.createElement("iframe")
+  frame.setAttribute("aria-hidden", "true")
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;"
+  document.body.appendChild(frame)
+  const doc = frame.contentDocument
+  if (!doc) { frame.remove(); return }
+  doc.open()
+  doc.write(`<!doctype html><html><head><title>${title}</title><style>
+    @page { margin: 12mm }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; text-align: center; margin: 0; padding: 8mm }
+    h1 { font-size: 16pt; margin: 0 0 2mm }
+    p { font-size: 10pt; color: #475569; margin: 0 0 6mm; word-break: break-all }
+    img { width: 74mm; height: 74mm; image-rendering: pixelated }
+  </style></head><body><h1>${title}</h1><p>${caption}</p><img src="${dataUrl}" alt="QR" /></body></html>`)
+  doc.close()
+  const done = () => { setTimeout(() => frame.remove(), 1000) }
+  frame.contentWindow?.addEventListener("afterprint", done)
+  frame.contentWindow?.focus()
+  frame.contentWindow?.print()
+  setTimeout(done, 60000)
+}

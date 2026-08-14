@@ -17,10 +17,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { QrCode, Download, Share2, Link as LinkIcon, AlertTriangle, Check, Loader2 } from "lucide-react"
+import { QrCode, Download, Share2, Link as LinkIcon, AlertTriangle, Check, Loader2, Printer, MapPin } from "lucide-react"
 import { toast } from "sonner"
 import { locationMapsUrl } from "@/lib/delivery-actions"
-import { qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE } from "@/lib/qr-export"
+import { qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE, printQrImage } from "@/lib/qr-export"
 
 /** Print resolution. 1000px keeps a QR crisp on a business card at any size. */
 
@@ -90,6 +90,12 @@ export function LocationQrCard({
     setBusy(null)
   }, [mapsUrl, fileBase, businessName, locationName])
 
+  /** Print the QR itself, through the shared hidden-iframe printer. */
+  const printQr = useCallback(() => {
+    if (!preview || !mapsUrl) return
+    printQrImage(preview, `${businessName} — ${locationName}`, address || mapsUrl)
+  }, [preview, mapsUrl, businessName, locationName, address])
+
   const copyLink = useCallback(async () => {
     if (!mapsUrl) return
     try {
@@ -147,12 +153,18 @@ export function LocationQrCard({
 
       <div className={`mt-3 flex flex-wrap gap-1.5 ${panel ? "justify-center" : ""}`}>
         <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={busy === "png"} onClick={downloadPng}>
-          {busy === "png" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} PNG
+          {busy === "png" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Download PNG
         </Button>
         <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={busy === "svg"} onClick={downloadSvg}>
           {busy === "svg" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} SVG
         </Button>
         {/* Hidden rather than shown-and-broken where the browser has no share. */}
+        <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={printQr} disabled={!preview}>
+          <Printer className="h-3 w-3" /> Print QR
+        </Button>
+        <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" asChild>
+          <a href={mapsUrl} target="_blank" rel="noreferrer"><MapPin className="h-3 w-3" /> Open Maps</a>
+        </Button>
         {canShare && (
           <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] gap-1" disabled={busy === "share"} onClick={share}>
             {busy === "share" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Share2 className="h-3 w-3" />} Share
