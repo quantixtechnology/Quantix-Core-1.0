@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import {
   ScanEngine, PrintEngine, diagnostics, eventLog, hardwareHealth,
-  scannerStatus, physicalConnection, PHYSICAL_CONNECTION_NOTE,
+  scannerStatus, physicalConnection, scannerInputMode, NOT_EXPOSED, PHYSICAL_CONNECTION_NOTE,
   readTerminalFacts, deviceApiResult, scannerResult, RESULT_LABEL, RESULT_TONE,
   probeCapabilities, capabilityLabel, isSecureContext, CAPABILITY_NOTES,
   discoverDevices, deviceSummary, watchDeviceChanges,
@@ -39,7 +39,7 @@ import {
 } from "@/lib/hardware"
 import type {
   HardwareDevice, PrinterRole, DiagnosticsSnapshot, DeviceProfile, TrackedJob,
-  TerminalFacts, HardwareResult,
+  TerminalFacts, HardwareResult, ScanEvent,
   HardwareEvent, HardwareEventLevel, CameraInfo, BrowserCapabilities,
 } from "@/lib/hardware"
 
@@ -74,6 +74,7 @@ export function LaundryHardwareManager() {
   const [events, setEvents] = useState<HardwareEvent[]>([])
   const [camera, setCamera] = useState<CameraInfo>(EMPTY_CAMERA)
   const [testingScan, setTestingScan] = useState(false)
+  const [lastTest, setLastTest] = useState<ScanEvent | null>(null)
   const [testingCam, setTestingCam] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [discovery, setDiscovery] = useState<string[]>([])
@@ -130,7 +131,12 @@ export function LaundryHardwareManager() {
     { lastScanAt: diag.scanner.lastScanAt, recentlyScanned: ScanEngine.scannerPresent() },
     time,
   )
-  const physical = physicalConnection(scanner)
+  // Devices the operator has actually granted, through any device API. This is
+  // never "everything plugged into the computer" — the browser does not offer
+  // that, and the UI says so where it is listed.
+  const permitted = devices.filter((d) => d.source === "WEBHID" || d.source === "WEBUSB" || d.source === "WEBSERIAL" || d.source === "BLUETOOTH")
+  const physical = physicalConnection(scanner, { apiSupported: caps.webHid || caps.webUsb, anyGranted: permitted.length > 0 })
+  const inputMode = scannerInputMode(scanner, ScanEngine.everScanned())
   // Facts the browser reports about itself. Read on mount so the server render
   // and the first client render agree.
   const [terminal, setTerminal] = useState<TerminalFacts>({ standalone: false, displayMode: "browser", browser: "Browser", secure: false, serviceWorker: false })
@@ -170,10 +176,12 @@ export function LaundryHardwareManager() {
 
   const testScanner = async () => {
     setTestingScan(true)
+    setLastTest(null)
     eventLog.record("TEST_RUN", "Scanner test started")
     toast.info("Scan anything now — waiting up to 30 seconds")
     const e = await ScanEngine.scanOnce(30000)
     setTestingScan(false)
+    setLastTest(e)
     if (e) toast.success(`Read "${e.code}" via ${e.source.replace(/_/g, " ").toLowerCase()}`)
     // TEST_FAILED, not ERROR: the operator declining to scan within the test
     // window is not a hardware fault, and must not count against health.
@@ -481,29 +489,98 @@ export function LaundryHardwareManager() {
             {/* The row this page was missing. Everything above is scan
                 evidence; this is the question it cannot answer. */}
             <Row k="Physical connection" v={physical.label} />
-            <Row k="Connection" v={scanner ? `${scanner.connection} ${scanner.source === "WEBHID" ? "HID" : ""}`.trim() : "Keyboard emulation (no pairing needed)"} />
-            <Row k="Type" v="Keyboard Emulation" />
-            <Row k="Manufacturer" v={scanner?.manufacturer || "Unknown"} />
-            <Row k="Model" v={scanner?.model || "Unknown"} />
-            <Row k="Vendor ID" v={scanner?.vendorId != null ? `0x${scanner.vendorId.toString(16).padStart(4, "0")}` : "Unknown"} mono />
-            <Row k="Product ID" v={scanner?.productId != null ? `0x${scanner.productId.toString(16).padStart(4, "0")}` : "Unknown"} mono />
+            {/* How the barcode arrives, which is not the same as whether a
+                cable is plugged in. A wedge delivers keystrokes; a paired
+                device names its own transport. */}
+            <Row k="Input" v={inputMode} />
+            <Row k="Manufacturer" v={scanner?.manufacturer || NOT_EXPOSED} />
+            <Row k="Model" v={scanner?.model || NOT_EXPOSED} />
+            <Row k="Vendor ID" v={scanner?.vendorId != null ? `0x${scanner.vendorId.toString(16).padStart(4, "0")}` : NOT_EXPOSED} mono />
+            <Row k="Product ID" v={scanner?.productId != null ? `0x${scanner.productId.toString(16).padStart(4, "0")}` : NOT_EXPOSED} mono />
+            <Row k="Serial number" v={scanner?.serialNumber || NOT_EXPOSED} mono />
             <Row k="Input mode" v={profile.scanner.autoDetect ? "Automatic" : "Manual preference"} />
             <Row k="Last scan" v={when(diag.scanner.lastScanAt)} />
             <Row k="Last barcode" v={diag.scanner.lastBarcode || "—"} mono />
             <Row k="Average scan speed" v={diag.scanner.averageScanMs != null ? `${diag.scanner.averageScanMs} ms` : "—"} />
             <Row k="Today's scans" v={String(diag.scanner.totalScansToday)} />
+            {/* ── Test Scanner ─────────────────────────────────────────
+                A diagnostic, not a second scanner: it attaches to the SAME
+                engine every workstation uses, so what it proves is exactly
+                what the workflow will do. */}
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-[12px] font-semibold text-slate-700">Test barcode scanner</p>
+              {testingScan ? (
+                <p className="mt-1 flex items-center gap-1.5 text-[12px] text-blue-700">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Waiting for scan… scan any barcode now.
+                </p>
+              ) : lastTest ? (
+                <div className="mt-1.5 space-y-1">
+                  <p className="flex items-center gap-1.5 text-[12px] font-medium text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Scanner detected — working</p>
+                  <Row k="Barcode" v={lastTest.code} mono />
+                  <Row k="Input" v={lastTest.source.replace(/_/g, " ").toLowerCase() === "usb scanner" ? "Keyboard Emulation" : lastTest.source.replace(/_/g, " ").toLowerCase()} />
+                  <Row k="Received" v={new Date(lastTest.at).toLocaleTimeString("en-IN")} />
+                </div>
+              ) : (
+                <p className="mt-1 text-[12px] text-slate-500">Press Test Scanner, then scan any barcode. The test listens through the same engine the workstations use.</p>
+              )}
+            </div>
+
             <div className="pt-2 flex gap-1.5">
               <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={testScanner} disabled={testingScan}>
                 {testingScan ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />} Test Scanner
               </Button>
               <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => runPrint("Barcode Test", barcodeTestHtml(), "BARCODE", true)} disabled={!!busy}>Scan Test Barcode</Button>
             </div>
-            {!physical.detectable && <Notice tone="info">{PHYSICAL_CONNECTION_NOTE}</Notice>}
-            <Notice tone="info">
-              A USB and a Bluetooth scanner are indistinguishable to a browser — both simply type. The connection above reads
-              &ldquo;Bluetooth&rdquo; only when a Bluetooth scanner has actually been paired; otherwise it reports keyboard emulation
-              rather than guessing. Manufacturer and model appear only for a device paired through WebUSB or WebHID.
-            </Notice>
+            {inputMode === "Keyboard Emulation" && (
+              <Notice tone="info">
+                <span className="font-semibold">Keyboard-emulation scanner.</span> This scanner sends barcode data to Windows as
+                keyboard input, so Windows may list it under keyboards rather than Printers &amp; scanners, and browser security
+                stops Laundry OS determining whether the USB cable is currently connected. The definitive verification is a
+                successful barcode scan — which is what the status above reports.
+              </Notice>
+            )}
+            {!physical.detectable && inputMode !== "Keyboard Emulation" && <Notice tone="info">{PHYSICAL_CONNECTION_NOTE}</Notice>}
+
+            {/* ── USB / HID device discovery ───────────────────────────
+                Separate from scan verification on purpose: pairing a device
+                proves a device, scanning proves the scanner. */}
+            <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
+              <p className="text-[12px] font-semibold text-slate-700">USB / HID Device Discovery</p>
+              {canPair ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {caps.webHid && <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => pair(requestHidDevice, "HID device")}><ScanLine className="h-3 w-3" /> Connect HID Device</Button>}
+                    {caps.webUsb && <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => pair(requestUsbDevice, "USB device")}><Usb className="h-3 w-3" /> Connect USB Device</Button>}
+                    {caps.webSerial && <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" onClick={() => pair(requestSerialPort, "serial port")}><Plug className="h-3 w-3" /> Connect Serial Device</Button>}
+                  </div>
+                  <p className="text-[11px] text-slate-500">Devices available to Laundry OS through this browser</p>
+                  {permitted.length === 0 ? (
+                    <p className="text-[11px] text-slate-400">No permitted devices. Nothing is enumerated without your permission — this is never a complete list of what is plugged into the computer.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {permitted.map((d, i) => (
+                        <div key={d.id} className="rounded-lg border border-slate-100 bg-white p-2.5">
+                          <p className="text-[12px] font-medium text-slate-800">{i + 1}. {d.name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {SOURCE_LABEL[d.source] ?? d.source}
+                            {" · Vendor ID: "}{d.vendorId != null ? `0x${d.vendorId.toString(16).padStart(4, "0")}` : NOT_EXPOSED}
+                            {" · Product ID: "}{d.productId != null ? `0x${d.productId.toString(16).padStart(4, "0")}` : NOT_EXPOSED}
+                            {" · Serial: "}{d.serialNumber || NOT_EXPOSED}
+                          </p>
+                          <p className="text-[11px] text-slate-500">Permission granted · {d.status === "ONLINE" ? "Connected" : "Not reporting"}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Notice tone="info">
+                  <span className="font-semibold">Hardware access is limited in this browser.</span> It cannot give Laundry OS
+                  device-level USB/HID information. Your keyboard-emulation barcode scanner still works normally — plug it in and
+                  scan, and Laundry OS verifies it when the scan arrives. For device-level information, use Chrome or Edge over HTTPS.
+                </Notice>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -782,6 +859,12 @@ function Tile({ label, value, note, ok, warn, icon: Icon }: { label: string; val
       {note && <div className="mt-1 text-[11px] leading-snug text-slate-500">{note}</div>}
     </div>
   )
+}
+
+/** How a granted device reached us, in the operator's words. */
+const SOURCE_LABEL: Record<string, string> = {
+  WEBHID: "HID", WEBUSB: "USB", WEBSERIAL: "Serial", BLUETOOTH: "Bluetooth",
+  MEDIA_DEVICES: "Camera", BROWSER_PRINT: "Browser print", KEYBOARD_WEDGE: "Keyboard",
 }
 
 /** A hardware result, with only a true failure shown in red. */

@@ -88,8 +88,9 @@ describe('what the terminal may claim', () => {
 
 describe('physical connection is reported only where it can be observed', () => {
   it('a keyboard wedge is never claimed to be connected or disconnected', () => {
+    // Wording sharpened to "…by browser" so the limit names whose limit it is.
     expect(physicalConnection(null)).toEqual({ detectable: false, label: PHYSICAL_CONNECTION_UNKNOWN })
-    expect(physicalConnection({ source: 'KEYBOARD_WEDGE' })).toEqual({ detectable: false, label: 'Not detectable' })
+    expect(physicalConnection({ source: 'KEYBOARD_WEDGE' })).toEqual({ detectable: false, label: 'Not detectable by browser' })
   })
 
   it('a device held through a real API may report its connection', () => {
@@ -140,8 +141,10 @@ describe('Hardware Manager shows exactly that', () => {
   it('the scan evidence itself is still shown', () => {
     expect(HW).toContain('<Row k="Last scan"')
     expect(HW).toContain('<Row k="Last barcode"')
-    expect(HW).toContain('<Row k="Type" v="Keyboard Emulation" />')
-    expect(HW).toContain('<Row k="Input mode"')
+    // "Type" became "Input", which now names the transport a barcode actually
+    // arrives on rather than assuming keyboard emulation.
+    expect(HW).toContain('<Row k="Input" v={inputMode} />')
+    expect(HW).toContain('scannerInputMode(scanner, ScanEngine.everScanned())')
   })
 })
 

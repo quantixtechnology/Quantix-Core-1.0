@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { browserName, deviceApiResult, scannerResult, RESULT_LABEL, RESULT_TONE } from '@/lib/hardware'
+import { browserName, deviceApiResult, scannerResult, RESULT_LABEL, RESULT_TONE, scannerInputMode, physicalConnection, NOT_EXPOSED } from '@/lib/hardware'
 
 // ============================================================================
 // Laundry OS tells the truth about hardware.
@@ -177,5 +177,123 @@ describe('hardware discovery changes nothing else', () => {
   it('the device guard and the other PWAs are unchanged', () => {
     expect(read('src/components/laundry/laundry-device-guard.tsx')).toContain('Laundry OS is designed for Desktop &amp; Tablet')
     expect(read('src/app/store/page.tsx')).toContain('LaundryStoreApp')
+  })
+})
+
+// ── Two questions, never merged ───────────────────────────────────────────
+//
+// "Has a barcode reached Laundry OS?" and "is a cable plugged in?" are
+// different questions with different evidence. A wedge scanner answers the
+// first by scanning and can never answer the second, because Windows hands it
+// to the browser as a keyboard — which is also why it may not appear under
+// Printers & scanners at all.
+describe('scan verification and physical connection stay apart', () => {
+  it('a wedge that is plainly typing is named Keyboard Emulation', () => {
+    expect(scannerInputMode(null, true)).toBe('Keyboard Emulation')
+  })
+
+  it('nothing seen at all is Unknown — not a shrug over a working scanner', () => {
+    expect(scannerInputMode(null, false)).toBe('Unknown')
+  })
+
+  it('a paired device names its own transport', () => {
+    expect(scannerInputMode({ source: 'WEBHID' }, false)).toBe('WebHID')
+    expect(scannerInputMode({ source: 'WEBUSB' }, true)).toBe('WebUSB')
+    expect(scannerInputMode({ source: 'WEBSERIAL' }, false)).toBe('Web Serial')
+    expect(scannerInputMode({ source: 'BLUETOOTH' }, false)).toBe('Bluetooth')
+  })
+
+  it('scanning NEVER produces a connection claim', () => {
+    // The whole point: a thousand scans do not prove a cable.
+    const p = physicalConnection(null, { apiSupported: true, anyGranted: true })
+    expect(p.detectable).toBe(false)
+    expect(p.label).toBe('Not detectable by browser')
+    expect(p.label).not.toMatch(/Connected|Active|USB Connected/)
+  })
+
+  it('a browser that could hold devices, with none granted → Permission required', () => {
+    expect(physicalConnection(null, { apiSupported: true, anyGranted: false }).label).toBe('Permission required')
+  })
+
+  it('a browser that cannot hold devices at all → Not detectable', () => {
+    expect(physicalConnection(null, { apiSupported: false, anyGranted: false }).label).toBe('Not detectable by browser')
+  })
+
+  it('only a genuinely held device reports Connected, and says how', () => {
+    expect(physicalConnection({ source: 'WEBHID', connection: 'USB' })).toEqual({ detectable: true, label: 'Connected via WebHID' })
+    expect(physicalConnection({ source: 'WEBUSB', connection: 'USB' }).label).toBe('Connected via WebUSB')
+  })
+
+  it('a value the browser withheld is "Not available", not "Unknown"', () => {
+    // "Unknown" would suggest we looked and could not tell.
+    expect(NOT_EXPOSED).toBe('Not available')
+    expect(HW).toContain('scanner?.manufacturer || NOT_EXPOSED')
+    expect(HW).toContain('scanner?.serialNumber || NOT_EXPOSED')
+    expect(HW).not.toContain('scanner?.manufacturer || "Unknown"')
+  })
+})
+
+// ── The test workflow ─────────────────────────────────────────────────────
+describe('Test Scanner is a diagnostic on the one engine', () => {
+  it('it waits, then reports what actually arrived', () => {
+    expect(HW).toContain('Waiting for scan… scan any barcode now.')
+    expect(HW).toContain('Scanner detected — working')
+    expect(HW).toContain('k="Barcode"')
+    expect(HW).toContain('k="Received"')
+  })
+
+  it('it listens through ScanEngine — no second listener, no second engine', () => {
+    expect(HW).toContain('ScanEngine.scanOnce(30000)')
+    const once = read('src/lib/hardware/scan-engine.ts')
+    const fn = once.slice(once.indexOf('scanOnce(timeoutMs'))
+    // scanOnce attaches to the same dispatch every workstation uses.
+    expect(fn).toContain('this.attach(')
+    expect(HW).not.toContain('addEventListener("keydown"')
+  })
+
+  it('and the result still flows through submit → recordScan', () => {
+    const engine = read('src/lib/hardware/scan-engine.ts')
+    expect(engine).toContain('diagnostics.recordScan(code, resolved, durationMs)')
+    expect(engine.match(/diagnostics\.recordScan/g)).toHaveLength(1)
+  })
+})
+
+// ── Permitted devices ─────────────────────────────────────────────────────
+describe('USB / HID discovery shows only what was granted', () => {
+  it('the list is labelled for what it is', () => {
+    expect(HW).toContain('Devices available to Laundry OS through this browser')
+    expect(HW).toContain('this is never a complete list of what is plugged into the computer')
+  })
+
+  it('connect buttons appear only where the API exists', () => {
+    expect(HW).toContain('{caps.webHid && <Button')
+    expect(HW).toContain('Connect HID Device')
+    expect(HW).toContain('Connect USB Device')
+    expect(HW).toContain('Connect Serial Device')
+  })
+
+  it('a browser without the APIs is told plainly, not shown an error', () => {
+    expect(HW).toContain('Hardware access is limited in this browser.')
+    expect(HW).toContain('still works normally')
+    expect(HW).toContain('use Chrome or Edge over HTTPS')
+  })
+
+  it('the keyboard-emulation explanation is on the scanner page', () => {
+    expect(HW).toContain('sends barcode data to Windows as')
+    expect(HW).toContain('Printers &amp; scanners')
+    expect(HW).toContain('The definitive verification is a')
+  })
+
+  it('missing device values are reported as withheld, per device', () => {
+    expect(HW).toContain('{" · Vendor ID: "}{d.vendorId != null ? `0x${d.vendorId.toString(16).padStart(4, "0")}` : NOT_EXPOSED}')
+    expect(HW).toContain('{" · Serial: "}{d.serialNumber || NOT_EXPOSED}')
+  })
+
+  it('nothing about a device leaves the browser', () => {
+    expect(read('src/lib/hardware/registry.ts')).not.toContain('fetch(')
+    expect(read('src/lib/hardware/scanner-status.ts')).not.toContain('fetch(')
+    for (const forbidden of ['businessId', 'prisma', 'token']) {
+      expect(read('src/lib/hardware/scanner-status.ts'), forbidden).not.toContain(forbidden)
+    }
   })
 })
