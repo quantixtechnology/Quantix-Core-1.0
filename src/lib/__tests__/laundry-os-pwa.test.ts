@@ -176,16 +176,19 @@ describe('one Laundry OS, installed once', () => {
 describe('Laundry OS is a desktop and tablet console', () => {
   const GUARD = read('src/components/laundry/laundry-device-guard.tsx')
 
-  it('a phone width gets a message, not a collapsed console', () => {
+  it('the INSTALLED app on a phone gets a message, not a collapsed console', () => {
     expect(GUARD).toContain('Laundry OS is designed for Desktop &amp; Tablet')
     expect(GUARD).toContain('Please open Laundry OS on a desktop, laptop or tablet')
-    expect(GUARD).toContain('MIN_OPERATIONAL_WIDTH = 768')
   })
 
-  it('tablet portrait and everything wider render the console unchanged', () => {
-    // 768 is tablet portrait; the guard fires strictly BELOW it.
-    expect(GUARD).toContain('max-width: ${MIN_OPERATIONAL_WIDTH - 1}px')
-    expect(GUARD).toContain('if (tooNarrow !== true) return <>{children}</>')
+  it('a normal mobile BROWSER is never blocked — see laundry-device-guard.test.ts', () => {
+    // Superseded: the guard used viewport width alone, which blocked anyone
+    // opening the workspace in Chrome on a phone. It now needs the Laundry
+    // host AND standalone AND a phone-sized screen.
+    expect(GUARD).toContain('shouldRestrictToDesktopTablet({')
+    expect(GUARD).toContain('installed: isStandaloneDisplay()')
+    expect(GUARD).not.toContain('MIN_OPERATIONAL_WIDTH')
+    expect(GUARD).toContain('if (restricted !== true) return <>{children}</>')
   })
 
   it('it is presentation only — it decides nothing about access', () => {
