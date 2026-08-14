@@ -7,14 +7,25 @@ import { useEffect, useState } from "react"
 import QRCode from "qrcode"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { QrCode, Share2, ExternalLink } from "lucide-react"
+import { QrCode, Share2, ExternalLink, Download, Loader2 } from "lucide-react"
 import { CopyButton } from "@/components/ui/copy-button"
+import { toast } from "sonner"
+import { downloadQrPng, QR_PNG_SIZE } from "@/lib/qr-export"
 import { AppQrDialog } from "@/components/laundry/apps/app-qr-dialog"
 
-export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction }: {
+export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction, downloadFileBase }: {
   title: string; description: string; url: string; icon?: React.ReactNode; note?: string
   /** Optional headline action for this app, e.g. Install. */
   primaryAction?: React.ReactNode
+  /**
+   * Supply a filename stem to put Download PNG directly in the action row.
+   *
+   * Opt-in: the QR dialog already offers a download, but a button that only
+   * exists behind another button is a button nobody finds. Where printing the
+   * QR is the actual job, the download belongs where the operator is already
+   * looking.
+   */
+  downloadFileBase?: string
   /**
    * Opt-in. When supplied, QR Code opens the polished print-ready dialog
    * instead of the inline preview. Only the Customer App passes it — that is
@@ -25,6 +36,7 @@ export function AppShareCard({ title, description, url, icon, note, qrDialog, pr
 }) {
   const [showQr, setShowQr] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -54,6 +66,17 @@ export function AppShareCard({ title, description, url, icon, note, qrDialog, pr
         <div className="flex gap-2 flex-wrap">
           <CopyButton value={url} label="Link" size="sm" variant="outline">Copy Link</CopyButton>
           <Button size="sm" variant="outline" className="gap-1" onClick={() => (qrDialog ? setQrOpen(true) : setShowQr((s) => !s))}><QrCode className="h-3.5 w-3.5" /> QR Code</Button>
+          {downloadFileBase && (
+            <Button size="sm" variant="outline" className="gap-1" disabled={downloading || !url}
+              onClick={async () => {
+                setDownloading(true)
+                try { await downloadQrPng(url, downloadFileBase); toast.success(`Downloaded ${QR_PNG_SIZE} × ${QR_PNG_SIZE} PNG`) }
+                catch { toast.error("Could not generate the QR") }
+                finally { setDownloading(false) }
+              }}>
+              {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Download PNG
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={whatsapp}><Share2 className="h-3.5 w-3.5" /> WhatsApp</Button>
         </div>
         {showQr && !qrDialog && (

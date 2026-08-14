@@ -190,6 +190,114 @@ describe('Laundry OS keeps working exactly as before', () => {
   })
 })
 
+// ── The page the operator actually opens ─────────────────────────────────
+//
+// THREE components render "Customer Website & PWA / Store Admin PWA / Delivery
+// Executive PWA". The Commerce workspace renders business/apps/apps-view.tsx —
+// the same tree as business/stores/stores-view.tsx, the Stores page. The QR
+// dialog was added to dashboard/commerce-apps-hub.tsx instead, so production
+// kept showing the inline preview with no download, and the tests passed
+// because they read the file the change was in.
+describe('the Commerce Mobile Apps page has the download dialog', () => {
+  const APPS = read('src/components/business/apps/apps-view.tsx')
+
+  it('all three cards open the dialog rather than the inline preview', () => {
+    expect(APPS.match(/qrDialog=\{\{/g)).toHaveLength(1)   // one card component, three cards
+    expect(APPS).toContain('appName: c.qrName')
+    for (const n of ['customer pwa', 'store admin pwa', 'delivery executive pwa']) {
+      expect(APPS, n).toContain(`qrName: "${n}"`)
+    }
+  })
+
+  it('filenames use the tenant slug, derived from the loaded host', () => {
+    expect(APPS).toContain('businessName: slug || "business"')
+    expect(APPS).toContain('const slug = (status?.customer.url || "")')
+  })
+
+  it('the QR still encodes the existing provisioned URL', () => {
+    expect(APPS).toContain('url={c.s?.url || ""}')
+  })
+
+  it('Copy Link, WhatsApp and the status strips are untouched', () => {
+    expect(APPS).toContain('<StatusStrip')
+    const card = read('src/components/laundry/apps/app-share-card.tsx')
+    expect(card).toContain('Copy Link')
+    expect(card).toContain('wa.me')
+  })
+})
+
+// ── Download PNG is on the card, not behind another button ───────────────
+//
+// ROUTE TRACE, because guessing the component cost two rounds:
+//   commerce.<base> → product workspace → renderBusinessPage()
+//   → business sidebar { key: "customer-app", label: "Mobile Apps" }
+//   → case "customer-app": <AppsView />
+//   → src/components/business/apps/apps-view.tsx
+//
+// The dialog already carried a download, but a button that only exists behind
+// another button is a button nobody finds.
+describe('the Commerce Mobile Apps card downloads without opening anything', () => {
+  const APPS = read('src/components/business/apps/apps-view.tsx')
+  const CARD = read('src/components/laundry/apps/app-share-card.tsx')
+
+  it('the page in the screenshot is the one that got the change', () => {
+    expect(read('src/app/page.tsx')).toContain('case "customer-app": return <AppsView />')
+    expect(read('src/components/business/layout/business-sidebar.tsx'))
+      .toContain('{ key: "customer-app",        label: "Mobile Apps",    icon: Smartphone }')
+    expect(APPS).toContain('downloadFileBase=')
+  })
+
+  it('all three cards get it, each with its own URL and filename', () => {
+    // One card component rendered over three entries, each carrying its own
+    // url and qrName.
+    expect(APPS).toContain('url={c.s?.url || ""}')
+    expect(APPS).toContain('downloadFileBase={`${slug || "business"}-${c.qrName.replace(/ /g, "-")}-qr`}')
+    for (const n of ['customer pwa', 'store admin pwa', 'delivery executive pwa']) {
+      expect(APPS, n).toContain(`qrName: "${n}"`)
+    }
+  })
+
+  it('the filenames come out as specified', () => {
+    const base = (slug: string, qrName: string) => `${slug}-${qrName.replace(/ /g, '-')}-qr.png`
+    expect(base('ohhhmonos', 'customer pwa')).toBe('ohhhmonos-customer-pwa-qr.png')
+    expect(base('ohhhmonos', 'store admin pwa')).toBe('ohhhmonos-store-admin-pwa-qr.png')
+    expect(base('ohhhmonos', 'delivery executive pwa')).toBe('ohhhmonos-delivery-executive-pwa-qr.png')
+  })
+
+  it('it downloads straight away — no dialog, no print dialog', () => {
+    const row = CARD.slice(CARD.indexOf('{downloadFileBase && ('), CARD.indexOf('WhatsApp</Button>'))
+    expect(row).toContain('downloadQrPng(url, downloadFileBase)')
+    expect(row).not.toContain('setQrOpen')
+    expect(row).not.toContain('print')
+  })
+
+  it('it sits in the visible action row, in order', () => {
+    const rowStart = CARD.indexOf('Copy Link</CopyButton>')
+    const order = ['QR Code', 'Download PNG', 'WhatsApp'].map((l) => CARD.indexOf(l, rowStart))
+    expect(order[0]).toBeLessThan(order[1])
+    expect(order[1]).toBeLessThan(order[2])
+  })
+
+  it('the export is re-rendered at 2048, never the preview scaled', () => {
+    expect(read('src/lib/qr-export.ts')).toContain('QRCode.toDataURL(value, { width: QR_PNG_SIZE, ...PRINT_OPTS })')
+    expect(QR_PNG_SIZE).toBe(2048)
+  })
+
+  it('it is opt-in, so the Laundry cards are untouched', () => {
+    expect(CARD).toContain('downloadFileBase?: string')
+    expect(CARD).toContain('{downloadFileBase && (')
+    const laundry = read('src/components/laundry/views/laundry-mobile-apps.tsx')
+    expect(laundry).not.toContain('downloadFileBase')
+  })
+
+  it('Copy Link, QR Code, WhatsApp and the status strips all remain', () => {
+    expect(CARD).toContain('Copy Link')
+    expect(CARD).toContain('QR Code')
+    expect(CARD).toContain('wa.me')
+    expect(APPS).toContain('<StatusStrip')
+  })
+})
+
 // ── The dialog an operator actually sees ──────────────────────────────────
 describe('the QR dialog names the right app and offers the right actions', () => {
   const DLG = read('src/components/laundry/apps/app-qr-dialog.tsx')

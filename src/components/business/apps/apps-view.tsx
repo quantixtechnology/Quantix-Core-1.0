@@ -22,6 +22,10 @@ export function AppsView() {
   const businessId = currentBusinessId || authBizId || ""
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
+  // The tenant slug for QR filenames, taken from the customer host we already
+  // loaded — no extra request, and it is the same slug the URLs are built from.
+  const slug = (status?.customer.url || "").replace(/^https?:\/\//, "").split(".")[0] || ""
+
 
   const load = useCallback(() => {
     if (!businessId) { setLoading(false); return }
@@ -32,9 +36,9 @@ export function AppsView() {
   useEffect(() => { load() }, [load])
 
   const cards = [
-    { key: "customer", title: "Customer Website & PWA", description: "Customers browse, order and pay.", icon: <Smartphone className="h-5 w-5" />, s: status?.customer, note: "Your dedicated branded storefront + installable PWA." },
-    { key: "store", title: "Store Admin PWA", description: "Store staff run daily operations.", icon: <StoreIcon className="h-5 w-5" />, s: status?.storeAdmin, note: "store.<tenant> — reuses this Admin's backend, store-scoped." },
-    { key: "delivery", title: "Delivery Executive PWA", description: "Executives run assigned deliveries.", icon: <Bike className="h-5 w-5" />, s: status?.deliveryExecutive, note: "delivery.<tenant> — the delivery workflow." },
+    { key: "customer", qrName: "customer pwa", title: "Customer Website & PWA", description: "Customers browse, order and pay.", icon: <Smartphone className="h-5 w-5" />, s: status?.customer, note: "Your dedicated branded storefront + installable PWA." },
+    { key: "store", qrName: "store admin pwa", title: "Store Admin PWA", description: "Store staff run daily operations.", icon: <StoreIcon className="h-5 w-5" />, s: status?.storeAdmin, note: "store.<tenant> — reuses this Admin's backend, store-scoped." },
+    { key: "delivery", qrName: "delivery executive pwa", title: "Delivery Executive PWA", description: "Executives run assigned deliveries.", icon: <Bike className="h-5 w-5" />, s: status?.deliveryExecutive, note: "delivery.<tenant> — the delivery workflow." },
   ]
 
   return (
@@ -55,7 +59,14 @@ export function AppsView() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {cards.map((c) => (
             <div key={c.key} className="space-y-2">
-              <AppShareCard title={c.title} description={c.description} url={c.s?.url || ""} icon={c.icon} note={c.note} />
+              {/* qrDialog switches the card from the inline preview to the
+                  print dialog — Download PNG, Print QR, Copy, Share. Without
+                  it the QR is only ever visible on screen. */}
+              <AppShareCard
+                title={c.title} description={c.description} url={c.s?.url || ""} icon={c.icon} note={c.note}
+                qrDialog={{ businessName: slug || "business", appName: c.qrName }}
+                downloadFileBase={`${slug || "business"}-${c.qrName.replace(/ /g, "-")}-qr`}
+              />
               <StatusStrip s={c.s} loading={loading} url={c.s?.url} />
             </div>
           ))}
