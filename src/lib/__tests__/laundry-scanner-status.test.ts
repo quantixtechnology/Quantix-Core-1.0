@@ -169,3 +169,59 @@ describe('nothing outside Hardware Manager status wording moved', () => {
     }
   })
 })
+
+// ── Pairing is a browser capability, never a permission ───────────────────
+//
+// The same terminal, the same tenant, two accounts:
+//
+//   Chrome · Super Admin      Discover Hardware · Pair USB · Pair HID · Pair Serial
+//   Safari · Business Owner   Discover Hardware
+//
+// which reads as "the owner is not allowed to connect hardware". It is not:
+// WebUSB, WebHID and Web Serial are Chromium-only, Safari ships none of them,
+// and the buttons are gated on navigator.usb / .hid / .serial alone. No role
+// gets them in Safari and every role gets them in Chrome. What was wrong was
+// leaving the gap unexplained.
+describe('the Hardware Manager treats every role identically', () => {
+  it('nothing in the screen consults a role, permission or owner flag', () => {
+    // `role` appears only as a PRINTER role (label vs document), and
+    // `permission` only as the browser's camera permission.
+    for (const forbidden of [
+      'useRuntimeAuth', 'screenLevels', 'isOwner', 'requireLaundry',
+      'resolveUserPermissions', 'laundry.hardware', 'roleCode',
+    ]) {
+      expect(HW, forbidden).not.toContain(forbidden)
+    }
+  })
+
+  it('the pairing buttons are gated on the browser APIs and nothing else', () => {
+    expect(HW).toContain('{caps.webUsb && <Button')
+    expect(HW).toContain('{caps.webHid && <Button')
+    expect(HW).toContain('{caps.webSerial && <Button')
+    expect(HW).toContain('const canPair = caps.webUsb || caps.webHid || caps.webSerial')
+  })
+
+  it('capability detection asks the browser, not the session', () => {
+    const caps = read('src/lib/hardware/capabilities.ts')
+    expect(caps).toContain('webUsb: !!n.usb')
+    expect(caps).toContain('webHid: !!n.hid')
+    expect(caps).toContain('webSerial: !!n.serial')
+    // Prose mentions permissions; the CODE must not consult one. Strip the
+    // comments and the explanatory strings before looking.
+    const code = caps
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/"[^"]*"/g, '""')
+    for (const forbidden of ['role', 'permission', 'businessId', 'fetch(', 'prisma']) {
+      expect(code.toLowerCase(), forbidden).not.toContain(forbidden)
+    }
+  })
+
+  it('a browser that cannot pair says so, instead of showing an empty toolbar', () => {
+    expect(HW).toContain('{!canPair && (')
+    expect(HW).toContain('Pairing is not available in this browser.')
+    // …and answers the question the missing buttons provoke.
+    expect(HW).toContain('no role can pair a device here')
+    expect(HW).toContain('needs no pairing at all')
+  })
+})

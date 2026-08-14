@@ -129,6 +129,10 @@ export function LaundryHardwareManager() {
     time,
   )
   const physical = physicalConnection(scanner)
+  // Pairing is a browser capability, never a permission. Every role sees the
+  // same buttons in the same browser, and none of them in a browser without
+  // the APIs — which is why this has to be stated rather than left blank.
+  const canPair = caps.webUsb || caps.webHid || caps.webSerial
   const barcodePrinter = printers.find((p) => p.id === profile.printers.BARCODE) ?? null
 
   const bindRole = (role: PrinterRole, deviceId: string) => {
@@ -460,6 +464,26 @@ export function LaundryHardwareManager() {
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
+            {/* The pairing buttons above are Chromium-only APIs, so on Safari
+                and Firefox they simply were not there — and a screen that
+                offers no way to add hardware, with no reason given, reads as
+                "my account is not allowed to do this". It is nothing to do
+                with the account: nobody gets these buttons in this browser,
+                and nobody needs them for the hardware a counter actually uses.
+                Say so, rather than leaving a gap. */}
+            {!canPair && (
+              <Notice tone="info">
+                <span className="font-semibold">Pairing is not available in this browser.</span> Direct USB, HID and serial
+                pairing exist only in Chromium browsers (Chrome, Edge) over HTTPS — this is a browser limit, not a
+                permission: no role can pair a device here.
+                <br />
+                <span className="font-semibold">Your hardware still works.</span> A USB or Bluetooth barcode scanner types
+                like a keyboard and needs no pairing at all — plug it in and scan; the Scanner tab confirms it the moment a
+                barcode arrives. Printing uses the system print dialog and works everywhere. Pairing is only for reading a
+                device&rsquo;s make and model, or for driving a label printer directly. Open this page in Chrome or Edge if
+                you want that.
+              </Notice>
+            )}
             {discovery.length > 0 && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
                 {discovery.map((l, i) => <p key={i} className="text-xs text-slate-600">{l}</p>)}
