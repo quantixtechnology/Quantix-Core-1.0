@@ -237,3 +237,99 @@ describe('nothing else moved', () => {
     expect(wt).not.toContain('resolveUserPermissions')
   })
 })
+
+// ── The card has to be on the page the operator actually opens ────────────
+//
+// It was not. The card went into commerce-apps-hub.tsx — the PLATFORM Mobile
+// Apps screen, with its own tenant picker and its own card names ("Customer
+// Website & PWA", "Store Admin PWA", "Delivery Executive PWA"). The screen a
+// business owner opens from the Laundry sidebar is a different component
+// entirely, laundry-mobile-apps.tsx, whose cards read "Customer App",
+// "Executive Pickup & Delivery App", "Store Admin App" and "Delivery Tracking
+// Links" — exactly what production showed. Unit tests passed the whole time
+// because they asserted against the file the card was in.
+describe('the Mobile Apps page a business owner opens', () => {
+  const TENANT_HUB = read('src/components/laundry/views/laundry-mobile-apps.tsx')
+  const PLATFORM_HUB = read('src/components/dashboard/commerce-apps-hub.tsx')
+
+  it('is laundry-mobile-apps, identified by the cards production showed', () => {
+    for (const card of ['Customer App', 'Executive Pickup & Delivery App', 'Store Admin App', 'Delivery Tracking Links']) {
+      expect(TENANT_HUB, card).toContain(card)
+    }
+    // …and it is NOT the platform hub, whose cards are named differently.
+    expect(PLATFORM_HUB).toContain('Customer Website & PWA')
+    expect(TENANT_HUB).not.toContain('Customer Website & PWA')
+  })
+
+  it('now carries the Laundry OS card', () => {
+    expect(TENANT_HUB).toContain('title="Laundry OS"')
+    expect(TENANT_HUB).toContain('Unified Laundry Operations App — store, processing and administration in one place.')
+  })
+
+  it('the card names the business without putting it in the URL', () => {
+    expect(TENANT_HUB).toContain('Access for ${businessName || "your business"}')
+    expect(TENANT_HUB).toContain('const laundryOsUrl = `https://laundry.${SF_BASE}`')
+    // No tenant-specific Laundry OS host, ever.
+    expect(TENANT_HUB).not.toContain('laundry.${slug}')
+    expect(TENANT_HUB).not.toContain('laundry.${businessName}')
+  })
+
+  it('it offers the same share actions as every other card', () => {
+    // Copy, QR (print dialog) and WhatsApp all come from AppShareCard; the
+    // Open action is its external-link control.
+    const card = read('src/components/laundry/apps/app-share-card.tsx')
+    expect(card).toContain('CopyButton')
+    expect(card).toContain('wa.me')
+    expect(card).toContain('QrCode')
+    expect(card).toContain('<a href={url} target="_blank"')
+    expect(TENANT_HUB).toContain('qrDialog={{ businessName: businessName || "Your Business", appName: "Laundry OS" }}')
+  })
+
+  it('the other three apps and the tracking panel are untouched', () => {
+    expect(TENANT_HUB).toContain('url={customerUrl}')
+    expect(TENANT_HUB).toContain('url={executiveUrl}')
+    expect(TENANT_HUB).toContain('url={storeAdminUrl}')
+    expect(TENANT_HUB).toContain('Delivery Tracking Links')
+    // Their per-tenant provisioning strips still render.
+    expect(TENANT_HUB.match(/<StatusStrip/g)).toHaveLength(3)
+  })
+
+  it('Laundry OS has no provisioning strip, because it has no tenant host', () => {
+    expect(TENANT_HUB).toContain('Shared host — always available, nothing to provision.')
+  })
+})
+
+// ── Classification, where a screen can serve any tenant ───────────────────
+describe('which businesses see a Laundry OS card', () => {
+  it('the tenant page is a Laundry-workspace screen, so it cannot render elsewhere', () => {
+    // No classification check is needed — or honest — here: this component is
+    // registered only under the Laundry screen key and rendered only by the
+    // Laundry page router. A Commerce tenant never reaches it.
+    expect(read('src/lib/laundry-nav-config.ts')).toContain('"laundry.mobile_apps": "mobile-apps"')
+    expect(read('src/components/laundry/laundry-page-router.tsx')).toContain('case "mobile-apps": return <LaundryMobileApps />')
+    expect(read('src/components/commerce/store/commerce-store-app.tsx')).not.toContain('LaundryMobileApps')
+  })
+
+  it('the PLATFORM hub does serve every tenant, so there it is classified', () => {
+    const hub = read('src/components/dashboard/commerce-apps-hub.tsx')
+    expect(hub).toContain('selected.productCode === "LAUNDRY"')
+    // The existing classification, from the existing business record — no
+    // second scheme, no name matching, no hardcoded tenant.
+    expect(hub).not.toMatch(/VASTRASUDHA|vastrasudha/i)
+    expect(hub).not.toMatch(/name.*includes\(["']aundry/)
+    expect(hub).not.toContain('cmqjfpuvj0000')
+  })
+
+  it('a missing classification fails safely — no card', () => {
+    // `productCode` is optional on the row; undefined !== "LAUNDRY", so the
+    // card is hidden rather than shown by default.
+    const hub = read('src/components/dashboard/commerce-apps-hub.tsx')
+    expect(hub).toContain('productCode?: string | null')
+    expect(hub).toContain('selected && selected.productCode === "LAUNDRY" && (')
+  })
+
+  it('productCode is really carried on that row', () => {
+    // Verified against production: Laundry & Drycleaners → productCode LAUNDRY.
+    expect(read('src/app/api/admin/businesses/route.ts')).toContain('productCode: b.productCode')
+  })
+})

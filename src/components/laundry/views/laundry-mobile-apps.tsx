@@ -10,9 +10,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
-import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Store } from "lucide-react"
+import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Store, Factory } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+
+const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 
 interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
 interface Provisioning { customer: AppStatus; executive: AppStatus; store: AppStatus }
@@ -65,6 +67,11 @@ export function LaundryMobileApps() {
   const customerUrl = prov?.customer.url || (origin ? `${origin}/laundry/app` : "")
   const executiveUrl = prov?.executive.url || (origin ? `${origin}/laundry/executive` : "")
   const storeAdminUrl = prov?.store.url || (origin ? `${origin}/laundry/store` : "")
+  // Laundry OS is the ONE operations console for the whole platform, so unlike
+  // the three apps above it has no per-tenant host to provision — there is
+  // nothing to give this business its own copy of. Everyone installs the same
+  // application and their business is resolved from who they sign in as.
+  const laundryOsUrl = `https://laundry.${SF_BASE}`
   const anyFailed = prov && [prov.customer.sslStatus, prov.executive.sslStatus, prov.store.sslStatus].some((s) => s === "failed")
 
   return (
@@ -89,6 +96,19 @@ export function LaundryMobileApps() {
         <div className="space-y-2">
           <AppShareCard title="Executive Pickup & Delivery App" description="Field executives run assigned pickups and deliveries." icon={<Bike className="h-5 w-5" />} url={executiveUrl} note="Dedicated per-tenant host — only active Delivery Executives sign in; the business is set by the URL." />
           <StatusStrip label="Executive host" status={prov?.executive} loading={loading} />
+        </div>
+        <div className="space-y-2">
+          <AppShareCard
+            title="Laundry OS"
+            description="Unified Laundry Operations App — store, processing and administration in one place."
+            icon={<Factory className="h-5 w-5" />}
+            url={laundryOsUrl}
+            note={`Access for ${businessName || "your business"}. One application for the whole platform: staff sign in and their business, role and screens are resolved on the server — the link itself grants nothing.`}
+            qrDialog={{ businessName: businessName || "Your Business", appName: "Laundry OS" }}
+          />
+          {/* No provisioning strip: there is no per-tenant host to provision.
+              The shared host is live for every business by definition. */}
+          <p className="text-[11px] text-slate-400 px-1">Shared host — always available, nothing to provision.</p>
         </div>
         <div className="space-y-2">
           <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />
