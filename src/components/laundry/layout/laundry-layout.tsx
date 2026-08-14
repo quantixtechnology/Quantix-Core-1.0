@@ -7,6 +7,7 @@ import { LaundryHeader } from "./laundry-header"
 import { LaundryAuthBridge } from "@/components/laundry/laundry-auth-bridge"
 import { RuntimeAuthProvider } from "@/components/auth/runtime-auth-provider"
 import { LaundryWorkspaceGate } from "@/components/laundry/laundry-workspace-gate"
+import { LaundryDeviceGuard } from "@/components/laundry/laundry-device-guard"
 
 export function LaundryLayout({ children }: { children: React.ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -14,7 +15,11 @@ export function LaundryLayout({ children }: { children: React.ReactNode }) {
   return (
     <RuntimeAuthProvider>
       <LaundryAuthBridge />
+      {/* Device guard sits INSIDE the authorization gate: what a person may
+          see is settled first, and only then does the width decide whether
+          this machine can render the console. */}
       <LaundryWorkspaceGate>
+        <LaundryDeviceGuard>
         <SidebarProvider>
           <LaundrySidebar
             mobileOpen={mobileSidebarOpen}
@@ -29,6 +34,7 @@ export function LaundryLayout({ children }: { children: React.ReactNode }) {
             </main>
           </SidebarInset>
         </SidebarProvider>
+        </LaundryDeviceGuard>
       </LaundryWorkspaceGate>
     </RuntimeAuthProvider>
   )

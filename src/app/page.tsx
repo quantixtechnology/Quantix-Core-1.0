@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
 import { AuthGuard } from "@/components/auth/auth-guard"
 import { useAuthStore } from "@/stores/auth-store"
+import { resolveWorkspaceTenant } from "@/lib/workspace-tenant"
 import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
 import { BusinessLayout } from "@/components/business/layout/business-layout"
@@ -491,7 +492,7 @@ const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTI
 
 function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, workspaceBusinessId }: { storefrontSlug?: string | null; deliveryEntry?: boolean; productWorkspaceCode?: string | null; workspaceBusinessId?: string | null }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId, manageBusinessId } = useAdminStore()
-  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced, setActiveBusinessId } = useAuthStore()
+  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, businesses, _isHydrated, _isSynced, setActiveBusinessId } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
   // True only after store-context API confirms the business exists in DB.
@@ -502,9 +503,22 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const isPlatformRole = PLATFORM_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
-  // Business id the workspace operates on: the one launched on a product host
-  // (Open Workspace) when present, otherwise the authenticated session business.
-  const wsBusinessId = (productWorkspaceCode ? (workspaceBusinessId || currentBusinessId) : currentBusinessId) || ""
+  // Business id the workspace operates on.
+  //
+  // The URL is a HINT, never authority. It is honoured only when the session
+  // already says this person belongs to that business — or when they are
+  // platform staff, who are deliberately unrestricted and get support mode
+  // from the server. Anything else falls back to the session's own business,
+  // so a Business A operator opening Business B's URL stays in Business A
+  // instead of entering a workspace that believes it is inside B and then
+  // dies on the first 401.
+  const workspaceTenant = resolveWorkspaceTenant({
+    urlBusinessId: productWorkspaceCode ? workspaceBusinessId : null,
+    memberBusinessIds: businesses.map((b) => b.businessId),
+    currentBusinessId,
+    isPlatformRole,
+  })
+  const wsBusinessId = workspaceTenant.businessId || ""
 
   // Guard: on admin host (no storefront slug), ALWAYS reset stale customer/delivery
   // viewMode — regardless of auth state. An authenticated CUSTOMER visiting
@@ -537,7 +551,9 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // not the canImpersonate PERMISSION, which could flip during syncPermissions()
     // and bounce the user back to the PLATFORM workspace → Access Denied.
     if (productWorkspaceCode && (isBusinessRole || isPlatformRole)) {
-      const bizId = workspaceBusinessId || currentBusinessId
+      // Same decision as wsBusinessId above — the URL never selects a tenant
+      // the session is not a member of.
+      const bizId = workspaceTenant.businessId
       if (bizId) {
         // The product workspace operates on this business; a platform admin's
         // session has no business, so set it here. Laundry/commerce APIs accept
@@ -565,7 +581,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       if (storefrontSlug && viewMode !== "delivery_partner") setViewMode("delivery_partner")
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active, productWorkspaceCode, workspaceBusinessId])
+  }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active, productWorkspaceCode, workspaceBusinessId, workspaceTenant.businessId])
 
   // Guard: if somehow in business_owner view without the right role/permission,
   // redirect via effect (never setState during render — that triggers the error boundary loop).

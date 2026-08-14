@@ -15,6 +15,7 @@
 // quickly without requiring a code deploy.
 
 import { db } from '@/lib/db'
+import { getProductCodeForHost } from '@/lib/product-hosts'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +47,17 @@ export async function GET(request: Request) {
   // store flavor (root start_url) regardless of query params.
   const isStoreHost = rawHost.startsWith('store.')
   const isStore = isStoreHost || new URL(request.url).searchParams.get('app') === 'store'
+  // The Laundry OS workspace host (laundry.<base>) IS the unified operations
+  // app. It had no flavour here, so it fell through to the customer storefront
+  // manifest and installed as "Quantix Store" — a phone-shaped app with the
+  // wrong name, wrong colour and a storefront description.
+  //
+  // ONE host, ONE installed app, no tenant in the URL: the manifest names the
+  // product, never a business, because the same installation must serve
+  // whichever tenants the person signing in is actually authorized for. The
+  // install URL grants nothing; the server decides that after login.
+  const isLaundryOsHost = getProductCodeForHost(rawHost, SF_BASE) === 'LAUNDRY'
+  const isLaundryOs = isLaundryOsHost || new URL(request.url).searchParams.get('app') === 'laundry-os'
 
   // ── Resolve tenant from Host header (strip the app prefix) ─────────────────
   const host = isDeliveryHost ? rawHost.slice('delivery.'.length) : isStoreHost ? rawHost.slice('store.'.length) : rawHost
@@ -98,7 +110,33 @@ export async function GET(request: Request) {
   // the shared workspace host it lives under /laundry/store.
   const storeStart = isStoreHost ? '/?source=pwa' : '/laundry/store?source=pwa'
   const storeScope = isStoreHost ? '/' : '/laundry/store'
-  const manifest = isStore
+  const manifest = isLaundryOs
+    ? {
+        id:               '/',
+        name:             'Laundry OS',
+        short_name:       'Laundry OS',
+        description:      'Unified laundry operations — store, processing and administration',
+        start_url:        '/?source=pwa',
+        display:          'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        background_color: '#ffffff',
+        // Product identity, not tenant identity — one installed app for every
+        // business the operator is authorized for.
+        theme_color:      '#2563EB',
+        // An operations console runs on a desk or a tablet stand; pinning it to
+        // portrait is what makes an installed desktop app feel broken.
+        orientation:      'any',
+        lang:             'en-IN',
+        scope:            '/',
+        categories:       ['business', 'productivity'],
+        icons: [
+          { src: '/quantix-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/quantix-logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/quantix-logo.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        prefer_related_applications: false,
+      }
+    : isStore
     ? {
         id:               isStoreHost ? '/' : '/laundry/store',
         name:             `${name} Admin App`,

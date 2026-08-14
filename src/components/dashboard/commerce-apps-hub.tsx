@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
 import { authFetch } from "@/lib/admin-fetch"
 import { useBusinesses } from "@/hooks/use-api"
-import { Smartphone, Store as StoreIcon, Bike, Search, Loader2 } from "lucide-react"
+import { Smartphone, Store as StoreIcon, Bike, Search, Loader2, Factory } from "lucide-react"
 
 const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
@@ -20,9 +20,9 @@ interface Status { customer: AppStatus; storeAdmin: AppStatus; deliveryExecutive
 
 export function CommerceAppsHub() {
   const { data: bizData } = useBusinesses({ status: "ACTIVE", limit: 100 }, { staleTime: 60_000 })
-  const businesses = useMemo(() => (bizData?.data ?? []) as { id: string; name: string; slug: string }[], [bizData])
+  const businesses = useMemo(() => (bizData?.data ?? []) as { id: string; name: string; slug: string; productCode?: string | null }[], [bizData])
   const [q, setQ] = useState("")
-  const [selected, setSelected] = useState<{ id: string; name: string; slug: string } | null>(null)
+  const [selected, setSelected] = useState<{ id: string; name: string; slug: string; productCode?: string | null } | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -40,6 +40,11 @@ export function CommerceAppsHub() {
     customer: status?.customer.url || (slug ? `https://${slug}.${SF_BASE}` : ""),
     store: status?.storeAdmin.url || (slug ? `https://store.${slug}.${SF_BASE}` : ""),
     delivery: status?.deliveryExecutive.url || (slug ? `https://delivery.${slug}.${SF_BASE}` : ""),
+    // ONE Laundry OS for the whole platform — no tenant in the host, because
+    // the same installed app must serve every business the operator is
+    // authorized for. The card names the business it is being handed out FOR;
+    // the URL grants nothing, and the server decides the tenant after login.
+    laundryOs: `https://laundry.${SF_BASE}`,
   }
 
   return (
@@ -61,6 +66,19 @@ export function CommerceAppsHub() {
           ))}
         </div>
       </CardContent></Card>
+
+      {selected && selected.productCode === "LAUNDRY" && (
+        <div className="space-y-2">
+          <AppShareCard
+            title="Laundry OS"
+            description="Unified Laundry Operations App — store, processing and administration in one place."
+            icon={<Factory className="h-5 w-5" />}
+            url={urls.laundryOs}
+            note={`Access for ${selected.name}. One installed app for the whole platform: staff sign in and their business, role and screens are resolved server-side — the link itself grants nothing.`}
+          />
+          <StatusStrip label="Laundry OS host" s={status?.customer} loading={loading} />
+        </div>
+      )}
 
       {selected && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
