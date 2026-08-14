@@ -11,8 +11,10 @@ import { QrCode, Share2, ExternalLink } from "lucide-react"
 import { CopyButton } from "@/components/ui/copy-button"
 import { AppQrDialog } from "@/components/laundry/apps/app-qr-dialog"
 
-export function AppShareCard({ title, description, url, icon, note, qrDialog }: {
+export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction }: {
   title: string; description: string; url: string; icon?: React.ReactNode; note?: string
+  /** Optional headline action for this app, e.g. Install. */
+  primaryAction?: React.ReactNode
   /**
    * Opt-in. When supplied, QR Code opens the polished print-ready dialog
    * instead of the inline preview. Only the Customer App passes it — that is
@@ -45,6 +47,10 @@ export function AppShareCard({ title, description, url, icon, note, qrDialog }: 
           <span className="text-xs text-slate-600 font-mono truncate flex-1">{url}</span>
           <a href={url} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-blue-600"><ExternalLink className="h-3.5 w-3.5" /></a>
         </div>
+        {/* Optional primary action, rendered ABOVE the share row so the main
+            thing to do with the app comes before the ways to pass it on. Only
+            Laundry OS supplies one; every other card is unchanged. */}
+        {primaryAction}
         <div className="flex gap-2 flex-wrap">
           <CopyButton value={url} label="Link" size="sm" variant="outline">Copy Link</CopyButton>
           <Button size="sm" variant="outline" className="gap-1" onClick={() => (qrDialog ? setQrOpen(true) : setShowQr((s) => !s))}><QrCode className="h-3.5 w-3.5" /> QR Code</Button>

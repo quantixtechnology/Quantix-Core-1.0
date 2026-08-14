@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
+import { PwaInstallButton } from "@/components/laundry/apps/pwa-install-button"
 import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Store, Factory } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
@@ -105,6 +106,7 @@ export function LaundryMobileApps() {
             url={laundryOsUrl}
             note={`Access for ${businessName || "your business"}. One application for the whole platform: staff sign in and their business, role and screens are resolved on the server — the link itself grants nothing.`}
             qrDialog={{ businessName: businessName || "Your Business", appName: "Laundry OS" }}
+            primaryAction={<PwaInstallButton appName="Laundry OS" url={laundryOsUrl} />}
           />
           {/* No provisioning strip: there is no per-tenant host to provision.
               The shared host is live for every business by definition. */}

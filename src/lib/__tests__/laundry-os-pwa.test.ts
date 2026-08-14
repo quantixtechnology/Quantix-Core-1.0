@@ -333,3 +333,89 @@ describe('which businesses see a Laundry OS card', () => {
     expect(read('src/app/api/admin/businesses/route.ts')).toContain('productCode: b.productCode')
   })
 })
+
+// ── Installing is installing, not access ──────────────────────────────────
+//
+// A PWA install is the browser wrapping the site it is already on in its own
+// window. There is no file, no package, and nothing about the install that the
+// server treats as authority. So the button promises neither a binary nor a
+// tenant.
+describe('the Install action', () => {
+  const INSTALL = read('src/components/laundry/apps/pwa-install-button.tsx')
+  const TENANT_HUB = read('src/components/laundry/views/laundry-mobile-apps.tsx')
+
+  it('the browser decides installability — the user agent only names the device', () => {
+    // Only the browser knows about the manifest, the service worker, HTTPS,
+    // whether it is already installed and its own engagement rules.
+    expect(INSTALL).toContain("window.addEventListener(\"beforeinstallprompt\", onPrompt)")
+    expect(INSTALL).toContain('prompt ? (')
+    // The UA is read once, and only to choose a label.
+    expect(INSTALL).toContain('function describeDevice(ua: string): Platform')
+    expect(INSTALL).toContain('function installLabel(p: Platform)')
+    // It must never be what decides whether the button appears.
+    expect(INSTALL).not.toMatch(/if \(platform === "(windows|android)"\)\s*\{?\s*return true/)
+  })
+
+  it('a real click drives the browser prompt and handles both outcomes', () => {
+    expect(INSTALL).toContain('await prompt.prompt()')
+    expect(INSTALL).toContain('const { outcome } = await prompt.userChoice')
+    expect(INSTALL).toContain('if (outcome === "accepted") setAccepted(true)')
+    expect(INSTALL).toContain('else setDismissed(true)')
+    // The event is single-use; it is dropped either way.
+    expect(INSTALL).toContain('setPrompt(null)')
+  })
+
+  it('Windows and Android get the same mechanism, differently named', () => {
+    expect(INSTALL).toContain('"Install on Windows PC"')
+    expect(INSTALL).toContain('"Install on Android Tablet"')
+    expect(INSTALL).toContain('"Install Laundry OS"')
+  })
+
+  it('already installed → Installed and Open, never another install prompt', () => {
+    expect(INSTALL).toContain('window.matchMedia("(display-mode: standalone)").matches')
+    expect(INSTALL).toContain('window.addEventListener("appinstalled", onInstalled)')
+    // The browser is asked directly rather than mirrored into state, so the
+    // installed window is recognised on first render.
+    expect(INSTALL).toContain('useSyncExternalStore(subscribeDisplayMode, readStandalone')
+    expect(INSTALL).toContain('Installed')
+    expect(INSTALL).toContain('Open {appName}')
+  })
+
+  it('no install prompt → instructions, never a button that does nothing', () => {
+    expect(INSTALL).toContain('Install manually')
+    expect(INSTALL).toContain('Install app / Add to Home screen')
+    expect(INSTALL).toContain('choose Install Laundry OS')
+  })
+
+  it('nothing is downloaded and nothing is packaged', () => {
+    for (const forbidden of ['.exe', '.msi', '.apk', '.aab', 'electron', 'download=', 'createObjectURL']) {
+      expect(INSTALL.toLowerCase(), forbidden).not.toContain(forbidden)
+    }
+  })
+
+  it('installing carries no tenant, and grants nothing', () => {
+    for (const forbidden of ['businessId', 'localStorage', 'token', 'fetch(', 'prisma']) {
+      expect(INSTALL, forbidden).not.toContain(forbidden)
+    }
+  })
+
+  it('the card leads with Install and keeps every share action', () => {
+    expect(TENANT_HUB).toContain('primaryAction={<PwaInstallButton appName="Laundry OS" url={laundryOsUrl} />}')
+    const card = read('src/components/laundry/apps/app-share-card.tsx')
+    expect(card).toContain('{primaryAction}')
+    // Copy / QR / WhatsApp / Open all still there, for every card.
+    expect(card).toContain('Copy Link')
+    expect(card).toContain('QR Code')
+    expect(card).toContain('WhatsApp')
+    // …and the primary slot is opt-in, so the other three cards are unchanged.
+    expect(card).toContain('primaryAction?: React.ReactNode')
+    expect(TENANT_HUB.match(/primaryAction=/g)).toHaveLength(1)
+  })
+
+  it('the QR encodes the shared host — the Windows-to-tablet path', () => {
+    // Super Admin on a PC scans it with the tablet, which then installs.
+    expect(TENANT_HUB).toContain('url={laundryOsUrl}')
+    expect(TENANT_HUB).toContain('const laundryOsUrl = `https://laundry.${SF_BASE}`')
+    expect(read('src/components/laundry/apps/app-share-card.tsx')).toContain('QRCode.toDataURL(url')
+  })
+})
