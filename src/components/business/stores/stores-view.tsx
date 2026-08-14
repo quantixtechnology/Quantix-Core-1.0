@@ -28,7 +28,7 @@ import {
 import {
   Store, Plus, MapPin, Phone, Mail, Clock, CheckCircle2,
   XCircle, Star, AlertCircle, Loader2, KeyRound, Copy, Check, Users,
-  MoreVertical, Edit, Trash2, ShieldOff, ShieldCheck, RefreshCw,
+  MoreVertical, Edit, Trash2, QrCode, ShieldOff, ShieldCheck, RefreshCw,
   Hash, Package, ShoppingBag,
 } from 'lucide-react'
 import { useAdminStore } from '@/stores/admin-store'
@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { showSuccess, showError } from '@/lib/toast-utils'
 import { StoreLocationPicker, type StoreLocation } from '@/components/shared/google/store-location-picker'
+import { LocationQrCard } from '@/components/shared/location-qr-card'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -181,6 +182,8 @@ export function StoresView() {
   // delete confirmation
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingStore, setDeletingStore] = useState<StoreRecord | null>(null)
+  /** The store whose address QR is open. */
+  const [qrStore, setQrStore] = useState<StoreRecord | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   // disable / enable in-progress
@@ -647,6 +650,12 @@ export function StoresView() {
                             : <ShieldCheck className="size-3.5 text-emerald-500" />}
                         {store.status === 'ACTIVE' ? 'Disable Store' : 'Enable Store'}
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setQrStore(store)}
+                        className="gap-2 cursor-pointer"
+                      >
+                        <QrCode className="size-3.5 text-blue-600" />Address QR
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => { setDeletingStore(store); setDeleteDialogOpen(true) }}
@@ -737,6 +746,30 @@ export function StoresView() {
           ))}
         </div>
       )}
+
+      {/* ── Store Address QR ─────────────────────────────────────────────────
+          The same shared card the Laundry stores use: the QR is built from the
+          SAVED coordinates through locationMapsUrl(), never from the typed
+          address, and a store with no pinned location gets an explanation
+          instead of a QR that would send customers to the wrong door. */}
+      <Dialog open={!!qrStore} onOpenChange={(o) => !o && setQrStore(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Store Address QR</DialogTitle>
+            <DialogDescription>Scan to get directions. Download the PNG to print it for the counter or reception.</DialogDescription>
+          </DialogHeader>
+          {qrStore && (
+            <LocationQrCard
+              variant="panel"
+              businessName={qrStore.storeCode || qrStore.name}
+              locationName={qrStore.name}
+              address={[qrStore.address, qrStore.city, qrStore.state, qrStore.pincode].filter(Boolean).join(', ') || null}
+              latitude={qrStore.latitude}
+              longitude={qrStore.longitude}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Create / Edit Dialog ─────────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!saving) setDialogOpen(open) }}>

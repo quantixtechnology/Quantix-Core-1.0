@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { StoreLocationPicker, type StoreLocation } from "@/components/shared/google/store-location-picker"
-import { LocationQrCard } from "@/components/laundry/location-qr-card"
+import { LocationQrCard } from "@/components/shared/location-qr-card"
 import { CopyButton } from "@/components/ui/copy-button"
 
 type Store = {

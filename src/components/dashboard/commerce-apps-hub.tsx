@@ -83,15 +83,15 @@ export function CommerceAppsHub() {
       {selected && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="space-y-2">
-            <AppShareCard title="Customer Website & PWA" description="Customers browse, order and pay." icon={<Smartphone className="h-5 w-5" />} url={urls.customer} note="Installable customer storefront + PWA." />
+            <AppShareCard title="Customer Website & PWA" description="Customers browse, order and pay." icon={<Smartphone className="h-5 w-5" />} url={urls.customer} note="Installable customer storefront + PWA." qrDialog={{ businessName: selected.slug, appName: "customer pwa" }} />
             <StatusStrip label="Customer host" s={status?.customer} loading={loading} />
           </div>
           <div className="space-y-2">
-            <AppShareCard title="Store Admin PWA" description="Store staff run daily operations." icon={<StoreIcon className="h-5 w-5" />} url={urls.store} note="store.<tenant> — reuses the Commerce Admin backend, store-scoped." />
+            <AppShareCard title="Store Admin PWA" description="Store staff run daily operations." icon={<StoreIcon className="h-5 w-5" />} url={urls.store} note="store.<tenant> — reuses the Commerce Admin backend, store-scoped." qrDialog={{ businessName: selected.slug, appName: "store admin pwa" }} />
             <StatusStrip label="Store Admin host" s={status?.storeAdmin} loading={loading} />
           </div>
           <div className="space-y-2">
-            <AppShareCard title="Delivery Executive PWA" description="Executives run assigned deliveries." icon={<Bike className="h-5 w-5" />} url={urls.delivery} note="delivery.<tenant> — the Commerce delivery workflow." />
+            <AppShareCard title="Delivery Executive PWA" description="Executives run assigned deliveries." icon={<Bike className="h-5 w-5" />} url={urls.delivery} note="delivery.<tenant> — the Commerce delivery workflow." qrDialog={{ businessName: selected.slug, appName: "delivery executive pwa" }} />
             <StatusStrip label="Delivery host" s={status?.deliveryExecutive} loading={loading} />
           </div>
         </div>

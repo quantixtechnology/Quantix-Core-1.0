@@ -9,8 +9,15 @@
 
 import QRCode from "qrcode"
 
-/** Print resolution. 1000px stays crisp on a business card at any size. */
-export const QR_PNG_SIZE = 1000
+/**
+ * Print resolution for every downloaded QR, in both products.
+ *
+ * 2048px survives what these files are actually used for: a counter card, a
+ * reception sign, an A3 poster on a wall. The on-screen preview stays small —
+ * the point of exporting at a fixed high resolution is that print quality never
+ * depends on how big the QR happens to be rendered in the page.
+ */
+export const QR_PNG_SIZE = 2048
 
 /**
  * margin 4 = the four-module quiet zone the QR spec requires. Without it a

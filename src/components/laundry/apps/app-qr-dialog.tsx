@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Download, Share2, Link as LinkIcon, Check, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import {
-  qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug,
+  qrPreviewDataUrl, downloadQrPng, downloadQrSvg, shareQr, canShareQr, qrSlug, QR_PNG_SIZE,
 } from "@/lib/qr-export"
 
 export interface AppQrDialogProps {
@@ -87,7 +87,7 @@ export function AppQrDialog({ open, onOpenChange, url, businessName, appName }: 
             <Button
               className="w-full gap-1.5"
               disabled={busy === "png"}
-              onClick={() => run("png", () => downloadQrPng(url, fileBase), "Downloaded 1000 × 1000 PNG")}>
+              onClick={() => run("png", () => downloadQrPng(url, fileBase), `Downloaded ${QR_PNG_SIZE} × ${QR_PNG_SIZE} PNG`)}>
               {busy === "png" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download PNG
             </Button>
 
