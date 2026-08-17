@@ -421,6 +421,15 @@ export function LaundryPacking() {
   }, [currentBusinessId, histSearch])
   useEffect(() => { if (tab === "history") loadHist() }, [tab, loadHist])
 
+  // BEFORE the History early return below — this used to sit after it. Pending
+  // renders the hook, History returns early and skips it, so switching to
+  // History dropped a hook between renders and React threw "Rendered fewer hooks
+  // than expected". The workspace boundary reported that as "error loading your
+  // business data", which is why a working screen broke on a tab click.
+  // The callback is read through a ref inside the hook, so binding it here still
+  // scans against the currently selected order.
+  const packScan = useScanSink((c) => { void runPack(c) })
+
   const Tabs = (
     <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit mx-4 lg:mx-6 mt-4">
       {([["pending", "Pending"], ["history", "History"]] as const).map(([k, lbl]) => (
@@ -475,7 +484,6 @@ export function LaundryPacking() {
     )
   }
 
-  const packScan = useScanSink((c) => { void runPack(c) })
   return (
     <div>{Tabs}
     <QueueShell status="READY_FOR_PROCESSING" title="Packing & QR" subtitle={mode === "BAG" ? "Pack the audited order and scan its laundry bag" : "Pack the audited order and generate its package QR"}
