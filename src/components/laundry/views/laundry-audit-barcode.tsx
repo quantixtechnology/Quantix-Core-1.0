@@ -19,12 +19,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Loader2, Barcode as BarcodeIcon, Printer, ArrowRight, User, ShoppingBag, Check, RefreshCw, Eye, Settings } from "lucide-react"
 import { Barcode } from "./barcode"
 import { LaundryPaymentBanner } from "./laundry-payment-banner"
-import { printLabels, loadLabelConfig, saveLabelConfig, scannerQuality, type LabelConfig, type LabelData } from "@/lib/laundry-label"
+import { printLabels, loadLabelConfig, saveLabelConfig, scannerQuality, resolveStockHeightMm, STOCK_HEIGHT_MM, DEFAULT_ORIENTATION, type LabelConfig, type LabelData } from "@/lib/laundry-label"
 
 interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
 interface Data { order: { id: string; orderNumber: string; status: string; grandTotal: number }; store?: { storeName: string } | null; customer?: { name: string; phone: string | null } | null; items: Item[]; totalItems: number; barcoded: number; allBarcoded: boolean }
 
 const WIDTHS = [40, 50, 60, 70, 80], HEIGHTS = [30, 40, 50], DPIS = [203, 300, 600]
+// Must match how the TSC TE244 driver is set for the loaded stock. Disagreement
+// is what makes the driver rotate the label 90° and clip the barcode.
+const ORIENTATIONS = [
+  { value: "landscape", label: "Landscape" },
+  { value: "portrait", label: "Portrait" },
+]
 const PROFILES: { value: string; label: string }[] = [
   { value: "compact", label: "Compact (58mm)" },
   { value: "standard", label: "Standard (Current)" },
@@ -89,7 +95,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
         <LaundryPaymentBanner orderId={orderId} />
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.widthMm}×{cfg.heightMm}mm</Button>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.widthMm}×{resolveStockHeightMm(cfg)}mm · {(cfg.orientation ?? DEFAULT_ORIENTATION) === "landscape" ? "Landscape" : "Portrait"}</Button>
         <Button variant="outline" className="gap-1" onClick={printAll}><Printer className="h-4 w-4" /> Print All</Button>
       </div>
 
@@ -154,11 +160,22 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Printer className="h-5 w-5 text-blue-600" /> Thermal Label Settings</DialogTitle></DialogHeader>
           <div className="space-y-4">
+            {/* PAPER — what the printer is loaded with and how it is set. These
+                three must match the TSC driver exactly; a mismatch is what makes
+                the driver rotate the label and clip the barcode. */}
             <div className="grid grid-cols-3 gap-3">
               {/* Width is a floor — a longer code widens the label rather than
                   compressing the barcode. */}
-              <div className="space-y-1"><Label className="text-xs">Width (mm)</Label><Select value={String(cfg.widthMm)} onValueChange={(v) => setCfg({ ...cfg, widthMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{WIDTHS.map((w) => <SelectItem key={w} value={String(w)}>{w} mm</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1"><Label className="text-xs">Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1"><Label className="text-xs">Stock Width (mm)</Label><Select value={String(cfg.widthMm)} onValueChange={(v) => setCfg({ ...cfg, widthMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{WIDTHS.map((w) => <SelectItem key={w} value={String(w)}>{w} mm</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-1"><Label className="text-xs">Stock Height (mm)</Label><Input type="number" min={10} max={200} step={0.1} value={cfg.stockHeightMm ?? STOCK_HEIGHT_MM} onChange={(e) => setCfg({ ...cfg, stockHeightMm: +e.target.value })} /></div>
+              <div className="space-y-1"><Label className="text-xs">Orientation</Label><Select value={cfg.orientation ?? DEFAULT_ORIENTATION} onValueChange={(v) => setCfg({ ...cfg, orientation: v as LabelConfig["orientation"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ORIENTATIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug -mt-2">Stock size and orientation must match the printer driver (TSC TE244: 1.97 × 1.50 in, Landscape). Print at 100% / Actual Size — never “Fit to page”.</p>
+
+            {/* CONTENT — the box the barcode and GAR are drawn in, centred on the
+                stock. Changing this resizes the barcode; changing the stock does not. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label className="text-xs">Content Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label className="text-xs">Printer DPI</Label><Select value={String(cfg.dpi)} onValueChange={(v) => setCfg({ ...cfg, dpi: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DPIS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent></Select></div>
             </div>
 

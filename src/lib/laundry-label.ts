@@ -20,12 +20,43 @@
 // IMPORTANT: printLabels() MUST be a pure side-effect — it opens a window and
 // calls window.print(). It must NEVER mutate React state, call APIs, or trigger
 // workflow transitions. See Bug 2.
+//
+// ORIENTATION — why there are two boxes, not one.
+//
+// A browser decides the print job's orientation from the @page size: wider than
+// tall is a LANDSCAPE job, taller than wide is PORTRAIT. The driver holds its own
+// orientation for the loaded stock. When the two DISAGREE the driver rotates the
+// raster 90° to reconcile them, and a 50mm-wide barcode lands on the 38.1mm feed
+// axis — rotated and clipped. That disagreement, not the barcode, is the bug.
+//
+// So two dimensions are tracked separately and neither is guessed:
+//   stockHeightMm  the PHYSICAL label pitch (38.1mm). This is the @page height,
+//                  so the declared page is the loaded media exactly — nothing for
+//                  a driver to scale or fit.
+//   heightMm       the CONTENT box (30mm) the barcode and GAR are laid out in.
+//                  Barcode geometry is derived from this and this alone, so the
+//                  page can match the stock without resizing a single bar.
+//
+// orientation states which way the driver is set, and the page is declared to
+// AGREE with it. Landscape (the TE244 default for this stock) declares 50 × 38.1
+// and draws upright. Portrait declares 38.1 × 50 and pre-rotates the content 90°,
+// so the ink lands identically on the label when the driver cannot be changed.
 
 import JsBarcode from "jsbarcode"
 
+/**
+ * Which way the PRINTER is set for the loaded stock. The page is declared to
+ * match; see the orientation note at the top of the file.
+ */
+export type LabelOrientation = "landscape" | "portrait"
+
 export interface LabelConfig {
   widthMm: number
+  /** Content box — what the barcode and GAR are laid out in. NOT the page. */
   heightMm: number
+  /** Physical label pitch — the @page height. Defaults to the 38.1mm TE244 stock. */
+  stockHeightMm?: number
+  orientation?: LabelOrientation
   dpi: number // 203 | 300 | 600
   barcodeProfile?: BarcodeProfile
   moduleWidth?: number
@@ -113,11 +144,12 @@ export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 // assumed, so a longer code (legacy ORD-…-G1 garments) degrades predictably
 // instead of running off the edge of the label.
 
-// LAYOUT: 50mm (W) x 38mm (H) landscape — the physical die-cut stock.
+// LAYOUT: 50mm (W) x 38.1mm (H) landscape — the physical die-cut stock. The
+// barcode and GAR live in a 50 x 30mm content box centred on it.
 //
-// BOTH ARE HARD. The printed page is exactly the label, so @page, the .label box
+// BOTH ARE HARD. The printed page is exactly the label, so @page, the .page box
 // and the media in the printer all agree; a page that disagrees with the stock is
-// what makes a driver scale or clip, and either one ruins the print.
+// what makes a driver scale, rotate or clip, and any of those ruins the print.
 //
 // The previous layout treated width as a FLOOR and grew both the module and the
 // bar height to consume every spare millimetre. That is why the customer's sample
@@ -127,8 +159,14 @@ export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 // symbol clear of the edges.
 export const TARGET_MODULE_DOTS = 2   // narrow bar: 2 dots @203dpi = 0.25mm
 export const MAX_MODULE_DOTS = 3      // past 3 dots a 15-char GAR outgrows 50mm
-export const FIXED_LABEL_HEIGHT_MM = 38
+/** CONTENT box height. Barcode geometry is derived from this, so it must not be
+ *  moved to chase the stock — that would resize the bars. */
+export const FIXED_LABEL_HEIGHT_MM = 30
+/** PHYSICAL stock pitch: TSC TE244 die-cut 1.97in x 1.50in. This is the @page height. */
+export const STOCK_HEIGHT_MM = 38.1
 export const FIXED_LABEL_WIDTH_MM = 50
+/** The TE244 is set to Landscape for this stock, so the page is declared landscape too. */
+export const DEFAULT_ORIENTATION: LabelOrientation = "landscape"
 export const MIN_QUIET_MM = 2.5       // Code 128 standard, measured from the bars
 export const MIN_BARCODE_MM = 18
 export const MAX_LABEL_WIDTH_MM = 108 // TE244 maximum printable width
@@ -294,10 +332,48 @@ export function computeLabelGeometry(value: string, cfg: LabelConfig, widthMm?: 
   }
 }
 
+export interface PageBox {
+  pageWidthMm: number
+  pageHeightMm: number
+  /** Degrees the CONTENT is turned inside the page. 0 when the driver agrees. */
+  rotateDeg: 0 | 90
+}
+
+/**
+ * The @page box for a given driver orientation, and how far the content has to
+ * be turned inside it.
+ *
+ * LANDSCAPE — the driver is set the way the stock is loaded (50mm across the
+ * head). The page is declared 50 x 38.1: wider than tall, which is a landscape
+ * job, so the browser and the driver agree and NOBODY rotates. Content upright.
+ *
+ * PORTRAIT — the driver insists on a portrait job. The page is declared
+ * 38.1 x 50 so it still matches the media the driver expects, and the content is
+ * turned 90° inside it. The driver's own rotation then undoes ours and the ink
+ * lands exactly as it does in landscape: barcode across the 50mm web, full size.
+ *
+ * Either way the 50mm content width lies along the page's 50mm axis, so the
+ * barcode cannot be clipped by the page in either mode.
+ */
+export function pageBoxFor(orientation: LabelOrientation, widthMm: number, stockHeightMm: number): PageBox {
+  return orientation === "portrait"
+    ? { pageWidthMm: stockHeightMm, pageHeightMm: widthMm, rotateDeg: 90 }
+    : { pageWidthMm: widthMm, pageHeightMm: stockHeightMm, rotateDeg: 0 }
+}
+
+/**
+ * The stock pitch actually used. Never shorter than the content box — a page
+ * smaller than what sits on it is the other way to clip a barcode.
+ */
+export function resolveStockHeightMm(cfg: LabelConfig): number {
+  const content = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
+  return Math.max(content, cfg.stockHeightMm ?? STOCK_HEIGHT_MM)
+}
+
 /**
  * ONE size for the whole print job.
  *
- * Height is the fixed 40mm. Width is AUTO — the widest code in the batch decides
+ * Content height is fixed. Width is AUTO — the widest code in the batch decides
  * it, so no barcode is ever compressed. Every label in the run gets that same
  * size: thermal printers feed on a fixed pitch, and varying the size between
  * labels would misalign every one after the first.
@@ -331,15 +407,26 @@ export function computeJobLayout(values: string[], cfg: LabelConfig) {
 
   const heightMm = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
   const geos = values.map((v) => computeLabelGeometry(v, { ...cfg, moduleWidth: moduleDots }, widthMm))
+  const stockHeightMm = resolveStockHeightMm({ ...cfg, heightMm })
+  const orientation = cfg.orientation ?? DEFAULT_ORIENTATION
   return {
-    widthMm, heightMm, geos, moduleDots,
+    widthMm, heightMm, stockHeightMm, orientation,
+    page: pageBoxFor(orientation, widthMm, stockHeightMm),
+    geos, moduleDots,
     fontPt: garFontPt(widthMm, values.reduce((m, v) => Math.max(m, v.length), 1)),
     anyOversized: geos.some((g) => !g.fits),
   }
 }
 
-// 50mm (W) x 38mm (H) landscape on the TE244 at 203 DPI.
-export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: FIXED_LABEL_WIDTH_MM, heightMm: FIXED_LABEL_HEIGHT_MM, dpi: 203 }
+// 50mm (W) x 38.1mm (H) stock, printed LANDSCAPE on the TE244 at 203 DPI, with
+// the barcode and GAR in a 50 x 30mm content box centred on it.
+export const DEFAULT_LABEL_CONFIG: LabelConfig = {
+  widthMm: FIXED_LABEL_WIDTH_MM,
+  heightMm: FIXED_LABEL_HEIGHT_MM,
+  stockHeightMm: STOCK_HEIGHT_MM,
+  orientation: DEFAULT_ORIENTATION,
+  dpi: 203,
+}
 
 // VERSIONED, and the version MUST be bumped whenever the physical size changes.
 //
@@ -348,7 +435,13 @@ export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: FIXED_LABEL_WIDTH_MM
 // DEFAULT_LABEL_CONFIG says. That is a large part of why the customer's label
 // stayed oversized: the new size never reached the terminal that had a stale
 // entry. v5 abandons those keys, so every workstation starts at 50x38.
-const KEY = "qx-laundry-label-config-v5"
+//
+// v6 adds the stock/orientation split. A v5 blob carries neither key, so merging
+// it would leave the page at the CONTENT height and the orientation unstated —
+// exactly the mismatch that made the driver rotate. Bumping drops those blobs so
+// every workstation starts at 50 x 38.1 landscape with a 50 x 30 content box,
+// which is the barcode size already in use.
+const KEY = "qx-laundry-label-config-v6"
 export function loadLabelConfig(): LabelConfig {
   if (typeof window === "undefined") return DEFAULT_LABEL_CONFIG
   try { return { ...DEFAULT_LABEL_CONFIG, ...JSON.parse(localStorage.getItem(KEY) || "{}") } } catch { return DEFAULT_LABEL_CONFIG }
@@ -380,43 +473,67 @@ function barcodeDataURL(value: string, cfg: LabelConfig, geo: LabelGeometry): st
   } catch { return "" }
 }
 
-function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
+/**
+ * Exported for tests: the @page rule this emits is what the driver reconciles
+ * against the loaded media, so it is the one line that decides whether the label
+ * prints straight or gets rotated and clipped. It is worth asserting directly.
+ */
+export function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
   const values = labels.map((l) => l.garScanCode || l.itemNumber)
-  // 50 x 38mm fixed. One size for the whole run — thermal stock feeds on a fixed
-  // pitch, so a per-label size would misregister everything after the first.
+  // 50 x 38.1mm stock, 50 x 30mm content. One size for the whole run — thermal
+  // stock feeds on a fixed pitch, so a per-label size would misregister
+  // everything after the first.
   const job = computeJobLayout(values, cfg)
   const w = job.widthMm, h = job.heightMm
+  const { pageWidthMm: pw, pageHeightMm: ph, rotateDeg } = job.page
   const garPt = job.fontPt
+  // The content box is CENTRED on the stock, stated in millimetres rather than
+  // percentages so a rotation cannot change where it lands.
+  const left = (pw - w) / 2, top = (ph - h) / 2
   const rows = labels.map((l, i) => {
     const bcValue = values[i]
     const geo = job.geos[i]
     const bc = barcodeDataURL(bcValue, cfg, geo)
     // The image is given its NATURAL width in mm — never a percentage — so the
     // browser hands the printer a 1:1 bitmap with no resampling.
-    return `<div class="label">
+    return `<div class="page"><div class="label">
         ${bc ? `<img class="bc" src="${bc}" alt="" style="width:${geo.imageWidthMm.toFixed(3)}mm;height:${geo.barcodeHeightMm.toFixed(3)}mm"/>` : ""}
         <div class="gar">${escapeHtml(bcValue)}</div>
-      </div>`
+      </div></div>`
   })
   // EVERY dimension below is in millimetres. No percentages, no vw/vh, no
   // transform: scale() — the page, the box and the bitmap are all stated in
   // physical units so the browser has nothing to reinterpret at print time.
   return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
-    /* The page IS the label. Zero margin, and the size declared here is what the
-       driver matches to the loaded media — print at 100% / Actual Size, never
-       "Fit to page", which would rescale all of this. */
-    @page { size: ${w}mm ${h}mm; margin: 0; }
+    /* The page IS the stock, in the orientation the printer is set to. Zero
+       margin, and the size declared here is what the driver matches to the loaded
+       media — print at 100% / Actual Size, never "Fit to page", which would
+       rescale all of this. A page that disagrees with the driver's orientation is
+       what makes it rotate the label 90° and clip the bars. */
+    @page { size: ${pw}mm ${ph}mm; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html,body { margin:0; padding:0; background:#fff; font-family: Arial, Helvetica, sans-serif; }
+    /* One .page per physical label, exactly the stock pitch. */
+    .page { position:relative; width:${pw}mm; height:${ph}mm; overflow:hidden; page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
     /* SAFE MARGIN on all four sides. The barcode still carries its own Code 128
        quiet zone INSIDE this box — the two add up rather than one replacing the
-       other — so feed drift cannot bring a bar to the edge. */
-    .label { width:${w}mm; height:${h}mm; padding:${SAFE_MARGIN_MM}mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
-    .label:last-child { page-break-after: auto; }
+       other — so feed drift cannot bring a bar to the edge.
+       The rotation is turned about the box's own centre, so the content stays
+       centred on the stock and the 50mm width always lies along the page's 50mm
+       axis — full size, nothing clipped, bars never re-scaled. */
+    .label { position:absolute; left:${left.toFixed(3)}mm; top:${top.toFixed(3)}mm; width:${w}mm; height:${h}mm; padding:${SAFE_MARGIN_MM}mm; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transform: rotate(${rotateDeg}deg); transform-origin: 50% 50%; }
     /* No scaling and no smoothing — the bitmap must reach the printer dot-for-dot. */
     .bc { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 ${BARCODE_TEXT_GAP_MM}mm; }
     .gar { font-family:'Courier New',monospace; font-weight:700; font-size:${garPt}pt; letter-spacing:0.5px; line-height:1.1; color:#000; white-space:nowrap; }
-    @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;border-radius:2px;} }
+    /* On screen the label is shown the way it lands on the stock — upright, at
+       the physical 50 x 38.1 — so a preview stays readable whichever orientation
+       the printer needs. The rotation is a driver compensation, not a design. */
+    @media screen {
+      body { background:#eef2f7; padding:10px; }
+      .page { width:${w}mm; height:${job.stockHeightMm}mm; margin:6px auto; border:1px dashed #cbd5e1; background:#fff; border-radius:2px; }
+      .label { left:0; top:${((job.stockHeightMm - h) / 2).toFixed(3)}mm; transform:none; }
+    }
   </style></head><body>${rows.join("")}</body></html>`
 }
 

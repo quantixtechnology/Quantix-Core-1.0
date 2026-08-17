@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   fitBarcode, autoWidthMm, garFontPt, textBlockMm, bestModuleDots,
   TARGET_MODULE_DOTS, MIN_QUIET_MM, MIN_BARCODE_MM,
-  FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM,
+  FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM, STOCK_HEIGHT_MM,
   SAFE_MARGIN_MM, MAX_BARCODE_HEIGHT_FRACTION, MAX_GAR_PT, BARCODE_TEXT_GAP_MM, usableWidthMm,
+  pageBoxFor, resolveStockHeightMm, DEFAULT_ORIENTATION, buildHTML,
 } from '@/lib/laundry-label'
 
 // ============================================================================
@@ -76,10 +77,15 @@ describe('fitBarcode at the auto width', () => {
   })
 })
 
-describe('fixed 50 x 38mm label — sized to be read, not to fill', () => {
+describe('fixed 50 x 38.1mm stock — sized to be read, not to fill', () => {
   it('the size constants match the requested physical stock', () => {
     expect(FIXED_LABEL_WIDTH_MM).toBe(50)
-    expect(FIXED_LABEL_HEIGHT_MM).toBe(38)
+    expect(STOCK_HEIGHT_MM).toBe(38.1)   // TSC TE244 stock: 1.97in x 1.50in
+    expect(FIXED_LABEL_HEIGHT_MM).toBe(30) // content box drawn on that stock
+  })
+
+  it('the content box always fits the stock, so nothing is clipped by the page', () => {
+    expect(FIXED_LABEL_HEIGHT_MM).toBeLessThanOrEqual(STOCK_HEIGHT_MM)
   })
 
   // Regression for the customer's oversized sample. The old layout grew the
@@ -131,10 +137,12 @@ describe('fixed 50 x 38mm label — sized to be read, not to fill', () => {
     const bars = Math.max(Math.min(MIN_BARCODE_MM, free), Math.min(cap, free))
     expect(bars).toBeGreaterThanOrEqual(MIN_BARCODE_MM)  // still scannable
     expect(bars).toBeLessThan(free)                       // leftovers NOT consumed
-    expect(bars / FIXED_LABEL_HEIGHT_MM).toBeLessThanOrEqual(MAX_BARCODE_HEIGHT_FRACTION)
+    // Measured against the STOCK — that is the label a person holds. The content
+    // box is only the frame the bars are laid out in.
+    expect(bars / STOCK_HEIGHT_MM).toBeLessThanOrEqual(MAX_BARCODE_HEIGHT_FRACTION)
   })
 
-  it('the whole stack fits inside 38mm with clear space top and bottom', () => {
+  it('the whole stack fits inside the content box with clear space top and bottom', () => {
     const pt = garFontPt(FIXED_LABEL_WIDTH_MM, 15)
     const cap = FIXED_LABEL_HEIGHT_MM * MAX_BARCODE_HEIGHT_FRACTION
     const free = FIXED_LABEL_HEIGHT_MM - SAFE_MARGIN_MM * 2 - textBlockMm(pt) - BARCODE_TEXT_GAP_MM
@@ -167,6 +175,108 @@ describe('GAR text always fits the auto width', () => {
   it('stays within readable type-size bounds', () => {
     expect(garFontPt(42, 15)).toBeGreaterThanOrEqual(7)
     expect(garFontPt(200, 4)).toBeLessThanOrEqual(20)
+  })
+})
+
+// The page the browser declares and the orientation the TSC driver is set to must
+// agree. When they disagree the driver rotates the raster 90° to reconcile them,
+// which puts the 50mm-wide barcode on the 38.1mm feed axis — rotated and clipped.
+describe('page orientation — the page is declared to match the printer', () => {
+  const W = FIXED_LABEL_WIDTH_MM, S = STOCK_HEIGHT_MM
+
+  it('defaults to the landscape the TE244 is set to for this stock', () => {
+    expect(DEFAULT_ORIENTATION).toBe('landscape')
+  })
+
+  it('landscape declares the stock as loaded and turns nothing', () => {
+    const p = pageBoxFor('landscape', W, S)
+    expect(p.pageWidthMm).toBe(50)
+    expect(p.pageHeightMm).toBe(38.1)
+    expect(p.pageWidthMm).toBeGreaterThan(p.pageHeightMm) // a landscape job
+    expect(p.rotateDeg).toBe(0)
+  })
+
+  it('portrait declares the swapped page and pre-turns the content to cancel the driver', () => {
+    const p = pageBoxFor('portrait', W, S)
+    expect(p.pageWidthMm).toBe(38.1)
+    expect(p.pageHeightMm).toBe(50)
+    expect(p.pageHeightMm).toBeGreaterThan(p.pageWidthMm) // a portrait job
+    expect(p.rotateDeg).toBe(90)
+  })
+
+  // The whole point: whichever way the driver is set, the 50mm content width
+  // lands on a 50mm page axis, so the bars are never cut off by the page.
+  it('puts the 50mm content width on a 50mm page axis in BOTH orientations', () => {
+    for (const o of ['landscape', 'portrait'] as const) {
+      const p = pageBoxFor(o, W, S)
+      const axis = p.rotateDeg === 0 ? p.pageWidthMm : p.pageHeightMm
+      expect(axis).toBeGreaterThanOrEqual(W)
+      const cross = p.rotateDeg === 0 ? p.pageHeightMm : p.pageWidthMm
+      expect(cross).toBeGreaterThanOrEqual(FIXED_LABEL_HEIGHT_MM)
+    }
+  })
+
+  it('both orientations cover the same physical area — only the frame turns', () => {
+    const l = pageBoxFor('landscape', W, S), p = pageBoxFor('portrait', W, S)
+    expect(l.pageWidthMm * l.pageHeightMm).toBeCloseTo(p.pageWidthMm * p.pageHeightMm, 6)
+  })
+
+  it('falls back to the TE244 stock pitch and never prints a page shorter than the content', () => {
+    expect(resolveStockHeightMm({ widthMm: W, heightMm: 30, dpi: 203 })).toBe(STOCK_HEIGHT_MM)
+    expect(resolveStockHeightMm({ widthMm: W, heightMm: 30, stockHeightMm: 20, dpi: 203 })).toBe(30)
+    expect(resolveStockHeightMm({ widthMm: W, heightMm: 30, stockHeightMm: 50, dpi: 203 })).toBe(50)
+  })
+
+  // Regression: the stock grew from 38 to 38.1 and the content box stayed at 30.
+  // If the page height were ever taken from the content box the bars would resize,
+  // which is exactly what must not happen while fixing orientation.
+  it('changing the stock pitch does not touch the bar height', () => {
+    const barsAt = (contentH: number) => {
+      const pt = garFontPt(FIXED_LABEL_WIDTH_MM, 15)
+      const free = contentH - SAFE_MARGIN_MM * 2 - textBlockMm(pt) - BARCODE_TEXT_GAP_MM
+      return Math.max(Math.min(MIN_BARCODE_MM, free), Math.min(contentH * MAX_BARCODE_HEIGHT_FRACTION, free))
+    }
+    // Same content box → same bars, whatever the stock or orientation is set to.
+    expect(barsAt(FIXED_LABEL_HEIGHT_MM)).toBe(barsAt(FIXED_LABEL_HEIGHT_MM))
+    expect(barsAt(FIXED_LABEL_HEIGHT_MM)).toBe(18)
+  })
+})
+
+// The emitted @page rule IS the contract with the driver. Asserting it directly
+// is the only way to catch the regression that produced a rotated, clipped label.
+describe('emitted print CSS', () => {
+  const one = [{ itemNumber: 'GAR000000000070', garment: 'Shirt', service: 'Wash', garScanCode: 'GAR000000000070' }]
+  const base = { widthMm: 50, heightMm: 30, stockHeightMm: 38.1, dpi: 203 } as const
+
+  it('declares the page as the physical stock when the printer is landscape', () => {
+    const html = buildHTML(one, { ...base, orientation: 'landscape' })
+    expect(html).toContain('@page { size: 50mm 38.1mm; margin: 0; }')
+    expect(html).toContain('transform: rotate(0deg)')
+  })
+
+  it('declares the swapped page and turns the content when the printer is portrait', () => {
+    const html = buildHTML(one, { ...base, orientation: 'portrait' })
+    expect(html).toContain('@page { size: 38.1mm 50mm; margin: 0; }')
+    expect(html).toContain('transform: rotate(90deg)')
+  })
+
+  it('defaults to landscape when nothing is saved', () => {
+    expect(buildHTML(one, base)).toContain('@page { size: 50mm 38.1mm; margin: 0; }')
+  })
+
+  it('keeps margins at zero and never scales', () => {
+    const html = buildHTML(one, { ...base, orientation: 'landscape' })
+    expect(html).toContain('margin: 0;')
+    expect(html).not.toContain('scale(')
+  })
+
+  it('never declares a page shorter than the content box', () => {
+    const html = buildHTML(one, { ...base, stockHeightMm: 20 })
+    expect(html).toContain('@page { size: 50mm 30mm; margin: 0; }')
+  })
+
+  it('prints the GAR under the bars', () => {
+    expect(buildHTML(one, base)).toContain('>GAR000000000070<')
   })
 })
 
