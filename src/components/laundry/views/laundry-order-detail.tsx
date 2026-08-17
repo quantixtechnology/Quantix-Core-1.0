@@ -245,6 +245,17 @@ export function LaundryOrderDetail() {
   const pickupCompleted = !!order?.pickupCompletedAt
   const pickupExecName = order?.pickupExecutiveName || null
 
+  // EVERY hook runs BEFORE the early returns below — this one used to sit after
+  // them. On the first render `loading` is true, so the component returned early
+  // and never called it; when the order arrived the next render called one hook
+  // MORE than the render before it and React threw "Rendered more hooks than
+  // during the previous render". The workspace boundary reported that as "error
+  // loading your business data", so a page that broke only when the order loaded
+  // SUCCESSFULLY looked like a failed business-data fetch.
+  // The callback is read through a ref inside the hook, so it always sees the
+  // latest `order`/`scanCode` even though it is bound before either exists.
+  const itemScan = useScanSink((c) => { setScanCode(""); void scan(c) })
+
   if (loading) return <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading order…</div>
   if (!order) return (
     <div className="py-16 text-center">
@@ -253,7 +264,6 @@ export function LaundryOrderDetail() {
     </div>
   )
 
-  const itemScan = useScanSink((c) => { setScanCode(""); void scan(c) })
   return (
     <div className="px-1 lg:px-2 py-2 space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
