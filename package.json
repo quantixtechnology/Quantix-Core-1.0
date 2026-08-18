@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "check:routes": "node scripts/check-route-conflicts.js",
-    "prebuild": "node scripts/check-route-conflicts.js",
+    "check:hooks": "node scripts/check-hooks-rules.js",
+    "prebuild": "node scripts/check-route-conflicts.js && node scripts/check-hooks-rules.js",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r .next/server/chunks/. .next/standalone/.next/server/chunks/",
     "start": "NODE_ENV=production node .next/standalone/Quantix-Core-1.0/server.js",
     "lint": "eslint .",

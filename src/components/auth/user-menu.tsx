@@ -45,9 +45,14 @@ export function UserMenu() {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // ABOVE the guard — this used to sit below it. A mounted menu that loses its
+  // user returns early and would call one hook FEWER than the render before,
+  // which React rejects ("Rendered fewer hooks than expected"). Same mistake as
+  // View Order and Packing & QR: a hook must never sit after an early return.
+  const { assignedRbacRole, isLoaded: rbacLoaded, businessRole, platformRole } = useRuntimeAuth();
+
   if (!user) return null;
 
-  const { assignedRbacRole, isLoaded: rbacLoaded, businessRole, platformRole } = useRuntimeAuth();
   const effectiveRole = platformRole || assignedRbacRole || businessRole;
   const roleLabel = rbacLoaded
     ? (laundryRoleLabel(effectiveRole) || "Team Member")
