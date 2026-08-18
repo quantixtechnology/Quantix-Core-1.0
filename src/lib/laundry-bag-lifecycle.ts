@@ -122,9 +122,24 @@ export interface BagInventory {
   damaged: number
   lost: number
   retired: number
+  /** A status the model does not recognise. Surfaced for review, NEVER folded
+   *  into Available — a bag nobody can classify is not a bag you can issue. */
+  unclassified: number
 }
 
 export type BagBucket = Exclude<keyof BagInventory, "total">
+
+/**
+ * Mid-cycle statuses placed by CUSTODY rather than by name, including the legacy
+ * values still on production rows. Anything outside this set is unclassified.
+ */
+const MID_CYCLE_STATUSES: readonly string[] = [
+  BAG_STATUS.ASSIGNED, BAG_STATUS.COLLECTED, BAG_STATUS.RECEIVED_AT_STORE,
+  BAG_STATUS.UNDER_AUDIT, BAG_STATUS.PROCESSING, BAG_STATUS.READY_FOR_DELIVERY,
+  BAG_STATUS.RETURNED_BY_CUSTOMER,
+  // Legacy statuses written before this module existed.
+  "CLEANING", "DELIVERED", "RETURNED",
+]
 
 export function bucketFor(bag: { status: string; currentCustodianType?: string | null }): BagBucket {
   switch (bag.status) {
@@ -136,6 +151,9 @@ export function bucketFor(bag: { status: string; currentCustodianType?: string |
     case BAG_STATUS.OUT_FOR_DELIVERY: return "outForDelivery"
     case BAG_STATUS.AVAILABLE: return "available"
   }
+  // A status nobody recognises is reported as such (§17). Quietly calling it
+  // "at store" would hide a data problem behind a plausible number.
+  if (!MID_CYCLE_STATUSES.includes(bag.status)) return "unclassified"
   // Everything mid-cycle is placed by who is holding it, which is more truthful
   // than the status name — a COLLECTED bag is in a van, not at the counter.
   switch (bag.currentCustodianType) {
@@ -146,9 +164,18 @@ export function bucketFor(bag: { status: string; currentCustodianType?: string |
   }
 }
 
+/**
+ * Active inventory excludes RETIRED — a retired bag is gone from circulation and
+ * counting it would inflate every ratio built on this number (§17).
+ */
+export function activeTotal(inv: BagInventory): number {
+  return inv.total - inv.retired
+}
+
 const EMPTY_INVENTORY: BagInventory = {
   total: 0, available: 0, withExecutives: 0, atStore: 0, atProcessingCenter: 0,
-  outForDelivery: 0, withCustomers: 0, inspectionRequired: 0, damaged: 0, lost: 0, retired: 0,
+  outForDelivery: 0, withCustomers: 0, inspectionRequired: 0, damaged: 0, lost: 0,
+  retired: 0, unclassified: 0,
 }
 
 export function tallyInventory(bags: { status: string; currentCustodianType?: string | null }[]): BagInventory {
@@ -582,4 +609,113 @@ export async function getBagHistory(lbId: string, bagId: string) {
     prisma.laundryBagEvent.findMany({ where: { bagId, businessId: lbId }, orderBy: { createdAt: "desc" }, take: 200 }),
   ])
   return { usages, events }
+}
+
+// ── Presentation vocabulary (§13) ────────────────────────────────────────────
+// Business-friendly names for states staff read on screen. The stored enum is
+// UNCHANGED — this is a display layer, so nothing downstream has to care.
+
+export const STATUS_LABEL: Record<string, string> = {
+  [BAG_STATUS.AVAILABLE]: "Available",
+  [BAG_STATUS.ASSIGNED]: "Assigned",
+  [BAG_STATUS.COLLECTED]: "Collected",
+  [BAG_STATUS.RECEIVED_AT_STORE]: "At Store",
+  [BAG_STATUS.UNDER_AUDIT]: "Under Audit",
+  [BAG_STATUS.PROCESSING]: "At Processing Center",
+  [BAG_STATUS.READY_FOR_DELIVERY]: "Ready for Delivery",
+  [BAG_STATUS.OUT_FOR_DELIVERY]: "Out for Delivery",
+  [BAG_STATUS.HANDED_TO_CUSTOMER]: "With Customer",
+  [BAG_STATUS.RETURNED_BY_CUSTOMER]: "Returned by Customer",
+  [BAG_STATUS.INSPECTION_REQUIRED]: "Inspection Required",
+  [BAG_STATUS.DAMAGED]: "Damaged",
+  [BAG_STATUS.LOST]: "Lost",
+  [BAG_STATUS.RETIRED]: "Retired",
+  CLEANING: "Cleaning",
+  DELIVERED: "Delivered",
+  RETURNED: "Returned",
+}
+
+export const CUSTODIAN_LABEL: Record<string, string> = {
+  [CUSTODIAN.LAUNDRY]: "Laundry",
+  [CUSTODIAN.STORE]: "Store",
+  [CUSTODIAN.PROCESSING_CENTER]: "Processing Center",
+  [CUSTODIAN.DELIVERY_EXECUTIVE]: "Delivery Executive",
+  [CUSTODIAN.CUSTOMER]: "Customer",
+}
+
+export const CONDITION_LABEL: Record<string, string> = {
+  [BAG_CONDITION.GOOD]: "Good",
+  [BAG_CONDITION.MINOR_DAMAGE]: "Minor Damage",
+  [BAG_CONDITION.DAMAGED]: "Damaged",
+  [BAG_CONDITION.HEAVILY_DAMAGED]: "Heavily Damaged",
+  [BAG_CONDITION.UNUSABLE]: "Unusable",
+}
+
+/** Human wording for a movement in the bag's timeline. */
+export const EVENT_LABEL: Record<string, string> = {
+  [DISPOSITION.HANDED_TO_CUSTOMER]: "Handed to customer",
+  [DISPOSITION.RETURNED_TO_EXECUTIVE]: "Returned to executive at the door",
+  [DISPOSITION.DAMAGED]: "Reported damaged",
+  [DISPOSITION.LOST]: "Reported lost",
+  RETURNED_BY_CUSTOMER: "Customer returned the bag",
+  INSPECTED: "Inspected",
+  QR_DAMAGED: "QR marked damaged",
+  RETIRED: "Retired from circulation",
+  RELEASED: "Released to available stock",
+}
+
+export const humanStatus = (s: string | null | undefined) => (s ? STATUS_LABEL[s] ?? s.replace(/_/g, " ") : "—")
+export const humanCustodian = (c: string | null | undefined) => (c ? CUSTODIAN_LABEL[c] ?? c.replace(/_/g, " ") : "—")
+export const humanCondition = (c: string | null | undefined) => (c ? CONDITION_LABEL[c] ?? c.replace(/_/g, " ") : "—")
+export const humanEvent = (a: string | null | undefined) => (a ? EVENT_LABEL[a] ?? a.replace(/_/g, " ") : "—")
+
+/** True when the status is one this module knows about (§17 data review). */
+export function isKnownStatus(status: string): boolean {
+  return Object.prototype.hasOwnProperty.call(STATUS_LABEL, status)
+}
+
+// ── Inspection decision (§15) ────────────────────────────────────────────────
+
+/**
+ * Close out an INSPECTION_REQUIRED bag with a condition decision, using the SAME
+ * condition→status rule as a customer return — there is one lifecycle, not an
+ * admin copy of it. GOOD returns the bag to stock; anything worse keeps it out.
+ */
+export async function inspectBag(opts: {
+  lbId: string
+  bagId: string
+  condition: BagCondition
+  notes?: string | null
+  actor?: BagEventInput["actor"]
+}): Promise<LifecycleResult<{ bagNumber: string; status: BagStatus }>> {
+  if (!isCondition(opts.condition)) return { ok: false, status: 400, error: "A valid bag condition is required" }
+  const bag = await prisma.laundryBag.findFirst({
+    where: { id: opts.bagId, businessId: opts.lbId },
+    select: { id: true, bagNumber: true, status: true, currentCustodianType: true, currentStoreId: true },
+  })
+  if (!bag) return { ok: false, status: 404, error: "Bag not found." }
+  if (bag.status === BAG_STATUS.RETIRED) return { ok: false, status: 409, error: "This bag is retired." }
+  // Inspection applies to a bag physically in the laundry's hands — never to one
+  // sitting with a customer, which would fabricate a return that never happened.
+  if (bag.status === BAG_STATUS.HANDED_TO_CUSTOMER) {
+    return { ok: false, status: 409, error: "This bag is with the customer. It must be returned before it can be inspected." }
+  }
+
+  const status = conditionToStatus(opts.condition)
+  const claimed = await prisma.laundryBag.updateMany({
+    where: { id: bag.id, status: bag.status },
+    data: { status, condition: opts.condition, ...(status === BAG_STATUS.RETIRED ? { active: false } : {}) },
+  })
+  if (claimed.count === 0) return { ok: false, status: 409, code: "CONCURRENT_UPDATE", error: "This bag was just updated by someone else." }
+
+  await prisma.$transaction(async (tx) => {
+    await recordBagEvent(tx, {
+      bagId: bag.id, bagNumber: bag.bagNumber, businessId: opts.lbId, action: "INSPECTED",
+      previousStatus: bag.status, newStatus: status,
+      previousCustodianType: bag.currentCustodianType, newCustodianType: bag.currentCustodianType,
+      storeId: bag.currentStoreId, condition: opts.condition,
+      reason: opts.notes ?? null, actor: opts.actor,
+    })
+  })
+  return { ok: true, bagNumber: bag.bagNumber, status }
 }
