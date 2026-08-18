@@ -6381,58 +6381,95 @@ model LaundryProcessingPackage {
 // Replaces the temporary Pickup Bag / Processing Package QR generation.
 // ============================================================================
 model LaundryBag {
-  id                  String    @id @default(cuid())
-  bagNumber           String // BAG-NNNNNN (permanent, per business)
-  qrValue             String // permanent QR payload = bagNumber
-  businessId          String
-  status              String    @default("AVAILABLE") // AVAILABLE|ASSIGNED|COLLECTED|RECEIVED_AT_STORE|UNDER_AUDIT|PROCESSING|READY_FOR_DELIVERY|OUT_FOR_DELIVERY|DELIVERED|RETURNED|CLEANING|DAMAGED|LOST
-  currentOrderId      String?
-  currentOrderNumber  String?
-  currentServiceId    String?
-  currentServiceName  String?
-  currentCustomerId   String?
-  currentCustomerName String?
-  lastUsedAt          DateTime?
-  lastReturnedAt      DateTime?
-  totalUsageCount     Int       @default(0)
-  notes               String?
-  releasedAt          DateTime?
-  releasedBy          String?
-  releaseReason       String?
-  lastAssignmentId    String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                      String    @id @default(cuid())
+  bagNumber               String // BAG-NNNNNN (permanent, per business)
+  qrValue                 String // permanent QR payload = bagNumber
+  businessId              String
+  status                  String    @default("AVAILABLE") // AVAILABLE|ASSIGNED|COLLECTED|RECEIVED_AT_STORE|UNDER_AUDIT|PROCESSING|READY_FOR_DELIVERY|OUT_FOR_DELIVERY|DELIVERED|RETURNED|CLEANING|DAMAGED|LOST
+  currentOrderId          String?
+  currentOrderNumber      String?
+  currentServiceId        String?
+  currentServiceName      String?
+  currentCustomerId       String?
+  currentCustomerName     String?
+  lastUsedAt              DateTime?
+  lastReturnedAt          DateTime?
+  totalUsageCount         Int       @default(0)
+  notes                   String?
+  releasedAt              DateTime?
+  releasedBy              String?
+  releaseReason           String?
+  lastAssignmentId        String?
+  // ── Physical custody (separate from inventory availability) ────────────────
+  // A bag handed to the customer is NOT available stock, but it is not lost
+  // either — it sits with a known custodian until it physically comes back.
+  // status answers "can it be used?"; custodian answers "who is holding it?".
+  currentCustodianType    String    @default("LAUNDRY") // LAUNDRY|STORE|PROCESSING_CENTER|DELIVERY_EXECUTIVE|CUSTOMER
+  currentCustodianId      String?
+  currentCustodianName    String?
+  currentStoreId          String?
+  // Condition is captured on RETURN and decides whether the bag may go back
+  // into circulation — a returned bag is not automatically reusable.
+  condition               String    @default("GOOD") // GOOD|MINOR_DAMAGE|DAMAGED|HEAVILY_DAMAGED|UNUSABLE
+  active                  Boolean   @default(true)
+  // Set when the bag is handed over at delivery; cleared when it comes back.
+  // These persist across orders, which is what makes "bags with this customer"
+  // answerable without scanning history.
+  handedToCustomerAt      DateTime?
+  handedToCustomerOrderId String?
+  // A physical bag whose QR is unreadable keeps its identity — it is flagged,
+  // never duplicated. Recovery is manual lookup + QR reprint.
+  qrDamaged               Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   assignments LaundryBagAssignment[]
   releases    LaundryBagRelease[]
+  events      LaundryBagEvent[]
 
   @@unique([businessId, bagNumber])
   @@index([businessId])
   @@index([businessId, status])
   @@index([currentOrderId])
   @@index([qrValue])
+  @@index([businessId, currentCustodianType])
+  @@index([businessId, currentCustomerId])
 }
 
 // Append-only lifecycle history — one row per order the bag has carried.
 model LaundryBagAssignment {
-  id           String    @id @default(cuid())
-  bagId        String
-  businessId   String
-  orderId      String
-  orderNumber  String?
-  serviceId    String?
-  serviceName  String?
-  customerId   String?
-  customerName String?
-  assignedAt   DateTime  @default(now())
-  returnedAt   DateTime?
-  status       String    @default("ASSIGNED") // ASSIGNED | RETURNED
+  id                String    @id @default(cuid())
+  bagId             String
+  businessId        String
+  orderId           String
+  orderNumber       String?
+  serviceId         String?
+  serviceName       String?
+  customerId        String?
+  customerName      String?
+  assignedAt        DateTime  @default(now())
+  returnedAt        DateTime?
+  status            String    @default("ASSIGNED") // ASSIGNED | RETURNED | HANDED_TO_CUSTOMER
+  // ── Usage detail (one row = one bag on one order, never overwritten) ───────
+  // A customer-retained bag closes its usage as HANDED_TO_CUSTOMER and the row
+  // is complete; if that same physical bag comes back three orders later it
+  // gets a NEW usage row. Historical rows are never rewritten.
+  pickupDate        DateTime?
+  deliveredDate     DateTime?
+  issuedBy          String?
+  receivedBy        String?
+  returnedBy        String?
+  returnDate        DateTime?
+  returnStatus      String? // HANDED_TO_CUSTOMER|RETURNED_TO_STORE|NOT_RETURNED|DAMAGED|LOST
+  conditionAtPickup String?
+  conditionAtReturn String?
 
   bag LaundryBag @relation(fields: [bagId], references: [id], onDelete: Cascade)
 
   @@index([bagId])
   @@index([businessId])
   @@index([orderId])
+  @@index([bagId, status])
 }
 
 // Append-only release audit — one row per time a bag is returned to AVAILABLE.
@@ -6457,6 +6494,41 @@ model LaundryBagRelease {
   @@index([bagId])
   @@index([businessId])
   @@index([releasedAt])
+}
+
+// Append-only movement log for a physical bag — every status or custody change,
+// whoever caused it. LaundryBagRelease stays as-is (it records one specific
+// event, a release to AVAILABLE); this records ALL of them, so a bag's life can
+// be read end to end without stitching tables together. Never updated, never
+// deleted.
+model LaundryBagEvent {
+  id                    String   @id @default(cuid())
+  bagId                 String
+  bagNumber             String
+  businessId            String
+  action                String // ISSUED|PICKED_UP|RECEIVED_AT_STORE|PROCESSING|OUT_FOR_DELIVERY|HANDED_TO_CUSTOMER|RETURNED_BY_CUSTOMER|INSPECTED|DAMAGED|LOST|RETIRED|RELEASED|QR_REPLACED|REASSIGNED
+  previousStatus        String?
+  newStatus             String?
+  previousCustodianType String?
+  newCustodianType      String?
+  orderId               String?
+  orderNumber           String?
+  customerId            String?
+  customerName          String?
+  storeId               String?
+  condition             String?
+  reason                String?
+  actorId               String?
+  actorName             String?
+  actorRole             String?
+  createdAt             DateTime @default(now())
+
+  bag LaundryBag @relation(fields: [bagId], references: [id], onDelete: Cascade)
+
+  @@index([bagId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([orderId])
+  @@index([customerId])
 }
 
 // ── Navigation Manager — per-business sidebar configuration ──────────────────

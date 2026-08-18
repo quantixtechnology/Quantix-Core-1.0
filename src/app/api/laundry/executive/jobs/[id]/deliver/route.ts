@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { markOrderDelivered } from "@/lib/laundry-deliver"
+import { applyDeliveryDisposition, isDisposition, isCondition, DEFAULT_DISPOSITION } from "@/lib/laundry-bag-lifecycle"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 import { verifyDelivery } from "@/lib/laundry-verification"
 
@@ -48,6 +49,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const r = await markOrderDelivered({ lbId: session.businessId, orderId: order.id, deliveredBy: actor.name, recipientName, note: `Verified (${v.method}${otp ? `: ${otp}` : " — identity confirmed"})`, actor })
       if (!r.ok) return NextResponse.json({ error: r.error, ...(r.code ? { code: r.code, balanceDue: r.balanceDue } : {}) }, { status: r.status })
       await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.DELIVERED, deliveryCompletedAt: new Date() } })
+      // BAG DISPOSITION — recorded BESIDE the delivery, never in front of it.
+      // Handing the bag to the customer is the normal outcome and the default;
+      // a missing, unknown or kept bag can never fail a completed delivery, so
+      // this is best-effort and its result does not change the response.
+      await applyDeliveryDisposition({
+        lbId: session.businessId, orderId: order.id,
+        disposition: isDisposition(b.bagDisposition) ? b.bagDisposition : DEFAULT_DISPOSITION,
+        condition: isCondition(b.bagCondition) ? b.bagCondition : undefined,
+        reason: b.bagNote ? String(b.bagNote) : null,
+        actor: { ...actor, role: "DELIVERY_EXECUTIVE" },
+      }).catch(() => null)
       await notifyCustomerForOrder(order.id, session.businessId, { type: "DELIVERY_UPDATE", title: "Order delivered", message: `Your order ${r.orderNumber} has been delivered.` })
       return NextResponse.json({ success: true, delivered: true })
     }
