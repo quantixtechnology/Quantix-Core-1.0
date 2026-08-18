@@ -30,42 +30,80 @@
 // data", pointing the investigation at an API that had already returned valid
 // data. Loud and local at build time beats disguised and global at runtime.
 //
-// WHY NOT JUST GATE `npm run lint`: the repo carries thousands of accepted
-// findings from other rules (set-state-in-effect alone is in the hundreds).
-// Gating all of them would block every build, so this guard reports ONE rule and
-// ignores the rest. It uses the project's own eslint.config.mjs — no second
-// parser or plugin set to drift out of sync with it.
+// ─── THE GUARD MUST NOT BE ABLE TO BREAK THE BUILD ──────────────────────────
+//
+// The first version of this script did exactly that. It ran ESLint in-process,
+// with the full Next.js config, over all of src — 1.3 GB peak — immediately
+// before `next build` on a VPS that caps the heap at 1536 MB. The deploy failed
+// at prebuild. Build-then-swap discarded the release and production stayed up,
+// but the deploy was lost, and no try/catch can catch an OOM kill.
+//
+// Three things keep that from recurring:
+//
+//   1. A CHILD PROCESS does the linting. If it dies for any reason at all —
+//      OOM, SIGKILL, a missing module, a broken config — the parent reports a
+//      skip and the build continues. Only a clean run reporting real violations
+//      can fail the build.
+//   2. A MINIMAL CONFIG: the TypeScript parser and this one rule, nothing else.
+//      That is ~790 MB instead of ~1.3 GB. It does mean this does not inherit
+//      eslint.config.mjs — acceptable for a single syntactic rule that needs no
+//      type information, and the fallbacks cover the plugin going missing.
+//   3. ONLY FILES CONTAINING HOOK CALLS are linted (~370 of ~1550).
 //
 // This guard only reads and lints source files. It does not modify code.
 // ============================================================================
 
-const { ESLint } = require('eslint')
+const fs = require('fs')
+const path = require('path')
 
 const RULE = 'react-hooks/rules-of-hooks'
-const TARGET = 'src'
+const SRC = path.join(process.cwd(), 'src')
+const BATCH = 40
+const HOOK_CALL = /\buse[A-Z][A-Za-z0-9_]*\s*\(/
+const CHILD_HEAP_MB = 900
 
-async function main() {
-  // The project's own flat config, so parser, plugins and ignores match `npm run
-  // lint` exactly. Everything except RULE is filtered out below.
-  const eslint = new ESLint({ errorOnUnmatchedPattern: false })
-
-  let results
-  try {
-    results = await eslint.lintFiles([TARGET])
-  } catch (err) {
-    // A guard must never be the reason a build cannot run. If linting itself
-    // breaks, say so clearly and let the build continue to the real compiler.
-    console.warn(`\n[hooks-guard] SKIPPED — could not lint ${TARGET}: ${err && err.message}`)
-    console.warn('[hooks-guard] The build continues; fix the lint setup to restore this check.\n')
-    return
+/** Every .ts/.tsx under src that actually calls a hook. */
+function hookFiles(dir, out = []) {
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return out }
+  for (const e of entries) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) { hookFiles(full, out); continue }
+    if (!/\.tsx?$/.test(e.name) || e.name.endsWith('.d.ts')) continue
+    try {
+      if (HOOK_CALL.test(fs.readFileSync(full, 'utf8'))) out.push(full)
+    } catch { /* unreadable file — nothing to check */ }
   }
+  return out
+}
 
+// ─── WORKER ─────────────────────────────────────────────────────────────────
+// Prints {"violations":[...]} on stdout and exits 0, or exits non-zero. It is
+// never the one to decide the build's fate.
+async function worker() {
+  const { ESLint } = require('eslint')
+  const eslint = new ESLint({
+    overrideConfigFile: true, // deliberately NOT eslint.config.mjs — see header
+    overrideConfig: [{
+      files: ['**/*.ts', '**/*.tsx'],
+      languageOptions: {
+        parser: require('@typescript-eslint/parser'),
+        parserOptions: { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true } },
+      },
+      plugins: { 'react-hooks': require('eslint-plugin-react-hooks') },
+      rules: { [RULE]: 'error' },
+    }],
+    errorOnUnmatchedPattern: false,
+  })
+
+  const files = hookFiles(SRC)
   const violations = []
-  for (const file of results) {
-    for (const msg of file.messages) {
-      if (msg.ruleId === RULE) {
+  for (let i = 0; i < files.length; i += BATCH) {
+    for (const file of await eslint.lintFiles(files.slice(i, i + BATCH))) {
+      for (const msg of file.messages) {
+        if (msg.ruleId !== RULE) continue
         violations.push({
-          file: file.filePath.replace(process.cwd() + '/', ''),
+          file: file.filePath.replace(process.cwd() + path.sep, ''),
           line: msg.line,
           column: msg.column,
           message: msg.message,
@@ -73,12 +111,21 @@ async function main() {
       }
     }
   }
+  process.stdout.write(JSON.stringify({ checked: files.length, violations }))
+}
 
+// ─── PARENT ─────────────────────────────────────────────────────────────────
+function skip(reason) {
+  console.warn(`\n[hooks-guard] SKIPPED — ${reason}`)
+  console.warn('[hooks-guard] The build continues. Run `npm run check:hooks` locally to restore the check.\n')
+  process.exit(0)
+}
+
+function report({ checked, violations }) {
   if (violations.length === 0) {
-    console.log(`✓ Hook guard: no conditional hooks in ${TARGET}/`)
-    return
+    console.log(`✓ Hook guard: no conditional hooks (${checked} files with hooks checked)`)
+    process.exit(0)
   }
-
   console.error('\n' + '='.repeat(78))
   console.error(`BUILD FAILED — ${violations.length} conditional React hook${violations.length === 1 ? '' : 's'}`)
   console.error('='.repeat(78) + '\n')
@@ -98,7 +145,33 @@ async function main() {
   process.exit(1)
 }
 
-main().catch((err) => {
-  console.error('[hooks-guard] unexpected failure:', err)
-  process.exit(1)
-})
+function parent() {
+  const { spawn } = require('child_process')
+  const child = spawn(
+    process.execPath,
+    [`--max-old-space-size=${CHILD_HEAP_MB}`, __filename, '--worker'],
+    { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] },
+  )
+  let out = '', err = ''
+  child.stdout.on('data', (d) => { out += d })
+  child.stderr.on('data', (d) => { err += d })
+  child.on('error', (e) => skip(`could not start the lint worker: ${e && e.message}`))
+  child.on('close', (code, signal) => {
+    if (signal) return skip(`lint worker killed by ${signal} (out of memory?)`)
+    if (code !== 0) {
+      // FIRST line: for a missing module that is "Cannot find module 'x'", where
+      // the remaining lines are just the require stack.
+      const why = (err.trim().split('\n')[0] || `exit ${code}`).slice(0, 200)
+      return skip(`lint worker failed — ${why}`)
+    }
+    let parsed
+    try { parsed = JSON.parse(out) } catch { return skip('lint worker produced no readable result') }
+    report(parsed)
+  })
+}
+
+if (process.argv.includes('--worker')) {
+  worker().catch((e) => { console.error(e && e.message); process.exit(1) })
+} else {
+  parent()
+}
