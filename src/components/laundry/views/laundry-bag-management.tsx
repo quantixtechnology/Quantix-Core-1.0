@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -32,7 +33,10 @@ import { BagScanButton } from "@/components/laundry/bag-scanner"
 // Bag QR labels go through the SAME thermal-label engine as garment barcodes:
 // same TE244, same 50 x 38.1mm stock, same saved workstation configuration.
 // There is no separate bag printer setup, and there must never be one.
-import { printBagLabels } from "@/lib/laundry-label"
+import { printBagLabels, loadLabelConfig, type LabelConfig } from "@/lib/laundry-label"
+// The SAME settings dialog Barcode Generation uses, writing the SAME saved
+// LabelConfig — change the stock on either screen and both follow.
+import { LaundryLabelSettings } from "@/components/laundry/laundry-label-settings"
 import {
   humanStatus, humanCustodian, humanCondition, humanEvent, isKnownStatus,
   BAG_STATUS, CUSTODIAN, BAG_CONDITION, type BagInventory,
@@ -104,6 +108,16 @@ const STATUS_FILTERS = [
 const CUSTODIAN_FILTERS = [CUSTODIAN.STORE, CUSTODIAN.PROCESSING_CENTER, CUSTODIAN.DELIVERY_EXECUTIVE, CUSTODIAN.CUSTOMER]
 const CONDITION_FILTERS = [BAG_CONDITION.GOOD, BAG_CONDITION.MINOR_DAMAGE, BAG_CONDITION.DAMAGED, BAG_CONDITION.HEAVILY_DAMAGED, BAG_CONDITION.UNUSABLE]
 
+// ── Print All: what counts as printable stock ───────────────────────────────
+// "available" is the lifecycle domain's OWN bucket (bucketFor → AVAILABLE),
+// resolved server-side by /api/laundry/bags. So retired, lost, damaged,
+// inspection-pending and customer-held bags are excluded by the engine that
+// classifies bags — never by a second definition written in this screen. That
+// is the same reason the census tiles above do not count anything themselves.
+const PRINT_ALL_BUCKET = "available"
+const PRINT_ALL_PAGE_SIZE = 200  // the list API's maximum page
+const PRINT_ALL_MAX_PAGES = 25   // 5,000 labels — a bounded ceiling, not a policy
+
 export function LaundryBagManagement() {
   const { currentBusinessId } = useAuthStore()
   const { setLaundryPage, setSelectedOrderId, setLaundryFocusCustomerId } = useAdminStore()
@@ -130,6 +144,10 @@ export function LaundryBagManagement() {
   const [canManage, setCanManage] = useState(false)
   const [manualReleaseTarget, setManualReleaseTarget] = useState<Bag | null>(null)
   const [manualReleaseReason, setManualReleaseReason] = useState("")
+  // ONE shared thermal configuration, read from the same store Barcode
+  // Generation saves to. Not bag-specific, and never a second config.
+  const [cfg, setCfg] = useState<LabelConfig>(loadLabelConfig())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!currentBusinessId) return
@@ -156,6 +174,9 @@ export function LaundryBagManagement() {
       if (debounced) p.set("search", debounced)
       const j = await fetch(`/api/laundry/bags?${p}`).then((r) => r.json())
       setBags(j.data || []); setInventory(j.inventory || null); setActiveTotal(j.activeTotal || 0)
+      // The rows just changed underneath it, so a tick left over from the last
+      // filter would print a bag the user can no longer see.
+      setSelected(new Set())
       setTotal(j.total || 0); setTotalPages(j.totalPages || 1)
     } catch { /* noop */ } finally { setLoading(false) }
   }, [currentBusinessId, page, bucket, status, custodian, condition, debounced])
@@ -173,8 +194,61 @@ export function LaundryBagManagement() {
       if (!j.success) throw new Error(j.error || "Failed")
       toast.success(`${j.data.length} bags created`)
       setGenOpen(false); load()
-      if (confirm(`Print labels for the ${j.data.length} new bags now?`)) printBagLabels(j.data)
+      if (confirm(`Print labels for the ${j.data.length} new bags now?`)) printBagLabels(j.data, cfg)
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
+  }
+
+  // ── Printing ──────────────────────────────────────────────────────────────
+  // Individual, selected and all differ ONLY in the list of bags handed to
+  // printBagLabels(). One engine, one saved config, one label design — this
+  // screen never builds a label or touches printer settings itself.
+  const selectedBags = bags.filter((b) => selected.has(b.id))
+  const allOnPageSelected = bags.length > 0 && bags.every((b) => selected.has(b.id))
+  const someOnPageSelected = bags.some((b) => selected.has(b.id))
+
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  // Select All covers the bags currently listed — i.e. the active filter/page,
+  // which is what the user can actually see.
+  const toggleAllOnPage = () => setSelected(allOnPageSelected ? new Set() : new Set(bags.map((b) => b.id)))
+
+  const printOne = (b: Bag) => printBagLabels([b], cfg)
+  const printSelected = () => printBagLabels(selectedBags, cfg)
+
+  // Prints issuable stock across the WHOLE inventory, not just this page, so it
+  // is fetched rather than taken from the table. The server applies the bucket;
+  // see PRINT_ALL_BUCKET.
+  const printAll = async () => {
+    if (!currentBusinessId) return
+    setBusy(true)
+    try {
+      const rows: Bag[] = []
+      let available = 0
+      for (let pg = 1; pg <= PRINT_ALL_MAX_PAGES; pg++) {
+        const q = new URLSearchParams({
+          businessId: currentBusinessId, bucket: PRINT_ALL_BUCKET,
+          page: String(pg), pageSize: String(PRINT_ALL_PAGE_SIZE),
+        })
+        const j = await fetch(`/api/laundry/bags?${q}`).then((r) => r.json())
+        const batch: Bag[] = j.data || []
+        available = j.total ?? available
+        rows.push(...batch)
+        if (batch.length < PRINT_ALL_PAGE_SIZE || rows.length >= available) break
+      }
+      if (rows.length === 0) { toast.error("No available bags to print."); return }
+      // A roll of labels is a physical commitment — say the number out loud, and
+      // say what is being left out, before spending it.
+      const capped = rows.length < available
+      const ok = window.confirm(
+        `Print ${rows.length} bag label${rows.length === 1 ? "" : "s"}?\n\n` +
+        `Available bags only — retired, lost, damaged and customer-held bags are not printed.` +
+        (capped ? `\n\nLimited to the first ${rows.length} of ${available}.` : ""))
+      if (!ok) return
+      await printBagLabels(rows, cfg)
+    } catch { toast.error("Could not load bags to print.") } finally { setBusy(false) }
   }
 
   // ── Row actions ───────────────────────────────────────────────────────────
@@ -271,9 +345,24 @@ export function LaundryBagManagement() {
           </h1>
           <p className="text-sm text-slate-500">Where every physical bag is right now — including the ones with customers.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <BagScanButton onScan={handleReturnScan} label="Scan Returned Bag" />
           <Button variant="outline" className="gap-1" onClick={() => setGenOpen(true)}><Plus className="h-4 w-4" /> Generate Bags</Button>
+          {/* Settings -> Select -> Print, the same order Barcode Generation uses. */}
+          <LaundryLabelSettings
+            cfg={cfg} onChange={setCfg} size="default"
+            onSaved={() => toast.success("Label settings saved")}
+            onPreview={bags.length ? (c) => printBagLabels([bags[0]], c, false) : undefined}
+          />
+          {/* Only present when there is a selection - nothing to read otherwise. */}
+          {selected.size > 0 && (
+            <Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={printSelected}>
+              <Printer className="h-4 w-4" /> Print Selected ({selected.size})
+            </Button>
+          )}
+          <Button variant="outline" className="gap-1" disabled={busy} onClick={printAll}>
+            <Printer className="h-4 w-4" /> Print All
+          </Button>
         </div>
       </div>
 
@@ -357,6 +446,16 @@ export function LaundryBagManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    {/* Select All over the bags currently listed. Indeterminate
+                        while only some of them are ticked. */}
+                    <Checkbox
+                      aria-label="Select all bags"
+                      checked={allOnPageSelected ? true : someOnPageSelected ? "indeterminate" : false}
+                      onCheckedChange={toggleAllOnPage}
+                      disabled={bags.length === 0}
+                    />
+                  </TableHead>
                   <TableHead>Bag</TableHead><TableHead>Status</TableHead><TableHead>Custodian</TableHead>
                   <TableHead>Customer</TableHead><TableHead>Condition</TableHead>
                   <TableHead>Current / Last Order</TableHead><TableHead>Last Movement</TableHead>
@@ -365,11 +464,19 @@ export function LaundryBagManagement() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={8} className="py-14 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="py-14 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></TableCell></TableRow>
                 ) : bags.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="py-14 text-center text-sm text-slate-400">No bags match this view.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="py-14 text-center text-sm text-slate-400">No bags match this view.</TableCell></TableRow>
                 ) : bags.map((b) => (
                   <TableRow key={b.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setDetailId(b.id)}>
+                    {/* The row opens the history drawer, so the tick must not. */}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        aria-label={`Select ${b.bagNumber}`}
+                        checked={selected.has(b.id)}
+                        onCheckedChange={() => toggleOne(b.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <span className="font-mono text-sm font-semibold text-slate-800">{b.bagNumber}</span>
                       {b.qrDamaged && <Badge variant="outline" className="ml-1.5 text-[9px] border-amber-300 text-amber-700 bg-amber-50">QR damaged</Badge>}
@@ -390,7 +497,7 @@ export function LaundryBagManagement() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuItem onClick={() => setDetailId(b.id)}><History className="h-4 w-4 mr-2" /> View History</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => printBagLabels([b])}><Printer className="h-4 w-4 mr-2" /> Print QR</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => printOne(b)}><Printer className="h-4 w-4 mr-2" /> Print QR</DropdownMenuItem>
                           {canManage && <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem disabled={busy} onClick={() => setManualReleaseTarget(b)}><RotateCcw className="h-4 w-4 mr-2" /> Release Bag</DropdownMenuItem>

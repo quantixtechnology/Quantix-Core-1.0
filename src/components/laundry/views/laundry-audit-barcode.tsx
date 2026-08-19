@@ -10,35 +10,19 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Loader2, Barcode as BarcodeIcon, Printer, ArrowRight, User, ShoppingBag, Check, RefreshCw, Eye, Settings } from "lucide-react"
+import { ArrowLeft, Loader2, Barcode as BarcodeIcon, Printer, ArrowRight, RefreshCw, Eye } from "lucide-react"
 import { Barcode } from "./barcode"
 import { LaundryPaymentBanner } from "./laundry-payment-banner"
-import { printLabels, loadLabelConfig, saveLabelConfig, scannerQuality, resolveStockHeightMm, STOCK_HEIGHT_MM, DEFAULT_ORIENTATION, type LabelConfig, type LabelData } from "@/lib/laundry-label"
+import { printLabels, loadLabelConfig, scannerQuality, type LabelConfig, type LabelData } from "@/lib/laundry-label"
+// ONE settings control for the whole workspace — the same dialog Bag Management
+// uses, writing the same saved LabelConfig. See laundry-label-settings.tsx.
+import { LaundryLabelSettings } from "@/components/laundry/laundry-label-settings"
 
 interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
 interface Data { order: { id: string; orderNumber: string; status: string; grandTotal: number }; store?: { storeName: string } | null; customer?: { name: string; phone: string | null } | null; items: Item[]; totalItems: number; barcoded: number; allBarcoded: boolean }
 
-const WIDTHS = [40, 50, 60, 70, 80], HEIGHTS = [30, 40, 50], DPIS = [203, 300, 600]
-// Must match how the TSC TE244 driver is set for the loaded stock. Disagreement
-// is what makes the driver rotate the label 90° and clip the barcode.
-const ORIENTATIONS = [
-  { value: "landscape", label: "Landscape" },
-  { value: "portrait", label: "Portrait" },
-]
-const PROFILES: { value: string; label: string }[] = [
-  { value: "compact", label: "Compact (58mm)" },
-  { value: "standard", label: "Standard (Current)" },
-  { value: "wide-scan", label: "Wide Scan" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "custom", label: "Custom" },
-]
-const TEXT_POSITIONS = [{ value: "bottom", label: "Bottom" }, { value: "top", label: "Top" }, { value: "hidden", label: "Hidden" }]
 
 export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false }: { orderId: string; onBack: () => void; onMoved: () => void; readOnly?: boolean }) {
   const { user } = useAuthStore()
@@ -47,7 +31,6 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [cfg, setCfg] = useState<LabelConfig>(loadLabelConfig())
-  const [showCfg, setShowCfg] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -95,7 +78,11 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
         <LaundryPaymentBanner orderId={orderId} />
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.widthMm}×{resolveStockHeightMm(cfg)}mm · {(cfg.orientation ?? DEFAULT_ORIENTATION) === "landscape" ? "Landscape" : "Portrait"}</Button>
+        <LaundryLabelSettings
+          cfg={cfg} onChange={setCfg}
+          onSaved={(c) => toast({ title: "Label settings saved", description: `${c.barcodeProfile || "standard"} profile` })}
+          onPreview={(c) => { if (data) printLabels(data.items.map(toLabel), c, false) }}
+        />
         <Button variant="outline" className="gap-1" onClick={printAll}><Printer className="h-4 w-4" /> Print All</Button>
       </div>
 
@@ -155,71 +142,6 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
         </div>
       )}
 
-      {/* Print settings */}
-      <Dialog open={showCfg} onOpenChange={setShowCfg}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Printer className="h-5 w-5 text-blue-600" /> Thermal Label Settings</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            {/* PAPER — what the printer is loaded with and how it is set. These
-                three must match the TSC driver exactly; a mismatch is what makes
-                the driver rotate the label and clip the barcode. */}
-            <div className="grid grid-cols-3 gap-3">
-              {/* Width is a floor — a longer code widens the label rather than
-                  compressing the barcode. */}
-              <div className="space-y-1"><Label className="text-xs">Stock Width (mm)</Label><Select value={String(cfg.widthMm)} onValueChange={(v) => setCfg({ ...cfg, widthMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{WIDTHS.map((w) => <SelectItem key={w} value={String(w)}>{w} mm</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1"><Label className="text-xs">Stock Height (mm)</Label><Input type="number" min={10} max={200} step={0.1} value={cfg.stockHeightMm ?? STOCK_HEIGHT_MM} onChange={(e) => setCfg({ ...cfg, stockHeightMm: +e.target.value })} /></div>
-              <div className="space-y-1"><Label className="text-xs">Orientation</Label><Select value={cfg.orientation ?? DEFAULT_ORIENTATION} onValueChange={(v) => setCfg({ ...cfg, orientation: v as LabelConfig["orientation"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ORIENTATIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select></div>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-snug -mt-2">Stock size and orientation must match the printer driver (TSC TE244: 1.97 × 1.50 in, Landscape). Print at 100% / Actual Size — never “Fit to page”.</p>
-
-            {/* CONTENT — the box the barcode and GAR are drawn in, centred on the
-                stock. Changing this resizes the barcode; changing the stock does not. */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1"><Label className="text-xs">Content Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1"><Label className="text-xs">Printer DPI</Label><Select value={String(cfg.dpi)} onValueChange={(v) => setCfg({ ...cfg, dpi: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DPIS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent></Select></div>
-            </div>
-
-            <div className="border-t pt-3 space-y-3">
-              <div>
-                <Label className="text-xs block mb-1.5">Barcode Profile</Label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {PROFILES.map((p) => (
-                    <button key={p.value} onClick={() => setCfg({ ...cfg, barcodeProfile: p.value as LabelConfig["barcodeProfile"] })} className={`rounded-md border px-3 py-2 text-xs font-medium text-left ${(cfg.barcodeProfile || "standard") === p.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>{p.label}</button>
-                  ))}
-                </div>
-              </div>
-
-              {(cfg.barcodeProfile === "custom" || !cfg.barcodeProfile) && (
-                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-                  <div className="space-y-1"><Label className="text-xs">Module Width</Label><Input type="number" min={0.5} max={10} step={0.1} value={cfg.moduleWidth ?? 2} onChange={(e) => setCfg({ ...cfg, moduleWidth: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Barcode Height</Label><Input type="number" min={30} max={500} step={5} value={cfg.barcodeHeight ?? 150} onChange={(e) => setCfg({ ...cfg, barcodeHeight: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Quiet Zone</Label><Input type="number" min={0} max={50} step={1} value={cfg.quietZone ?? 10} onChange={(e) => setCfg({ ...cfg, quietZone: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Font Size</Label><Input type="number" min={4} max={24} step={1} value={cfg.fontSize ?? 10} onChange={(e) => setCfg({ ...cfg, fontSize: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Text Position</Label><Select value={cfg.textPosition || "bottom"} onValueChange={(v) => setCfg({ ...cfg, textPosition: v as LabelConfig["textPosition"], barcodeProfile: "custom" })}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{TEXT_POSITIONS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent></Select></div>
-                </div>
-              )}
-
-              <div className="border-t pt-3 space-y-3">
-                <Label className="text-xs block mb-1.5 font-semibold text-slate-700">Margins & Scaling</Label>
-                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-                  <div className="space-y-1"><Label className="text-xs">Left (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginLeft ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginLeft: +e.target.value })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Right (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginRight ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginRight: +e.target.value })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Top (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginTop ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginTop: +e.target.value })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Bottom (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginBottom ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginBottom: +e.target.value })} className="h-8 text-xs" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Print Scaling</Label><Input type="number" min={0.5} max={3} step={0.1} value={cfg.scaling ?? 1} onChange={(e) => setCfg({ ...cfg, scaling: +e.target.value })} className="h-8 text-xs" /></div>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-slate-400 leading-snug">Barcode encodes the Global Garment Number (GAR). The garment Item ID is shown below for human reference.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCfg(false)}>Close</Button>
-            <Button variant="outline" className="gap-1" onClick={() => { if (data) printLabels(data.items.map(toLabel), cfg, false) }}><Eye className="h-4 w-4" /> Preview</Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-1" onClick={() => { saveLabelConfig(cfg); setShowCfg(false); toast({ title: "Label settings saved", description: `${cfg.barcodeProfile || "standard"} profile` }) }}><Check className="h-4 w-4" /> Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
