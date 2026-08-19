@@ -333,15 +333,34 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
-  const scanBag = async (code: string, svc: Svc): Promise<boolean> => {
+  // ONE call for both pickup bag actions. Everything the domain needs to do —
+  // take a returned bag back from the customer, record it, then attach it to
+  // this order — happens server-side; the app just says which of the two things
+  // the executive did.
+  const bagAction = async (svc: Svc, body: Record<string, unknown>): Promise<{ ok: boolean; useNewBag?: boolean }> => {
+    setBusy(true)
     try {
-      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, { method: "POST", body: JSON.stringify({ code, serviceId: svc.serviceId, serviceName: svc.serviceName, executiveName: exec.name }) })
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, {
+        method: "POST",
+        body: JSON.stringify({ serviceId: svc.serviceId, serviceName: svc.serviceName, executiveName: exec.name, ...body }),
+      })
       const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.error || "Bag not accepted")
+      if (!res.ok || !j.success) return { ok: false, useNewBag: j.useNewBag === true }
       toast.success(`${svc.serviceName}: ${j.bagNumber}`)
       await refresh()
-      return true
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not accepted"); return false }
+      return { ok: true }
+    } catch { return { ok: false } } finally { setBusy(false) }
+  }
+
+  const scanBag = async (code: string, svc: Svc): Promise<boolean> => {
+    const r = await bagAction(svc, { code })
+    return r.ok
+  }
+
+  const useNewBag = async (svc: Svc): Promise<boolean> => {
+    const r = await bagAction(svc, { useNewBag: true })
+    if (!r.ok) toast.error("No spare bags. Ask the store.")
+    return r.ok
   }
 
   const [delBag, setDelBag] = useState("")
@@ -358,8 +377,8 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
   }
 
   const navigate = () => {
-    // Chain of custody: no delivery leaves the store until its bag is scanned.
-    if (isDelivery && !job.deliveryBagNumber) { toast.error("Scan the delivery bag first"); return }
+    // No bag gate. A delivery must never be stuck behind a scan — see the
+    // delivery-bag card below.
     const url = job.mapsLink || (job.lat && job.lng ? `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}` : job.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}` : null)
     if (!url) { toast.error("No location for this order"); return }
     if (isDelivery) { if (job.acceptance === "ACCEPTED" && st < RANK.OUT_FOR_DELIVERY) deliver("out_for_delivery") }
@@ -371,8 +390,6 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
   const delivered = job.status === "DELIVERED"
   // A pickup is done once PICKUP_COMPLETED; a cancelled order is never editable.
   const pickupDone = st >= RANK.PICKUP_COMPLETED || delivered
-  // Delivery may only start once its bag is scanned/assigned.
-  const deliveryReady = !isDelivery || !!job.deliveryBagNumber
 
   // Delivery-door payment: cash collect, or a UPI QR the customer scans (polled).
   const [qr, setQr] = useState<{ imageUrl: string; qrCodeId: string; amount: number } | null>(null)
@@ -430,9 +447,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
             {job.customerPhone
               ? <a href={`tel:${job.customerPhone}`} className="h-11 rounded-xl border border-slate-200 text-slate-700 font-medium flex items-center justify-center gap-2"><Phone className="h-4 w-4" /> Call</a>
               : <div className="h-11 rounded-xl border border-slate-100 text-slate-300 flex items-center justify-center gap-2 text-sm"><Phone className="h-4 w-4" /> No phone</div>}
-            {deliveryReady
-              ? <button onClick={navigate} className="h-11 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
-              : <button disabled className="h-11 rounded-xl bg-slate-100 text-slate-400 font-medium flex items-center justify-center gap-2 text-xs px-2"><Package className="h-4 w-4" /> Scan bag to start</button>}
+            <button onClick={navigate} className="h-11 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
           </div>
         </div>
 
@@ -460,17 +475,19 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           </div>
         )}
 
-        {/* Delivery bag — must be scanned before heading out (chain of custody) */}
+        {/* Delivery bag — OPTIONAL. Scanning it is what lets the backend record
+            WHICH bag went to the customer, so it is still offered; it never
+            blocks anything. The bag goes to the customer and stays there. */}
         {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <div>
-              <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Delivery Bag</p>
-              <p className="text-xs text-slate-500">Scan or enter the bag you're taking this order out in. Navigation unlocks once it's set; the store scans it back after delivery.</p>
+              <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Delivery Bag <span className="text-[10px] font-medium text-slate-400">optional</span></p>
+              <p className="text-xs text-slate-500">Give this bag to the customer. Scanning is optional — you can deliver without it.</p>
             </div>
             {job.deliveryBagNumber ? (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                <p className="text-sm font-medium text-slate-700">Bag <span className="font-mono text-emerald-700">{job.deliveryBagNumber}</span> assigned</p>
+                <p className="text-sm font-medium text-slate-700">Bag <span className="font-mono text-emerald-700">{job.deliveryBagNumber}</span> — give it to the customer</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -533,7 +550,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags · one or more bags per service</p>
             {job.services.map((s, i) => (
-              <ServiceBags key={i} svc={s} onScan={scanBag} />
+              <ServiceBags key={i} svc={s} onScan={scanBag} onUseNew={useNewBag} />
             ))}
           </div>
         )}
@@ -570,8 +587,8 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       )}
       {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
         <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
-          <button disabled={busy || !deliveryReady} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} {deliveryReady ? "Mark as Delivered" : "Scan delivery bag first"}
+          <button disabled={busy} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Delivery
           </button>
         </div>
       )}
@@ -585,8 +602,15 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 // One service's bag list inside the editable assignment section. Each service
 // is independent: assigned bags show as "Bag N ✓ number", then a "+ Add Bag"
 // button reveals the next "Bag N · Scan" slot. No fixed limit.
-function ServiceBags({ svc, onScan }: { svc: Svc; onScan: (code: string, svc: Svc) => Promise<boolean> }) {
+function ServiceBags({ svc, onScan, onUseNew }: {
+  svc: Svc
+  onScan: (code: string, svc: Svc) => Promise<boolean>
+  onUseNew: (svc: Svc) => Promise<boolean>
+}) {
   const [adding, setAdding] = useState(false)
+  // A scan that did not work. Shown as one short line, never as an error the
+  // executive has to resolve.
+  const [failed, setFailed] = useState(false)
   const n = svc.bags.length
   return (
     <div className="border border-slate-100 rounded-xl p-3 space-y-2">
@@ -606,9 +630,23 @@ function ServiceBags({ svc, onScan }: { svc: Svc; onScan: (code: string, svc: Sv
         </div>
       )}
       {n === 0 || adding ? (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-slate-500">Bag {n + 1}</span>
-          <BagScanButton label="Scan" size="sm" onScan={async (code) => { if (await onScan(code, svc)) setAdding(false) }} />
+        // THE WHOLE DECISION, at a doorstep, in two buttons: did the customer
+        // give you a bag, or not? A failed scan is not an error to investigate —
+        // it just means the second button.
+        <div className="space-y-2">
+          <BagScanButton
+            label="Scan Returned Bag" closeOnScan className="w-full h-12 justify-center text-base font-semibold"
+            onScan={async (code) => {
+              const okScan = await onScan(code, svc)
+              if (okScan) { setFailed(false); setAdding(false) } else setFailed(true)
+            }}
+          />
+          {failed && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">Bag not readable — use a new bag</p>}
+          <button
+            onClick={async () => { if (await onUseNew(svc)) { setFailed(false); setAdding(false) } }}
+            className="w-full h-12 rounded-xl border-2 border-slate-900 text-slate-900 text-base font-semibold">
+            Use New Bag
+          </button>
         </div>
       ) : (
         <button onClick={() => setAdding(true)} className="w-full h-9 rounded-xl border border-dashed border-blue-300 text-blue-600 text-sm font-medium flex items-center justify-center gap-1.5">
