@@ -5,6 +5,8 @@ import {
   FIXED_LABEL_HEIGHT_MM, FIXED_LABEL_WIDTH_MM, MAX_LABEL_WIDTH_MM, STOCK_HEIGHT_MM,
   SAFE_MARGIN_MM, MAX_BARCODE_HEIGHT_FRACTION, MAX_GAR_PT, BARCODE_TEXT_GAP_MM, usableWidthMm,
   pageBoxFor, resolveStockHeightMm, DEFAULT_ORIENTATION, buildHTML,
+  computeQrGeometry, computeBagJobLayout, buildBagLabelHTML,
+  QR_QUIET_MODULES, MIN_QR_MODULE_DOTS,
 } from '@/lib/laundry-label'
 
 // ============================================================================
@@ -287,5 +289,113 @@ describe('printer limit', () => {
     expect(f.moduleDots).toBeLessThan(TARGET_MODULE_DOTS)
     expect(f.imageWidthMm).toBeLessThanOrEqual(MAX_LABEL_WIDTH_MM)
     expect(f.fits).toBe(false) // flagged, never silently wrong
+  })
+})
+
+// ============================================================================
+// Bag QR labels.
+//
+// The whole point of this label type is that it is NOT a separate printing
+// system: a bag QR must come off the same TE244, on the same 50 x 38.1mm stock,
+// through the same @page contract with the driver as a garment barcode. The
+// tests below assert exactly that, because the failure mode being fixed was a
+// bag label rendering as an A4 page with a small QR in the middle.
+// ============================================================================
+
+const BAG_CFG = { widthMm: 50, heightMm: 30, stockHeightMm: 38.1, dpi: 203 } as const
+const BAGS = [{ bagNumber: 'BAG-000002', qrValue: 'BAG-000002' }]
+
+describe('bag QR label — same stock as the garment barcode', () => {
+  it('declares the physical 50 x 38.1mm stock, exactly as buildHTML does', async () => {
+    const bag = await buildBagLabelHTML(BAGS, { ...BAG_CFG, orientation: 'landscape' })
+    const garment = buildHTML([{ itemNumber: 'GAR000000000070', garment: 'Shirt', service: 'Wash' }], { ...BAG_CFG, orientation: 'landscape' })
+    expect(bag).toContain('@page { size: 50mm 38.1mm; margin: 0; }')
+    // Not "a landscape page too" — the SAME page rule, character for character.
+    const rule = (h: string) => h.match(/@page \{[^}]*\}/)![0]
+    expect(rule(bag)).toBe(rule(garment))
+  })
+
+  // A4 is 210 x 297mm. The old bag print declared no @page at all, so the
+  // browser fell back to the default paper — this is that regression.
+  it('never falls back to a browser page size', async () => {
+    const html = await buildBagLabelHTML(BAGS, BAG_CFG)
+    expect(html).toContain('@page')
+    expect(html).not.toContain('210mm')
+    expect(html).not.toContain('297mm')
+  })
+
+  it('turns the content when the driver is set to portrait, like the garment label', async () => {
+    const html = await buildBagLabelHTML(BAGS, { ...BAG_CFG, orientation: 'portrait' })
+    expect(html).toContain('@page { size: 38.1mm 50mm; margin: 0; }')
+    expect(html).toContain('transform: rotate(90deg)')
+  })
+
+  it('defaults to landscape when nothing is saved', async () => {
+    expect(await buildBagLabelHTML(BAGS, BAG_CFG)).toContain('@page { size: 50mm 38.1mm; margin: 0; }')
+  })
+
+  it('never scales, and states the QR size in millimetres', async () => {
+    const html = await buildBagLabelHTML(BAGS, BAG_CFG)
+    expect(html).not.toContain('scale(')
+    expect(html).not.toContain('%"')
+    expect(html).toMatch(/class="qr"[^>]*style="width:[\d.]+mm;height:[\d.]+mm"/)
+  })
+
+  it('prints the bag number under the QR', async () => {
+    expect(await buildBagLabelHTML(BAGS, BAG_CFG)).toContain('>BAG-000002<')
+  })
+})
+
+describe('bag QR geometry — sized to be scanned', () => {
+  const geo = () => computeQrGeometry('BAG-000002', BAG_CFG)
+
+  it('uses a whole number of printer dots per module', () => {
+    const g = geo()
+    expect(Number.isInteger(g.moduleDots)).toBe(true)
+    expect(g.moduleDots).toBeGreaterThanOrEqual(MIN_QR_MODULE_DOTS)
+    expect(g.fits).toBe(true)
+  })
+
+  it('carries the full 4-module quiet zone on every side', () => {
+    const g = geo()
+    expect(g.totalModules).toBe(g.matrixModules + QR_QUIET_MODULES * 2)
+  })
+
+  // The label clips overflow, and a clipped QR is unscannable 100% of the time.
+  it('stays inside the safe area on both axes', () => {
+    const g = geo()
+    const budget = FIXED_LABEL_HEIGHT_MM - SAFE_MARGIN_MM * 2 - textBlockMm(garFontPt(50, 10)) - BARCODE_TEXT_GAP_MM
+    expect(g.sizeMm).toBeLessThanOrEqual(usableWidthMm(FIXED_LABEL_WIDTH_MM))
+    expect(g.sizeMm).toBeLessThanOrEqual(budget)
+  })
+
+  // A phone camera needs real millimetres of symbol, not a 6mm thumbnail.
+  it('is big enough to scan off a folded bag', () => {
+    expect(geo().sizeMm).toBeGreaterThanOrEqual(15)
+  })
+
+  it('flags rather than silently shrinks a QR that cannot fit', () => {
+    // A URL-length payload on a tiny label cannot hold a 2-dot module.
+    const g = computeQrGeometry('https://example.com/bags/' + 'x'.repeat(200), { ...BAG_CFG, heightMm: 12 })
+    expect(g.fits).toBe(false)
+  })
+})
+
+describe('bag QR batch — one size for the whole run', () => {
+  // Thermal stock feeds on a fixed pitch, so a per-label module width would
+  // misregister every label after the first.
+  it('every label in a batch shares the module width of the largest QR', () => {
+    const job = computeBagJobLayout(
+      [{ bagNumber: 'BAG-000002' }, { bagNumber: 'BAG-000003' }, { bagNumber: 'BAG-000004' }],
+      BAG_CFG,
+    )
+    expect(job.moduleDots).toBe(Math.min(...job.geos.map((g) => g.moduleDots)))
+    expect(job.page.pageWidthMm).toBe(50)
+    expect(job.page.pageHeightMm).toBe(38.1)
+    expect(job.anyOversized).toBe(false)
+  })
+
+  it('falls back to the bag number when no separate QR value is stored', async () => {
+    expect(await buildBagLabelHTML([{ bagNumber: 'BAG-000009' }], BAG_CFG)).toContain('>BAG-000009<')
   })
 })

@@ -43,6 +43,7 @@
 // so the ink lands identically on the label when the driver cannot be changed.
 
 import JsBarcode from "jsbarcode"
+import QRCode from "qrcode"
 
 /**
  * Which way the PRINTER is set for the loaded stock. The page is declared to
@@ -473,38 +474,38 @@ function barcodeDataURL(value: string, cfg: LabelConfig, geo: LabelGeometry): st
   } catch { return "" }
 }
 
-/**
- * Exported for tests: the @page rule this emits is what the driver reconciles
- * against the loaded media, so it is the one line that decides whether the label
- * prints straight or gets rotated and clipped. It is worth asserting directly.
- */
-export function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
-  const values = labels.map((l) => l.garScanCode || l.itemNumber)
-  // 50 x 38.1mm stock, 50 x 30mm content. One size for the whole run — thermal
-  // stock feeds on a fixed pitch, so a per-label size would misregister
-  // everything after the first.
-  const job = computeJobLayout(values, cfg)
-  const w = job.widthMm, h = job.heightMm
-  const { pageWidthMm: pw, pageHeightMm: ph, rotateDeg } = job.page
-  const garPt = job.fontPt
+// ─── The printed page ───────────────────────────────────────────────────────
+// ONE page shell for every label type. The @page rule, the stock-sized .page
+// box, the centred content box, the safe margin and the driver-compensating
+// rotation are decided here and NOWHERE else, so a garment barcode and a bag QR
+// physically land on the stock the same way. A label type only supplies the ink
+// that goes inside the content box (its own CSS and its own markup).
+
+/** What a label type contributes to the shared page: its CSS and its content. */
+interface LabelDocument {
+  title: string
+  page: PageBox
+  /** Content box, centred on the stock. */
+  widthMm: number
+  heightMm: number
+  /** Physical stock pitch — what the .page box is on screen. */
+  stockHeightMm: number
+  /** Rules for the label type's own elements. Must state every size in mm/pt. */
+  css: string
+  /** One `<div class="page"><div class="label">…</div></div>` per label. */
+  body: string
+}
+
+function renderLabelDocument(d: LabelDocument): string {
+  const { pageWidthMm: pw, pageHeightMm: ph, rotateDeg } = d.page
+  const w = d.widthMm, h = d.heightMm
   // The content box is CENTRED on the stock, stated in millimetres rather than
   // percentages so a rotation cannot change where it lands.
   const left = (pw - w) / 2, top = (ph - h) / 2
-  const rows = labels.map((l, i) => {
-    const bcValue = values[i]
-    const geo = job.geos[i]
-    const bc = barcodeDataURL(bcValue, cfg, geo)
-    // The image is given its NATURAL width in mm — never a percentage — so the
-    // browser hands the printer a 1:1 bitmap with no resampling.
-    return `<div class="page"><div class="label">
-        ${bc ? `<img class="bc" src="${bc}" alt="" style="width:${geo.imageWidthMm.toFixed(3)}mm;height:${geo.barcodeHeightMm.toFixed(3)}mm"/>` : ""}
-        <div class="gar">${escapeHtml(bcValue)}</div>
-      </div></div>`
-  })
   // EVERY dimension below is in millimetres. No percentages, no vw/vh, no
   // transform: scale() — the page, the box and the bitmap are all stated in
   // physical units so the browser has nothing to reinterpret at print time.
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(d.title)}</title><style>
     /* The page IS the stock, in the orientation the printer is set to. Zero
        margin, and the size declared here is what the driver matches to the loaded
        media — print at 100% / Actual Size, never "Fit to page", which would
@@ -516,70 +517,252 @@ export function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
     /* One .page per physical label, exactly the stock pitch. */
     .page { position:relative; width:${pw}mm; height:${ph}mm; overflow:hidden; page-break-after: always; }
     .page:last-child { page-break-after: auto; }
-    /* SAFE MARGIN on all four sides. The barcode still carries its own Code 128
-       quiet zone INSIDE this box — the two add up rather than one replacing the
-       other — so feed drift cannot bring a bar to the edge.
+    /* SAFE MARGIN on all four sides. A symbol still carries its own quiet zone
+       INSIDE this box — the two add up rather than one replacing the other — so
+       feed drift cannot bring a bar or a QR module to the edge.
        The rotation is turned about the box's own centre, so the content stays
        centred on the stock and the 50mm width always lies along the page's 50mm
-       axis — full size, nothing clipped, bars never re-scaled. */
+       axis — full size, nothing clipped, nothing re-scaled. */
     .label { position:absolute; left:${left.toFixed(3)}mm; top:${top.toFixed(3)}mm; width:${w}mm; height:${h}mm; padding:${SAFE_MARGIN_MM}mm; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transform: rotate(${rotateDeg}deg); transform-origin: 50% 50%; }
-    /* No scaling and no smoothing — the bitmap must reach the printer dot-for-dot. */
-    .bc { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 ${BARCODE_TEXT_GAP_MM}mm; }
-    .gar { font-family:'Courier New',monospace; font-weight:700; font-size:${garPt}pt; letter-spacing:0.5px; line-height:1.1; color:#000; white-space:nowrap; }
+    /* The human-readable code under the symbol. */
+    .gar { font-family:'Courier New',monospace; font-weight:700; letter-spacing:0.5px; line-height:1.1; color:#000; white-space:nowrap; }
+${d.css}
     /* On screen the label is shown the way it lands on the stock — upright, at
        the physical 50 x 38.1 — so a preview stays readable whichever orientation
        the printer needs. The rotation is a driver compensation, not a design. */
     @media screen {
       body { background:#eef2f7; padding:10px; }
-      .page { width:${w}mm; height:${job.stockHeightMm}mm; margin:6px auto; border:1px dashed #cbd5e1; background:#fff; border-radius:2px; }
-      .label { left:0; top:${((job.stockHeightMm - h) / 2).toFixed(3)}mm; transform:none; }
+      .page { width:${w}mm; height:${d.stockHeightMm}mm; margin:6px auto; border:1px dashed #cbd5e1; background:#fff; border-radius:2px; }
+      .label { left:0; top:${((d.stockHeightMm - h) / 2).toFixed(3)}mm; transform:none; }
     }
-  </style></head><body>${rows.join("")}</body></html>`
+  </style></head><body>${d.body}</body></html>`
+}
+
+/**
+ * Exported for tests: the @page rule this emits is what the driver reconciles
+ * against the loaded media, so it is the one line that decides whether the label
+ * prints straight or gets rotated and clipped. It is worth asserting directly.
+ */
+export function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
+  const values = labels.map((l) => l.garScanCode || l.itemNumber)
+  // 50 x 38.1mm stock, 50 x 30mm content. One size for the whole run — thermal
+  // stock feeds on a fixed pitch, so a per-label size would misregister
+  // everything after the first.
+  const job = computeJobLayout(values, cfg)
+  const rows = labels.map((l, i) => {
+    const bcValue = values[i]
+    const geo = job.geos[i]
+    const bc = barcodeDataURL(bcValue, cfg, geo)
+    // The image is given its NATURAL width in mm — never a percentage — so the
+    // browser hands the printer a 1:1 bitmap with no resampling.
+    return `<div class="page"><div class="label">
+        ${bc ? `<img class="bc" src="${bc}" alt="" style="width:${geo.imageWidthMm.toFixed(3)}mm;height:${geo.barcodeHeightMm.toFixed(3)}mm"/>` : ""}
+        <div class="gar">${escapeHtml(bcValue)}</div>
+      </div></div>`
+  })
+  return renderLabelDocument({
+    title: "Labels",
+    page: job.page,
+    widthMm: job.widthMm,
+    heightMm: job.heightMm,
+    stockHeightMm: job.stockHeightMm,
+    css: `    /* No scaling and no smoothing — the bitmap must reach the printer dot-for-dot. */
+    .bc { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 ${BARCODE_TEXT_GAP_MM}mm; }
+    .gar { font-size:${job.fontPt}pt; }`,
+    body: rows.join(""),
+  })
+}
+
+// ─── Bag QR labels ──────────────────────────────────────────────────────────
+// A reusable bag carries a QR rather than a Code 128, because a bag is scanned
+// off a crumpled, folded surface from whatever angle the executive is holding
+// their phone — a 2-D symbol survives that, a 1-D barcode does not.
+//
+// Everything else is the garment label: the SAME TE244, the SAME 50 x 38.1mm
+// stock, the SAME saved LabelConfig (loadLabelConfig), the SAME @page contract
+// with the driver and the SAME hidden-iframe print. Only the ink differs. There
+// is no second printer configuration and nothing for staff to set up twice.
+//
+// The QR obeys the same two rules that make a thermal symbol scan:
+//   1. A module is a WHOLE number of printer dots, so the printer never rounds
+//      one module up and its neighbour down.
+//   2. The image prints at its NATURAL size — one canvas pixel per printer dot,
+//      never a CSS percentage — so no resampling smears the module edges.
+
+/** Quiet zone around a QR, in modules. 4 is the ISO/IEC 18004 minimum. */
+export const QR_QUIET_MODULES = 4
+/** Below 2 dots a module the TE244 cannot hold the module edges apart. */
+export const MIN_QR_MODULE_DOTS = 2
+/** M tolerates ~15% damage — the right level for a bag that gets wet and creased. */
+export const QR_ERROR_CORRECTION = "M" as const
+
+export interface BagLabelData {
+  bagNumber: string
+  /** What the QR encodes. Bags store qrValue === bagNumber; falls back to it. */
+  qrValue?: string | null
+}
+
+export interface QrGeometry {
+  /** Symbol size in modules, excluding the quiet zone. */
+  matrixModules: number
+  /** Symbol + both quiet zones — what is actually printed. */
+  totalModules: number
+  moduleDots: number
+  sizeMm: number
+  /** false → the label cannot hold a reliably scannable QR at this size. */
+  fits: boolean
+}
+
+/** Modules across the QR symbol for a value. Measured, never assumed. */
+function qrModules(value: string): number {
+  try { return QRCode.create(value, { errorCorrectionLevel: QR_ERROR_CORRECTION }).modules.size } catch { return 0 }
+}
+
+/**
+ * The largest whole-dot QR that fits the content box with the safe margin and
+ * the bag code still on the label. A QR is square, so it is bounded by the
+ * SHORTER of the two: the label's usable width, or what is left of its height
+ * once the code line and the gap are taken out.
+ */
+export function computeQrGeometry(value: string, cfg: LabelConfig, codeChars = value.length): QrGeometry {
+  const dpi = cfg.dpi || 203
+  const dotsPerMm = dpi / 25.4
+  const w = cfg.widthMm || FIXED_LABEL_WIDTH_MM
+  const h = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
+  const fontPt = garFontPt(w, codeChars)
+  const availMm = Math.min(
+    usableWidthMm(w),
+    h - SAFE_MARGIN_MM * 2 - textBlockMm(fontPt) - BARCODE_TEXT_GAP_MM,
+  )
+  const matrixModules = qrModules(value)
+  if (matrixModules <= 0 || availMm <= 0) return { matrixModules: 0, totalModules: 0, moduleDots: 0, sizeMm: 0, fits: false }
+  const totalModules = matrixModules + QR_QUIET_MODULES * 2
+  // FLOOR, never round: one dot of overshoot makes the image wider than the
+  // content box, and the box clips overflow — which would eat the quiet zone.
+  const moduleDots = Math.max(0, Math.floor((availMm * dotsPerMm) / totalModules))
+  return {
+    matrixModules, totalModules, moduleDots,
+    sizeMm: (totalModules * moduleDots) / dotsPerMm,
+    fits: moduleDots >= MIN_QR_MODULE_DOTS,
+  }
+}
+
+/**
+ * ONE size for the whole run, exactly as the garment labels do it: the QR that
+ * needs the most modules sets the module width for every label in the batch, so
+ * a mixed run cannot register differently label to label.
+ */
+export function computeBagJobLayout(bags: BagLabelData[], cfg: LabelConfig) {
+  const widthMm = cfg.widthMm || FIXED_LABEL_WIDTH_MM
+  const heightMm = cfg.heightMm || FIXED_LABEL_HEIGHT_MM
+  const codeChars = bags.reduce((m, b) => Math.max(m, b.bagNumber.length), 1)
+  const geos = bags.map((b) => computeQrGeometry(b.qrValue || b.bagNumber, { ...cfg, widthMm, heightMm }, codeChars))
+  const moduleDots = geos.reduce((m, g) => Math.min(m, g.moduleDots), Number.POSITIVE_INFINITY)
+  const dotsPerMm = (cfg.dpi || 203) / 25.4
+  const stockHeightMm = resolveStockHeightMm({ ...cfg, heightMm })
+  const orientation = cfg.orientation ?? DEFAULT_ORIENTATION
+  return {
+    widthMm, heightMm, stockHeightMm, orientation,
+    page: pageBoxFor(orientation, widthMm, stockHeightMm),
+    geos,
+    moduleDots: Number.isFinite(moduleDots) ? moduleDots : 0,
+    // Every QR in the run is drawn at the shared module width, so its printed
+    // size follows its own module count.
+    sizeMmFor: (g: QrGeometry) => (g.totalModules * (Number.isFinite(moduleDots) ? moduleDots : 0)) / dotsPerMm,
+    fontPt: garFontPt(widthMm, codeChars),
+    anyOversized: geos.some((g) => !g.fits),
+  }
+}
+
+/**
+ * Exported for tests, for the same reason buildHTML is: the @page rule is the
+ * contract with the driver, and a bag label that declares a different page from
+ * a garment label is a bag label that prints rotated or on A4.
+ *
+ * Async because the QR encoder is — the garment path is synchronous only because
+ * JsBarcode draws onto a canvas we already own.
+ */
+export async function buildBagLabelHTML(bags: BagLabelData[], cfg: LabelConfig): Promise<string> {
+  const job = computeBagJobLayout(bags, cfg)
+  const rows = await Promise.all(bags.map(async (b, i) => {
+    const geo = job.geos[i]
+    const sizeMm = job.sizeMmFor(geo)
+    // scale = dots per module and margin = the quiet zone in the SAME modules,
+    // so one canvas pixel is one printer dot and the <img> is then given that
+    // exact size in millimetres — nothing to resample.
+    let qr = ""
+    if (geo.moduleDots > 0) {
+      try {
+        qr = await QRCode.toDataURL(b.qrValue || b.bagNumber, {
+          errorCorrectionLevel: QR_ERROR_CORRECTION,
+          margin: QR_QUIET_MODULES,
+          scale: job.moduleDots,
+          color: { dark: "#000000ff", light: "#ffffffff" },
+        })
+      } catch { qr = "" }
+    }
+    return `<div class="page"><div class="label">
+        ${qr ? `<img class="qr" src="${qr}" alt="" style="width:${sizeMm.toFixed(3)}mm;height:${sizeMm.toFixed(3)}mm"/>` : ""}
+        <div class="gar">${escapeHtml(b.bagNumber)}</div>
+      </div></div>`
+  }))
+  return renderLabelDocument({
+    title: bagJobName(bags),
+    page: job.page,
+    widthMm: job.widthMm,
+    heightMm: job.heightMm,
+    stockHeightMm: job.stockHeightMm,
+    css: `    /* No scaling and no smoothing — the bitmap must reach the printer dot-for-dot. */
+    .qr { display:block; image-rendering: pixelated; image-rendering: crisp-edges; margin:0 0 ${BARCODE_TEXT_GAP_MM}mm; }
+    .gar { font-size:${job.fontPt}pt; }`,
+    body: rows.join(""),
+  })
 }
 
 function escapeHtml(s: string) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)) }
 
+const cleanJobName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim()
+
 // The print/PDF filename: a single garment → its Item ID (falls back to the GAR
 // code); multiple → the order number. Sanitised for use as a file name.
 function printJobName(labels: LabelData[]): string {
-  const clean = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim() || "labels"
   if (labels.length === 1) {
     const l = labels[0]
-    return clean(l.itemNumber || l.garScanCode || l.orderNumber || "label")
+    return cleanJobName(l.itemNumber || l.garScanCode || l.orderNumber || "label") || "labels"
   }
   const order = labels.find((l) => l.orderNumber)?.orderNumber
-  return clean(order ? `${order}-labels` : "labels")
+  return cleanJobName(order ? `${order}-labels` : "labels") || "labels"
 }
 
-// PURE side-effect: opens print window, no state mutation, no API calls.
-// The returned Promise resolves when the window opens so callers can continue
-// without blocking on the print dialog.
-export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = true): Promise<void> {
+/** Same rule for bags: one bag → its number, a batch → "Bag Labels". */
+function bagJobName(bags: BagLabelData[]): string {
+  return (bags.length === 1 ? cleanJobName(bags[0].bagNumber) : "") || "Bag Labels"
+}
+
+/**
+ * THE print side-effect, shared by every label type.
+ *
+ * PURE: it writes a document into a hidden iframe and prints THAT — no state
+ * mutation, no API calls, no workflow transitions. See Bug 2.
+ *
+ * Never a popup: window.open + print can be blocked, can leave a stuck blank
+ * window, and froze the app for some users. The iframe prints only the labels
+ * (its own document and its own @page size) and is removed afterwards. Symbols
+ * are inline data-URIs, so there is no external load to wait on.
+ *
+ * The returned Promise resolves once the print has been asked for, so callers
+ * never block on the dialog.
+ */
+function printLabelDocument(html: string, jobName: string): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof window === "undefined" || labels.length === 0) { resolve(); return }
-    const html = buildHTML(labels, cfg)
-
-    // PREVIEW: open in a tab so staff can eyeball the labels (explicit user intent).
-    if (!autoPrint) {
-      const win = window.open("", "_blank", "width=420,height=640")
-      if (win) { win.document.open(); win.document.write(html); win.document.close() }
-      resolve(); return
-    }
-
-    // PRINT: render into a hidden, same-page iframe and print THAT — never a popup.
-    // A popup window is unreliable here: it can be blocked, it can leave a stuck
-    // blank window, and window.print() on it froze the app for some users. The
-    // iframe prints only the labels (its own document + @page size) and is removed
-    // afterwards. Barcodes are inline data-URIs, so no external load to wait on.
     const iframe = document.createElement("iframe")
     iframe.setAttribute("aria-hidden", "true")
     iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;"
     document.body.appendChild(iframe)
 
     // The browser derives the "Save as PDF" filename from the TOP document's title
-    // (not the iframe's), so set it to the garment/order id while printing and
+    // (not the iframe's), so set it to the garment/bag/order id while printing and
     // restore it after — otherwise the file is named after the app's <title>.
-    const jobName = printJobName(labels)
     const prevTitle = document.title
 
     let cleaned = false
@@ -609,4 +792,32 @@ export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = t
     iframe.onload = printNow
     setTimeout(printNow, 300)
   })
+}
+
+/** PREVIEW: open the same document in a tab so staff can eyeball it first. */
+function previewLabelDocument(html: string): void {
+  const win = window.open("", "_blank", "width=420,height=640")
+  if (win) { win.document.open(); win.document.write(html); win.document.close() }
+}
+
+// PURE side-effect: no state mutation, no API calls. See Bug 2.
+export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = true): Promise<void> {
+  if (typeof window === "undefined" || labels.length === 0) return Promise.resolve()
+  const html = buildHTML(labels, cfg)
+  if (!autoPrint) { previewLabelDocument(html); return Promise.resolve() }
+  return printLabelDocument(html, printJobName(labels))
+}
+
+/**
+ * Bag QR labels — the same printer, the same stock, the same pipeline.
+ *
+ * cfg defaults to the workstation's SAVED label configuration, so a bag label
+ * comes off the machine set up for garment barcodes with nothing extra to
+ * configure. PURE side-effect, exactly like printLabels.
+ */
+export async function printBagLabels(bags: BagLabelData[], cfg: LabelConfig = loadLabelConfig(), autoPrint = true): Promise<void> {
+  if (typeof window === "undefined" || bags.length === 0) return
+  const html = await buildBagLabelHTML(bags, cfg)
+  if (!autoPrint) { previewLabelDocument(html); return }
+  return printLabelDocument(html, bagJobName(bags))
 }

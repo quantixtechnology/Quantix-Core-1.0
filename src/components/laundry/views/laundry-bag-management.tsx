@@ -29,7 +29,10 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { printHtmlDocument } from "@/lib/print-utils"
+// Bag QR labels go through the SAME thermal-label engine as garment barcodes:
+// same TE244, same 50 x 38.1mm stock, same saved workstation configuration.
+// There is no separate bag printer setup, and there must never be one.
+import { printBagLabels } from "@/lib/laundry-label"
 import {
   humanStatus, humanCustodian, humanCondition, humanEvent, isKnownStatus,
   BAG_STATUS, CUSTODIAN, BAG_CONDITION, type BagInventory,
@@ -100,18 +103,6 @@ const STATUS_FILTERS = [
 ]
 const CUSTODIAN_FILTERS = [CUSTODIAN.STORE, CUSTODIAN.PROCESSING_CENTER, CUSTODIAN.DELIVERY_EXECUTIVE, CUSTODIAN.CUSTOMER]
 const CONDITION_FILTERS = [BAG_CONDITION.GOOD, BAG_CONDITION.MINOR_DAMAGE, BAG_CONDITION.DAMAGED, BAG_CONDITION.HEAVILY_DAMAGED, BAG_CONDITION.UNUSABLE]
-
-async function printBagLabels(bags: { bagNumber: string; qrValue: string }[]) {
-  const labels = await Promise.all(bags.map(async (b) => ({ b, url: await QRCode.toDataURL(b.qrValue, { width: 240, margin: 1 }) })))
-  const body = labels.map(({ b, url }) => `
-    <div style="page-break-after:always;text-align:center;padding:20px;border-bottom:1px dashed #ccc">
-      <img src="${url}" width="220" height="220" />
-      <div style="font-family:monospace;font-size:20px;font-weight:bold;margin-top:8px">${b.bagNumber}</div>
-      <div style="font-size:11px;color:#888">Reusable laundry bag · permanent QR</div>
-    </div>`).join("")
-  const jobTitle = bags.length === 1 ? bags[0].bagNumber : "Bag Labels"
-  printHtmlDocument(`<html><head><title>${jobTitle}</title></head><body style="font-family:sans-serif;margin:0">${body}</body></html>`, jobTitle)
-}
 
 export function LaundryBagManagement() {
   const { currentBusinessId } = useAuthStore()
