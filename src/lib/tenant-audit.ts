@@ -55,6 +55,19 @@ export interface TenantAudit {
   laundryBusinesses: { id: string; name: string | null; platformBusinessId: string | null }[]
   /** FileUpload ledger totals per business */
   files: Record<string, { count: number; bytes: number }>
+  /**
+   * Every domain mapping, live or stale.
+   *
+   * Both `domain` and `businessId` are unique, so a mapping left behind by a
+   * deleted business permanently reserves that hostname — the reason stale
+   * mappings matter more than their row count suggests.
+   */
+  domains: {
+    id: string; businessId: string; domain: string; subdomain: string | null
+    status: string; createdAt: string; orphaned: boolean
+  }[]
+  /** Record ids behind each orphan group, so a cleanup can be reviewed row by row. */
+  orphanDetail: { table: string; column: string; referencedId: string; ids: string[] }[]
 }
 
 interface TableFk { table: string; column: string }
@@ -75,7 +88,7 @@ async function discoverTenantTables(): Promise<TableFk[]> {
   return out
 }
 
-export async function auditTenants(): Promise<TenantAudit> {
+export async function auditTenants(opts: { detail?: boolean } = {}): Promise<TenantAudit> {
   const businesses = await prisma.business.findMany({
     orderBy: { createdAt: "asc" },
     select: {
@@ -144,6 +157,39 @@ export async function auditTenants(): Promise<TenantAudit> {
     files[f.businessId] = { count: f._count._all, bytes: f._sum.size ?? 0 }
   }
 
+  // Domain mappings — the whole table, flagged by whether their tenant survives.
+  const domainRows = await prisma.domainMapping.findMany({
+    select: { id: true, businessId: true, domain: true, subdomain: true, status: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  })
+  const domains = domainRows.map((d) => ({
+    id: d.id,
+    businessId: d.businessId,
+    domain: d.domain,
+    subdomain: d.subdomain,
+    status: String(d.status),
+    createdAt: d.createdAt.toISOString(),
+    orphaned: !businessIds.has(d.businessId) && !platformIdByLaundryId.has(d.businessId),
+  }))
+
+  // Row ids behind each orphan group, so a proposed cleanup can be checked one
+  // record at a time instead of trusting a count.
+  const orphanDetail: TenantAudit["orphanDetail"] = []
+  if (opts.detail) {
+    for (const o of orphans) {
+      try {
+        const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+          `SELECT id FROM "${o.table}" WHERE "${o.column}" = ? LIMIT 200`,
+          o.referencedId,
+        )
+        orphanDetail.push({ table: o.table, column: o.column, referencedId: o.referencedId, ids: rows.map((r) => r.id) })
+      } catch {
+        // No `id` column on this table — the count still stands, the ids do not.
+        orphanDetail.push({ table: o.table, column: o.column, referencedId: o.referencedId, ids: [] })
+      }
+    }
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     businesses: businesses.map((b) => ({
@@ -160,5 +206,7 @@ export async function auditTenants(): Promise<TenantAudit> {
       id: l.id, name: l.businessName, platformBusinessId: l.platformBusinessId,
     })),
     files,
+    domains,
+    orphanDetail,
   }
 }

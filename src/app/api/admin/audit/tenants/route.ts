@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   return superAdminOnly(async (req) => {
     try {
       const includeDisk = new URL(req.url).searchParams.get("disk") === "1"
-      const audit = await auditTenants()
+      const audit = await auditTenants({ detail: new URL(req.url).searchParams.get("detail") === "1" })
       // The disk scan is the same read-only walk the reconciler does; it never
       // writes because apply is not passed.
       const disk = includeDisk ? await reconcileStorage() : null
