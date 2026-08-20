@@ -44,7 +44,13 @@ function InstallCta({ color, variant = "light" }: { color: string; variant?: "li
             {isIos ? (
               <p className="text-sm text-slate-600 flex items-start gap-2"><Share className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" /> In Safari, tap the <b>Share</b> icon, then <b>Add to Home Screen</b>. Open it from your home screen for camera scanning.</p>
             ) : (
-              <p className="text-sm text-slate-600">Open your browser menu (⋮ top-right) and tap <b>Install app</b> / <b>Add to Home screen</b>. Then open the app from your home screen — the camera scanner works properly in the installed app.</p>
+              <div className="space-y-2 text-sm text-slate-600">
+                {/* Chrome hides Install for an app it has ALREADY installed, so
+                    the menu item people are told to look for is not there. Say
+                    that first — it is the most common reason to land here. */}
+                <p><b>Already installed?</b> Open it from your home screen — Chrome hides the install option once the app is on your device.</p>
+                <p>Otherwise open your browser menu (⋮ top-right) and tap <b>Install app</b> / <b>Add to Home screen</b>. The camera scanner works properly in the installed app.</p>
+              </div>
             )}
             <button onClick={() => setHelp(false)} className="w-full h-10 rounded-xl text-white font-medium" style={{ backgroundColor: color }}>Got it</button>
           </div>

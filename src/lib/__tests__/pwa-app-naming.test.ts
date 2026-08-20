@@ -76,13 +76,43 @@ describe('the business name stays dynamic', () => {
   it('the name is resolved from the tenant, not invented', () => {
     // The manifest reads the Business row keyed on the host's slug.
     expect(MANIFEST).toContain('db.business.findUnique')
-    expect(MANIFEST).toContain('where:  { slug }')
+    expect(MANIFEST).toContain('where:  { slug: extractedSlug }')
   })
 
   it('each layout reuses its existing tenant resolver', () => {
     // No second resolution mechanism was introduced for naming.
     expect(STORE_LAYOUT).toContain('resolveStoreTenant')
     expect(EXEC_LAYOUT).toContain('resolveExecutiveTenant')
+  })
+})
+
+describe('the flavour is decided by ?app=, not by the host', () => {
+  it('an explicit app param wins over the host default', () => {
+    // On the Laundry OS host, ?app=executive returned the Laundry OS manifest:
+    // the Delivery PWA linked a manifest for a DIFFERENT app, and once Laundry
+    // OS was installed Chrome stopped offering to install anything.
+    expect(MANIFEST).toContain("const isExecutive = appParam ? appParam === 'executive' : isDeliveryHost")
+    expect(MANIFEST).toContain("const isStore = appParam ? appParam === 'store' : isStoreHost")
+    expect(MANIFEST).toContain("const isLaundryOs = appParam ? appParam === 'laundry-os' : isLaundryOsHost")
+  })
+
+  it('a host with no app param still gets its own flavour', () => {
+    // delivery.<tenant> and store.<tenant> ARE their apps, param or not.
+    expect(MANIFEST).toContain("const isDeliveryHost = rawHost.startsWith('delivery.')")
+    expect(MANIFEST).toContain("const isStoreHost = rawHost.startsWith('store.')")
+  })
+})
+
+describe('only a real business makes a host a tenant', () => {
+  it('the slug is set after the lookup succeeds, never before', () => {
+    // `app.<base>` matched the storefront shape, so slug became "app" and the
+    // icons pointed at /api/core/pwa-icon/app/… — which resolves to nothing.
+    // A manifest whose icons 404 is not installable.
+    const idx = MANIFEST.indexOf('slug        = extractedSlug')
+    const lookup = MANIFEST.indexOf('where:  { slug: extractedSlug }')
+    expect(lookup).toBeGreaterThan(-1)
+    expect(idx).toBeGreaterThan(lookup)
+    expect(MANIFEST).not.toContain('      slug = extractedSlug\n')
   })
 })
 

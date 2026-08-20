@@ -34,7 +34,15 @@ export async function GET(request: Request) {
   // ?app=delivery → Delivery PWA manifest ("{Business} Delivery", start_url
   // /delivery). The DeliveryLayout swaps the <link rel="manifest"> href to
   // this URL so agents install the workforce app, not the storefront.
-  const isDelivery = new URL(request.url).searchParams.get('app') === 'delivery'
+  // An explicit ?app= names the flavour and WINS over the host's default.
+  //
+  // THE BUG THIS FIXES: the host checks were evaluated first, so on the Laundry
+  // OS host /manifest.json?app=executive returned the Laundry OS manifest. The
+  // Delivery PWA linked a manifest describing a different app — and once
+  // Laundry OS was installed, Chrome saw that app id already present and never
+  // fired beforeinstallprompt, so "Install App" fell back to instructions.
+  const appParam = new URL(request.url).searchParams.get('app')
+  const isDelivery = appParam === 'delivery'
   // ?app=executive → Laundry Pickup & Delivery Executive PWA ("{Business} Pickup
   // & Delivery", start_url /laundry/executive). Installed alongside the customer
   // app as a separate, fully white-label field-ops app.
@@ -42,11 +50,11 @@ export async function GET(request: Request) {
   // the executive flavor (root start_url) regardless of query params.
   const rawHost = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
   const isDeliveryHost = rawHost.startsWith('delivery.')
-  const isExecutive = isDeliveryHost || new URL(request.url).searchParams.get('app') === 'executive'
+  const isExecutive = appParam ? appParam === 'executive' : isDeliveryHost
   // A `store.<tenant>` host IS the dedicated Store Admin app — its manifest is the
   // store flavor (root start_url) regardless of query params.
   const isStoreHost = rawHost.startsWith('store.')
-  const isStore = isStoreHost || new URL(request.url).searchParams.get('app') === 'store'
+  const isStore = appParam ? appParam === 'store' : isStoreHost
   // The Laundry OS workspace host (laundry.<base>) IS the unified operations
   // app. It had no flavour here, so it fell through to the customer storefront
   // manifest and installed as "Quantix Store" — a phone-shaped app with the
@@ -57,7 +65,7 @@ export async function GET(request: Request) {
   // whichever tenants the person signing in is actually authorized for. The
   // install URL grants nothing; the server decides that after login.
   const isLaundryOsHost = getProductCodeForHost(rawHost, SF_BASE) === 'LAUNDRY'
-  const isLaundryOs = isLaundryOsHost || new URL(request.url).searchParams.get('app') === 'laundry-os'
+  const isLaundryOs = appParam ? appParam === 'laundry-os' : isLaundryOsHost
 
   // ── Resolve tenant from Host header (strip the app prefix) ─────────────────
   const host = isDeliveryHost ? rawHost.slice('delivery.'.length) : isStoreHost ? rawHost.slice('store.'.length) : rawHost
@@ -71,13 +79,17 @@ export async function GET(request: Request) {
   if (isStorefront) {
     const extractedSlug = host.slice(0, -(SF_BASE.length + 1))
     if (extractedSlug) {
-      slug = extractedSlug
       try {
         const biz = await db.business.findUnique({
-          where:  { slug },
+          where:  { slug: extractedSlug },
           select: { name: true, primaryColor: true, description: true, tagline: true },
         })
         if (biz) {
+          // Only a slug backed by a real Business is a tenant. `app.<base>` is
+          // not a storefront: claiming it was pointed the icons at
+          // /api/core/pwa-icon/app/… , which resolves to nothing, and a
+          // manifest whose icons 404 is not installable at all.
+          slug        = extractedSlug
           name        = biz.name
           theme       = biz.primaryColor ?? '#10B981'
           description = biz.description || biz.tagline || `${biz.name} — delivered fast.`
