@@ -230,6 +230,21 @@ describe('images are derived, never destructive', () => {
     expect(sq).not.toContain('"fill"')
   })
 
+  it('the generated mark is DRAWN, never typeset', () => {
+    // SVG <text> renders on a developer machine and produces nothing on the
+    // server, which has no fonts: the Customer icon shipped as a blue square
+    // with a blank corner. Geometry cannot fail to load the way a glyph can.
+    const gen = IMAGE.slice(IMAGE.indexOf('export async function generatedAppIcon'), IMAGE.indexOf('// ─── Landscape website logo'))
+    expect(gen).not.toContain('<text')
+    expect(gen).not.toContain('font-family')
+    expect(gen).toContain('const MARKS')
+  })
+
+  it('each app has its own silhouette, not just its own colour', () => {
+    const gen = IMAGE.slice(IMAGE.indexOf('export async function generatedAppIcon'), IMAGE.indexOf('// ─── Landscape website logo'))
+    for (const key of ['    C:', '    D:', '    A:', '    S:']) expect(gen).toContain(key)
+  })
+
   it('the launcher pad is transparent, not a white box', () => {
     expect(IMAGE).toContain('background: { r: 255, g: 255, b: 255, alpha: 0 }')
   })

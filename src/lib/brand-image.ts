@@ -51,8 +51,6 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
   }
 }
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
 /** A sharp pipeline for a buffer, rasterising SVG at a usable density. */
 function pipelineFor(buf: Buffer, sourcePath?: string | null) {
   const isSvg = extname(sourcePath ?? "").toLowerCase() === ".svg"
@@ -78,9 +76,15 @@ export async function squareIcon(logo: Buffer, size: number, sourcePath?: string
 /**
  * A generated square icon, used when a business has uploaded nothing.
  *
- * Each app gets its OWN accent and glyph, because four identical grey squares
- * on a launcher is the problem this whole model exists to solve. The business
- * initial keeps it recognisably theirs.
+ * DRAWN, NEVER TYPESET. The first version set the business initial as SVG
+ * <text>. That renders on a developer's machine and produces NOTHING on the
+ * server, which has no fonts installed: the Customer icon shipped as a blue
+ * square with a blank corner. It also explained an odd instability — with no
+ * font to fall back on, libvips varied its output between requests.
+ *
+ * So the mark is pure geometry. Every app gets its own accent AND its own
+ * silhouette, which is what keeps four unbranded apps apart on a launcher, and
+ * a shape cannot fail to load the way a glyph can.
  */
 export async function generatedAppIcon(opts: {
   initial: string
@@ -91,23 +95,32 @@ export async function generatedAppIcon(opts: {
   const { r, g, b } = hexToRgb(opts.accent)
   const { size } = opts
   const radius = Math.round(size * 0.22)
-  const initialSize = Math.round(size * 0.4)
-  const badge = Math.round(size * 0.3)
-  const badgeR = Math.round(badge * 0.32)
-  const pad = Math.round(size * 0.07)
+  // Marks are authored on a 100x100 grid and scaled to the icon.
+  const u = size / 100
+  const p = (n: number) => +(n * u).toFixed(2)
 
-  // Business initial on the app's accent, with a small light badge carrying the
-  // app glyph — distinct at 48dp, still legibly the same business.
+  const MARKS: Record<string, string> = {
+    // Customer — a person.
+    C: `<circle cx="${p(50)}" cy="${p(38)}" r="${p(14)}" fill="#fff"/>`
+     + `<path d="M${p(24)} ${p(74)}a${p(26)} ${p(26)} 0 0 1 ${p(52)} 0Z" fill="#fff"/>`,
+    // Delivery — motion, pointing forward.
+    D: `<path d="M${p(22)} ${p(50)}h${p(34)}M${p(44)} ${p(36)}l${p(16)} ${p(14)}l-${p(16)} ${p(14)}" `
+     + `stroke="#fff" stroke-width="${p(9)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+     + `<circle cx="${p(70)}" cy="${p(50)}" r="${p(6)}" fill="#fff"/>`,
+    // Admin — a console of panels.
+    A: `<rect x="${p(24)}" y="${p(24)}" width="${p(22)}" height="${p(22)}" rx="${p(5)}" fill="#fff"/>`
+     + `<rect x="${p(54)}" y="${p(24)}" width="${p(22)}" height="${p(22)}" rx="${p(5)}" fill="#fff"/>`
+     + `<rect x="${p(24)}" y="${p(54)}" width="${p(22)}" height="${p(22)}" rx="${p(5)}" fill="#fff"/>`
+     + `<rect x="${p(54)}" y="${p(54)}" width="${p(22)}" height="${p(22)}" rx="${p(5)}" fill="#fff"/>`,
+    // Store — a shopfront.
+    S: `<path d="M${p(22)} ${p(44)}l${p(28)}-${p(20)}l${p(28)} ${p(20)}v${p(32)}h-${p(56)}Z" fill="#fff"/>`
+     + `<rect x="${p(42)}" y="${p(56)}" width="${p(16)}" height="${p(20)}" rx="${p(3)}" fill="rgb(${r},${g},${b})"/>`,
+  }
+  const mark = MARKS[opts.glyph] ?? MARKS.A
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="rgb(${r},${g},${b})"/>
-  <text x="${size / 2}" y="${size * 0.47}" text-anchor="middle" dominant-baseline="central"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"
-    font-size="${initialSize}" font-weight="700" fill="#ffffff">${esc(opts.initial)}</text>
-  <rect x="${size - badge - pad}" y="${size - badge - pad}" width="${badge}" height="${badge}"
-    rx="${badgeR}" ry="${badgeR}" fill="#ffffff" fill-opacity="0.92"/>
-  <text x="${size - badge / 2 - pad}" y="${size - badge / 2 - pad}" text-anchor="middle" dominant-baseline="central"
-    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif"
-    font-size="${Math.round(badge * 0.62)}" font-weight="700" fill="rgb(${r},${g},${b})">${esc(opts.glyph)}</text>
+  ${mark}
 </svg>`
 
   return sharp(Buffer.from(svg)).resize(size, size).png({ compressionLevel: 8 }).toBuffer()
