@@ -14,9 +14,42 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { withMiddleware } from "@/lib/middleware"
-import { isAppKey, parseAppLogos } from "@/lib/app-branding"
+import { APP_KEYS, isAppKey, parseAppLogos, appIconVersion } from "@/lib/app-branding"
 
 export const runtime = "nodejs"
+
+/**
+ * GET — what is configured for each app right now.
+ *
+ * The branding dialog cannot say "Custom icon" or "Default icon" without this:
+ * showing a preview and leaving the owner to guess which they are looking at is
+ * how someone re-uploads an icon they already had.
+ */
+export const GET = withMiddleware({ requireAuth: true })(async (req) => {
+  try {
+    const parts = new URL(req.url).pathname.split("/").filter(Boolean)
+    const businessId = parts[parts.indexOf("businesses") + 1]
+    if (!businessId) return NextResponse.json({ success: false, error: "Missing businessId" }, { status: 400 })
+
+    const user = req.user!
+    if (!user.isPlatformAdmin && user.businessId && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: "Not your business" }, { status: 403 })
+    }
+
+    const row = await db.businessBranding.findUnique({
+      where: { businessId },
+      select: { appLogos: true },
+    })
+    const map = parseAppLogos(row?.appLogos)
+    const apps = Object.fromEntries(
+      APP_KEYS.map((k) => [k, { custom: !!map[k], logo: map[k] ?? null, version: appIconVersion(map[k]) }]),
+    )
+    return NextResponse.json({ success: true, data: { apps } })
+  } catch (error) {
+    console.error("[app-branding] GET", error)
+    return NextResponse.json({ success: false, error: "Could not read app branding" }, { status: 500 })
+  }
+})
 
 export const PUT = withMiddleware({ requireAuth: true })(async (req) => {
   try {

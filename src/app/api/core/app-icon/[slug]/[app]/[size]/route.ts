@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic"
 const VALID_SIZES = new Set([192, 512])
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ slug: string; app: string; size: string }> },
 ) {
   const { slug, app, size: rawSize } = await context.params
@@ -40,6 +40,7 @@ export async function GET(
   if (!slug || !/^[a-z0-9-]+$/i.test(slug)) return new Response("Invalid slug.", { status: 400 })
   if (!isAppKey(app)) return new Response("Unknown application.", { status: 400 })
 
+  const versioned = !!new URL(req.url).searchParams.get("v")
   const brand = await resolveAppBranding(slug, app)
   const def = APPS[app]
   const initial = (brand.businessName || "Q").trim().charAt(0).toUpperCase() || "Q"
@@ -67,9 +68,14 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": "image/png",
-      // Long cache: the icon changes only when the business changes it, and the
-      // app + slug in the path keep tenants on separate cache entries.
-      "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600",
+      // A versioned URL names one exact asset, so it can be cached forever: when
+      // the icon changes the version changes, the URL changes, and nothing has
+      // to expire. Without a version the URL is stable while its contents are
+      // not, so it gets a short cache instead — otherwise a replaced icon would
+      // sit stale for a day and the only fix would be clearing the browser.
+      "Cache-Control": versioned
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=300, stale-while-revalidate=60",
       "X-Content-Type-Options": "nosniff",
     },
   })

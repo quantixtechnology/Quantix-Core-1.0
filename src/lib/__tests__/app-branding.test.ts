@@ -109,8 +109,9 @@ describe('the manifest uses application icons, not the website logo', () => {
   })
 
   it('the icon set is tenant-scoped', () => {
-    expect(MANIFEST).toContain('`/api/core/app-icon/${slug}/${app}/192.png`')
-    expect(MANIFEST).toContain('`/api/core/app-icon/${slug}/${app}/512.png`')
+    // Versioned, so a replaced icon produces a new URL.
+    expect(MANIFEST).toContain('/api/core/app-icon/${slug}/${app}/192.png?v=${v}')
+    expect(MANIFEST).toContain('/api/core/app-icon/${slug}/${app}/512.png?v=${v}')
   })
 
   it('it still declares the sizes and the maskable purpose Chrome needs', () => {
@@ -145,6 +146,68 @@ describe('the upload survives the proxy, and never parses HTML as JSON', () => {
     // The raw .json() calls that produced the parse error are gone.
     expect(DIALOG).not.toContain('await up.json()')
     expect(DIALOG).not.toContain('await res.json()')
+  })
+})
+
+describe('the dialog says which icon you are looking at', () => {
+  const DIALOG = read('src/components/laundry/apps/app-branding-dialog.tsx')
+  const SAVE = read('src/app/api/core/businesses/[businessId]/app-branding/route.ts')
+
+  it('it reads what is actually configured', () => {
+    expect(SAVE).toContain('export const GET')
+    expect(SAVE).toContain('custom: !!map[k]')
+    expect(DIALOG).toContain('const loadState = useCallback(')
+  })
+
+  it('custom and default are named, never left to guess', () => {
+    expect(DIALOG).toContain('Custom icon')
+    expect(DIALOG).toContain('Default icon')
+  })
+
+  it('the preview is the same route the manifest points at', () => {
+    // A dialog that previews one image while the phone installs another is
+    // worse than no preview.
+    expect(DIALOG).toContain('`/api/core/app-icon/${slug}/${appKey}/192.png')
+  })
+
+  it('resetting is offered only when there is something to reset', () => {
+    expect(DIALOG).toContain('{custom && (')
+  })
+
+  it('all four apps expose branding, Laundry OS included', () => {
+    const APPS_VIEW = read('src/components/laundry/views/laundry-mobile-apps.tsx')
+    for (const k of ['"customer"', '"delivery"', '"store"', '"admin"']) {
+      expect(APPS_VIEW).toContain(`appKey=${k}`)
+    }
+  })
+})
+
+describe('a replaced icon is visible without clearing a cache', () => {
+  const ICON = read('src/app/api/core/app-icon/[slug]/[app]/[size]/route.ts')
+  const MAN = read('src/app/manifest.json/route.ts')
+  const LIB = read('src/lib/app-branding.ts')
+
+  it('the version is derived from the configured asset', () => {
+    expect(LIB).toContain('export function appIconVersion(')
+    expect(LIB).toContain('if (!appLogo) return "d"')
+  })
+
+  it('the manifest points at versioned icon URLs', () => {
+    expect(MAN).toContain('const v = appIconVersion(appLogos[app])')
+    expect(MAN).toContain('/192.png?v=${v}')
+    expect(MAN).toContain('/512.png?v=${v}')
+  })
+
+  it('a versioned URL caches forever; an unversioned one does not', () => {
+    // The URL names one exact asset, so it never has to expire. Without a
+    // version the URL is stable while its contents are not.
+    expect(ICON).toContain('"public, max-age=31536000, immutable"')
+    expect(ICON).toContain('"public, max-age=300, stale-while-revalidate=60"')
+  })
+
+  it('the same version changes for a different upload', () => {
+    // Distinct stored paths must not collide onto one cache entry.
+    expect(LIB).toContain('Math.imul(31, h)')
   })
 })
 

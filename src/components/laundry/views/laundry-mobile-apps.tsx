@@ -126,6 +126,9 @@ export function LaundryMobileApps() {
           {/* No provisioning strip: there is no per-tenant host to provision.
               The shared host is live for every business by definition. */}
           <p className="text-[11px] text-slate-400 px-1">Shared host — always available, nothing to provision.</p>
+          {currentBusinessId && (
+            <AppBrandingDialog appKey="admin" appLabel="Laundry OS" businessId={currentBusinessId} slug={tenantSlug} />
+          )}
         </div>
         <div className="space-y-2">
           <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />

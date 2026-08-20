@@ -146,7 +146,7 @@ describe('the installed identity is all that changed', () => {
     // which is the point: one logo for four apps is what made them identical.
     expect(storeBlock).toContain("icons: iconSet('store')")
     expect(execBlock).toContain("icons: iconSet('delivery')")
-    expect(MANIFEST).toContain('`/api/core/app-icon/${slug}/${app}/192.png`')
+    expect(MANIFEST).toContain('/api/core/app-icon/${slug}/${app}/192.png?v=${v}')
   })
 
   it('routes, scope and start_url are unchanged', () => {

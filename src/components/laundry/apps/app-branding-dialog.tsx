@@ -11,10 +11,10 @@
 // and then to a generated default in that app's accent — which is what keeps
 // four unbranded apps visually distinct on the launcher.
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Image as ImageIcon, Loader2, Upload, RotateCcw } from "lucide-react"
+import { Image as ImageIcon, Loader2, Upload, RotateCcw, CheckCircle2, Circle } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { BrandAssetCropper, CROP_PRESETS } from "@/components/branding/brand-asset-cropper"
@@ -93,13 +93,35 @@ export function AppBrandingDialog({
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // What is ACTUALLY configured. Showing a preview without saying whether it is
+  // the business's own icon or the generated default is how somebody re-uploads
+  // an icon they already had.
+  const [custom, setCustom] = useState<boolean | null>(null)
+  const [version, setVersion] = useState("d")
   // Selecting a file no longer saves it. It opens the crop editor first, so the
   // empty margin around a logo can be trimmed before it becomes an app icon.
   const [pending, setPending] = useState<File | null>(null)
   // Cache-bust the preview after a change; the icon route caches for a day.
   const [v, setV] = useState(0)
 
-  const preview = slug ? `/api/core/app-icon/${slug}/${appKey}/192.png?v=${v}` : null
+  // The preview is the SAME route the manifest points at, so what is shown here
+  // and what the phone installs cannot disagree.
+  const preview = slug ? `/api/core/app-icon/${slug}/${appKey}/192.png?v=${version}-${v}` : null
+
+  const loadState = useCallback(async () => {
+    if (!businessId) return
+    try {
+      const res = await fetch(`/api/core/businesses/${businessId}/app-branding`, { headers: getAuthHeaders() })
+      const json = await readJson(res)
+      if (json?.success) {
+        const entry = (json.data as { apps?: Record<string, { custom?: boolean; version?: string }> })?.apps?.[appKey]
+        setCustom(!!entry?.custom)
+        setVersion(entry?.version || "d")
+      }
+    } catch { setCustom(null) }
+  }, [businessId, appKey])
+
+  useEffect(() => { if (open) loadState() }, [open, loadState])
 
   const save = async (file: File | null) => {
     setBusy(true)
@@ -129,6 +151,7 @@ export function AppBrandingDialog({
       })
       const json = await readJson(res)
       if (!res.ok || json.success === false) throw new Error((json.error as string) || "Could not save")
+      await loadState()
       setV((n) => n + 1)
       toast.success(file ? `${appLabel} icon updated` : `${appLabel} icon reset to default`)
     } catch (e) {
@@ -148,17 +171,30 @@ export function AppBrandingDialog({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle className="text-base">{appLabel} icon</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <div className="flex items-center gap-4">
+          {/* The icon in use right now, named for what it is. */}
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt={`${appLabel} icon`} className="h-16 w-16 rounded-2xl border border-slate-200 bg-white object-contain" />
+              <img src={preview} alt={`${appLabel} icon`} className="h-20 w-20 rounded-2xl border border-slate-200 bg-white object-contain" />
             ) : (
-              <div className="h-16 w-16 rounded-2xl border border-dashed border-slate-200 grid place-items-center text-slate-300"><ImageIcon className="h-6 w-6" /></div>
+              <div className="h-20 w-20 rounded-2xl border border-dashed border-slate-200 grid place-items-center text-slate-300"><ImageIcon className="h-7 w-7" /></div>
             )}
-            <p className="text-xs text-slate-500">
-              Square works best — this is what appears on the phone&apos;s home screen. Without one, {appLabel} uses your business logo, then a generated icon in its own colour.
-            </p>
+            {custom === null ? (
+              <span className="text-xs text-slate-400 flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking…</span>
+            ) : custom ? (
+              <span className="text-xs font-medium text-emerald-700 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" /> Custom icon
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-slate-500 flex items-center gap-1.5">
+                <Circle className="h-4 w-4" /> Default icon
+              </span>
+            )}
           </div>
+
+          <p className="text-xs text-slate-500">
+            Square works best — this is what appears on the phone&apos;s home screen. Without a custom icon, {appLabel} uses a generated mark in its own colour.
+          </p>
 
           <label className="block">
             <input
@@ -169,13 +205,15 @@ export function AppBrandingDialog({
               onChange={(e) => { const f = e.target.files?.[0]; if (f) setPending(f); e.target.value = "" }}
             />
             <span className="inline-flex w-full items-center justify-center gap-2 h-10 rounded-xl border border-slate-200 text-sm font-medium cursor-pointer hover:bg-slate-50">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload icon
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {custom ? "Change icon" : "Upload icon"}
             </span>
           </label>
 
-          <Button variant="ghost" size="sm" className="w-full gap-1.5 text-slate-500" disabled={busy} onClick={() => save(null)}>
-            <RotateCcw className="h-3.5 w-3.5" /> Use the default
-          </Button>
+          {custom && (
+            <Button variant="ghost" size="sm" className="w-full gap-1.5 text-slate-500" disabled={busy} onClick={() => save(null)}>
+              <RotateCcw className="h-3.5 w-3.5" /> Use the default
+            </Button>
+          )}
 
           <p className="text-[11px] text-slate-400">
             Changing this affects {appLabel} only. Your website logo and the other apps are untouched.

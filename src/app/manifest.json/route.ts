@@ -16,7 +16,7 @@
 
 import { db } from '@/lib/db'
 import { getProductCodeForHost } from '@/lib/product-hosts'
-import { appDisplayName, appShortName, type AppKey } from '@/lib/app-branding'
+import { appDisplayName, appShortName, appIconVersion, parseAppLogos, type AppKey } from '@/lib/app-branding'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,6 +75,7 @@ export async function GET(request: Request) {
   let theme       = '#10B981'
   let description = 'Your store — delivered fast.'
   let slug: string | null = null
+  let appLogos: ReturnType<typeof parseAppLogos> = {}
 
   const isStorefront = host.endsWith(`.${SF_BASE}`)
   if (isStorefront) {
@@ -83,7 +84,10 @@ export async function GET(request: Request) {
       try {
         const biz = await db.business.findUnique({
           where:  { slug: extractedSlug },
-          select: { name: true, primaryColor: true, description: true, tagline: true },
+          select: {
+            name: true, primaryColor: true, description: true, tagline: true,
+            branding: { select: { appLogos: true } },
+          },
         })
         if (biz) {
           // Only a slug backed by a real Business is a tenant. `app.<base>` is
@@ -94,6 +98,7 @@ export async function GET(request: Request) {
           name        = biz.name
           theme       = biz.primaryColor ?? '#10B981'
           description = biz.description || biz.tagline || `${biz.name} — delivered fast.`
+          appLogos    = parseAppLogos(biz.branding?.appLogos)
         }
       } catch {
         // Non-fatal — serve generic manifest
@@ -120,10 +125,16 @@ export async function GET(request: Request) {
   // generated default carrying that app's accent and glyph.
   //
   // Off a tenant host there is no business to brand, so the static mark stands.
-  const appIcons = (app: AppKey) =>
-    slug
-      ? { i192: `/api/core/app-icon/${slug}/${app}/192.png`, i512: `/api/core/app-icon/${slug}/${app}/512.png` }
-      : { i192: '/quantix-logo.png', i512: '/quantix-logo.png' }
+  // The version is derived from the configured asset, so a replaced icon
+  // produces a new URL and the installed app stops seeing the old bytes.
+  const appIcons = (app: AppKey) => {
+    if (!slug) return { i192: '/quantix-logo.png', i512: '/quantix-logo.png' }
+    const v = appIconVersion(appLogos[app])
+    return {
+      i192: `/api/core/app-icon/${slug}/${app}/192.png?v=${v}`,
+      i512: `/api/core/app-icon/${slug}/${app}/512.png?v=${v}`,
+    }
+  }
   const iconSet = (app: AppKey) => {
     const { i192, i512 } = appIcons(app)
     return [

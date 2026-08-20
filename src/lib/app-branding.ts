@@ -94,6 +94,26 @@ export function appShortName(app: AppKey, businessName: string | null | undefine
   return first || "App"
 }
 
+/**
+ * A cache key for one app's icon, derived from what is configured.
+ *
+ * Icons are cached hard — a launcher icon that refetches on every page load is
+ * waste. But a hard cache with a stable URL means a replaced icon can take a
+ * day to appear, and telling a business owner to clear their browser is not an
+ * answer. The version changes when, and only when, the configured asset does,
+ * so the URL itself becomes new and the old bytes are never consulted.
+ *
+ * `d` marks the generated default, which changes only when the code does.
+ */
+export function appIconVersion(appLogo: string | null | undefined): string {
+  if (!appLogo) return "d"
+  // The stored path carries an upload timestamp and a random suffix, so a short
+  // hash of it is unique per asset without exposing the path in the URL.
+  let h = 0
+  for (let i = 0; i < appLogo.length; i++) h = (Math.imul(31, h) + appLogo.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
 /** Per-app logo overrides, stored as JSON on BusinessBranding.appLogos. */
 export type AppLogoMap = Partial<Record<AppKey, string>>
 
