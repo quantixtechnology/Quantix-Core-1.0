@@ -18,6 +18,7 @@ import { Loader2, Upload, Trash2, RefreshCw, Save, Check, Sparkles, ImageIcon, I
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { BrandAssetCropper, CROP_PRESETS } from "@/components/branding/brand-asset-cropper"
 import {
   BrandLogo, LOGO_ACCEPT, LOGO_MAX_BYTES, readImageSize, logoAdvice,
 } from "@/components/laundry/brand-logo"
@@ -103,6 +104,11 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
     const pct = Math.round((checks.filter((c) => c.done).length / checks.length) * 100)
     return { checks, pct }
   }, [data])
+
+  // The chosen file waits for the crop editor rather than uploading straight
+  // through — the same component and the same step the app icons use, only at
+  // the website's landscape ratio.
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null)
 
   const pickLogo = async (file: File) => {
     if (file.size > LOGO_MAX_BYTES) { toast.error("Logo must be smaller than 2 MB"); return }
@@ -227,7 +233,7 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
 
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <input ref={fileRef} type="file" accept={LOGO_ACCEPT} className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) pickLogo(f); e.target.value = "" }} />
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setPendingLogo(f); e.target.value = "" }} />
             <Button size="sm" variant={data.logo ? "outline" : "default"} className="gap-1.5" disabled={uploading} onClick={() => fileRef.current?.click()}>
               {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : data.logo ? <RefreshCw className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
               {data.logo ? "Replace Logo" : "Upload Logo"}
@@ -386,6 +392,16 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
           </div>
         </div>
       )}
+
+      {/* The SAME editor the app icons use, at the website's landscape ratio —
+          so a square logo can have its empty margin trimmed rather than being
+          shrunk to fit a wide header. */}
+      <BrandAssetCropper
+        file={pendingLogo}
+        config={CROP_PRESETS.websiteLogo()}
+        onCancel={() => setPendingLogo(null)}
+        onApply={(cropped) => { setPendingLogo(null); pickLogo(cropped) }}
+      />
     </section>
   )
 }

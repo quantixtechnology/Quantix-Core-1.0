@@ -158,6 +158,16 @@ describe('one crop editor, configured per destination', () => {
     expect(DIALOG).not.toContain('if (f) save(f)')
   })
 
+  it('the workspace logo uses the same editor at the website ratio', () => {
+    // §9: one crop workflow, not a second implementation for the website.
+    const WS = read('src/components/laundry/views/laundry-branding-settings.tsx')
+    expect(WS).toContain('<BrandAssetCropper')
+    expect(WS).toContain('CROP_PRESETS.websiteLogo()')
+    expect(WS).toContain('if (f) setPendingLogo(f)')
+    // Straight-to-upload is gone.
+    expect(WS).not.toContain('if (f) pickLogo(f)')
+  })
+
   it('all four apps share the one component', () => {
     // The dialog is rendered per app, so wiring it here covers Customer,
     // Delivery, Admin and Store without four implementations.
