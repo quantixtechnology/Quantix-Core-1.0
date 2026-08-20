@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'fs'
+import { execSync } from 'child_process'
 import { join } from 'path'
 
 // ============================================================================
@@ -77,11 +78,28 @@ describe('B. platform-wide routes are platform-only', () => {
   it('every debug route is platform-gated', () => {
     // One of them carried the comment "TEMP: no auth — production debug only".
     const debugDirs = [
-      'debug/store-live', 'debug/full-cleanup', 'debug/force-store-repair',
+      // 'debug/full-cleanup' is deliberately absent: the route was DELETED.
+      // A gated destructive endpoint is still a destructive endpoint, and
+      // nothing called it. See the "no delete-everything route" test below.
+      'debug/store-live', 'debug/force-store-repair',
       'debug/store-global-repair', 'debug/repair-store-inventory', 'debug/storefront',
       'debug/business-assets', 'debug/subdomain-audit',
     ]
     for (const d of debugDirs) expect(src(d)).toContain('platformOnly')
+  })
+
+  it('no route exists that deletes every business', () => {
+    // POST /api/debug/full-cleanup took {"confirm":"DELETE_ALL_BUSINESSES"} and
+    // removed every tenant, their dependants and their upload directories. It
+    // was platform-gated, but nothing in the app ever called it, and one
+    // mistaken request from the single Super Admin account would have taken the
+    // whole platform. The route is gone; this stops it coming back.
+    expect(existsSync(join(ROOT, 'src/app/api/debug/full-cleanup'))).toBe(false)
+    const all = execSync(
+      "grep -rl 'DELETE_ALL_BUSINESSES' src --exclude-dir=__tests__ || true",
+      { cwd: ROOT, encoding: 'utf8' },
+    ).trim()
+    expect(all).toBe('')
   })
 })
 
