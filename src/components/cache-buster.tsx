@@ -10,7 +10,31 @@
 import { useEffect } from "react"
 
 const BUILD_KEY = "quantix_build_id"
+// Build id sources, in order. The debug route carries the real build id but is
+// platform-admin gated, so for every ordinary visitor — including every
+// delivery executive and store user — it answers 401. /api/build-info is public
+// and its buildTime changes on each deploy, which is all the cache needs.
 const VERSION_URL = "/api/debug/runtime-version"
+const PUBLIC_VERSION_URL = "/api/build-info"
+
+/** The current build id, or null when neither endpoint will say. */
+async function fetchBuildId(): Promise<string | null> {
+  try {
+    const res = await fetch(VERSION_URL, { cache: "no-store" })
+    if (res.ok) {
+      const json = await res.json()
+      if (json?.data?.buildId) return json.data.buildId
+    }
+  } catch { /* fall through to the public endpoint */ }
+  try {
+    const res = await fetch(PUBLIC_VERSION_URL, { cache: "no-store" })
+    if (res.ok) {
+      const json = await res.json()
+      if (json?.buildTime) return json.buildTime
+    }
+  } catch { /* no build id available */ }
+  return null
+}
 
 async function clearAllCaches() {
   // Unregister all service workers
@@ -52,17 +76,22 @@ export function CacheBuster() {
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await fetch(VERSION_URL, { cache: "no-store" })
-        if (!res.ok) return
-        const json = await res.json()
-        const serverBuild: string = json?.data?.buildId || "unknown"
+        // THE BUG THIS FIXES: this used to `return` when the version endpoint
+        // was not ok. That endpoint is platform-admin gated, so it answered 401
+        // for every real user and the service worker below was never reached —
+        // the Delivery and Store PWAs shipped with no service worker at all,
+        // and therefore no offline capability.
+        //
+        // Registering the worker is core app capability. It must not depend on
+        // a diagnostics endpoint answering, so it now happens either way.
+        const serverBuild: string | null = await fetchBuildId()
         const localBuild = localStorage.getItem(BUILD_KEY)
 
         if (process.env.NODE_ENV === "development") {
           console.log(`[CacheBuster] build: server=${serverBuild} local=${localBuild ?? "none"}`)
         }
 
-        if (localBuild && localBuild !== serverBuild) {
+        if (serverBuild && localBuild && localBuild !== serverBuild) {
           console.log(`[CacheBuster] New deploy detected (${localBuild} → ${serverBuild}). Clearing caches and reloading...`)
           await clearAllCaches()
           localStorage.setItem(BUILD_KEY, serverBuild)
@@ -70,13 +99,15 @@ export function CacheBuster() {
           return
         }
 
-        // First visit — store build ID and register SW
-        if (!localBuild) {
+        // First visit — remember the build we are running.
+        if (serverBuild && !localBuild) {
           localStorage.setItem(BUILD_KEY, serverBuild)
         }
 
-        // Register / update service worker
-        await registerSW(serverBuild)
+        // Register / update the service worker. Unconditional: an unknown build
+        // id costs a less precise cache name, while skipping this costs the
+        // whole PWA.
+        await registerSW(serverBuild ?? "unknown")
       } catch {
         // Non-blocking — never break the app
       }
