@@ -3,31 +3,17 @@
 // Cache-Control: no-store — must always return fresh data.
 
 import { NextResponse } from 'next/server'
-import { readFileSync } from 'fs'
-import { join } from 'path'
 import { platformOnly } from "@/lib/platform-guard"
+import { getBuildId } from '@/lib/build-id'
 
 export const dynamic = 'force-dynamic'
 
-function readBuildId(): string {
-  // Standard Next.js build output
-  const candidates = [
-    join(process.cwd(), '.next', 'BUILD_ID'),
-    join(process.cwd(), 'BUILD_ID'),
-    // Standalone: server.js runs from .next/standalone, cwd may differ
-    join(__dirname, '..', '..', '..', '..', '.next', 'BUILD_ID'),
-  ]
-  for (const p of candidates) {
-    try { return readFileSync(p, 'utf8').trim() } catch { /* try next */ }
-  }
-  return 'dev'
-}
 
 export async function GET(request: Request) {
   // Platform staff only — diagnostics/administration, never tenant-reachable.
   const _denied = await platformOnly(request)
   if (_denied) return _denied
-  const buildId = readBuildId()
+  const buildId = getBuildId()
 
   return NextResponse.json(
     {

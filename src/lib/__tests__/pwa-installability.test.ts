@@ -41,9 +41,43 @@ describe('the service worker always registers', () => {
   })
 
   it('there is a public fallback for the build id', () => {
-    // The debug route is gated; build-info is public and changes per deploy.
+    // The debug route is gated; build-info is public and exposes the same id.
     expect(BUSTER).toContain('const PUBLIC_VERSION_URL = "/api/build-info"')
-    expect(BUSTER).toContain('json?.buildTime')
+    expect(BUSTER).toContain('json?.buildId')
+  })
+
+  it('the fallback reads an IDENTIFIER, never a timestamp', () => {
+    // buildTime is the time of the request. Comparing it against a stored copy
+    // made every page load look like a new deploy — clear caches, reload,
+    // forever. That is what the flickering was.
+    expect(BUSTER).not.toContain('json?.buildTime')
+    const BUILD_INFO = read('src/app/api/build-info/route.ts')
+    expect(BUILD_INFO).toContain('buildId: getBuildId()')
+  })
+
+  it('the build id is stable for the life of a release', () => {
+    const LIB = read('src/lib/build-id.ts')
+    expect(LIB).toContain("'.next', 'BUILD_ID'".replace(/'/g, '"'))
+    expect(LIB).not.toContain('new Date()')
+    // Memoised — the file cannot change under a running server.
+    expect(LIB).toContain('if (cached) return cached')
+  })
+
+  it('one deploy reload per tab, so a bad id cannot flicker', () => {
+    expect(BUSTER).toContain('sessionStorage.getItem(RELOADED_KEY)')
+    // The flag must be written AFTER clearAllCaches(), which wipes
+    // sessionStorage and would otherwise erase the guard.
+    const clearIdx = BUSTER.indexOf('await clearAllCaches()\n            // AFTER the wipe')
+    const flagIdx = BUSTER.indexOf('sessionStorage.setItem(RELOADED_KEY')
+    expect(clearIdx).toBeGreaterThan(-1)
+    expect(flagIdx).toBeGreaterThan(clearIdx)
+  })
+
+  it('one build-id reader, used by both endpoints', () => {
+    expect(read('src/app/api/build-info/route.ts')).toContain("from '@/lib/build-id'")
+    expect(read('src/app/api/debug/runtime-version/route.ts')).toContain("from '@/lib/build-id'")
+    // The private copy is gone.
+    expect(read('src/app/api/debug/runtime-version/route.ts')).not.toContain('function readBuildId')
   })
 
   it('cache-busting only fires when a build id is actually known', () => {

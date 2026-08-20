@@ -10,10 +10,17 @@
 import { useEffect } from "react"
 
 const BUILD_KEY = "quantix_build_id"
+// Set once a reload has been spent, so a loop cannot outlive the tab.
+const RELOADED_KEY = "quantix_cache_reloaded"
 // Build id sources, in order. The debug route carries the real build id but is
 // platform-admin gated, so for every ordinary visitor — including every
 // delivery executive and store user — it answers 401. /api/build-info is public
-// and its buildTime changes on each deploy, which is all the cache needs.
+// and now exposes the same stable buildId.
+//
+// It must be an IDENTIFIER, not a timestamp: /api/build-info also returns
+// `buildTime`, which is the time of the request. Comparing that against a
+// stored copy makes every single page load look like a new deploy, which
+// clears caches and reloads — forever.
 const VERSION_URL = "/api/debug/runtime-version"
 const PUBLIC_VERSION_URL = "/api/build-info"
 
@@ -30,7 +37,7 @@ async function fetchBuildId(): Promise<string | null> {
     const res = await fetch(PUBLIC_VERSION_URL, { cache: "no-store" })
     if (res.ok) {
       const json = await res.json()
-      if (json?.buildTime) return json.buildTime
+      if (json?.buildId) return json.buildId
     }
   } catch { /* no build id available */ }
   return null
@@ -92,11 +99,21 @@ export function CacheBuster() {
         }
 
         if (serverBuild && localBuild && localBuild !== serverBuild) {
-          console.log(`[CacheBuster] New deploy detected (${localBuild} → ${serverBuild}). Clearing caches and reloading...`)
-          await clearAllCaches()
+          // One reload per tab, ever. If the build id is somehow unstable, the
+          // page reloads once and then stops instead of flickering forever —
+          // the user still sees the app, just with a stale cache.
+          const alreadyReloaded = sessionStorage.getItem(RELOADED_KEY)
           localStorage.setItem(BUILD_KEY, serverBuild)
-          window.location.reload()
-          return
+          if (!alreadyReloaded) {
+            console.log(`[CacheBuster] New deploy detected (${localBuild} → ${serverBuild}). Clearing caches and reloading...`)
+            await clearAllCaches()
+            // AFTER the wipe — clearAllCaches() calls sessionStorage.clear(),
+            // which would erase the very flag that stops a second reload.
+            try { sessionStorage.setItem(RELOADED_KEY, "1") } catch { /* ignore */ }
+            window.location.reload()
+            return
+          }
+          console.warn("[CacheBuster] build id changed again this session — not reloading twice.")
         }
 
         // First visit — remember the build we are running.
