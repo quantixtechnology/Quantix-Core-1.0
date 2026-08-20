@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Image as ImageIcon, Loader2, Upload, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { BrandAssetCropper, CROP_PRESETS } from "@/components/branding/brand-asset-cropper"
 
 
 /** Largest body the proxy in front of the app will accept, with headroom. */
@@ -92,6 +93,9 @@ export function AppBrandingDialog({
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Selecting a file no longer saves it. It opens the crop editor first, so the
+  // empty margin around a logo can be trimmed before it becomes an app icon.
+  const [pending, setPending] = useState<File | null>(null)
   // Cache-bust the preview after a change; the icon route caches for a day.
   const [v, setV] = useState(0)
 
@@ -162,7 +166,7 @@ export function AppBrandingDialog({
               accept="image/png,image/jpeg,image/webp,image/svg+xml"
               className="hidden"
               disabled={busy}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) save(f); e.target.value = "" }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setPending(f); e.target.value = "" }}
             />
             <span className="inline-flex w-full items-center justify-center gap-2 h-10 rounded-xl border border-slate-200 text-sm font-medium cursor-pointer hover:bg-slate-50">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload icon
@@ -178,6 +182,14 @@ export function AppBrandingDialog({
           </p>
         </div>
       </DialogContent>
+
+      {/* ONE cropper, configured per destination — not four implementations. */}
+      <BrandAssetCropper
+        file={pending}
+        config={CROP_PRESETS.appIcon(`${appLabel} icon`)}
+        onCancel={() => setPending(null)}
+        onApply={(cropped) => { setPending(null); save(cropped) }}
+      />
     </Dialog>
   )
 }

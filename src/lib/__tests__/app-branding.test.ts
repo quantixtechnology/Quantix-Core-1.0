@@ -148,6 +148,55 @@ describe('the upload survives the proxy, and never parses HTML as JSON', () => {
   })
 })
 
+describe('one crop editor, configured per destination', () => {
+  const CROPPER = read('src/components/branding/brand-asset-cropper.tsx')
+  const DIALOG = read('src/components/laundry/apps/app-branding-dialog.tsx')
+
+  it('selecting a file opens the editor instead of saving', () => {
+    // Straight-to-save is how a logo's empty margin became most of the icon.
+    expect(DIALOG).toContain('if (f) setPending(f)')
+    expect(DIALOG).not.toContain('if (f) save(f)')
+  })
+
+  it('all four apps share the one component', () => {
+    // The dialog is rendered per app, so wiring it here covers Customer,
+    // Delivery, Admin and Store without four implementations.
+    expect(DIALOG).toContain('<BrandAssetCropper')
+    expect(DIALOG).toContain('CROP_PRESETS.appIcon(')
+  })
+
+  it('the editor cannot distort the logo', () => {
+    // The frame is fixed and the artwork moves beneath it. There is no handle
+    // that changes width independently of height, which is how logos squash.
+    expect(CROPPER).toContain('const s = baseScale * zoom')
+    expect(CROPPER).toContain('const w = img.width * s')
+    expect(CROPPER).toContain('const h = img.height * s')
+  })
+
+  it('what is seen in the frame is what is saved', () => {
+    expect(CROPPER).toContain('const k = config.outputWidth / FRAME_W')
+    expect(CROPPER).toContain('offset.x * k')
+  })
+
+  it('it produces a NEW file and never touches the original', () => {
+    expect(CROPPER).toContain('new File([blob]')
+    expect(CROPPER).toContain('-cropped.png')
+    expect(CROPPER).not.toContain('writeFile')
+  })
+
+  it('presets carry each destination\'s real ratio and size', () => {
+    expect(CROPPER).toContain('aspect: 1, outputWidth: 512, outputHeight: 512')
+    expect(CROPPER).toContain('aspect: 3, outputWidth: 900, outputHeight: 300')
+    expect(CROPPER).toContain('aspect: 1, outputWidth: 256, outputHeight: 256')
+  })
+
+  it('it offers move, zoom, reset, cancel and apply', () => {
+    for (const control of ['onPointerDown', 'type="range"', 'const reset =', 'onClick={onCancel}', 'onClick={apply}']) {
+      expect(CROPPER).toContain(control)
+    }
+  })
+})
+
 describe('images are derived, never destructive', () => {
   it('the pipeline only reads the uploaded original', () => {
     expect(IMAGE).not.toContain('writeFile')
