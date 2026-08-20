@@ -108,6 +108,17 @@ export async function GET(request: Request) {
   const execScope = isDeliveryHost ? '/' : '/laundry/executive'
   // On a dedicated store.<tenant> host the Store Admin app lives at the ROOT; on
   // the shared workspace host it lives under /laundry/store.
+  // Installed-app label: ROLE FIRST, business second.
+  //
+  // Android puts short_name on the launcher and truncates it, so
+  // "{Business} Admin" and "{Business} Delivery" both rendered as
+  // "Laundry & Dry…" — two icons with the same visible name. Leading with the
+  // role keeps them apart however hard the label is cut.
+  //
+  // With no tenant resolved there is no business to name, so the role stands
+  // alone rather than being glued to a generic placeholder.
+  const appLabel = (role: 'Admin' | 'Delivery') => (slug ? `${role} ${name}` : role)
+
   const storeStart = isStoreHost ? '/?source=pwa' : '/laundry/store?source=pwa'
   const storeScope = isStoreHost ? '/' : '/laundry/store'
   const manifest = isLaundryOs
@@ -139,8 +150,12 @@ export async function GET(request: Request) {
     : isStore
     ? {
         id:               isStoreHost ? '/' : '/laundry/store',
-        name:             `${name} Admin App`,
-        short_name:       shortName(name),
+        // ROLE FIRST. Android shows short_name on the launcher and truncates it,
+        // so "{Business} Admin" and "{Business} Delivery" both collapsed to the
+        // same visible label — two identical icons. Leading with the role keeps
+        // them apart even when the tail is cut: "Admin Laundry &…".
+        name:             appLabel('Admin'),
+        short_name:       appLabel('Admin'),
         description:      'Store operations — orders, audit, payment, dispatch',
         start_url:        storeStart,
         display:          'standalone',
@@ -161,8 +176,9 @@ export async function GET(request: Request) {
     : isExecutive
     ? {
         id:               isDeliveryHost ? '/' : '/laundry/executive',
-        name:             `${name} Delivery App`,
-        short_name:       shortName(name),
+        // Role first, for the same reason as the Admin app above.
+        name:             appLabel('Delivery'),
+        short_name:       appLabel('Delivery'),
         description:      'Pickup & delivery field operations',
         start_url:        execStart,
         display:          'standalone',

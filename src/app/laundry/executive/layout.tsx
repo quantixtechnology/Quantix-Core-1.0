@@ -14,12 +14,16 @@ async function tenant() {
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await tenant()
-  const name = t?.name || "Pickup & Delivery"
+  // Role first so the two installed apps stay distinct on the Android
+  // launcher, which truncates. With no tenant resolved there is no
+  // business to name, so the role stands alone rather than being glued
+  // to a placeholder ("Delivery <placeholder>").
+  const appName = t?.name ? `Delivery ${t.name}` : "Delivery"
   const logo = t?.logo ? resolveImageUrl(t.logo) : null
   return {
-    title: `${name} Delivery App`,
+    title: appName,
     manifest: "/manifest.json?app=executive",
-    appleWebApp: { capable: true, statusBarStyle: "default", title: `${name} Delivery App` },
+    appleWebApp: { capable: true, statusBarStyle: "default", title: appName },
     ...(logo ? { icons: { icon: logo, apple: logo, shortcut: logo } } : {}),
   }
 }

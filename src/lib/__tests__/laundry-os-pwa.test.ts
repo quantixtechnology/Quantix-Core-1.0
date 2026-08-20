@@ -155,8 +155,9 @@ describe('one Laundry OS, installed once', () => {
   })
 
   it('the other three PWAs keep their own manifests', () => {
-    expect(MANIFEST).toContain('${name} Admin App')
-    expect(MANIFEST).toContain('${name} Delivery App')
+    // The tenant apps are now labelled role-first — see the naming block below.
+    expect(MANIFEST).toContain("appLabel('Admin')")
+    expect(MANIFEST).toContain("appLabel('Delivery')")
     expect(MANIFEST).toContain('isStoreHost')
     expect(MANIFEST).toContain('isDeliveryHost')
   })
