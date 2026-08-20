@@ -335,7 +335,7 @@ export function StorefrontLayout({
                     not grow; width is capped so the action buttons keep their
                     space and can never be pushed off-screen. */}
                 <div
-                  className="h-[44px] max-w-[46vw] shrink-0 flex items-center cursor-pointer active:opacity-70"
+                  className="h-[40px] max-w-[34vw] sm:max-w-[46vw] shrink-0 flex items-center cursor-pointer active:opacity-70"
                   onClick={() => nav.go("home")}
                 >
                   <img
@@ -364,11 +364,14 @@ export function StorefrontLayout({
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); onOpenAddressSheet() }}
-                    className="flex items-center gap-1 p-0 border-0 bg-transparent active:opacity-70 w-fit"
+                    className="flex items-center gap-1 p-0 border-0 bg-transparent active:opacity-70 max-w-full min-w-0"
                     style={{ color: hMuted }}
                   >
                     <MapPin className="w-3 h-3 shrink-0" />
-                    <span className="text-[13px] leading-[1.2] truncate max-w-[200px]">
+                    {/* Truncates to whatever space is LEFT, not to a fixed
+                        200px: on a narrow phone the leftover is far less than
+                        that, and the difference ran off the right edge. */}
+                    <span className="text-[13px] leading-[1.2] truncate min-w-0">
                       Delivering To {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
                     </span>
                     <ChevronDown className="w-3 h-3 shrink-0" />
