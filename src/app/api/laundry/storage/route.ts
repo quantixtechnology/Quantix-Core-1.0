@@ -18,16 +18,19 @@ export async function GET(request: Request) {
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 
-    // Plan name is a LABEL only — the limit comes from the business's assigned
-    // LaundryScalingLimit (see resolveStorageLimitBytes), never from the name.
+    // Plan name is a LABEL only — the limit is resolved from THIS business's
+    // allocation (see resolveStorageLimit), never from the name.
     const [sub, business] = await Promise.all([
       prisma.laundrySubscription.findUnique({ where: { businessId: biz.id }, select: { plan: true } }),
       prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { plan: true } }),
     ])
     const plan = sub?.plan || business?.plan || null
 
-    const { storage, stores, calculatedAt } = await computeBusinessUsage(biz.id, biz.platformBusinessId)
-    return NextResponse.json({ success: true, plan, data: storage, stores, calculatedAt })
+    // biz.id / biz.platformBusinessId both come from the requested businessId,
+    // which the guard above proved this caller belongs to — quota and usage are
+    // scoped to the current tenant end to end.
+    const { storage, stores, limit, calculatedAt } = await computeBusinessUsage(biz.id, biz.platformBusinessId)
+    return NextResponse.json({ success: true, plan, data: storage, stores, limit, calculatedAt })
   } catch (e) {
     console.error("[laundry-storage] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

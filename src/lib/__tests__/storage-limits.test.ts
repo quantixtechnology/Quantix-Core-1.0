@@ -34,18 +34,26 @@ describe('the limit comes from the business, not a hardcoded table', () => {
     expect(STORAGE_CODE).not.toContain('limitBytesForPlan')
   })
 
-  it('LaundryScalingLimit.storageLimitMB is the primary source', () => {
-    expect(STORAGE).toContain('prisma.laundryScalingLimit.findUnique')
-    expect(STORAGE).toContain('scaling.storageLimitMB * MB')
+  // Precedence itself is proven behaviourally in storage-quota-resolution.test.ts.
+  // The business's own allocation comes first; LaundryScalingLimit.storageLimitMB
+  // is a defaulted 500 on every workspace and used to shadow it.
+  it('the business override is the primary source', () => {
+    expect(STORAGE).toContain('parseResourceOverrides')
+    expect(STORAGE).toContain('overrideBytes ?? planDefaultBytes')
   })
 
-  it('the product plan is only the fallback', () => {
-    expect(STORAGE).toContain('if (scaling && scaling.storageLimitMB > 0) return scaling.storageLimitMB * MB')
+  it('the product plan is the fallback, and the workspace row the last resort', () => {
     expect(STORAGE).toContain('plan.storageQuotaMB')
+    const overrideIdx = STORAGE.indexOf('parseResourceOverrides(business.settings)')
+    const planIdx = STORAGE.indexOf('plan.storageQuotaMB')
+    const scalingIdx = STORAGE.indexOf('scaling.storageLimitMB * MB')
+    expect(overrideIdx).toBeGreaterThan(-1)
+    expect(planIdx).toBeGreaterThan(overrideIdx)
+    expect(scalingIdx).toBeGreaterThan(planIdx)
   })
 
   it('a business with no assigned limit is unlimited, not silently defaulted', () => {
-    expect(STORAGE).toContain('return null')
+    expect(STORAGE).toContain('effectiveBytes: null, source: "none"')
   })
 
   it('no limit is ever written — the calculation only reads', () => {

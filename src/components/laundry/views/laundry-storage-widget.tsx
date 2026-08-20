@@ -20,6 +20,11 @@ interface Usage {
   fileCount: number; uploadsToday: number; uploadsThisMonth: number
   byCategory: { category: string; label: string; bytes: number; mb: number; count: number }[]
 }
+// Where the displayed limit came from — a per-business allocation or the plan.
+interface Limit {
+  planDefaultBytes: number | null; overrideBytes: number | null; effectiveBytes: number | null
+  source: "override" | "plan" | "workspace" | "none"; planCode: string | null
+}
 
 const fmt = (bytes: number) => {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
@@ -40,17 +45,28 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
   const [stores, setStores] = useState<StoreUsage | null>(null)
   const [calculatedAt, setCalculatedAt] = useState<string | null>(null)
   const [plan, setPlan] = useState<string | null>(null)
+  const [limit, setLimit] = useState<Limit | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!businessId) return
+    // Scoped to the business currently open in the workspace — never a global
+    // or platform-wide figure.
     fetch(`/api/laundry/storage?businessId=${encodeURIComponent(businessId)}`).then((r) => r.json())
-      .then((j) => { if (j.success) { setUsage(j.data); setStores(j.stores ?? null); setCalculatedAt(j.calculatedAt ?? null); setPlan(j.plan) } })
+      .then((j) => { if (j.success) { setUsage(j.data); setStores(j.stores ?? null); setCalculatedAt(j.calculatedAt ?? null); setPlan(j.plan); setLimit(j.limit ?? null) } })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [businessId])
 
   const barColor = usage?.exceeded ? "bg-red-500" : usage?.nearingLimit ? "bg-amber-500" : "bg-blue-600"
+
+  // Says which allocation the number above is, so an override is visibly an
+  // override rather than an unexplained figure.
+  const limitCaption =
+    limit?.source === "override" ? "Custom allocation for this business"
+    : limit?.source === "plan" ? `${limit.planCode || plan || "Plan"} plan default`
+    : limit?.source === "workspace" ? "Workspace allocation"
+    : null
 
   return (
     <Card className="rounded-xl border-slate-200 shadow-sm">
@@ -75,8 +91,12 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
               <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
                 <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${usage.limitBytes != null ? Math.max(2, usage.percentUsed) : 4}%` }} />
               </div>
-              {usage.remainingBytes != null && !usage.exceeded && (
-                <p className="text-[11px] text-slate-400 mt-1.5">{fmt(usage.remainingBytes)} remaining</p>
+              {(usage.remainingBytes != null || limitCaption) && !usage.exceeded && (
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  {usage.remainingBytes != null && <>{fmt(usage.remainingBytes)} remaining</>}
+                  {usage.remainingBytes != null && limitCaption && <span className="mx-1.5">·</span>}
+                  {limitCaption}
+                </p>
               )}
               {usage.exceeded && (
                 <p className="text-[12px] text-red-600 mt-2 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> <b>OVER LIMIT</b> — new uploads are blocked. Nothing has been deleted; remove unused files or contact Quantix to increase the limit.</p>

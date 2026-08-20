@@ -4,6 +4,9 @@
 // uploads live under /uploads/{businessId}/... — one tenant never sees another.
 
 import { prisma } from "@/lib/prisma"
+// One reader for the per-business overrides Resource Allocation writes — the
+// same helper the store-limit resolver uses. No second parsing of that field.
+import { parseResourceOverrides } from "@/lib/laundry-scaling-limits"
 
 export const STORAGE_CATEGORIES = [
   "customers", "orders", "garments", "audit", "processing", "delivery", "invoice", "documents", "branding", "temp",
@@ -16,43 +19,103 @@ const MB = 1024 * 1024
 // `temp` is scratch space, not business data — it never counts toward the quota.
 export const NON_QUOTA_CATEGORIES = new Set<string>(["temp"])
 
+/** Where an effective storage limit came from. */
+export type StorageLimitSource = "override" | "plan" | "workspace" | "none"
+
+export interface StorageLimitResolution {
+  /** ProductPlan.storageQuotaMB for the business's plan, in bytes. */
+  planDefaultBytes: number | null
+  /** settings.resourceOverrides.storageGB for THIS business, in bytes. */
+  overrideBytes: number | null
+  /** override ?? plan default — what the business is actually entitled to. */
+  effectiveBytes: number | null
+  source: StorageLimitSource
+  planCode: string | null
+}
+
 /**
- * The business's assigned storage limit, in bytes.
+ * THE effective storage limit for one business: Super Admin override first,
+ * plan default second. Resolved from the businessId and nothing else.
  *
- * PRIMARY: LaundryScalingLimit.storageLimitMB — the limit assigned at Business
- * Creation and editable by Super Admin. FALLBACK: the product plan's quota,
- * only when no scaling limit exists. There is no hardcoded table: the previous
- * PLAN_LIMITS_GB map is what put a fictional "10 GB" on every screen regardless
- * of what the business was actually sold.
+ * THE BUG THIS FIXES: LaundryScalingLimit.storageLimitMB used to be read FIRST.
+ * That column has a schema default of 500 and is never seeded from the plan
+ * (ensureScalingLimitForNewBusiness writes only storesAllowed), so every laundry
+ * workspace carried a defaulted 500 that shadowed BOTH the plan default and the
+ * per-business allocation. A business whose plan gives 10 GB and whose Resource
+ * Allocation override grants 15 GB still read "500 MB" on Storage Usage.
+ *
+ * Resolution order — identical in shape to resolveEffectiveStoreLimit():
+ *   1. Business.settings.resourceOverrides.storageGB — what Business Management
+ *      → Resource Allocation persists. An explicit allocation is the customer's
+ *      real entitlement and always wins.
+ *   2. ProductPlan.storageQuotaMB — the plan DEFAULT, used when no override.
+ *   3. LaundryScalingLimit.storageLimitMB — last resort, and ONLY for a legacy
+ *      workspace with no platform allocation at all (no business row, or no
+ *      product/plan and no override). It can no longer shadow a real one.
+ *
+ * 500 MB can therefore only appear if 500 MB is genuinely what the business was
+ * allocated — never as an unrelated hardcoded fallback.
  *
  * NOTE on ProductPlan.storageQuotaMB: despite the name its values are KB — the
  * existing UI divides by 1024*1024 to render GB (52428800 → "50 GB"). That
  * reading is preserved exactly; renaming or rescaling the column would change
- * businesses' assigned limits, which this work must not do.
+ * businesses' assigned limits, which this work must not do. The override is
+ * stored in the same GB convention the Resource Allocation UI writes.
  */
-export async function resolveStorageLimitBytes(laundryBusinessId: string, platformBusinessId: string | null): Promise<number | null> {
-  const scaling = await prisma.laundryScalingLimit.findUnique({
-    where: { businessId: laundryBusinessId },
-    select: { storageLimitMB: true },
-  })
-  if (scaling && scaling.storageLimitMB > 0) return scaling.storageLimitMB * MB
+export async function resolveStorageLimit(
+  laundryBusinessId: string,
+  platformBusinessId: string | null,
+): Promise<StorageLimitResolution> {
+  let planDefaultBytes: number | null = null
+  let overrideBytes: number | null = null
+  let planCode: string | null = null
 
   if (platformBusinessId) {
     const business = await prisma.business.findUnique({
       where: { id: platformBusinessId },
-      select: { productCode: true, subscriptionPlanCode: true },
+      select: { productCode: true, subscriptionPlanCode: true, settings: true },
     })
-    if (business?.productCode && business.subscriptionPlanCode) {
-      const plan = await prisma.productPlan.findUnique({
-        where: { productCode_code: { productCode: business.productCode, code: business.subscriptionPlanCode } },
-        select: { storageQuotaMB: true },
-      })
-      // Same unit reading as the plan-selection UI (value is KB).
-      if (plan && plan.storageQuotaMB > 0) return plan.storageQuotaMB * 1024
+    if (business) {
+      planCode = business.subscriptionPlanCode ?? null
+
+      // Same guard the Resource Allocation screen applies: blank/invalid/<1 is
+      // not an override, it means "use the plan default".
+      const ov = parseResourceOverrides(business.settings).storageGB
+      if (typeof ov === "number" && Number.isFinite(ov) && ov >= 1) overrideBytes = Math.floor(ov) * GB
+
+      if (business.productCode && business.subscriptionPlanCode) {
+        const plan = await prisma.productPlan.findUnique({
+          where: { productCode_code: { productCode: business.productCode, code: business.subscriptionPlanCode } },
+          select: { storageQuotaMB: true },
+        })
+        // Same unit reading as the plan-selection UI (value is KB).
+        if (plan && plan.storageQuotaMB > 0) planDefaultBytes = plan.storageQuotaMB * 1024
+      }
     }
   }
+
+  const effectiveBytes = overrideBytes ?? planDefaultBytes
+  if (effectiveBytes != null) {
+    return { planDefaultBytes, overrideBytes, effectiveBytes, source: overrideBytes != null ? "override" : "plan", planCode }
+  }
+
+  // Nothing allocated at platform level — a laundry-only workspace. Its own
+  // scaling row is the only business-specific number that exists.
+  const scaling = await prisma.laundryScalingLimit.findUnique({
+    where: { businessId: laundryBusinessId },
+    select: { storageLimitMB: true },
+  })
+  if (scaling && scaling.storageLimitMB > 0) {
+    return { planDefaultBytes, overrideBytes, effectiveBytes: scaling.storageLimitMB * MB, source: "workspace", planCode }
+  }
+
   // No limit assigned anywhere — report unlimited rather than inventing one.
-  return null
+  return { planDefaultBytes, overrideBytes, effectiveBytes: null, source: "none", planCode }
+}
+
+/** The effective limit in bytes, or null for unlimited. */
+export async function resolveStorageLimitBytes(laundryBusinessId: string, platformBusinessId: string | null): Promise<number | null> {
+  return (await resolveStorageLimit(laundryBusinessId, platformBusinessId)).effectiveBytes
 }
 
 // Human-friendly label per category.
@@ -215,12 +278,16 @@ export async function computeStoreUsage(laundryBusinessId: string): Promise<Stor
  * so the two can never disagree about what a business has consumed.
  */
 export async function computeBusinessUsage(laundryBusinessId: string, platformBusinessId: string | null) {
-  const limitBytes = await resolveStorageLimitBytes(laundryBusinessId, platformBusinessId)
+  // Quota and usage are resolved from the SAME businessId pair, so the limit
+  // shown can only ever be this tenant's own allocation.
+  const limit = await resolveStorageLimit(laundryBusinessId, platformBusinessId)
   const [storage, stores] = await Promise.all([
     platformBusinessId
-      ? computeStorageUsage(platformBusinessId, limitBytes)
+      ? computeStorageUsage(platformBusinessId, limit.effectiveBytes)
       : Promise.resolve(null),
     computeStoreUsage(laundryBusinessId),
   ])
-  return { storage, stores, calculatedAt: new Date().toISOString() }
+  // `limit` is carried so both surfaces can say WHERE the number came from —
+  // a custom allocation or the plan default.
+  return { storage, stores, limit, calculatedAt: new Date().toISOString() }
 }
