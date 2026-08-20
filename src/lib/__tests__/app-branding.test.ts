@@ -168,14 +168,25 @@ describe('the website logo is landscape, and camouflaged', () => {
 })
 
 describe('existing businesses keep working', () => {
-  it('an app with no icon falls back to the business logo, then a default', () => {
-    expect(ICON_ROUTE).toContain('const chosen = brand.appLogo ?? brand.sourceLogo')
+  it('an app with no icon gets a GENERATED default, not the business logo', () => {
+    // Falling back to the business logo hands the same image to all four apps.
+    // It looks correct in review — every app "has an icon" — and produces four
+    // identical launcher entries.
+    expect(ICON_ROUTE).toContain('const chosen = brand.appLogo')
+    expect(ICON_ROUTE).not.toContain('brand.appLogo ?? brand.sourceLogo')
     expect(ICON_ROUTE).toContain('png = await generatedAppIcon(')
   })
 
-  it('the source logo comes from the business row that already exists', () => {
+  it('the generated default still carries the tenant identity', () => {
+    // Distinct per app, but recognisably this business.
+    expect(ICON_ROUTE).toContain('const initial = (brand.businessName || "Q")')
+    expect(ICON_ROUTE).toContain('glyph: def.glyph, accent: def.accent')
+  })
+
+  it('the source logo is kept for the WEBSITE presentation', () => {
     const LIB = read('src/lib/app-branding.ts')
     expect(LIB).toContain('sourceLogo: biz.logo || biz.branding?.logo || null')
+    expect(SITE_ROUTE).toContain('logoPath = biz.logo || biz.branding?.logo || null')
   })
 
   it('the stored override defaults to empty, so nothing must be migrated', () => {

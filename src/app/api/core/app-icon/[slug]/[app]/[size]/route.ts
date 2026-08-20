@@ -7,12 +7,16 @@
 //
 // Resolution order, per app:
 //   1. The app's own uploaded icon (BusinessBranding.appLogos[app])
-//   2. The business's source logo — so a tenant that has only ever uploaded one
-//      logo keeps working and is never asked to re-upload anything
-//   3. A generated default carrying the app's own accent and glyph
+//   2. A generated default in THIS app's accent, carrying the business initial
 //
-// Step 3 is why four installed apps stop looking alike: an unbranded Delivery
-// and an unbranded Store are visibly different icons, not two grey squares.
+// There is deliberately no step that falls back to the business logo. Doing so
+// returns the same image for all four apps — which is the bug this model exists
+// to remove, and it is invisible in code review because each app still "has an
+// icon". The generated default keeps the tenant's identity (its initial) while
+// making Customer, Delivery, Admin and Store four distinct marks.
+//
+// The source logo is not discarded: it is what the WEBSITE presentation is
+// generated from (see /api/core/website-logo). Different job, different asset.
 //
 // Tenant isolation: the slug in the path IS the ownership boundary. There is no
 // path by which one business's icon is served for another.
@@ -40,8 +44,8 @@ export async function GET(
   const def = APPS[app]
   const initial = (brand.businessName || "Q").trim().charAt(0).toUpperCase() || "Q"
 
-  // The app's own icon first, the business's logo second.
-  const chosen = brand.appLogo ?? brand.sourceLogo
+  // ONLY the app's own icon. No fallback to the business logo — see above.
+  const chosen = brand.appLogo
   let png: Buffer | null = null
 
   if (chosen) {
