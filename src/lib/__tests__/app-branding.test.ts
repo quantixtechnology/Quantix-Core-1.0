@@ -110,6 +110,35 @@ describe('the manifest uses application icons, not the website logo', () => {
   })
 })
 
+describe('the upload survives the proxy, and never parses HTML as JSON', () => {
+  const DIALOG = read('src/components/laundry/apps/app-branding-dialog.tsx')
+
+  it('the image is squared and shrunk before it is sent', () => {
+    // nginx rejects a body over ~1MB with an HTML 413 page. JSON.parse on that
+    // is the "Unexpected token '<'" the user saw — the request never reached
+    // the app, so no handler could have answered in JSON.
+    expect(DIALOG).toContain('async function toSquarePng(')
+    expect(DIALOG).toContain('const prepared = await toSquarePng(file)')
+  })
+
+  it('squaring centres the art instead of stretching or cropping it', () => {
+    expect(DIALOG).toContain('const scale = Math.min(size / bitmap.width, size / bitmap.height)')
+    expect(DIALOG).toContain('Math.round((size - w) / 2), Math.round((size - h) / 2)')
+  })
+
+  it('an SVG small enough to send is left as vector art', () => {
+    expect(DIALOG).toContain('if (file.type === "image/svg+xml" && file.size <= MAX_UPLOAD_BYTES) return file')
+  })
+
+  it('a non-JSON response is reported, not parsed blind', () => {
+    expect(DIALOG).toContain('async function readJson(')
+    expect(DIALOG).toContain('if (res.status === 413) throw new Error("That image is too large. Try one under 1 MB.")')
+    // The raw .json() calls that produced the parse error are gone.
+    expect(DIALOG).not.toContain('await up.json()')
+    expect(DIALOG).not.toContain('await res.json()')
+  })
+})
+
 describe('images are derived, never destructive', () => {
   it('the pipeline only reads the uploaded original', () => {
     expect(IMAGE).not.toContain('writeFile')

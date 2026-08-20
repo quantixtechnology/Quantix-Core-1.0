@@ -297,7 +297,6 @@ export function StorefrontLayout({
     const hMuted   = getPwaHeaderMuted(hTheme, brandColor)
     const hIcon    = getPwaHeaderIcon(hTheme)
     const hHover   = hTheme === "brandColor" ? "hover:bg-white/20" : "hover:bg-gray-100"
-    const logoBorder = hTheme === "brandColor" ? "border-white/30" : "border-gray-100"
     const cartBadgeBg   = hTheme === "brandColor" ? "#FFFFFF" : brandColor
     const cartBadgeText = hTheme === "brandColor" ? brandColor  : "#FFFFFF"
 
@@ -331,15 +330,18 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Logo container — 56×56 flex centered, never stretches header */}
+                {/* Landscape brand area. A fixed 56×56 square rendered a wide
+                    logo as a postage stamp. Height is capped so the header does
+                    not grow; width is capped so the action buttons keep their
+                    space and can never be pushed off-screen. */}
                 <div
-                  className="w-[56px] h-[56px] shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"
+                  className="h-[44px] max-w-[46vw] shrink-0 flex items-center cursor-pointer active:opacity-70"
                   onClick={() => nav.go("home")}
                 >
                   <img
                     src={currentBusinessLogo || "/placeholder-logo.svg"}
                     alt={currentBusinessName || "Store"}
-                    className={`rounded-xl object-contain max-w-full max-h-full border ${logoBorder}`}
+                    className="h-full w-auto max-w-full object-contain object-left"
                     onError={(e) => {
                       const img = e.currentTarget
                       if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
@@ -521,7 +523,11 @@ export function StorefrontLayout({
               <img
                 src={currentBusinessLogo || "/placeholder-logo.svg"}
                 alt={currentBusinessName || "Store"}
-                className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-100"
+                /* A brand mark is not an avatar. Fixing width AND height to 36px
+                   squeezed a wide lockup into a thumbnail; letting the width run
+                   free at a fixed height lets a landscape logo use the header's
+                   64px properly, while a square one simply stays 40px. */
+                className="h-10 w-auto max-w-[220px] object-contain object-left"
                 onError={(e) => {
                   const img = e.currentTarget
                   if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
@@ -702,7 +708,7 @@ export function StorefrontLayout({
                 <img
                   src={currentBusinessLogo || "/placeholder-logo.svg"}
                   alt={currentBusinessName || "Store"}
-                  className="w-8 h-8 rounded-xl object-contain"
+                  className="h-8 w-auto max-w-[160px] object-contain object-left"
                   onError={(e) => {
                     const img = e.currentTarget
                     if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
