@@ -519,7 +519,7 @@ export function StorefrontLayout({
           <div className="flex items-center h-16 gap-3">
 
             {/* Logo + Business name + location */}
-            <button onClick={() => nav.go("home")} className="flex items-center gap-2.5 shrink-0 mr-2">
+            <button onClick={() => nav.go("home")} className="flex items-center gap-2 min-w-0 shrink mr-1 sm:mr-2 sm:gap-2.5">
               <img
                 src={currentBusinessLogo || "/placeholder-logo.svg"}
                 alt={currentBusinessName || "Store"}
@@ -527,7 +527,7 @@ export function StorefrontLayout({
                    squeezed a wide lockup into a thumbnail; letting the width run
                    free at a fixed height lets a landscape logo use the header's
                    64px properly, while a square one simply stays 40px. */
-                className="h-10 w-auto max-w-[220px] object-contain object-left rounded-md"
+                className="h-9 sm:h-10 w-auto max-w-[110px] sm:max-w-[160px] lg:max-w-[220px] object-contain object-left rounded-md"
                 onError={(e) => {
                   const img = e.currentTarget
                   if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
