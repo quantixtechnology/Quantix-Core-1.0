@@ -24,6 +24,7 @@ const GUARD = read('src/lib/storage-guard.ts')
 const CORE_UPLOAD = read('src/app/api/core/upload/route.ts')
 const UPLOADS = read('src/app/api/uploads/route.ts')
 const RECONCILE = read('scripts/reconcile-storage.ts')
+const RECONCILE_LIB = read('src/lib/storage-reconcile.ts')
 const ADMIN_USAGE = read('src/app/api/admin/businesses/[businessId]/usage/route.ts')
 const WIDGET = read('src/components/laundry/views/laundry-storage-widget.tsx')
 
@@ -181,33 +182,39 @@ describe('enforcement is at upload points only', () => {
   })
 })
 
+// The scan itself now lives in src/lib/storage-reconcile.ts so the CLI and the
+// Super Admin endpoint share one definition; behaviour is covered in
+// storage-reconcile.test.ts. These assertions follow the logic to the lib.
 describe('reconciliation is one-time and safe', () => {
   it('it never deletes or modifies a file', () => {
-    expect(RECONCILE).not.toContain('unlink')
-    expect(RECONCILE).not.toContain('rm(')
-    expect(RECONCILE).not.toContain('rmdir')
-    expect(RECONCILE).not.toContain('fileUpload.update')
-    expect(RECONCILE).not.toContain('fileUpload.delete')
+    for (const src of [RECONCILE, RECONCILE_LIB]) {
+      expect(src).not.toContain('unlink')
+      expect(src).not.toContain('rm(')
+      expect(src).not.toContain('rmdir')
+      expect(src).not.toContain('fileUpload.update')
+      expect(src).not.toContain('fileUpload.delete')
+    }
   })
 
   it('it reports before it writes', () => {
     expect(RECONCILE).toContain("const APPLY = process.argv.includes(\"--apply\")")
     expect(RECONCILE).toContain('MODE: REPORT ONLY')
+    expect(RECONCILE_LIB).toContain('const apply = opts.apply === true')
   })
 
   it('it dedupes on uploadPath so a re-run is safe', () => {
-    expect(RECONCILE).toContain('const missing = found.filter((f) => !existing.has(f.uploadPath))')
+    expect(RECONCILE_LIB).toContain('const missing = found.filter((f) => !existing.has(f.uploadPath))')
   })
 
-  it('it only counts files it can tie to a real Business id', () => {
-    expect(RECONCILE).toContain('businessIds.has(a)')
-    expect(RECONCILE).toContain('businessIds.has(b)')
-    expect(RECONCILE).toContain('no Business id in path')
+  it('it only counts files it can tie to a real tenant', () => {
+    expect(RECONCILE_LIB).toContain('byId.has(a)')
+    expect(RECONCILE_LIB).toContain('byId.has(b)')
+    expect(RECONCILE_LIB).toContain('no tenant id in path')
   })
 
-  it('it excludes temp and reports the rest as unclassifiable', () => {
-    expect(RECONCILE).toContain('temp (excluded from quota)')
-    expect(RECONCILE).toContain('unclassifiable')
+  it('it excludes temp and holds the rest back for review', () => {
+    expect(RECONCILE_LIB).toContain('temp (excluded from quota)')
+    expect(RECONCILE_LIB).toContain('manualReview')
   })
 
   it('it is a script, not an endpoint — no page load ever scans the disk', () => {

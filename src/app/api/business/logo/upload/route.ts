@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile } from 'fs/promises';
+import { checkStorageAllowance, recordUpload, resolveMeteringTarget } from '@/lib/storage-guard';
 import { join, extname } from 'path';
 import { db } from '@/lib/db';
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
@@ -159,6 +160,23 @@ export async function POST(req: NextRequest) {
     const safeName = `${field}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${ext}`;
     const subPath  = join('business', businessId, folder);
 
+    // ── 4b. Storage quota ─────────────────────────────────────────────────────
+    // This endpoint wrote a logo to disk and recorded nothing, so a brand asset
+    // never appeared in Storage Usage. It has no caller in the app today, but it
+    // is live and reachable — an unmetered write path is a hole whether or not
+    // the UI happens to use it.
+    const target = await resolveMeteringTarget(businessId);
+    if (target) {
+      const allowance = await checkStorageAllowance({
+        laundryBusinessId: target.laundryBusinessId,
+        platformBusinessId: target.platformBusinessId,
+        incomingBytes: file.size,
+      });
+      if (!allowance.ok) {
+        return NextResponse.json({ success: false, error: allowance.error, code: allowance.code }, { status: 413 });
+      }
+    }
+
     let uploadDir: string;
     try {
       uploadDir = await ensureDir(subPath);
@@ -181,6 +199,20 @@ export async function POST(req: NextRequest) {
     }
 
     const url = `/uploads/business/${businessId}/${folder}/${safeName}`;
+
+    // Ledger AFTER the write is confirmed. A logo and a favicon are brand
+    // assets whatever directory they land in.
+    if (target) {
+      await recordUpload({
+        platformBusinessId: target.platformBusinessId,
+        originalName: file.name,
+        filename: safeName,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        uploadPath: url,
+        category: 'branding',
+      });
+    }
 
     // ── 6. Update DB ──────────────────────────────────────────────────────────
     try {

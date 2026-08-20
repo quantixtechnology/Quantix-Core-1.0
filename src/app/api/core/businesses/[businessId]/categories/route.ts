@@ -16,6 +16,7 @@ import { join } from 'path'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import { ensureDir } from '@/lib/upload-root'
+import { checkStorageAllowance, recordUpload, resolveMeteringTarget } from '@/lib/storage-guard'
 import type { NextRequest } from 'next/server'
 
 const CAT_IMG_MAX = 2 * 1024 * 1024
@@ -24,11 +25,38 @@ const CAT_IMG_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 async function uploadCategoryImage(file: File, businessId: string): Promise<string> {
   if (!CAT_IMG_TYPES.has(file.type)) throw new Error('Only JPEG, PNG, and WebP are allowed')
   if (file.size > CAT_IMG_MAX)       throw new Error('Image must be under 2 MB')
+
+  // A category image is business-owned storage like any other upload: check the
+  // allowance before writing, and record it after. This wrote to disk silently
+  // before, so the bytes existed but no tenant was ever charged for them.
+  const target = await resolveMeteringTarget(businessId)
+  if (target) {
+    const allowance = await checkStorageAllowance({
+      laundryBusinessId: target.laundryBusinessId,
+      platformBusinessId: target.platformBusinessId,
+      incomingBytes: file.size,
+    })
+    if (!allowance.ok) throw new Error(allowance.error)
+  }
+
   const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg'
   const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
   const dir      = await ensureDir(join('categories', businessId))
   await writeFile(join(dir, safeName), Buffer.from(await file.arrayBuffer()))
-  return `/uploads/categories/${businessId}/${safeName}`
+  const url = `/uploads/categories/${businessId}/${safeName}`
+
+  if (target) {
+    await recordUpload({
+      platformBusinessId: target.platformBusinessId,
+      originalName: file.name,
+      filename: safeName,
+      size: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      uploadPath: url,
+      folder: 'categories',
+    })
+  }
+  return url
 }
 
 // Parses POST/PATCH body from either multipart/form-data OR application/json.

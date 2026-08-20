@@ -63,7 +63,7 @@ export interface StorageLimitResolution {
  * stored in the same GB convention the Resource Allocation UI writes.
  */
 export async function resolveStorageLimit(
-  laundryBusinessId: string,
+  laundryBusinessId: string | null,
   platformBusinessId: string | null,
 ): Promise<StorageLimitResolution> {
   let planDefaultBytes: number | null = null
@@ -100,13 +100,16 @@ export async function resolveStorageLimit(
   }
 
   // Nothing allocated at platform level — a laundry-only workspace. Its own
-  // scaling row is the only business-specific number that exists.
-  const scaling = await prisma.laundryScalingLimit.findUnique({
-    where: { businessId: laundryBusinessId },
-    select: { storageLimitMB: true },
-  })
-  if (scaling && scaling.storageLimitMB > 0) {
-    return { planDefaultBytes, overrideBytes, effectiveBytes: scaling.storageLimitMB * MB, source: "workspace", planCode }
+  // scaling row is the only business-specific number that exists. A business
+  // with no laundry workspace at all (Commerce) has no such row to fall to.
+  if (laundryBusinessId) {
+    const scaling = await prisma.laundryScalingLimit.findUnique({
+      where: { businessId: laundryBusinessId },
+      select: { storageLimitMB: true },
+    })
+    if (scaling && scaling.storageLimitMB > 0) {
+      return { planDefaultBytes, overrideBytes, effectiveBytes: scaling.storageLimitMB * MB, source: "workspace", planCode }
+    }
   }
 
   // No limit assigned anywhere — report unlimited rather than inventing one.
@@ -114,7 +117,7 @@ export async function resolveStorageLimit(
 }
 
 /** The effective limit in bytes, or null for unlimited. */
-export async function resolveStorageLimitBytes(laundryBusinessId: string, platformBusinessId: string | null): Promise<number | null> {
+export async function resolveStorageLimitBytes(laundryBusinessId: string | null, platformBusinessId: string | null): Promise<number | null> {
   return (await resolveStorageLimit(laundryBusinessId, platformBusinessId)).effectiveBytes
 }
 
@@ -141,6 +144,8 @@ export function categoryFromFolder(folder: string | null | undefined): string | 
   if (s.includes("brand") || s === "logo" || s === "logos" || s === "favicons") return "branding"
   if (s.includes("invoice")) return "invoice"
   if (s.includes("garment") || s === "product" || s === "products") return "garments"
+  // Catalog category artwork is catalogue imagery, not a document.
+  if (s.startsWith("categor")) return "garments"
   if (s.includes("audit")) return "audit"
   if (s.includes("customer")) return "customers"
   if (s.includes("deliver")) return "delivery"

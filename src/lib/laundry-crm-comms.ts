@@ -11,6 +11,7 @@
 import { join } from "path"
 import { writeFile, unlink } from "fs/promises"
 import { UPLOAD_ROOT, ensureDir } from "@/lib/upload-root"
+import { recordUpload, forgetUpload, resolveMeteringTarget } from "@/lib/storage-guard"
 
 // Supported audio upload formats for manual call recordings.
 export const RECORDING_MAX_MB = 25
@@ -55,7 +56,29 @@ export async function persistRecording(
   const dir = await ensureRecordingDir(businessId)
   const storageName = recordingStorageName(fileName)
   await writeFile(join(dir, storageName), buffer)
+
+  // The DIRECTORY is keyed on whatever id the CRM holds — a LaundryBusiness id
+  // — and that path stays as it is so existing recordings keep resolving. The
+  // LEDGER is a different matter: FileUpload.businessId must be the platform
+  // Business id or the row belongs to no tenant and is counted for nobody.
+  const target = await resolveMeteringTarget(businessId)
+  if (target) {
+    await recordUpload({
+      platformBusinessId: target.platformBusinessId,
+      originalName: fileName,
+      filename: storageName,
+      size: buffer.length,
+      mimeType: "audio/mpeg",
+      uploadPath: recordingUploadPath(businessId, storageName),
+      category: "documents",
+    })
+  }
   return storageName
+}
+
+/** The ledger path for a recording — the same string the reconciler derives. */
+export function recordingUploadPath(businessId: string, storageName: string): string {
+  return `/uploads/crm-recordings/${businessId}/${storageName}`
 }
 
 export async function deleteRecordingFile(
@@ -65,6 +88,8 @@ export async function deleteRecordingFile(
   try {
     await unlink(join(recordingDir(businessId), storageName))
   } catch { /* missing file is fine */ }
+  // The bytes are gone, so the quota must stop counting them.
+  await forgetUpload(recordingUploadPath(businessId, storageName))
 }
 
 // Absolute path on disk for a stored recording (serving/downloading).

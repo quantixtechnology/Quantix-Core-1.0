@@ -12,6 +12,7 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root'
+import { recordUpload, resolveMeteringTarget } from '@/lib/storage-guard'
 
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'application/pdf'])
 const MAX_SIZE = 10 * 1024 * 1024
@@ -41,6 +42,21 @@ export const POST = withMiddleware({
     await writeFile(join(uploadDir, safeName), Buffer.from(await file.arrayBuffer()))
 
     const url = `/uploads/payment-proofs/${businessId}/${safeName}`
+
+    // Metered but never refused. A payment proof is how a business settles its
+    // bill — blocking it at the quota would stop them paying to raise it.
+    const target = await resolveMeteringTarget(businessId)
+    if (target) {
+      await recordUpload({
+        platformBusinessId: target.platformBusinessId,
+        originalName: file.name,
+        filename: safeName,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        uploadPath: url,
+        category: 'documents',
+      })
+    }
     return NextResponse.json({ success: true, url, fileType: fileType(file.type) })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upload failed'

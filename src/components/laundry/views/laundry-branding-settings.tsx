@@ -122,6 +122,9 @@ export function LaundryBrandingSettings({ businessId }: { businessId: string }) 
       const fd = new FormData()
       fd.append("file", file); fd.append("businessId", bizId)
       fd.append("type", "image"); fd.append("category", "branding")
+      // Without this the endpoint defaults to the "products" folder, which the
+      // ledger resolves to Garment Images — a logo filed as a garment photo.
+      fd.append("folder", "branding")
 
       // Same auth as the branding API — one mechanism, not two. Content-Type
       // is deliberately dropped: multipart needs the boundary the browser

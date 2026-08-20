@@ -72,9 +72,14 @@ export function LaundryStorageWidget({ businessId }: { businessId: string }) {
     <Card className="rounded-xl border-slate-200 shadow-sm">
       <CardHeader className="pb-3 border-b border-slate-100">
         <CardTitle className="flex items-center justify-between text-[15px] font-semibold text-slate-800">
-          <span className="flex items-center gap-2"><HardDrive className="h-[18px] w-[18px] text-blue-600" /> Storage Usage</span>
+          <span className="flex items-center gap-2"><HardDrive className="h-[18px] w-[18px] text-blue-600" /> File Storage Usage</span>
           {plan && <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">{plan} Plan</Badge>}
         </CardTitle>
+        {/* The quota measures uploaded files. Without saying so, "0 B" reads as
+            "this business has no data at all". */}
+        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+          Measures uploaded files stored for this business. Database records such as customers, orders and garments are not included.
+        </p>
       </CardHeader>
       <CardContent className="pt-4">
         {loading ? (

@@ -16,8 +16,7 @@ import { constants as FS } from 'fs';
 import { join } from 'path';
 import { withMiddleware } from '@/lib/middleware';
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
-import { prisma } from '@/lib/prisma';
-import { checkStorageAllowance, recordUpload } from '@/lib/storage-guard';
+import { checkStorageAllowance, recordUpload, resolveMeteringTarget } from '@/lib/storage-guard';
 
 const MAX_MB = 20;
 const MAX_SIZE = MAX_MB * 1024 * 1024;
@@ -77,20 +76,20 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     // Storage Usage screen reported 0 B while the business plainly had files.
     // It now both checks the allowance and writes the ledger. Uploads for the
     // shared/platform scope are not business-owned and are left unmetered.
-    let laundryBusinessId: string | null = null;
-    if (businessId && businessId !== 'shared') {
-      const lb = await prisma.laundryBusiness.findFirst({
-        where: { OR: [{ id: businessId }, { platformBusinessId: businessId }] },
-        select: { id: true, platformBusinessId: true },
+    //
+    // Metering used to require a LaundryBusiness, so a Commerce tenant's files
+    // were written with no quota check and no ledger row. Every real business
+    // is metered now — the product it belongs to is not the deciding factor.
+    const target = businessId !== 'shared' ? await resolveMeteringTarget(businessId) : null;
+    if (target) {
+      const allowance = await checkStorageAllowance({
+        laundryBusinessId: target.laundryBusinessId,
+        platformBusinessId: target.platformBusinessId,
+        incomingBytes: file.size,
       });
-      laundryBusinessId = lb?.id ?? null;
-      const platformId = lb?.platformBusinessId ?? businessId;
-      if (laundryBusinessId) {
-        const allowance = await checkStorageAllowance({ laundryBusinessId, platformBusinessId: platformId, incomingBytes: file.size });
-        if (!allowance.ok) {
-          log(`STAGE=quota BLOCKED business=${businessId} used=${allowance.usedBytes} limit=${allowance.limitBytes}`);
-          return NextResponse.json({ success: false, stage: 'quota', error: allowance.error, code: allowance.code }, { status: 413 });
-        }
+      if (!allowance.ok) {
+        log(`STAGE=quota BLOCKED business=${businessId} used=${allowance.usedBytes} limit=${allowance.limitBytes}`);
+        return NextResponse.json({ success: false, stage: 'quota', error: allowance.error, code: allowance.code }, { status: 413 });
       }
     }
 
@@ -128,17 +127,18 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
 
     // Ledger AFTER the write is confirmed, so a failed upload is never counted.
     // Never throws — a bookkeeping error must not lose a file already saved.
-    if (laundryBusinessId) {
-      const lb = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { platformBusinessId: true } });
-      const platformId = lb?.platformBusinessId ?? businessId;
+    if (target) {
       await recordUpload({
-        platformBusinessId: platformId,
+        platformBusinessId: target.platformBusinessId,
         originalName: file.name,
         filename: safeName,
         size: file.size,
         mimeType: file.type || 'application/octet-stream',
         uploadPath: url,
         folder,
+        // The caller may know the asset's real kind even when the directory
+        // does not — a logo written to /uploads/products is a brand asset.
+        category: (formData.get('category') as string) || null,
       });
     }
 
