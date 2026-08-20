@@ -119,6 +119,25 @@ describe('the dry run finds what is really on disk', () => {
     expect(r.byCategory.map((c) => c.category)).not.toContain('garments')
   })
 
+  it('the per-file list names the tenant and category of each file', async () => {
+    // The reviewable part of a dry run: totals alone cannot tell you whether
+    // THIS business's logo was classified correctly.
+    const r = await reconcileStorage()
+    const logo = r.files.find((f) => f.path.endsWith('1786356288633-bmrj1x.png'))
+    expect(logo).toBeTruthy()
+    expect(logo!.category).toBe('branding')
+    expect(logo!.businessId).toBe('pb-laundry')
+    expect(logo!.size).toBe(263494)
+    expect(logo!.inLedger).toBe(false)
+
+    const known = r.files.find((f) => f.path.endsWith('known.jpg'))
+    expect(known!.inLedger).toBe(true) // already recorded, will not insert again
+
+    const rec = r.files.find((f) => f.path.includes('crm-recordings'))
+    expect(rec!.viaLaundryId).toBe(true)
+    expect(rec!.businessId).toBe('pb-laundry')
+  })
+
   it('bytes are attributed to the owning business', async () => {
     const r = await reconcileStorage()
     expect(r.byBusiness).toHaveLength(1)

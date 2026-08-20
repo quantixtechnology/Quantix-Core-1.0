@@ -56,6 +56,22 @@ export interface ReconcileReport {
   byBusiness: { businessId: string; name: string; files: number; bytes: number }[]
   byCategory: { category: string; files: number; bytes: number }[]
   manualReview: { path: string; reason: string; size: number }[]
+  /**
+   * Every classifiable file with the tenant and category it resolved to.
+   *
+   * A dry run that only reports totals cannot be reviewed: "Brand Assets: 5
+   * files" does not tell you whether THIS business's logo is one of them. The
+   * per-file list is the thing an operator actually checks before applying.
+   */
+  files: {
+    path: string
+    businessId: string
+    businessName: string
+    size: number
+    category: string
+    viaLaundryId: boolean
+    inLedger: boolean
+  }[]
 }
 
 async function walk(dir: string, rel: string[] = []): Promise<{ abs: string; rel: string[] }[]> {
@@ -215,5 +231,16 @@ export async function reconcileStorage(opts: { apply?: boolean } = {}): Promise<
       .map(([category, v]) => ({ category, ...v }))
       .sort((x, y) => y.bytes - x.bytes),
     manualReview,
+    files: found
+      .map((f) => ({
+        path: f.uploadPath,
+        businessId: f.platformBusinessId,
+        businessName: f.businessName,
+        size: f.size,
+        category: f.category,
+        viaLaundryId: f.viaLaundryId,
+        inLedger: existing.has(f.uploadPath),
+      }))
+      .sort((x, y) => y.size - x.size),
   }
 }
