@@ -102,7 +102,7 @@ describe('the manifest meets Chrome install criteria', () => {
   const store = block('    : isStore', '    : isExecutive')
   const exec = block('    : isExecutive', '    : isDelivery')
 
-  for (const [label, b] of [['Delivery', exec], ['Admin', store]] as const) {
+  for (const [label, b] of [['Delivery', exec], ['Store', store]] as const) {
     describe(`${label} PWA`, () => {
       it('declares a standalone display', () => {
         expect(b).toContain("display:          'standalone'")

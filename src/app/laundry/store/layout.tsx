@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // launcher, which truncates. With no tenant resolved there is no
   // business to name, so the role stands alone rather than being glued
   // to a placeholder ("Admin <placeholder>").
-  const appName = t?.name ? `Admin ${t.name}` : "Admin"
+  const appName = t?.name ? `Store ${t.name}` : "Store"
   const logo = t?.logo ? resolveImageUrl(t.logo) : null
   return {
     title: appName,

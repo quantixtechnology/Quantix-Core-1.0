@@ -16,7 +16,7 @@
 
 import { db } from '@/lib/db'
 import { getProductCodeForHost } from '@/lib/product-hosts'
-import type { AppKey } from '@/lib/app-branding'
+import { appDisplayName, type AppKey } from '@/lib/app-branding'
 
 export const dynamic = 'force-dynamic'
 
@@ -151,7 +151,10 @@ export async function GET(request: Request) {
   //
   // With no tenant resolved there is no business to name, so the role stands
   // alone rather than being glued to a generic placeholder.
-  const appLabel = (role: 'Admin' | 'Delivery') => (slug ? `${role} ${name}` : role)
+  // The application NAME and the application ICON come from one place, so they
+  // cannot drift apart. Off a tenant host there is no business to name, so the
+  // role stands alone rather than being glued to a placeholder.
+  const appLabel = (app: AppKey) => appDisplayName(app, slug ? name : null)
 
   const storeStart = isStoreHost ? '/?source=pwa' : '/laundry/store?source=pwa'
   const storeScope = isStoreHost ? '/' : '/laundry/store'
@@ -188,8 +191,8 @@ export async function GET(request: Request) {
         // so "{Business} Admin" and "{Business} Delivery" both collapsed to the
         // same visible label — two identical icons. Leading with the role keeps
         // them apart even when the tail is cut: "Admin Laundry &…".
-        name:             appLabel('Admin'),
-        short_name:       appLabel('Admin'),
+        name:             appLabel('store'),
+        short_name:       appLabel('store'),
         description:      'Store operations — orders, audit, payment, dispatch',
         start_url:        storeStart,
         display:          'standalone',
@@ -207,8 +210,8 @@ export async function GET(request: Request) {
     ? {
         id:               isDeliveryHost ? '/' : '/laundry/executive',
         // Role first, for the same reason as the Admin app above.
-        name:             appLabel('Delivery'),
-        short_name:       appLabel('Delivery'),
+        name:             appLabel('delivery'),
+        short_name:       appLabel('delivery'),
         description:      'Pickup & delivery field operations',
         start_url:        execStart,
         display:          'standalone',
@@ -255,8 +258,8 @@ export async function GET(request: Request) {
       }
     : {
         id:               '/',
-        name,
-        short_name:       shortName(name),
+        name:             appLabel('customer'),
+        short_name:       appLabel('customer'),
         description,
         start_url:        '/?source=pwa',
         display:          'standalone',

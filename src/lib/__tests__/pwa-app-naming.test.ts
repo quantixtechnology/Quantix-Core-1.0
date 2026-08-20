@@ -34,17 +34,18 @@ const execBlock = MANIFEST.slice(MANIFEST.indexOf('    : isExecutive'), MANIFEST
 
 describe('the role comes first', () => {
   it('the Admin PWA is labelled "Admin {Business}"', () => {
-    expect(storeBlock).toContain("name:             appLabel('Admin')")
-    expect(storeBlock).toContain("short_name:       appLabel('Admin')")
+    expect(storeBlock).toContain("name:             appLabel('store')")
+    expect(storeBlock).toContain("short_name:       appLabel('store')")
   })
 
   it('the Delivery PWA is labelled "Delivery {Business}"', () => {
-    expect(execBlock).toContain("name:             appLabel('Delivery')")
-    expect(execBlock).toContain("short_name:       appLabel('Delivery')")
+    expect(execBlock).toContain("name:             appLabel('delivery')")
+    expect(execBlock).toContain("short_name:       appLabel('delivery')")
   })
 
   it('the label puts the role before the business, never after', () => {
-    expect(MANIFEST).toContain('const appLabel = (role: \'Admin\' | \'Delivery\') => (slug ? `${role} ${name}` : role)')
+    // Name and icon resolve from the SAME registry, so they cannot drift.
+    expect(MANIFEST).toContain('const appLabel = (app: AppKey) => appDisplayName(app, slug ? name : null)')
     // The old business-first forms are gone from both tenant apps.
     expect(storeBlock).not.toContain('${name} Admin')
     expect(execBlock).not.toContain('${name} Delivery')
@@ -120,11 +121,11 @@ describe('an unresolved tenant degrades to the role alone', () => {
   it('the manifest falls back to the bare role', () => {
     // `slug` is null off a tenant host — "Delivery Quantix Store" would be a
     // lie, and "Delivery undefined" would be worse.
-    expect(MANIFEST).toContain('(slug ? `${role} ${name}` : role)')
+    expect(MANIFEST).toContain('appDisplayName(app, slug ? name : null)')
   })
 
   it('the layouts fall back to the bare role too', () => {
-    expect(STORE_LAYOUT).toContain('const appName = t?.name ? `Admin ${t.name}` : "Admin"')
+    expect(STORE_LAYOUT).toContain('const appName = t?.name ? `Store ${t.name}` : "Store"')
     expect(EXEC_LAYOUT).toContain('const appName = t?.name ? `Delivery ${t.name}` : "Delivery"')
   })
 })
@@ -157,6 +158,6 @@ describe('the installed identity is all that changed', () => {
   it('the storefront and Laundry OS apps keep their own names', () => {
     // Only the two tenant field apps were renamed.
     expect(MANIFEST).toContain("name:             'Laundry OS'")
-    expect(MANIFEST).toContain('short_name:       shortName(name)') // storefront default
+    expect(MANIFEST).toContain("name:             'Laundry OS'")
   })
 })
