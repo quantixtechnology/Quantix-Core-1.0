@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { APPS, APP_KEYS, appDisplayName, parseAppLogos, isAppKey } from '@/lib/app-branding'
+import { APPS, APP_KEYS, appDisplayName, appShortName, parseAppLogos, isAppKey } from '@/lib/app-branding'
 
 // ============================================================================
 // A website logo and a launcher icon are different assets.
@@ -39,13 +39,22 @@ describe('every installable app has its own identity', () => {
 
   it('names lead with the role, so a truncated launcher label still differs', () => {
     expect(appDisplayName('delivery', 'Laundry & Drycleaners')).toBe('Delivery Laundry & Drycleaners')
-    expect(appDisplayName('customer', 'Laundry & Drycleaners')).toBe('Customer Laundry & Drycleaners')
-    expect(appDisplayName('store', 'Laundry & Drycleaners')).toBe('Store Laundry & Drycleaners')
+    expect(appDisplayName('store', 'Laundry & Drycleaners')).toBe('Store Admin Laundry & Drycleaners')
+    expect(appDisplayName('customer', 'Laundry & Drycleaners')).toBe('Laundry & Drycleaners')
   })
 
   it('an unresolved tenant degrades to the role alone', () => {
     expect(appDisplayName('delivery', null)).toBe('Delivery')
-    expect(appDisplayName('store', '')).toBe('Store')
+    expect(appDisplayName('store', '')).toBe('Store Admin')
+  })
+
+  it('the launcher label is the ROLE, which truncation cannot destroy', () => {
+    // short_name is what Android draws. "Delivery" and "Store Admin" stay
+    // readable where a full name would be cut to a shared prefix.
+    expect(appShortName('delivery', 'Laundry & Drycleaners')).toBe('Delivery')
+    expect(appShortName('store', 'Laundry & Drycleaners')).toBe('Store Admin')
+    // The customer app has no role, so it uses the first word of the business.
+    expect(appShortName('customer', 'Laundry & Drycleaners')).toBe('Laundry')
   })
 
   it('Laundry OS stays product-branded, by design', () => {
@@ -53,7 +62,7 @@ describe('every installable app has its own identity', () => {
     // for, so naming it after one of them would be false the moment they
     // switch. This is a deliberate exception, asserted so it is not "fixed".
     expect(APPS.admin.tenantBranded).toBe(false)
-    expect(appDisplayName('admin', 'Laundry & Drycleaners')).toBe('Admin')
+    expect(appDisplayName('admin', 'Laundry & Drycleaners')).toBe('Laundry OS')
   })
 })
 

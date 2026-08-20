@@ -16,7 +16,7 @@
 
 import { db } from '@/lib/db'
 import { getProductCodeForHost } from '@/lib/product-hosts'
-import { appDisplayName, type AppKey } from '@/lib/app-branding'
+import { appDisplayName, appShortName, type AppKey } from '@/lib/app-branding'
 
 export const dynamic = 'force-dynamic'
 
@@ -155,6 +155,7 @@ export async function GET(request: Request) {
   // cannot drift apart. Off a tenant host there is no business to name, so the
   // role stands alone rather than being glued to a placeholder.
   const appLabel = (app: AppKey) => appDisplayName(app, slug ? name : null)
+  const appShort = (app: AppKey) => appShortName(app, slug ? name : null)
 
   const storeStart = isStoreHost ? '/?source=pwa' : '/laundry/store?source=pwa'
   const storeScope = isStoreHost ? '/' : '/laundry/store'
@@ -192,7 +193,7 @@ export async function GET(request: Request) {
         // same visible label — two identical icons. Leading with the role keeps
         // them apart even when the tail is cut: "Admin Laundry &…".
         name:             appLabel('store'),
-        short_name:       appLabel('store'),
+        short_name:       appShort('store'),
         description:      'Store operations — orders, audit, payment, dispatch',
         start_url:        storeStart,
         display:          'standalone',
@@ -211,7 +212,7 @@ export async function GET(request: Request) {
         id:               isDeliveryHost ? '/' : '/laundry/executive',
         // Role first, for the same reason as the Admin app above.
         name:             appLabel('delivery'),
-        short_name:       appLabel('delivery'),
+        short_name:       appShort('delivery'),
         description:      'Pickup & delivery field operations',
         start_url:        execStart,
         display:          'standalone',
@@ -259,7 +260,7 @@ export async function GET(request: Request) {
     : {
         id:               '/',
         name:             appLabel('customer'),
-        short_name:       appLabel('customer'),
+        short_name:       appShort('customer'),
         description,
         start_url:        '/?source=pwa',
         display:          'standalone',

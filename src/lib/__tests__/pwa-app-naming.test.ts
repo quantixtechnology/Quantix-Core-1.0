@@ -35,12 +35,13 @@ const execBlock = MANIFEST.slice(MANIFEST.indexOf('    : isExecutive'), MANIFEST
 describe('the role comes first', () => {
   it('the Admin PWA is labelled "Admin {Business}"', () => {
     expect(storeBlock).toContain("name:             appLabel('store')")
-    expect(storeBlock).toContain("short_name:       appLabel('store')")
+    // short_name is the ROLE alone — the part truncation cannot take away.
+    expect(storeBlock).toContain("short_name:       appShort('store')")
   })
 
   it('the Delivery PWA is labelled "Delivery {Business}"', () => {
     expect(execBlock).toContain("name:             appLabel('delivery')")
-    expect(execBlock).toContain("short_name:       appLabel('delivery')")
+    expect(execBlock).toContain("short_name:       appShort('delivery')")
   })
 
   it('the label puts the role before the business, never after', () => {

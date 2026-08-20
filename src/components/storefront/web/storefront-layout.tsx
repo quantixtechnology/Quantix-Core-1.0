@@ -341,7 +341,7 @@ export function StorefrontLayout({
                   <img
                     src={currentBusinessLogo || "/placeholder-logo.svg"}
                     alt={currentBusinessName || "Store"}
-                    className="h-full w-auto max-w-full object-contain object-left"
+                    className="h-full w-auto max-w-full object-contain object-left rounded-md"
                     onError={(e) => {
                       const img = e.currentTarget
                       if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
@@ -527,7 +527,7 @@ export function StorefrontLayout({
                    squeezed a wide lockup into a thumbnail; letting the width run
                    free at a fixed height lets a landscape logo use the header's
                    64px properly, while a square one simply stays 40px. */
-                className="h-10 w-auto max-w-[220px] object-contain object-left"
+                className="h-10 w-auto max-w-[220px] object-contain object-left rounded-md"
                 onError={(e) => {
                   const img = e.currentTarget
                   if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
@@ -708,7 +708,7 @@ export function StorefrontLayout({
                 <img
                   src={currentBusinessLogo || "/placeholder-logo.svg"}
                   alt={currentBusinessName || "Store"}
-                  className="h-8 w-auto max-w-[160px] object-contain object-left"
+                  className="h-8 w-auto max-w-[160px] object-contain object-left rounded-md"
                   onError={(e) => {
                     const img = e.currentTarget
                     if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
