@@ -140,9 +140,11 @@ describe('the installed identity is all that changed', () => {
       expect(layout).toContain('icons: { icon: logo, apple: logo, shortcut: logo }')
       expect(layout).toContain('themeColor: t?.primaryColor')
     }
-    // Icons still come from the tenant logo in the manifest as well.
-    expect(storeBlock).toContain('src: icon192')
-    expect(execBlock).toContain('src: icon192')
+    // Icons are still tenant-scoped in the manifest — now per application,
+    // which is the point: one logo for four apps is what made them identical.
+    expect(storeBlock).toContain("icons: iconSet('store')")
+    expect(execBlock).toContain("icons: iconSet('delivery')")
+    expect(MANIFEST).toContain('`/api/core/app-icon/${slug}/${app}/192.png`')
   })
 
   it('routes, scope and start_url are unchanged', () => {

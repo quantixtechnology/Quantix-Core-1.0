@@ -2601,6 +2601,12 @@ model BusinessBranding {
   favicon        String?
   coverImage     String?
   appIcon        String?
+  // Per-application launcher icons, JSON keyed by app: {"delivery":"/uploads/…"}.
+  // A launcher icon is not the website logo — see src/lib/app-branding.ts.
+  // Absent or malformed means "no override": the business's source logo is used
+  // and, failing that, a generated per-app default. Existing tenants therefore
+  // keep working without uploading anything.
+  appLogos       String   @default("{}")
   fontFamily     String?
   borderRadius   String   @default("8")
   darkMode       Boolean  @default(false)

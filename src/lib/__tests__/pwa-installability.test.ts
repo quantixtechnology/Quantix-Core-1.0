@@ -109,12 +109,14 @@ describe('the manifest meets Chrome install criteria', () => {
       })
 
       it('declares both required icon sizes as PNG', () => {
-        expect(b).toContain("sizes: '192x192', type: 'image/png'")
-        expect(b).toContain("sizes: '512x512', type: 'image/png'")
+        // Icons come from the per-app set now; the sizes are declared there.
+        expect(b).toMatch(/icons: iconSet\('(delivery|store)'\)/)
+        expect(MANIFEST).toContain("sizes: '192x192', type: 'image/png', purpose: 'any' as const")
+        expect(MANIFEST).toContain("sizes: '512x512', type: 'image/png', purpose: 'any' as const")
       })
 
       it('offers a maskable icon for the Android launcher', () => {
-        expect(b).toContain("purpose: 'maskable'")
+        expect(MANIFEST).toContain("sizes: '512x512', type: 'image/png', purpose: 'maskable' as const")
       })
 
       it('does not defer to a native app', () => {

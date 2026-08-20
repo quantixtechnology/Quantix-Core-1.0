@@ -16,6 +16,7 @@
 
 import { db } from '@/lib/db'
 import { getProductCodeForHost } from '@/lib/product-hosts'
+import type { AppKey } from '@/lib/app-branding'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,6 +112,27 @@ export async function GET(request: Request) {
     ? `/api/core/pwa-icon/${slug}/512.png`
     : '/quantix-logo.png'
 
+  // APPLICATION icons, one set per installed app.
+  //
+  // The website logo and a launcher icon are different assets: reusing one for
+  // all four apps is exactly why the installed apps looked identical. Each app
+  // resolves its own icon, falling back to the business logo and then to a
+  // generated default carrying that app's accent and glyph.
+  //
+  // Off a tenant host there is no business to brand, so the static mark stands.
+  const appIcons = (app: AppKey) =>
+    slug
+      ? { i192: `/api/core/app-icon/${slug}/${app}/192.png`, i512: `/api/core/app-icon/${slug}/${app}/512.png` }
+      : { i192: '/quantix-logo.png', i512: '/quantix-logo.png' }
+  const iconSet = (app: AppKey) => {
+    const { i192, i512 } = appIcons(app)
+    return [
+      { src: i192, sizes: '192x192', type: 'image/png', purpose: 'any' as const },
+      { src: i512, sizes: '512x512', type: 'image/png', purpose: 'any' as const },
+      { src: i512, sizes: '512x512', type: 'image/png', purpose: 'maskable' as const },
+    ]
+  }
+
   // Icons are shared between flavors (tenant logo); name/start_url/identity
   // differ so Android/iOS/desktop treat the Delivery PWA as a separate app
   // that can be installed alongside the customer storefront.
@@ -178,11 +200,7 @@ export async function GET(request: Request) {
         lang:             'en-IN',
         scope:            storeScope,
         categories:       ['business', 'productivity'],
-        icons: [
-          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
+        icons: iconSet('store'),
         prefer_related_applications: false,
       }
     : isExecutive
@@ -201,11 +219,7 @@ export async function GET(request: Request) {
         lang:             'en-IN',
         scope:            execScope,
         categories:       ['business', 'productivity'],
-        icons: [
-          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
+        icons: iconSet('delivery'),
         prefer_related_applications: false,
       }
     : isDelivery
@@ -253,15 +267,10 @@ export async function GET(request: Request) {
         lang:             'en-IN',
         scope:            '/',
         categories:       ['shopping', 'lifestyle'],
-        icons: [
-          // Chrome requires at least one 192×192 and one 512×512 PNG icon.
-          // The 'maskable' purpose enables adaptive icons on Android — the image
-          // must have safe-zone padding. The pwa-icon route adds white padding
-          // via sharp's 'contain' fit, which satisfies the maskable requirement.
-          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
+        // Chrome requires a 192 and a 512 PNG; 'maskable' enables Android's
+        // adaptive icon, which needs safe-zone padding — the icon route pads
+        // with sharp's 'contain' fit, satisfying it.
+        icons: iconSet('customer'),
         shortcuts: [
           {
             name:        'My Orders',

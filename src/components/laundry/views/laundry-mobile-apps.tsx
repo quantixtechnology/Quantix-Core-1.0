@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
+import { AppBrandingDialog } from "@/components/laundry/apps/app-branding-dialog"
 import { PwaInstallButton } from "@/components/laundry/apps/pwa-install-button"
 import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Store, Factory } from "lucide-react"
 import { toast } from "sonner"
@@ -68,6 +69,14 @@ export function LaundryMobileApps() {
   const customerUrl = prov?.customer.url || (origin ? `${origin}/laundry/app` : "")
   const executiveUrl = prov?.executive.url || (origin ? `${origin}/laundry/executive` : "")
   const storeAdminUrl = prov?.store.url || (origin ? `${origin}/laundry/store` : "")
+
+  // The provisioned customer host IS <slug>.<base>, which is the same slug the
+  // icon routes key on. Read it from there rather than guessing from the name.
+  const tenantSlug = (() => {
+    const u = prov?.customer.url
+    if (!u) return null
+    try { return new URL(u).hostname.split(".")[0] || null } catch { return null }
+  })()
   // Laundry OS is the ONE operations console for the whole platform, so unlike
   // the three apps above it has no per-tenant host to provision — there is
   // nothing to give this business its own copy of. Everyone installs the same
@@ -93,10 +102,16 @@ export function LaundryMobileApps() {
         <div className="space-y-2">
           <AppShareCard title="Customer App" description="Customers book pickups, track orders and pay." icon={<Smartphone className="h-5 w-5" />} url={customerUrl} note="Your dedicated branded customer website & PWA." qrDialog={{ businessName: businessName || "Your Business", appName: "Customer App" }} />
           <StatusStrip label="Customer host" status={prov?.customer} loading={loading} />
+          {currentBusinessId && (
+            <AppBrandingDialog appKey="customer" appLabel="Customer App" businessId={currentBusinessId} slug={tenantSlug} />
+          )}
         </div>
         <div className="space-y-2">
           <AppShareCard title="Executive Pickup & Delivery App" description="Field executives run assigned pickups and deliveries." icon={<Bike className="h-5 w-5" />} url={executiveUrl} note="Dedicated per-tenant host — only active Delivery Executives sign in; the business is set by the URL." />
           <StatusStrip label="Executive host" status={prov?.executive} loading={loading} />
+          {currentBusinessId && (
+            <AppBrandingDialog appKey="delivery" appLabel="Delivery App" businessId={currentBusinessId} slug={tenantSlug} />
+          )}
         </div>
         <div className="space-y-2">
           <AppShareCard
@@ -115,6 +130,9 @@ export function LaundryMobileApps() {
         <div className="space-y-2">
           <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />
           <StatusStrip label="Store host" status={prov?.store} loading={loading} />
+          {currentBusinessId && (
+            <AppBrandingDialog appKey="store" appLabel="Store App" businessId={currentBusinessId} slug={tenantSlug} />
+          )}
         </div>
         <Card className="rounded-xl border-slate-200">
           <CardContent className="p-4 space-y-2">
