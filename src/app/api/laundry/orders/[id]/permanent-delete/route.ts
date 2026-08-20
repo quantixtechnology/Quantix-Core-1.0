@@ -16,6 +16,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { verifyPassword } from "@/lib/password-utils"
 import { unlink } from "fs/promises"
+import { forgetUpload } from "@/lib/storage-guard"
 import { join } from "path"
 
 export const runtime = "nodejs"
@@ -106,6 +107,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (!url.startsWith("/uploads/")) continue
       const filePath = join(UPLOAD_ROOT, url.replace(/^\/uploads\//, ""))
       await unlink(filePath).catch(() => {}) // best-effort; already-gone files are fine
+      // The bytes are gone, so the ledger must stop charging for them —
+      // otherwise a deleted order's photos consume the quota forever.
+      await forgetUpload(url)
     }
 
     console.warn(`[laundry-permanent-delete] ${order.orderNumber} permanently deleted by ${admin.email} (${admin.id})`)

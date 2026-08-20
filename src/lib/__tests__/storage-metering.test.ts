@@ -155,6 +155,14 @@ describe('deleted files stop consuming the quota', () => {
     expect(del).toContain('forgetUpload(recordingUploadPath(')
   })
 
+  it('permanently deleting an order forgets its audit photos', () => {
+    // The files were unlinked from disk but the rows stayed, so a deleted
+    // order's photos went on consuming the quota indefinitely.
+    const src = read('src/app/api/laundry/orders/[id]/permanent-delete/route.ts')
+    expect(src).toContain('await unlink(filePath)')
+    expect(src).toContain('await forgetUpload(url)')
+  })
+
   it('a failed ledger delete never blocks the deletion', async () => {
     mocks.fileUploadDeleteMany.mockRejectedValue(new Error('db down'))
     await expect(forgetUpload('/uploads/x/y.png')).resolves.toBeUndefined()
