@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTenantAppStatus, provisionTenantApps } from "@/lib/laundry-app-provisioning"
 import { prisma } from "@/lib/prisma"
+import { builtApkUrl, type ApkDeploymentType } from "@/lib/mobile-apk-artifacts"
 
 export const runtime = "nodejs"
 
@@ -32,27 +33,45 @@ export async function GET(request: Request) {
       if (storeNeedsHeal) status.store.sslStatus = "provisioning"
     }
     // ── Android builds ──────────────────────────────────────────────────────
-    // The APK URLs the mobile-provision pipeline already records on Deployment
-    // rows (hostingConfig.apkUrl, falling back to liveUrl). Read here rather
-    // than from a second endpoint because this route has ALREADY resolved the
-    // platform business and proved the caller belongs to it — a separate call
-    // would be a second place for that check to be got wrong.
+    // Two sources, in this order:
     //
-    // A build that is not LIVE has no downloadable artifact, whatever URL the
-    // row happens to carry: offering it would hand someone a 404.
+    //   1. An APK built for this tenant and sitting in public/apks. It exists
+    //      on this server, so the link cannot 404.
+    //   2. The apkUrl the mobile-provision pipeline recorded on the Deployment
+    //      row (falling back to liveUrl) — used when nothing is built here.
+    //
+    // Read here rather than from a second endpoint because this route has
+    // ALREADY resolved the platform business and proved the caller belongs to
+    // it — a separate call would be a second place for that check to be got
+    // wrong. The slug then scopes the filenames to that same business.
+    //
+    // A pipeline build that is not LIVE has no downloadable artifact, whatever
+    // URL the row happens to carry: offering it would hand someone a 404. A
+    // file on disk needs no such judgement — it is either there or it is not.
+    const APK_TYPES: ApkDeploymentType[] = ["CUSTOMER_APP", "DELIVERY_APP", "ADMIN_APP"]
+    const biz = await prisma.business.findUnique({
+      where: { id: guard.platformBusinessId },
+      select: { slug: true },
+    })
     const deployments = await prisma.deployment.findMany({
       where: { businessId: guard.platformBusinessId, type: { in: ["CUSTOMER_APP", "DELIVERY_APP", "ADMIN_APP"] } },
       select: { type: true, status: true, liveUrl: true, hostingConfig: true },
     })
+    const byType = new Map(deployments.map((d) => [d.type, d]))
     const apk: Record<string, { url: string | null; status: string }> = {}
-    for (const d of deployments) {
+    for (const type of APK_TYPES) {
+      const local = builtApkUrl(biz?.slug, type)
+      if (local) { apk[type] = { url: local, status: "BUILT" }; continue }
+
+      const d = byType.get(type)
+      if (!d) { apk[type] = { url: null, status: "NOT_BUILT" }; continue }
       let cfgApk: string | null = null
       try {
         const cfg = d.hostingConfig ? (JSON.parse(d.hostingConfig) as Record<string, unknown>) : {}
         cfgApk = typeof cfg.apkUrl === "string" ? cfg.apkUrl : null
       } catch { /* malformed config is no URL, never a crash */ }
       const url = cfgApk ?? d.liveUrl ?? null
-      apk[d.type] = { url: d.status === "LIVE" && url ? url : null, status: d.status }
+      apk[type] = { url: d.status === "LIVE" && url ? url : null, status: d.status }
     }
 
     return NextResponse.json({ success: true, data: { ...status, apk } })

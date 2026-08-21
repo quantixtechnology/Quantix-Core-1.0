@@ -16,11 +16,13 @@ import { AppQrDialog } from "@/components/laundry/apps/app-qr-dialog"
 export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction, downloadFileBase, apk }: {
   title: string; description: string; url: string; icon?: React.ReactNode; note?: string
   /**
-   * The Android build for THIS app, from the mobile-provision pipeline.
+   * The Android build for THIS app — an APK built for this tenant and served
+   * from this server, or failing that whatever the mobile-provision pipeline
+   * last recorded.
    *
-   * `url` is null until a build is LIVE — a half-finished build has no
-   * artifact to hand out, and a download button that 404s is worse than one
-   * that says it is not ready.
+   * `url` is null when neither exists — a half-finished build has no artifact
+   * to hand out, and a download button that 404s is worse than one that says
+   * it is not ready.
    */
   apk?: { url: string | null; status?: string }
   /** Optional headline action for this app, e.g. Install. */

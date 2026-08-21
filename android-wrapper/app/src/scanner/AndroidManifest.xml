@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The camera half of the app, merged in only for the SCANNER flavour.
+
+  Delivery scans bag QR codes and Store scans garments and bags; the Customer
+  app never scans, and an app that asks for a camera it never opens is one
+  people are right to distrust. So the permission is not "declared and unused"
+  in the customer build — it is absent from it.
+
+  A manifest placeholder cannot do this: the merger reads tools:node before
+  placeholders are substituted, so `tools:node="${...}"` fails the build. A
+  flavour overlay is the mechanism that actually exists for it.
+
+  Declaring the permission still does not grant it. MainActivity asks Android
+  at the moment of the first scan and forwards ONLY that grant to the web
+  layer, denying every other resource the page asks for.
+
+  required="false" so the build still installs on a device with no camera.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+</manifest>

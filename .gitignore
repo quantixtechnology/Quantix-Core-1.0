@@ -60,3 +60,16 @@ server.log
 # Skills directory
 /skills/public/manifest.json
 apps/customer_app/.dart_tool/
+
+# ── Android wrapper ─────────────────────────────────────────────────────────
+# Signing material NEVER goes in the repo. Losing the keystore means future
+# versions cannot install over the current ones without users uninstalling, so
+# it lives in ~/.quantix-android and is backed up out of band.
+*.jks
+*.keystore
+android-wrapper/local.properties
+android-wrapper/.gradle/
+android-wrapper/build/
+android-wrapper/app/build/
+# Generated per tenant at build time from that app's own branding icon.
+android-wrapper/app/src/main/res/mipmap-*/

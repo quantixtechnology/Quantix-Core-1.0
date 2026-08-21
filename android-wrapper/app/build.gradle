@@ -1,0 +1,78 @@
+plugins { id "com.android.application" }
+
+// Everything tenant-specific arrives as a Gradle property, so one source tree
+// builds every app for every business. Nothing about a tenant is committed.
+def appId       = project.findProperty("quantixAppId")     ?: "in.quantixtechnology.wrapper.dev"
+def appLabel    = project.findProperty("quantixAppLabel")  ?: "Quantix"
+def launchUrl   = project.findProperty("quantixLaunchUrl") ?: "https://quantixtechnology.in"
+def appVersionName = project.findProperty("quantixVersion")   ?: "1.0.0"
+def appVersionCode = (project.findProperty("quantixVersionCode") ?: "1") as Integer
+
+android {
+    namespace "in.quantixtechnology.wrapper"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId appId
+        minSdk 24
+        targetSdk 34
+        versionCode appVersionCode
+        versionName appVersionName
+        resValue "string", "app_name", appLabel
+        // The one thing the shell needs to know.
+        buildConfigField "String", "LAUNCH_URL", "\"${launchUrl}\""
+    }
+
+    // Which apps may open a camera, decided at build time rather than shipped
+    // to every app and left unused. `scanner` merges src/scanner/AndroidManifest
+    // (Delivery, Store); `viewer` has no camera declaration at all (Customer).
+    flavorDimensions "capability"
+    productFlavors {
+        viewer  { dimension "capability" }
+        scanner { dimension "capability" }
+    }
+
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("QUANTIX_KEYSTORE_PATH")
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword System.getenv("QUANTIX_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("QUANTIX_KEY_ALIAS")
+                keyPassword System.getenv("QUANTIX_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // A wrapper has no code worth shrinking, and minification only adds
+            // ways for a release build to differ from what was tested.
+            minifyEnabled false
+            signingConfig System.getenv("QUANTIX_KEYSTORE_PATH") ? signingConfigs.release : null
+        }
+    }
+
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// AndroidX pulls kotlin-stdlib 1.8.22, but drags in the 1.6.21 kotlin-stdlib-jdk7
+// and -jdk8 shims behind it. From 1.8 those JDK classes live in kotlin-stdlib
+// itself, so the two copies collide and the duplicate-class check refuses to
+// build. Pinning the shims to the same version is the whole fix: at 1.8.22
+// they are empty modules that just point back at kotlin-stdlib.
+configurations.all {
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
+    }
+}
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.webkit:webkit:1.11.0"
+}
