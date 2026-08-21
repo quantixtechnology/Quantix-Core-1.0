@@ -66,23 +66,25 @@ describe('delivery is never blocked by a bag', () => {
 
 // ── Pickup (tests 6-12, §5 §6 §9) ───────────────────────────────────────────
 describe('pickup is two buttons', () => {
-  it('offers exactly two scans: the returned bag, or a new one', () => {
-    // Both are bags the executive is holding, so both are scanned. Picking a
-    // bag on their behalf recorded a number nobody had read.
-    expect(PWA).toContain('Scan Returned Bag')
-    expect(PWA).toContain('Scan New Bag')
+  it('offers exactly two scans: the customer\'s bag, or one off the van', () => {
+    expect(PWA).toContain('label="Scan Existing Bag"')
+    expect(PWA).toContain('label="Tag New Bag"')
   })
 
-  it('a failed scan falls through to a fallback, not to an error to resolve', () => {
-    expect(PWA).toContain('Bag not readable')
+  it('a failed scan asks for another scan, not for a shortcut', () => {
+    expect(PWA).toContain('scan a different bag')
     expect(PWA).toContain('else setFailed(true)')
-    // The escape hatch is still one tap away — just no longer the default.
-    expect(PWA).toContain('onUseNew(svc)')
   })
 
-  it('Use New Bag always exists as the fallback', () => {
-    expect(ASSIGN).toContain('const useNewBag = b.useNewBag === true')
-    expect(ASSIGN).toContain('status: BAG_STATUS.AVAILABLE, active: true')
+  // SUPERSEDES the original §10 rule. That rule kept a doorstep from ever
+  // dead-ending by letting the server pick the next AVAILABLE bag. But
+  // executives carry no printer and every physical bag is already tagged, so
+  // choosing by sequence recorded a bag nobody was holding — and each later
+  // step trusted it. Traceability won; the shortcut is gone from both sides.
+  it('no bag can be assigned without a scanned QR', () => {
+    expect(PWA).not.toContain('useNewBag')
+    expect(ASSIGN).not.toContain('b.useNewBag === true')
+    expect(ASSIGN).toContain("Scan the bag's QR code")
   })
 
   // Test 7 — a returned bag is HANDED_TO_CUSTOMER, so it must be taken back

@@ -21,25 +21,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const session = await resolveExecutive(request)
     if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     const b = await request.json().catch(() => ({}))
-    let code = String(b.code || b.bagNumber || b.qrValue || "").trim()
-    // USE NEW BAG — the executive has no bag to scan, or the one they were given
-    // cannot be used. The system picks the next available bag itself so there is
-    // never a doorstep dead end (§10).
-    const useNewBag = b.useNewBag === true
-    if (!code && !useNewBag) return NextResponse.json({ error: "Scan a bag" }, { status: 400 })
+    const code = String(b.code || b.bagNumber || b.qrValue || "").trim()
+    // A BAG IS IDENTIFIED BY ITS QR, NEVER BY ITS AVAILABILITY.
+    //
+    // This used to accept { useNewBag: true } and pick the lowest-numbered
+    // AVAILABLE bag itself, so a doorstep could never dead-end. But executives
+    // carry no printer: every physical bag is already tagged, and choosing one
+    // by sequence records a number that may not be the bag in the van. Once the
+    // record and the physical bag diverge, every later step trusts the wrong one.
+    //
+    // The guard lives HERE, not only in the app: a client that forgets to scan
+    // must be refused, not accommodated.
+    if (!code) {
+      return NextResponse.json(
+        { error: "Scan the bag's QR code — a bag cannot be assigned without it." },
+        { status: 400 },
+      )
+    }
 
     const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, pickupExecutiveId: true, fieldStatus: true, customerId: true, storeId: true } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.pickupExecutiveId !== session.executiveId) return NextResponse.json({ error: "This pickup is not assigned to you" }, { status: 403 })
-
-    if (useNewBag) {
-      const fresh = await db.laundryBag.findFirst({
-        where: { businessId: session.businessId, status: BAG_STATUS.AVAILABLE, active: true },
-        orderBy: { bagNumber: "asc" }, select: { bagNumber: true },
-      })
-      if (!fresh) return NextResponse.json({ success: false, error: "No spare bags are available. Ask the store." }, { status: 409 })
-      code = fresh.bagNumber
-    }
 
     // ── The bag the customer just handed back ────────────────────────────────
     // A bag that went home with a customer is HANDED_TO_CUSTOMER, not AVAILABLE,
@@ -69,14 +71,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // It is someone else's bag, or otherwise not reusable. The executive is
         // not the person to sort that out at a doorstep — they are told to use a
         // new bag, and the bag's own record is left exactly as it was for Admin.
-        return NextResponse.json({ success: false, useNewBag: true, error: "Use a new bag for this pickup." }, { status: 409 })
+        return NextResponse.json({ success: false, error: "That bag cannot be used for this pickup — scan a different one." }, { status: 409 })
       }
     }
 
     const r = await assignBagToOrder({ lbId: session.businessId, code, orderId: order.id, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName })
     // Any rejection at this point is still not the executive's problem to solve:
     // offer the one action that always works.
-    if (!r.ok) return NextResponse.json({ success: false, useNewBag: true, error: r.error }, { status: r.status })
+    if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: r.status })
 
     // Safety: only promote REACHED → PICKUP_STARTED. Bags may be scanned before
     // the executive reaches the customer, but the field status must NEVER jump

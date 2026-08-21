@@ -22,22 +22,32 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const UI = read('src/components/laundry/executive/executive-app.tsx')
 const ROUTE = read('src/app/api/laundry/executive/jobs/[id]/assign-bag/route.ts')
 
-describe('a new bag is scanned, not guessed', () => {
-  it('the new-bag action opens the scanner', () => {
-    expect(UI).toContain('label="Scan New Bag"')
+describe('a bag is identified by its QR, never by availability', () => {
+  it('both paths open the scanner', () => {
+    expect(UI).toContain('label="Scan Existing Bag"')
+    expect(UI).toContain('label="Tag New Bag"')
   })
 
-  it('auto-pick is only offered after a scan has failed', () => {
-    // It sits inside the `failed` branch, not beside the scan button.
-    const block = UI.slice(UI.indexOf('{failed && ('), UI.indexOf('{failed && (') + 900)
-    expect(block).toContain('onUseNew(svc)')
-    expect(block).toContain("Can&apos;t scan")
+  it('the app offers no way to assign without scanning', () => {
+    expect(UI).not.toContain('useNewBag')
+    expect(UI).not.toContain('assign any spare bag')
   })
 
-  it('the server still has the escape hatch, unchanged', () => {
-    // Removing it would recreate the doorstep dead end it exists to prevent.
-    expect(ROUTE).toContain('const useNewBag = b.useNewBag === true')
-    expect(ROUTE).toContain('status: BAG_STATUS.AVAILABLE')
+  it('the SERVER refuses an assignment with no scanned code', () => {
+    // The guard cannot live only in the app: a client that forgets to scan
+    // must be refused, not accommodated.
+    expect(ROUTE).toContain("if (!code) {")
+    expect(ROUTE).toContain("Scan the bag's QR code")
+  })
+
+  it('the auto-pick is gone from the server, not just hidden', () => {
+    // "find next AVAILABLE and assign" is what recorded a bag nobody held.
+    expect(ROUTE).not.toContain('b.useNewBag === true')
+    expect(ROUTE).not.toContain('orderBy: { bagNumber: "asc" }')
+  })
+
+  it('the entry point invites a scan', () => {
+    expect(UI).toContain('Add / Scan Bag')
   })
 })
 

@@ -343,7 +343,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
   // take a returned bag back from the customer, record it, then attach it to
   // this order — happens server-side; the app just says which of the two things
   // the executive did.
-  const bagAction = async (svc: Svc, body: Record<string, unknown>): Promise<{ ok: boolean; useNewBag?: boolean }> => {
+  const bagAction = async (svc: Svc, body: Record<string, unknown>): Promise<{ ok: boolean }> => {
     setBusy(true)
     try {
       const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, {
@@ -351,7 +351,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
         body: JSON.stringify({ serviceId: svc.serviceId, serviceName: svc.serviceName, executiveName: exec.name, ...body }),
       })
       const j = await res.json()
-      if (!res.ok || !j.success) return { ok: false, useNewBag: j.useNewBag === true }
+      if (!res.ok || !j.success) return { ok: false }
       toast.success(`${svc.serviceName}: ${j.bagNumber}`)
       await refresh()
       return { ok: true }
@@ -363,11 +363,6 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     return r.ok
   }
 
-  const useNewBag = async (svc: Svc): Promise<boolean> => {
-    const r = await bagAction(svc, { useNewBag: true })
-    if (!r.ok) toast.error("No spare bags. Ask the store.")
-    return r.ok
-  }
 
   /** Take a bag back off this pickup — a mis-scan is fixable at the door. */
   const removeBag = async (svc: Svc, bagNumber: string): Promise<void> => {
@@ -575,7 +570,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags · one or more bags per service</p>
             {job.services.map((s, i) => (
-              <ServiceBags key={i} svc={s} onScan={scanBag} onUseNew={useNewBag} onRemove={removeBag} />
+              <ServiceBags key={i} svc={s} onScan={scanBag} onRemove={removeBag} />
             ))}
           </div>
         )}
@@ -627,10 +622,9 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 // One service's bag list inside the editable assignment section. Each service
 // is independent: assigned bags show as "Bag N ✓ number", then a "+ Add Bag"
 // button reveals the next "Bag N · Scan" slot. No fixed limit.
-function ServiceBags({ svc, onScan, onUseNew, onRemove }: {
+function ServiceBags({ svc, onScan, onRemove }: {
   svc: Svc
   onScan: (code: string, svc: Svc) => Promise<boolean>
-  onUseNew: (svc: Svc) => Promise<boolean>
   onRemove: (svc: Svc, bagNumber: string) => Promise<void>
 }) {
   const [adding, setAdding] = useState(false)
@@ -666,22 +660,23 @@ function ServiceBags({ svc, onScan, onUseNew, onRemove }: {
         </div>
       )}
       {n === 0 || adding ? (
-        // THE WHOLE DECISION, at a doorstep, in two buttons: did the customer
-        // give you a bag, or not? A failed scan is not an error to investigate —
-        // it just means the second button.
+        // Two buttons, one rule: whichever bag it is, its QR identifies it.
+        // "Existing" is the customer's own bag coming back; "New" is one off the
+        // executive's pre-tagged stock. The server tells them apart from the
+        // bag's own status, so the executive never has to.
         <div className="space-y-2">
+          {/* BOTH paths are a scan. The executive carries no printer, every
+              physical bag is already tagged, and the QR is the only thing that
+              knows which bag is actually in their hand. */}
           <BagScanButton
-            label="Scan Returned Bag" closeOnScan className="w-full h-12 justify-center text-base font-semibold"
+            label="Scan Existing Bag" closeOnScan className="w-full h-12 justify-center text-base font-semibold"
             onScan={async (code) => {
               const okScan = await onScan(code, svc)
               if (okScan) { setFailed(false); setAdding(false) } else setFailed(true)
             }}
           />
-          {/* A new bag is still A BAG THE EXECUTIVE IS HOLDING, so it is
-              scanned like any other. Picking one from stock on their behalf
-              records a bag number that may not be the one in the van. */}
           <BagScanButton
-            label="Scan New Bag" closeOnScan
+            label="Tag New Bag" closeOnScan
             className="w-full h-12 justify-center text-base font-semibold border-2 border-slate-900 text-slate-900 bg-white"
             onScan={async (code) => {
               const okScan = await onScan(code, svc)
@@ -689,23 +684,20 @@ function ServiceBags({ svc, onScan, onUseNew, onRemove }: {
             }}
           />
           {failed && (
-            <div className="space-y-1.5">
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">
-                Bag not readable
-              </p>
-              {/* Last resort only, so a doorstep is never a dead end — but no
-                  longer the default, because it guesses which bag is in hand. */}
-              <button
-                onClick={async () => { if (await onUseNew(svc)) { setFailed(false); setAdding(false) } }}
-                className="w-full h-10 rounded-xl text-sm font-medium text-slate-500 underline underline-offset-2">
-                Can&apos;t scan — assign any spare bag
-              </button>
-            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">
+              That bag could not be used — scan a different bag
+            </p>
+          )}
+          {n > 0 && (
+            <button onClick={() => { setAdding(false); setFailed(false) }}
+              className="w-full h-10 rounded-xl text-sm font-medium text-slate-500">
+              Cancel
+            </button>
           )}
         </div>
       ) : (
         <button onClick={() => setAdding(true)} className="w-full h-9 rounded-xl border border-dashed border-blue-300 text-blue-600 text-sm font-medium flex items-center justify-center gap-1.5">
-          <Plus className="h-4 w-4" /> Add Bag
+          <Plus className="h-4 w-4" /> Add / Scan Bag
         </button>
       )}
     </div>
