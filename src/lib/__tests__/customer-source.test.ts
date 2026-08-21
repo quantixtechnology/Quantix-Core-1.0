@@ -82,16 +82,27 @@ describe('the source list is configurable, not an enum', () => {
   })
 })
 
-describe('the owner list is CRM lead ownership, not the staff list', () => {
-  it('it reads owners off CRM leads and opportunities', () => {
-    expect(OWNERS).toContain('prisma.laundryCrmLead.findMany')
-    expect(OWNERS).toContain('prisma.laundryCrmOpportunity.findMany')
-    expect(OWNERS).toContain('distinct: ["assignedToName"]')
+describe('the owner list is the CRM Lead Owner field, not the staff list', () => {
+  it('it reads the configured Lead Owner options', () => {
+    // CRM → Settings → Lead Fields → Lead Owner is a SELECT whose options
+    // carry an active flag. That IS the configured sales-people list, so the
+    // customer dropdown and the lead dropdown agree by construction.
+    expect(OWNERS).toContain('const LEAD_OWNER_FIELD_KEY = "lead_owner"')
+    expect(OWNERS).toContain('prisma.laundryCrmLeadField.findFirst')
+    expect(OWNERS).toContain('fieldKey: LEAD_OWNER_FIELD_KEY')
+  })
+
+  it('a deactivated option is not offered', () => {
+    // `!== false` matches how CRM reads these: an option written before the
+    // flag existed still counts as active.
+    expect(OWNERS).toContain('o.active !== false')
+  })
+
+  it('the configured order is kept', () => {
+    expect(OWNERS).toContain('(a.order ?? 0) - (b.order ?? 0)')
   })
 
   it('the generic staff list is gone', () => {
-    // A store manager or delivery executive is not a sales owner; offering
-    // the whole payroll made the field meaningless.
     expect(OWNERS).not.toContain('prisma.businessUser.findMany')
   })
 
@@ -101,11 +112,12 @@ describe('the owner list is CRM lead ownership, not the staff list', () => {
     expect(SCHEMA).not.toContain('model LaundryCrmLeadOwner')
   })
 
-  it('the id stays whatever CRM uses, so the two agree', () => {
-    expect(OWNERS).toContain('id: row.assignedToId || name')
+  it('an unconfigured or malformed field yields nothing, never staff names', () => {
+    expect(OWNERS).toContain('if (!field || !field.active || !field.options)')
+    expect(OWNERS).toContain('// Malformed options are no options, never a crash.')
   })
 
-  it('CRM behaviour is only READ — nothing is written', () => {
+  it('CRM is only READ — nothing is written', () => {
     for (const w of ['.update(', '.create(', '.delete(', '.upsert(']) {
       expect(OWNERS).not.toContain(w)
     }
