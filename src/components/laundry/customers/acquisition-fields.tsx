@@ -7,9 +7,12 @@
 // question two different ways.
 //
 // Both lists come from the server: sources from the configurable master,
-// owners from the EXISTING staff list. An inactive source is not offered for a
-// new customer, but one already ON this customer stays in its dropdown —
-// otherwise editing a phone number would silently blank how they were won.
+// owners from CRM lead ownership — the people who already own leads, not the
+// staff list.
+//
+// Whatever this customer already carries stays in its dropdown even when it is
+// no longer offered: a retired source, or an owner whose leads have all moved
+// on. Otherwise editing a phone number would silently blank how they were won.
 
 import { useEffect, useState } from "react"
 import { Label } from "@/components/ui/label"
@@ -41,18 +44,26 @@ export function defaultSourceId(sources: Source[]): string {
 }
 
 export function AcquisitionFields({
-  sources, owners, sourceId, ownerId, onSourceChange, onOwnerChange,
+  sources, owners, sourceId, ownerId, ownerName, onSourceChange, onOwnerChange,
 }: {
   sources: Source[]
   owners: Owner[]
   sourceId: string
   ownerId: string
+  /** The owner already on this customer, so history survives the dropdown. */
+  ownerName?: string
   onSourceChange: (id: string) => void
   onOwnerChange: (id: string, name: string) => void
 }) {
   // Active options, plus whatever this customer already carries — a retired
   // source must not vanish from the record that has it.
   const options = sources.filter((s) => s.active || s.id === sourceId)
+
+  // Same for the owner: if this customer's owner is no longer in the CRM list,
+  // keep them, so opening the form does not quietly reassign the customer.
+  const ownerOptions = ownerId && !owners.some((o) => o.id === ownerId)
+    ? [{ id: ownerId, name: ownerName || ownerId }, ...owners]
+    : owners
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -80,7 +91,7 @@ export function AcquisitionFields({
         >
           {/* Optional by design: a Direct customer has nobody who won them. */}
           <option value="">Select Sales Team Owner</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          {ownerOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </div>
     </div>

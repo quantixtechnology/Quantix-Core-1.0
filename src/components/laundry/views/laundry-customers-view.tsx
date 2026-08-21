@@ -583,6 +583,7 @@ export function LaundryCustomersView() {
                   owners={owners}
                   sourceId={form.customerSourceId || defaultSourceId(sources)}
                   ownerId={form.salesTeamOwnerId || ""}
+                  ownerName={form.salesTeamOwnerName || ""}
                   onSourceChange={(id) => setForm((f) => ({ ...f, customerSourceId: id }))}
                   onOwnerChange={(id, name) => setForm((f) => ({ ...f, salesTeamOwnerId: id, salesTeamOwnerName: name }))}
                 />

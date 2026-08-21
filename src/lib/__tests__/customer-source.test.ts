@@ -82,19 +82,33 @@ describe('the source list is configurable, not an enum', () => {
   })
 })
 
-describe('the owner list is the staff list, not a second master', () => {
-  it('it reads existing BusinessUser records', () => {
-    expect(OWNERS).toContain('prisma.businessUser.findMany')
-    expect(OWNERS).toContain('role: { not: "CUSTOMER" }')
+describe('the owner list is CRM lead ownership, not the staff list', () => {
+  it('it reads owners off CRM leads and opportunities', () => {
+    expect(OWNERS).toContain('prisma.laundryCrmLead.findMany')
+    expect(OWNERS).toContain('prisma.laundryCrmOpportunity.findMany')
+    expect(OWNERS).toContain('distinct: ["assignedToName"]')
   })
 
-  it('no parallel sales-team model was introduced', () => {
+  it('the generic staff list is gone', () => {
+    // A store manager or delivery executive is not a sales owner; offering
+    // the whole payroll made the field meaningless.
+    expect(OWNERS).not.toContain('prisma.businessUser.findMany')
+  })
+
+  it('no parallel owner master was introduced', () => {
     expect(SCHEMA).not.toContain('model LaundrySalesTeamMember')
     expect(SCHEMA).not.toContain('model LaundrySalesOwner')
+    expect(SCHEMA).not.toContain('model LaundryCrmLeadOwner')
   })
 
-  it('only active staff can be picked for a new customer', () => {
-    expect(OWNERS).toContain('s.user?.isActive')
+  it('the id stays whatever CRM uses, so the two agree', () => {
+    expect(OWNERS).toContain('id: row.assignedToId || name')
+  })
+
+  it('CRM behaviour is only READ — nothing is written', () => {
+    for (const w of ['.update(', '.create(', '.delete(', '.upsert(']) {
+      expect(OWNERS).not.toContain(w)
+    }
   })
 })
 
@@ -150,6 +164,12 @@ describe('the feature is reachable, not just implemented', () => {
 
   it('the owner is optional', () => {
     expect(FIELDS).toContain('<option value="">Select Sales Team Owner</option>')
+  })
+
+  it('an owner already on a customer survives leaving the CRM list', () => {
+    // Opening the form must not quietly reassign the customer.
+    expect(FIELDS).toContain('ownerId && !owners.some((o) => o.id === ownerId)')
+    expect(CUSTOMERS).toContain('ownerName={form.salesTeamOwnerName')
   })
 
   it('both fields persist on create and on edit', () => {

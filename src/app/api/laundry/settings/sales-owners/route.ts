@@ -2,11 +2,22 @@
 //
 // The people who can be named as a customer's Sales Team Owner.
 //
-// This is the EXISTING staff list — BusinessUser rows for the tenant, the same
-// records the Staff screen manages. There is deliberately no separate sales-team
-// master: a second list of the same people would drift from the first the moment
-// somebody joined or left, and then two screens would disagree about who works
-// here.
+// SOURCE: CRM lead ownership — the same people who already own leads — NOT the
+// Business User/staff list. A store manager or a delivery executive is not a
+// sales owner, and offering the whole payroll made the field meaningless.
+//
+// There is no Lead Owner master to read: CRM records ownership as free text on
+// the lead itself (assignedToName, with assignedToId set to the same string).
+// So this returns the DISTINCT owners CRM actually holds. That has two honest
+// consequences, and neither is hidden:
+//
+//   • a name appears only once it owns at least one lead — there is nowhere
+//     else for a "configured owner" to exist yet;
+//   • two spellings of one person are two owners, because CRM stores them that
+//     way. A Lead Owner master would fix this at the source, in CRM, and this
+//     endpoint would then read it without changing shape.
+//
+// Nothing here writes, and no CRM behaviour is touched.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
@@ -22,22 +33,33 @@ export async function GET(request: Request) {
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
 
     const biz = await resolveLaundryBusiness(businessId)
-    if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 
-    const staff = await prisma.businessUser.findMany({
-      where: { businessId: biz.platformBusinessId, role: { not: "CUSTOMER" } },
-      include: { user: { select: { id: true, name: true, email: true, isActive: true } } },
-    })
+    // Leads carry the owner; opportunities inherit it at conversion. Reading
+    // both means an owner whose leads have all converted still appears.
+    const [leadOwners, oppOwners] = await Promise.all([
+      prisma.laundryCrmLead.findMany({
+        where: { businessId: biz.id, assignedToName: { not: null } },
+        select: { assignedToId: true, assignedToName: true },
+        distinct: ["assignedToName"],
+      }),
+      prisma.laundryCrmOpportunity.findMany({
+        where: { businessId: biz.id, assignedToName: { not: null } },
+        select: { assignedToId: true, assignedToName: true },
+        distinct: ["assignedToName"],
+      }),
+    ])
 
-    // Active staff only: naming someone who has left as the owner of a NEW
-    // customer is a mistake waiting to happen. Customers already carrying a
-    // departed owner keep the name — it is stored alongside the id for exactly
-    // that reason.
-    const owners = staff
-      .filter((s) => s.user?.isActive)
-      .map((s) => ({ id: s.user!.id, name: s.user!.name || s.user!.email || "Unnamed", email: s.user!.email }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    // One entry per name. CRM sets assignedToId to the name itself, so the id
+    // stays consistent with how CRM already identifies an owner.
+    const byName = new Map<string, { id: string; name: string }>()
+    for (const row of [...leadOwners, ...oppOwners]) {
+      const name = (row.assignedToName || "").trim()
+      if (!name) continue
+      if (!byName.has(name)) byName.set(name, { id: row.assignedToId || name, name })
+    }
 
+    const owners = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
     return NextResponse.json({ success: true, data: owners })
   } catch (e) {
     console.error("[sales-owners] GET", e)
