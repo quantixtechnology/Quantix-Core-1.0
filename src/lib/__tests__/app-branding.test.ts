@@ -149,6 +149,35 @@ describe('the upload survives the proxy, and never parses HTML as JSON', () => {
   })
 })
 
+describe('the website header wears the square app mark', () => {
+  const LAYOUT = read('src/components/storefront/web/storefront-layout.tsx')
+
+  it('the header resolves the Customer App icon, not the landscape logo', () => {
+    expect(LAYOUT).toContain('/api/core/app-icon/${slug}/customer/192.png')
+    expect(LAYOUT).toContain('src={headerMark || currentBusinessLogo')
+  })
+
+  it('the slug comes from the host, with no fetch and no PWA code touched', () => {
+    expect(LAYOUT).toContain('const slug = host.slice(0, -(base.length + 1))')
+    expect(LAYOUT).toContain('if (!slug || slug.includes("."))')
+  })
+
+  it('a square mark sits in a square box, fixed on both axes', () => {
+    // A width that can grow is what let one asset eat a phone header.
+    expect(LAYOUT).toContain('className="h-10 w-10 shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"')
+    expect(LAYOUT).toContain('className="h-10 w-10 sm:h-11 sm:w-11 object-contain rounded-lg"')
+  })
+
+  it('it is contained, never stretched, and never circular', () => {
+    expect(LAYOUT).toContain('className="h-full w-full object-contain rounded-md"')
+    expect(LAYOUT).not.toContain('rounded-full object-contain')
+  })
+
+  it('off a tenant host it falls back rather than breaking', () => {
+    expect(LAYOUT).toContain('if (!host.endsWith(`.${base}`)) return null')
+  })
+})
+
 describe('a square app icon never becomes a landscape one', () => {
   const ICON = read('src/app/api/core/app-icon/[slug]/[app]/[size]/route.ts')
   const CROPPER = read('src/components/branding/brand-asset-cropper.tsx')

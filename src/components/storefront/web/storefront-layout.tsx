@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import type { CartItem } from "@/stores/cart-store"
@@ -42,6 +42,28 @@ export function StorefrontLayout({
   storeClosed,
 }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
+
+  /**
+   * The header mark: the SQUARE Customer App icon from Mobile Apps branding.
+   *
+   * Business.logo is a landscape wordmark, and a 4.33:1 lockup spends most of a
+   * phone header on one asset. The square icon says the same thing in a
+   * fraction of the width, and it is the mark customers already meet on their
+   * home screen — one identity in both places.
+   *
+   * The storefront host IS the tenant slug, so this resolves without a fetch
+   * and without reaching into the PWA code. Off a tenant host — a preview, a
+   * local run — it falls back to whatever logo the business has.
+   */
+  const headerMark = useMemo(() => {
+    if (typeof window === "undefined") return null
+    const host = window.location.hostname
+    const base = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
+    if (!host.endsWith(`.${base}`)) return null
+    const slug = host.slice(0, -(base.length + 1))
+    if (!slug || slug.includes(".")) return null
+    return `/api/core/app-icon/${slug}/customer/192.png`
+  }, [])
   const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType, deliveryAddress } = useCartStore()
 
   // Stamp the active workspace type onto the shared Quantix Cart Engine — makes
@@ -334,14 +356,18 @@ export function StorefrontLayout({
                     logo as a postage stamp. Height is capped so the header does
                     not grow; width is capped so the action buttons keep their
                     space and can never be pushed off-screen. */}
+                {/* A square mark needs a square box: fixed on both axes, so it
+                    cannot grow wide and reclaim the room the name and actions
+                    need. object-contain keeps a not-quite-square upload
+                    undistorted inside it. */}
                 <div
-                  className="h-[40px] max-w-[34vw] sm:max-w-[46vw] shrink-0 flex items-center cursor-pointer active:opacity-70"
+                  className="h-10 w-10 shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"
                   onClick={() => nav.go("home")}
                 >
                   <img
-                    src={currentBusinessLogo || "/placeholder-logo.svg"}
+                    src={headerMark || currentBusinessLogo || "/placeholder-logo.svg"}
                     alt={currentBusinessName || "Store"}
-                    className="h-full w-auto max-w-full object-contain object-left rounded-md"
+                    className="h-full w-full object-contain rounded-md"
                     onError={(e) => {
                       const img = e.currentTarget
                       if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
@@ -524,13 +550,13 @@ export function StorefrontLayout({
             {/* Logo + Business name + location */}
             <button onClick={() => nav.go("home")} className="flex items-center gap-2 min-w-0 shrink mr-1 sm:mr-2 sm:gap-2.5">
               <img
-                src={currentBusinessLogo || "/placeholder-logo.svg"}
+                src={headerMark || currentBusinessLogo || "/placeholder-logo.svg"}
                 alt={currentBusinessName || "Store"}
                 /* A brand mark is not an avatar. Fixing width AND height to 36px
                    squeezed a wide lockup into a thumbnail; letting the width run
                    free at a fixed height lets a landscape logo use the header's
                    64px properly, while a square one simply stays 40px. */
-                className="h-9 sm:h-10 w-auto max-w-[110px] sm:max-w-[160px] lg:max-w-[220px] object-contain object-left rounded-md"
+                className="h-10 w-10 sm:h-11 sm:w-11 object-contain rounded-lg"
                 onError={(e) => {
                   const img = e.currentTarget
                   if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
