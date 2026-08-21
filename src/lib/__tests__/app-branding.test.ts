@@ -149,6 +149,49 @@ describe('the upload survives the proxy, and never parses HTML as JSON', () => {
   })
 })
 
+describe('a square app icon never becomes a landscape one', () => {
+  const ICON = read('src/app/api/core/app-icon/[slug]/[app]/[size]/route.ts')
+  const CROPPER = read('src/components/branding/brand-asset-cropper.tsx')
+  const DIALOG = read('src/components/laundry/apps/app-branding-dialog.tsx')
+
+  it('the icon route cannot reach the website logo at all', () => {
+    // The website logo is a landscape wordmark. Reaching for it here would put
+    // a 4.33:1 lockup inside a square launcher tile.
+    expect(ICON).not.toContain('sourceLogo')
+    expect(ICON).toContain('const chosen = brand.appLogo')
+  })
+
+  it('the output is square at both required sizes', () => {
+    expect(ICON).toContain('const VALID_SIZES = new Set([192, 512])')
+    expect(ICON).toContain('squareIcon(buf, size, chosen)')
+    // squareIcon fits into size x size — one dimension, used twice.
+    const IMG = read('src/lib/brand-image.ts')
+    expect(IMG).toContain('.resize(size, size, { fit: "contain"')
+  })
+
+  it('app icons crop 1:1 and the website crops 3:1 — separate presets', () => {
+    expect(CROPPER).toContain('aspect: 1, outputWidth: 512, outputHeight: 512')
+    expect(CROPPER).toContain('aspect: 3, outputWidth: 900, outputHeight: 300')
+    // The app dialog asks for the square preset, never the website one.
+    expect(DIALOG).toContain('CROP_PRESETS.appIcon(')
+    expect(DIALOG).not.toContain('CROP_PRESETS.websiteLogo')
+  })
+
+  it('the cropped square is what is saved, previewed AND installed', () => {
+    // One asset: the crop output is uploaded, the dialog previews the icon
+    // route, and the manifest points at that same route.
+    expect(DIALOG).toContain('onApply={(cropped) => { setPending(null); save(cropped) }}')
+    expect(DIALOG).toContain('`/api/core/app-icon/${slug}/${appKey}/192.png')
+    expect(MANIFEST).toContain('/api/core/app-icon/${slug}/${app}/192.png?v=${v}')
+  })
+
+  it('the website logo is read from the business, not from app branding', () => {
+    const SITE = read('src/app/api/core/website-logo/[slug]/route.ts')
+    expect(SITE).toContain('logoPath = biz.logo || biz.branding?.logo || null')
+    expect(SITE).not.toContain('appLogos')
+  })
+})
+
 describe('the dialog says which icon you are looking at', () => {
   const DIALOG = read('src/components/laundry/apps/app-branding-dialog.tsx')
   const SAVE = read('src/app/api/core/businesses/[businessId]/app-branding/route.ts')
