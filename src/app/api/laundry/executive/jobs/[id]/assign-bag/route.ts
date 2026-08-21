@@ -119,14 +119,23 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
     const order = await prisma.laundryOrder.findFirst({
       where: { id, businessId: session.businessId },
-      select: { id: true, pickupExecutiveId: true, pickupVerifiedAt: true, storeId: true },
+      select: { id: true, pickupExecutiveId: true, pickupCompletedAt: true, storeId: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.pickupExecutiveId !== session.executiveId) {
       return NextResponse.json({ error: "This pickup is not assigned to you" }, { status: 403 })
     }
-    // Once the customer has verified the collection, the bag list is history.
-    if (order.pickupVerifiedAt) {
+    // Locked by CONFIRMATION, not by verification.
+    //
+    // pickupVerifiedAt is stamped when the customer proves who they are — at
+    // the REACHED step, BEFORE any bag is scanned. Gating on it locked the bag
+    // list at the very moment the executive was starting to fill it, so the
+    // remove button was refused on the screen that exists to edit bags.
+    //
+    // pickupCompletedAt is what "Confirm Pickup" sets, which is the point after
+    // which the bags are a fact about a finished collection rather than a
+    // choice still being made.
+    if (order.pickupCompletedAt) {
       return NextResponse.json({ error: "Pickup is already confirmed. Ask the store to change the bag." }, { status: 409 })
     }
 

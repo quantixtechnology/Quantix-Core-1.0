@@ -64,10 +64,30 @@ describe('a bag can be taken back off an unconfirmed pickup', () => {
     expect(ROUTE).toContain('reason: "Removed by executive before pickup was confirmed"')
   })
 
-  it('it refuses once the pickup is confirmed', () => {
-    // After verification the bag list is history, not a choice.
-    expect(ROUTE).toContain('if (order.pickupVerifiedAt)')
+  it('it locks on CONFIRMATION, not on customer verification', () => {
+    // pickupVerifiedAt is stamped when the customer proves who they are, at
+    // REACHED — BEFORE any bag is scanned. Gating on it locked the bag list at
+    // the moment the executive started filling it, so the remove button was
+    // refused on the very screen that exists to edit bags.
+    expect(ROUTE).toContain('if (order.pickupCompletedAt)')
+    const del = ROUTE.slice(ROUTE.indexOf('export async function DELETE'))
+    expect(del).not.toContain('if (order.pickupVerifiedAt)')
     expect(ROUTE).toContain('Pickup is already confirmed')
+  })
+
+  it('the control is hidden exactly when the API would refuse it', () => {
+    // A visible button that the server rejects is worse than no button.
+    expect(UI).toContain('const pickupDone = st >= RANK.PICKUP_COMPLETED')
+    expect(UI).toContain('st >= RANK.PICKUP_STARTED && !pickupDone')
+  })
+
+  it('removal frees the bag instead of consuming it', () => {
+    const ASSIGN_LIB = read('src/lib/laundry-bag-assign.ts')
+    expect(ASSIGN_LIB).toContain('status: "AVAILABLE"')
+    expect(ASSIGN_LIB).toContain('currentOrderId: null')
+    // The physical bag record is UPDATED, never deleted.
+    expect(ASSIGN_LIB).not.toContain('laundryBag.delete')
+    expect(ASSIGN_LIB).toContain('status: "RETURNED", returnedAt: now')
   })
 
   it('an executive can only touch their own pickup', () => {
