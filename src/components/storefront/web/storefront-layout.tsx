@@ -55,6 +55,18 @@ export function StorefrontLayout({
    * and without reaching into the PWA code. Off a tenant host — a preview, a
    * local run — it falls back to whatever logo the business has.
    */
+  // Published by the storefront bootstrap once store-context resolves.
+  const [iconVersion, setIconVersion] = useState<string>("")
+  useEffect(() => {
+    const read = () => {
+      const v = (window as unknown as { __qxCustomerIconV?: string }).__qxCustomerIconV
+      if (v) setIconVersion(v)
+    }
+    read()
+    window.addEventListener("qx:branding", read)
+    return () => window.removeEventListener("qx:branding", read)
+  }, [])
+
   const headerMark = useMemo(() => {
     if (typeof window === "undefined") return null
     const host = window.location.hostname
@@ -62,8 +74,14 @@ export function StorefrontLayout({
     if (!host.endsWith(`.${base}`)) return null
     const slug = host.slice(0, -(base.length + 1))
     if (!slug || slug.includes(".")) return null
-    return `/api/core/app-icon/${slug}/customer/192.png`
-  }, [])
+    // Versioned, exactly like the manifest. An unversioned URL is stable while
+    // its contents are not, so a browser that cached it once keeps showing an
+    // icon the tenant has since replaced.
+    const v = typeof window !== "undefined"
+      ? (window as unknown as { __qxCustomerIconV?: string }).__qxCustomerIconV
+      : undefined
+    return `/api/core/app-icon/${slug}/customer/192.png?v=${v || "d"}`
+  }, [iconVersion])
   const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType, deliveryAddress } = useCartStore()
 
   // Stamp the active workspace type onto the shared Quantix Cart Engine — makes

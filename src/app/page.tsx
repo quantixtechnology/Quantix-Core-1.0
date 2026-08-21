@@ -60,6 +60,12 @@ function StorefrontContextLoader({
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
         if (biz.logo) setCurrentBusinessLogo(biz.logo)
+        // The header renders the square Customer App icon and needs its
+        // version to avoid serving a browser's stale copy.
+        if (typeof window !== 'undefined' && biz.customerAppIconVersion) {
+          ;(window as unknown as { __qxCustomerIconV?: string }).__qxCustomerIconV = biz.customerAppIconVersion
+          window.dispatchEvent(new Event('qx:branding'))
+        }
         // Always inject a favicon — use business favicon if set, otherwise the
         // platform logo. This ensures the browser tab always shows something.
         if (typeof document !== 'undefined') {

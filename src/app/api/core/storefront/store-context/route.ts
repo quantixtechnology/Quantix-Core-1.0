@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveImageUrl } from '@/lib/image-url';
+import { appIconVersion, parseAppLogos } from '@/lib/app-branding';
 import { resolveBusinessFromDomain } from '@/lib/tenant-resolver';
 import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
 import { getStorefrontSettings } from '@/lib/core/address-serviceability';
@@ -94,7 +95,7 @@ export async function GET(request: Request) {
         },
         // Fetch BusinessBranding as fallback for logo/favicon if Business fields are null
         branding: {
-          select: { logo: true, favicon: true },
+          select: { logo: true, favicon: true, appLogos: true },
         },
       },
     });
@@ -190,6 +191,11 @@ export async function GET(request: Request) {
           slug: business.slug,
           businessType: business.businessType,
           isOnline: business.isOnline,
+          // The header wears the SQUARE Customer App icon and needs the same
+          // version the manifest uses. Without it the header requests a stable
+          // URL whose contents change — which is how a browser keeps showing an
+          // icon the tenant replaced days ago.
+          customerAppIconVersion: appIconVersion(parseAppLogos(business.branding?.appLogos).customer),
           logo:    resolveImageUrl(business.logo    ?? business.branding?.logo),
           favicon: resolveImageUrl(business.favicon ?? business.branding?.favicon),
           primaryColor: business.primaryColor,

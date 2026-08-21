@@ -173,6 +173,15 @@ describe('the website header wears the square app mark', () => {
     expect(LAYOUT).not.toContain('rounded-full object-contain')
   })
 
+  it('the header URL is versioned, like the manifest', () => {
+    // An unversioned URL is stable while its contents are not: a browser that
+    // cached it once keeps showing an icon the tenant has since replaced.
+    expect(LAYOUT).toContain('/customer/192.png?v=${v || "d"}')
+    const CTX = read('src/app/api/core/storefront/store-context/route.ts')
+    expect(CTX).toContain('customerAppIconVersion: appIconVersion(')
+    expect(CTX).toContain('appLogos: true')
+  })
+
   it('off a tenant host it falls back rather than breaking', () => {
     expect(LAYOUT).toContain('if (!host.endsWith(`.${base}`)) return null')
   })
