@@ -88,7 +88,7 @@ describe('the shell forwards a camera grant, and nothing else', () => {
   it('the Android permission is asked for before the web one is answered', () => {
     expect(ACTIVITY).toContain('Manifest.permission.CAMERA')
     expect(ACTIVITY).toContain('pendingWebRequest = request')
-    expect(ACTIVITY).toContain('requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA)')
+    expect(ACTIVITY).toContain('new String[]{Manifest.permission.CAMERA}, REQ_CAMERA)')
   })
 
   it('a refusal is answered, never left hanging', () => {
@@ -160,6 +160,62 @@ describe('the builds are signed releases', () => {
   it('the release task is what the builder runs', () => {
     expect(SCRIPT).toContain('Release"')
     expect(SCRIPT).not.toContain('assembleDebug')
+  })
+})
+
+describe('an APK a phone will actually parse', () => {
+  // "There was a problem while parsing the package" is what a phone says about
+  // an APK it cannot read, and it says nothing else — no log, no reason. So the
+  // packaging leaves no room for the question: every device back to Android 5
+  // is in range, and every signature scheme an installer might look for is
+  // present.
+  it('the floor is Android 5, not Android 7', () => {
+    // minSdk above the device is one of the few ways a structurally perfect
+    // APK still refuses to install, and the phone is the part we cannot see.
+    expect(GRADLE).toContain('minSdk 21')
+    expect(GRADLE).not.toContain('minSdk 24')
+  })
+
+  it('all three signature schemes are stated, not inferred', () => {
+    // AGP drops v1 once minSdk reaches 24, leaving META-INF empty — valid to
+    // the platform, but OEM installers and file managers still look there.
+    expect(GRADLE).toContain('enableV1Signing true')
+    expect(GRADLE).toContain('enableV2Signing true')
+    expect(GRADLE).toContain('enableV3Signing true')
+  })
+
+  it('a build is verified before it is published', () => {
+    expect(SCRIPT).toContain('apksigner" verify "$built"')
+    expect(SCRIPT).toContain('SIGNATURE DID NOT VERIFY')
+    expect(SCRIPT).toContain('zipalign" -c 4 "$built"')
+    expect(SCRIPT).toContain('APK IS NOT ALIGNED')
+  })
+
+  it('the three entries a package needs are checked for', () => {
+    expect(SCRIPT).toContain('for entry in AndroidManifest.xml classes.dex resources.arsc')
+    expect(SCRIPT).toContain('APK IS MISSING $entry')
+  })
+
+  it('the check runs BEFORE the copy, not after', () => {
+    // Verifying a file already sitting in public/apks proves nothing: it is
+    // downloadable by then.
+    const verify = SCRIPT.indexOf('apksigner" verify "$built"')
+    const copy = SCRIPT.indexOf('cp "$built" "$OUT/$SLUG-$key.apk"')
+    expect(verify).toBeGreaterThan(-1)
+    expect(copy).toBeGreaterThan(verify)
+  })
+
+  it('the entry check does not pipe into grep', () => {
+    // `unzip -l | grep -q` reads correctly and fails anyway: grep exits at the
+    // first hit, unzip dies of SIGPIPE, and pipefail calls a good APK broken.
+    expect(SCRIPT).not.toContain('unzip -l "$built" | grep')
+    expect(SCRIPT).toContain('listing="$(unzip -l "$built")"')
+  })
+
+  it('the runtime permission call survives the older floor', () => {
+    // Activity.requestPermissions does not exist below API 23.
+    expect(ACTIVITY).toContain('ActivityCompat.requestPermissions(MainActivity.this')
+    expect(codeOnly(ACTIVITY)).not.toContain('        requestPermissions(new String[]')
   })
 })
 

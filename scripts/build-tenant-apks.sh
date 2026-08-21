@@ -20,8 +20,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WRAP="$ROOT/android-wrapper"
 OUT="$ROOT/public/apks"
 ICON_HOST="${QUANTIX_ICON_HOST:-https://app.$BASE}"
-VERSION="${QUANTIX_APP_VERSION:-1.0.0}"
-VERSION_CODE="${QUANTIX_APP_VERSION_CODE:-1}"
+# Newest build-tools available — apksigner and zipalign live here.
+BT="$(ls -d "${ANDROID_HOME:-}"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+VERSION="${QUANTIX_APP_VERSION:-1.0.1}"
+VERSION_CODE="${QUANTIX_APP_VERSION_CODE:-2}"
 
 : "${JAVA_HOME:?set JAVA_HOME to a JDK 17 or 21}"
 : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
@@ -69,8 +71,23 @@ for row in "${APPS[@]}"; do
 
   built="$WRAP/app/build/outputs/apk/$flavour/release/app-$flavour-release.apk"
   [ -f "$built" ] || { echo "   BUILD PRODUCED NO APK"; exit 1; }
+
+  # Verify BEFORE publishing. An APK that does not verify is not a build
+  # failure anyone sees — it is "There was a problem while parsing the package"
+  # on somebody's phone, hours later and with nothing to go on. Checked here so
+  # a broken artifact can never reach public/apks in the first place.
+  "${BT}apksigner" verify "$built" >/dev/null || { echo "   SIGNATURE DID NOT VERIFY"; exit 1; }
+  "${BT}zipalign" -c 4 "$built" >/dev/null || { echo "   APK IS NOT ALIGNED"; exit 1; }
+  # Listed once and matched in the shell: `unzip -l | grep -q` looks right but
+  # grep exits at the first hit, unzip dies of SIGPIPE, and pipefail then
+  # reports a perfectly good APK as broken.
+  listing="$(unzip -l "$built")"
+  for entry in AndroidManifest.xml classes.dex resources.arsc; do
+    case "$listing" in *"$entry"*) ;; *) echo "   APK IS MISSING $entry"; exit 1 ;; esac
+  done
+
   cp "$built" "$OUT/$SLUG-$key.apk"
-  echo "   → public/apks/$SLUG-$key.apk  ($(du -h "$OUT/$SLUG-$key.apk" | cut -f1))"
+  echo "   → public/apks/$SLUG-$key.apk  ($(du -h "$OUT/$SLUG-$key.apk" | cut -f1), verified)"
 done
 
 echo

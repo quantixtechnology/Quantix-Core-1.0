@@ -14,7 +14,12 @@ android {
 
     defaultConfig {
         applicationId appId
-        minSdk 24
+        // 21, not 24. A shell around a website needs nothing newer, and the
+        // phone that reported "problem parsing the package" is the phone we
+        // cannot inspect — an APK the device is too old to parse is reported
+        // exactly that way by several launchers. minSdk 21 also makes D8 emit
+        // DEX 035 and makes AGP add the v1 signature below.
+        minSdk 21
         targetSdk 34
         versionCode appVersionCode
         versionName appVersionName
@@ -41,6 +46,15 @@ android {
                 keyAlias System.getenv("QUANTIX_KEY_ALIAS")
                 keyPassword System.getenv("QUANTIX_KEY_PASSWORD")
             }
+            // All three schemes, stated rather than inferred. AGP drops v1 once
+            // minSdk reaches 24, which leaves a sideloaded APK with nothing in
+            // META-INF — valid to the platform, but some OEM package installers
+            // and file managers still look for the JAR signature and refuse
+            // what they cannot find. v1 costs a few KB; a refusal costs an
+            // install.
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
         }
     }
 

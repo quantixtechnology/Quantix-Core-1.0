@@ -16,6 +16,7 @@ import android.content.Intent;
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 /**
@@ -92,7 +93,12 @@ public class MainActivity extends AppCompatActivity {
                     } else {
                         // Ask Android first; the page waits for the answer.
                         pendingWebRequest = request;
-                        requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+                        // ActivityCompat, not Activity: below API 23 the platform
+                        // method does not exist, and permissions were granted at
+                        // install time anyway — the compat call answers straight
+                        // away instead of throwing.
+                        ActivityCompat.requestPermissions(MainActivity.this,
+                                new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
                     }
                 });
             }
