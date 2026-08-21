@@ -27,6 +27,7 @@ const SCRIPT   = read('scripts/build-tenant-apks.sh')
 const ARTIFACTS = read('src/lib/mobile-apk-artifacts.ts')
 const ROUTE    = read('src/app/api/laundry/app-provisioning/route.ts')
 const GITIGNORE = read('.gitignore')
+const PROXY    = read('src/proxy.ts')
 
 /**
  * Both files EXPLAIN the mistakes they avoid, in comments that quote them
@@ -216,6 +217,33 @@ describe('an APK a phone will actually parse', () => {
     // Activity.requestPermissions does not exist below API 23.
     expect(ACTIVITY).toContain('ActivityCompat.requestPermissions(MainActivity.this')
     expect(codeOnly(ACTIVITY)).not.toContain('        requestPermissions(new String[]')
+  })
+})
+
+describe('every host serves the APK as an APK', () => {
+  // The download button is a RELATIVE link, so the host the admin happened to
+  // be on decided what came back. On delivery.<tenant> and store.<tenant> the
+  // proxy rewrites every path to that app's root, and on the storefront host
+  // to a storefront page — so /apks/<tenant>-customer.apk answered 200
+  // text/html. A phone that downloads 15 KB of HTML named .apk says "There was
+  // a problem while parsing the package", which is a true statement about an
+  // HTML file and tells you nothing about the APK.
+  it('the proxy lets the APK path through untouched', () => {
+    expect(PROXY).toContain("const SKIP_PATHS = ['/api', '/uploads', '/apks', '/sw.js'")
+  })
+
+  it('it is skipped like a file, not routed like a page', () => {
+    // Same list as /uploads, and for the same reason: it is a download.
+    const skip = PROXY.slice(PROXY.indexOf('const SKIP_PATHS'), PROXY.indexOf('const hostWithoutPort'))
+    expect(skip).toContain("'/uploads'")
+    expect(skip).toContain("'/apks'")
+  })
+
+  it('the link stays relative, so no host is hardcoded', () => {
+    // Absolute URLs would fix the button and leave every link already shared
+    // pointing at a web page.
+    expect(ARTIFACTS).toContain('return `/${APK_DIR}/${file}`')
+    expect(ARTIFACTS).not.toMatch(/https?:\/\//)
   })
 })
 

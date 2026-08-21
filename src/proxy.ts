@@ -44,7 +44,16 @@ export default function proxy(request: NextRequest) {
   log(`[proxy] host=${host} pathname=${pathname} base=${STOREFRONT_BASE}`)
 
   // Storefront subdomain detection — skip for API, uploads, static assets, and Next internals
-  const SKIP_PATHS = ['/api', '/uploads', '/sw.js', '/manifest.json', '/robots.txt', '/sitemap.xml', '/.well-known']
+  // /apks is here for the same reason as /uploads: it is a downloadable FILE,
+  // not a page. Without it, delivery.<tenant> and store.<tenant> rewrite every
+  // path to their app root and the storefront host rewrites to a storefront
+  // page — so /apks/<tenant>-customer.apk answered 200 text/html, and a phone
+  // that downloads 15 KB of HTML named .apk says "There was a problem while
+  // parsing the package". The download button is a relative link, so which
+  // host the admin happened to be on decided whether it returned an app or a
+  // web page. The APK is public and its filename already carries the tenant,
+  // so it is served identically from every host.
+  const SKIP_PATHS = ['/api', '/uploads', '/apks', '/sw.js', '/manifest.json', '/robots.txt', '/sitemap.xml', '/.well-known']
   if (!SKIP_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     const hostWithoutPort = host.split(':')[0]
 
