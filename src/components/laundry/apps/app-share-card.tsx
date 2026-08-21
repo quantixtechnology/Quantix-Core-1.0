@@ -7,14 +7,22 @@ import { useEffect, useState } from "react"
 import QRCode from "qrcode"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { QrCode, Share2, ExternalLink, Download, Loader2 } from "lucide-react"
+import { QrCode, Share2, ExternalLink, Download, Loader2, Smartphone } from "lucide-react"
 import { CopyButton } from "@/components/ui/copy-button"
 import { toast } from "sonner"
 import { downloadQrPng, QR_PNG_SIZE } from "@/lib/qr-export"
 import { AppQrDialog } from "@/components/laundry/apps/app-qr-dialog"
 
-export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction, downloadFileBase }: {
+export function AppShareCard({ title, description, url, icon, note, qrDialog, primaryAction, downloadFileBase, apk }: {
   title: string; description: string; url: string; icon?: React.ReactNode; note?: string
+  /**
+   * The Android build for THIS app, from the mobile-provision pipeline.
+   *
+   * `url` is null until a build is LIVE — a half-finished build has no
+   * artifact to hand out, and a download button that 404s is worse than one
+   * that says it is not ready.
+   */
+  apk?: { url: string | null; status?: string }
   /** Optional headline action for this app, e.g. Install. */
   primaryAction?: React.ReactNode
   /**
@@ -44,6 +52,10 @@ export function AppShareCard({ title, description, url, icon, note, qrDialog, pr
   }, [showQr, url])
 
   const whatsapp = () => window.open(`https://wa.me/?text=${encodeURIComponent(`${title}\n${url}`)}`, "_blank")
+  // The APK gets its OWN share text. Folding it into the message above would
+  // change what every existing share sends.
+  const whatsappApk = () => apk?.url && window.open(
+    `https://wa.me/?text=${encodeURIComponent(`${title} — Android app\n${apk.url}`)}`, "_blank")
 
   return (
     <Card className="rounded-xl border-slate-200">
@@ -78,6 +90,28 @@ export function AppShareCard({ title, description, url, icon, note, qrDialog, pr
             </Button>
           )}
           <Button size="sm" variant="outline" className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={whatsapp}><Share2 className="h-3.5 w-3.5" /> WhatsApp</Button>
+
+          {/* Android build. Only rendered for apps that have one, and only
+              enabled once the build is LIVE — see the `apk` prop. */}
+          {apk && (apk.url ? (
+            <>
+              <Button asChild size="sm" variant="outline" className="gap-1 text-indigo-700 border-indigo-200 hover:bg-indigo-50">
+                {/* A real link, so the browser downloads the file itself —
+                    never a route into the PWA. */}
+                <a href={apk.url} target="_blank" rel="noreferrer" download>
+                  <Smartphone className="h-3.5 w-3.5" /> Download APK
+                </a>
+              </Button>
+              <CopyButton value={apk.url} label="APK link" size="sm" variant="outline">Copy APK Link</CopyButton>
+              <Button size="sm" variant="outline" className="gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={whatsappApk}>
+                <Share2 className="h-3.5 w-3.5" /> Share APK
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="outline" className="gap-1 text-slate-400" disabled title={apk.status ? `Build status: ${apk.status}` : undefined}>
+              <Smartphone className="h-3.5 w-3.5" /> APK Not Available
+            </Button>
+          ))}
         </div>
         {showQr && !qrDialog && (
           <div className="flex flex-col items-center pt-1">

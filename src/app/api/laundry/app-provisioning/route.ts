@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTenantAppStatus, provisionTenantApps } from "@/lib/laundry-app-provisioning"
+import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
 
@@ -30,7 +31,31 @@ export async function GET(request: Request) {
       if (execNeedsHeal) status.executive.sslStatus = "provisioning"
       if (storeNeedsHeal) status.store.sslStatus = "provisioning"
     }
-    return NextResponse.json({ success: true, data: status })
+    // ── Android builds ──────────────────────────────────────────────────────
+    // The APK URLs the mobile-provision pipeline already records on Deployment
+    // rows (hostingConfig.apkUrl, falling back to liveUrl). Read here rather
+    // than from a second endpoint because this route has ALREADY resolved the
+    // platform business and proved the caller belongs to it — a separate call
+    // would be a second place for that check to be got wrong.
+    //
+    // A build that is not LIVE has no downloadable artifact, whatever URL the
+    // row happens to carry: offering it would hand someone a 404.
+    const deployments = await prisma.deployment.findMany({
+      where: { businessId: guard.platformBusinessId, type: { in: ["CUSTOMER_APP", "DELIVERY_APP", "ADMIN_APP"] } },
+      select: { type: true, status: true, liveUrl: true, hostingConfig: true },
+    })
+    const apk: Record<string, { url: string | null; status: string }> = {}
+    for (const d of deployments) {
+      let cfgApk: string | null = null
+      try {
+        const cfg = d.hostingConfig ? (JSON.parse(d.hostingConfig) as Record<string, unknown>) : {}
+        cfgApk = typeof cfg.apkUrl === "string" ? cfg.apkUrl : null
+      } catch { /* malformed config is no URL, never a crash */ }
+      const url = cfgApk ?? d.liveUrl ?? null
+      apk[d.type] = { url: d.status === "LIVE" && url ? url : null, status: d.status }
+    }
+
+    return NextResponse.json({ success: true, data: { ...status, apk } })
   } catch (e) {
     console.error("[laundry-app-provisioning] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

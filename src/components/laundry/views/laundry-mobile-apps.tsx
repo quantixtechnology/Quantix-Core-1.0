@@ -19,7 +19,12 @@ import { useAuthStore } from "@/stores/auth-store"
 const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 
 interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
-interface Provisioning { customer: AppStatus; executive: AppStatus; store: AppStatus }
+interface ApkState { url: string | null; status: string }
+interface Provisioning {
+  customer: AppStatus; executive: AppStatus; store: AppStatus
+  // Keyed by Deployment type from the mobile-provision pipeline.
+  apk?: Partial<Record<"CUSTOMER_APP" | "DELIVERY_APP" | "ADMIN_APP", ApkState>>
+}
 
 export function LaundryMobileApps() {
   const { currentBusinessId, user } = useAuthStore()
@@ -100,14 +105,14 @@ export function LaundryMobileApps() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="space-y-2">
-          <AppShareCard title="Customer App" description="Customers book pickups, track orders and pay." icon={<Smartphone className="h-5 w-5" />} url={customerUrl} note="Your dedicated branded customer website & PWA." qrDialog={{ businessName: businessName || "Your Business", appName: "Customer App" }} />
+          <AppShareCard apk={prov?.apk?.CUSTOMER_APP ?? { url: null, status: "NOT_BUILT" }} title="Customer App" description="Customers book pickups, track orders and pay." icon={<Smartphone className="h-5 w-5" />} url={customerUrl} note="Your dedicated branded customer website & PWA." qrDialog={{ businessName: businessName || "Your Business", appName: "Customer App" }} />
           <StatusStrip label="Customer host" status={prov?.customer} loading={loading} />
           {currentBusinessId && (
             <AppBrandingDialog appKey="customer" appLabel="Customer App" businessId={currentBusinessId} slug={tenantSlug} />
           )}
         </div>
         <div className="space-y-2">
-          <AppShareCard title="Executive Pickup & Delivery App" description="Field executives run assigned pickups and deliveries." icon={<Bike className="h-5 w-5" />} url={executiveUrl} note="Dedicated per-tenant host — only active Delivery Executives sign in; the business is set by the URL." />
+          <AppShareCard apk={prov?.apk?.DELIVERY_APP ?? { url: null, status: "NOT_BUILT" }} title="Executive Pickup & Delivery App" description="Field executives run assigned pickups and deliveries." icon={<Bike className="h-5 w-5" />} url={executiveUrl} note="Dedicated per-tenant host — only active Delivery Executives sign in; the business is set by the URL." />
           <StatusStrip label="Executive host" status={prov?.executive} loading={loading} />
           {currentBusinessId && (
             <AppBrandingDialog appKey="delivery" appLabel="Delivery App" businessId={currentBusinessId} slug={tenantSlug} />
@@ -131,7 +136,7 @@ export function LaundryMobileApps() {
           )}
         </div>
         <div className="space-y-2">
-          <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />
+          <AppShareCard apk={prov?.apk?.ADMIN_APP ?? { url: null, status: "NOT_BUILT" }} title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />
           <StatusStrip label="Store host" status={prov?.store} loading={loading} />
           {currentBusinessId && (
             <AppBrandingDialog appKey="store" appLabel="Store App" businessId={currentBusinessId} slug={tenantSlug} />
