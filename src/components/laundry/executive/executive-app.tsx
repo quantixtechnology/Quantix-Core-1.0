@@ -6,7 +6,7 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus } from "lucide-react"
+import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
 import { DeliveryPromiseCard, DeliveryPromiseUrgency, DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
@@ -369,6 +369,25 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
     return r.ok
   }
 
+  /** Take a bag back off this pickup — a mis-scan is fixable at the door. */
+  const removeBag = async (svc: Svc, bagNumber: string): Promise<void> => {
+    setBusy(true)
+    try {
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, {
+        method: "DELETE",
+        body: JSON.stringify({ code: bagNumber, serviceName: svc.serviceName, executiveName: exec.name }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Could not remove that bag")
+      toast.success(`${bagNumber} removed`)
+      await refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove that bag")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const [delBag, setDelBag] = useState("")
   const scanDeliveryBag = async (code: string) => {
     const c = String(code || "").trim(); if (!c) return
@@ -556,7 +575,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags · one or more bags per service</p>
             {job.services.map((s, i) => (
-              <ServiceBags key={i} svc={s} onScan={scanBag} onUseNew={useNewBag} />
+              <ServiceBags key={i} svc={s} onScan={scanBag} onUseNew={useNewBag} onRemove={removeBag} />
             ))}
           </div>
         )}
@@ -608,10 +627,11 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
 // One service's bag list inside the editable assignment section. Each service
 // is independent: assigned bags show as "Bag N ✓ number", then a "+ Add Bag"
 // button reveals the next "Bag N · Scan" slot. No fixed limit.
-function ServiceBags({ svc, onScan, onUseNew }: {
+function ServiceBags({ svc, onScan, onUseNew, onRemove }: {
   svc: Svc
   onScan: (code: string, svc: Svc) => Promise<boolean>
   onUseNew: (svc: Svc) => Promise<boolean>
+  onRemove: (svc: Svc, bagNumber: string) => Promise<void>
 }) {
   const [adding, setAdding] = useState(false)
   // A scan that did not work. Shown as one short line, never as an error the
@@ -631,6 +651,16 @@ function ServiceBags({ svc, onScan, onUseNew }: {
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
               <span className="text-slate-500">Bag {j + 1}</span>
               <span className="font-mono font-semibold text-emerald-700">{bn}</span>
+              {/* A wrong bag is easiest to fix at the door. Removing is only
+                  offered before the pickup is confirmed; afterwards the bag is
+                  a fact about a completed collection, not a choice. */}
+              <button
+                onClick={() => onRemove(svc, bn)}
+                aria-label={`Remove ${bn}`}
+                className="ml-auto h-7 w-7 grid place-items-center rounded-lg text-slate-400 active:bg-rose-50 active:text-rose-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
         </div>
@@ -647,12 +677,31 @@ function ServiceBags({ svc, onScan, onUseNew }: {
               if (okScan) { setFailed(false); setAdding(false) } else setFailed(true)
             }}
           />
-          {failed && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">Bag not readable — use a new bag</p>}
-          <button
-            onClick={async () => { if (await onUseNew(svc)) { setFailed(false); setAdding(false) } }}
-            className="w-full h-12 rounded-xl border-2 border-slate-900 text-slate-900 text-base font-semibold">
-            Use New Bag
-          </button>
+          {/* A new bag is still A BAG THE EXECUTIVE IS HOLDING, so it is
+              scanned like any other. Picking one from stock on their behalf
+              records a bag number that may not be the one in the van. */}
+          <BagScanButton
+            label="Scan New Bag" closeOnScan
+            className="w-full h-12 justify-center text-base font-semibold border-2 border-slate-900 text-slate-900 bg-white"
+            onScan={async (code) => {
+              const okScan = await onScan(code, svc)
+              if (okScan) { setFailed(false); setAdding(false) } else setFailed(true)
+            }}
+          />
+          {failed && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-center">
+                Bag not readable
+              </p>
+              {/* Last resort only, so a doorstep is never a dead end — but no
+                  longer the default, because it guesses which bag is in hand. */}
+              <button
+                onClick={async () => { if (await onUseNew(svc)) { setFailed(false); setAdding(false) } }}
+                className="w-full h-10 rounded-xl text-sm font-medium text-slate-500 underline underline-offset-2">
+                Can&apos;t scan — assign any spare bag
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <button onClick={() => setAdding(true)} className="w-full h-9 rounded-xl border border-dashed border-blue-300 text-blue-600 text-sm font-medium flex items-center justify-center gap-1.5">
