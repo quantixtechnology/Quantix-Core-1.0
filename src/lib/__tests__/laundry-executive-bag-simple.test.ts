@@ -66,14 +66,18 @@ describe('delivery is never blocked by a bag', () => {
 
 // ── Pickup (tests 6-12, §5 §6 §9) ───────────────────────────────────────────
 describe('pickup is two buttons', () => {
-  it('offers exactly Scan Returned Bag and Use New Bag', () => {
+  it('offers exactly two scans: the returned bag, or a new one', () => {
+    // Both are bags the executive is holding, so both are scanned. Picking a
+    // bag on their behalf recorded a number nobody had read.
     expect(PWA).toContain('Scan Returned Bag')
-    expect(PWA).toContain('Use New Bag')
+    expect(PWA).toContain('Scan New Bag')
   })
 
-  it('a failed scan falls through to Use New Bag, not to an error to resolve', () => {
-    expect(PWA).toContain('Bag not readable — use a new bag')
+  it('a failed scan falls through to a fallback, not to an error to resolve', () => {
+    expect(PWA).toContain('Bag not readable')
     expect(PWA).toContain('else setFailed(true)')
+    // The escape hatch is still one tap away — just no longer the default.
+    expect(PWA).toContain('onUseNew(svc)')
   })
 
   it('Use New Bag always exists as the fallback', () => {
