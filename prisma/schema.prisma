@@ -1952,7 +1952,24 @@ model Customer {
   metadata                 String                 @default("{}")
   isActive                 Boolean                @default(true)
   status                   String                 @default("ACTIVE")
+  // Channel the record came in through — STORE_FRONT, WEBSITE_INQUIRY, API…
+  // Long-standing, widely written, and NOT the acquisition question below.
   source                   String                 @default("MANUAL")
+  // ── Acquisition ─────────────────────────────────────────────────────────
+  // How the business won this customer, chosen by a person at create/edit time.
+  // Kept separate from `source` above: overloading a field that already holds
+  // channel values would corrupt every record written by the twelve places
+  // that set it.
+  //
+  // customerSourceId points at LaundryCustomerSource without a Prisma relation
+  // on purpose — that master is scoped to the LaundryBusiness while Customer is
+  // scoped to the platform Business, and a relation across those two scopes
+  // would tie a tenant's customers to the wrong ownership boundary.
+  customerSourceId         String?
+  // Denormalised alongside the id, the way CRM stores assignedToId/Name: the
+  // name a person picked should survive that staff member later leaving.
+  salesTeamOwnerId         String?
+  salesTeamOwnerName       String?
   isGuest                  Boolean                @default(false)
   verified                 Boolean                @default(false)
   customerCode             String?
@@ -1997,6 +2014,8 @@ model Customer {
   @@unique([businessId, customerCode])
   @@index([businessId])
   @@index([userId])
+  @@index([businessId, customerSourceId])
+  @@index([businessId, salesTeamOwnerId])
   @@index([phone])
   @@index([status])
   @@index([businessId, email])
@@ -5580,6 +5599,28 @@ model LaundryCrmLeadStatus {
   updatedAt       DateTime         @updatedAt
   laundryCrmLeads LaundryCrmLead[]
 
+  @@index([businessId])
+}
+
+/// How a customer was acquired — Direct, Sales, Event, or whatever the business
+/// adds. Deliberately NOT the same list as LaundryCrmLeadSource: that one
+/// records how a LEAD arrived (Google Ads, Referral…), which is a different
+/// vocabulary answering a different question.
+///
+/// Shaped like the CRM masters so it behaves the way admins already expect:
+/// reorder by displayOrder, retire by `active` rather than delete, because a
+/// source that customers already carry must stay readable on their records.
+model LaundryCustomerSource {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  color        String   @default("#64748B")
+  displayOrder Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessId, name])
   @@index([businessId])
 }
 
