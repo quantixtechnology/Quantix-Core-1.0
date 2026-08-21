@@ -27,6 +27,7 @@ import {
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { AcquisitionFields, useAcquisitionOptions, defaultSourceId } from "@/components/laundry/customers/acquisition-fields"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 
 interface Row {
@@ -40,6 +41,10 @@ interface Detail extends Row {
   avatar?: string | null; addresses: Addr[]; fullAddress?: string; tags?: string[]; comm?: Record<string, boolean>
   alternateMobile?: string | null; company?: string | null; reference?: string | null; anniversary?: string | null
   gender?: string | null; dateOfBirth?: string | null; gstNumber?: string | null; notes?: string; stats?: CustStats
+  // Acquisition — how the business won this customer. Distinct from the
+  // long-standing `source` channel field on the Customer row.
+  customerSourceId?: string | null; customerSourceName?: string | null; customerSourceActive?: boolean
+  salesTeamOwnerId?: string | null; salesTeamOwnerName?: string | null
 }
 interface TL { at: string; type: string; title: string; detail?: string | null; amount?: number | null; ref?: string | null }
 interface Note { id: string; type: string; title: string; body: string | null; actorName: string | null; createdAt: string }
@@ -119,6 +124,7 @@ export function LaundryCustomersView() {
   const [membership, setMembership] = useState<any>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [savingEdit, setSavingEdit] = useState(false)
+  const { sources, owners } = useAcquisitionOptions(currentBusinessId || "")
   const [timeline, setTimeline] = useState<TL[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
@@ -263,7 +269,7 @@ export function LaundryCustomersView() {
       if (json.success) {
         const d = json.data as Detail; setDetail(d)
         const a = d.addresses?.[0]
-        setForm({ name: d.name, mobile: d.phone || "", email: d.email || "", alternateMobile: d.alternateMobile || "", company: d.company || "", gstNumber: d.gstNumber || "", gender: d.gender || "", reference: d.reference || "", tags: (d.tags || []).join(", "), status: d.status || "ACTIVE", addressLine1: a?.addressLine1 || "", addressLine2: a?.addressLine2 || "", area: a?.area || "", landmark: a?.landmark || "", city: a?.city || "", state: a?.state || "", pincode: a?.pincode || "" })
+        setForm({ customerSourceId: d.customerSourceId || "", salesTeamOwnerId: d.salesTeamOwnerId || "", salesTeamOwnerName: d.salesTeamOwnerName || "", name: d.name, mobile: d.phone || "", email: d.email || "", alternateMobile: d.alternateMobile || "", company: d.company || "", gstNumber: d.gstNumber || "", gender: d.gender || "", reference: d.reference || "", tags: (d.tags || []).join(", "), status: d.status || "ACTIVE", addressLine1: a?.addressLine1 || "", addressLine2: a?.addressLine2 || "", area: a?.area || "", landmark: a?.landmark || "", city: a?.city || "", state: a?.state || "", pincode: a?.pincode || "" })
         // Overview is the default tab → warm the recent-orders list immediately.
         if (!edit) { setOrdersLoaded(true); loadOrders(id, 0, "", "") }
       }
@@ -570,6 +576,16 @@ export function LaundryCustomersView() {
                     </select>
                   </div>
                 </div>
+                {/* Acquisition — how this customer was won. Editable later,
+                    because it is often learnt after the record is created. */}
+                <AcquisitionFields
+                  sources={sources}
+                  owners={owners}
+                  sourceId={form.customerSourceId || defaultSourceId(sources)}
+                  ownerId={form.salesTeamOwnerId || ""}
+                  onSourceChange={(id) => setForm((f) => ({ ...f, customerSourceId: id }))}
+                  onOwnerChange={(id, name) => setForm((f) => ({ ...f, salesTeamOwnerId: id, salesTeamOwnerName: name }))}
+                />
                 <div className="space-y-1"><Label className="text-xs">Tags (comma separated)</Label><Input value={form.tags || ""} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="VIP, Corporate, Premium" /></div>
                 <div className="space-y-1"><Label className="text-xs">Address Line 1</Label><Input value={form.addressLine1} onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))} /></div>
                 <div className="space-y-1"><Label className="text-xs">Address Line 2</Label><Input value={form.addressLine2} onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))} /></div>
@@ -725,6 +741,26 @@ export function LaundryCustomersView() {
                     <div><p className="text-xs text-slate-400 flex items-center gap-1"><Wallet className="h-3 w-3" /> Wallet</p><p className="text-slate-700">{inr(detail.walletBalance)}</p></div>
                     <div><p className="text-xs text-slate-400">Reference</p><p className="text-slate-700">{detail.reference || "—"}</p></div>
                   </div>
+                  {/* Acquisition — how this customer was won. Kept as its own
+                      block rather than mixed into contact details, because it
+                      is what the source and salesperson reports read. */}
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">Acquisition</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400">Source</p>
+                        <p className="text-slate-700">
+                          {detail.customerSourceName || "Direct"}
+                          {detail.customerSourceActive === false && <span className="ml-1 text-[10px] text-slate-400">(inactive)</span>}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Sales Team Owner</p>
+                        <p className="text-slate-700">{detail.salesTeamOwnerName || "—"}</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div><p className="text-xs text-slate-400">Communication</p><div className="flex flex-wrap gap-1 mt-0.5">{["sms", "whatsapp", "email", "push", "marketing"].map((k) => <Badge key={k} variant="outline" className={`text-[10px] capitalize ${detail.comm?.[k] ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{k}</Badge>)}</div></div>
                   <Button size="sm" variant="outline" className="w-full gap-1.5 border-blue-200 text-blue-700" disabled={!detail.email} onClick={sendInvite}><Mail className="h-3.5 w-3.5" /> Send App Registration Invitation</Button>
 

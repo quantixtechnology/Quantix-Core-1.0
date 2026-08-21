@@ -27,6 +27,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { AcquisitionFields, useAcquisitionOptions, defaultSourceId } from "@/components/laundry/customers/acquisition-fields"
 import { generateSlots, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT, slotHasEnded, slotIsPast } from "@/lib/laundry-slots"
 import { dayKey, earliestDeliveryDayKey } from "@/lib/laundry-tat"
 import { fulfilmentError, fulfilmentPayload, needsAddress as fulfilmentNeedsAddress, addressLabel, type FulfilmentState } from "@/lib/laundry-fulfilment"
@@ -120,6 +121,16 @@ export default function LaundryNewOrder() {
   const [newCustCity, setNewCustCity] = useState("")
   const [newCustState, setNewCustState] = useState("")
   const [newCustPincode, setNewCustPincode] = useState("")
+  // Acquisition — chosen here so a customer is classified the moment they exist,
+  // rather than needing a second visit to Customer Master.
+  const [newCustSourceId, setNewCustSourceId] = useState("")
+  const [newCustOwnerId, setNewCustOwnerId] = useState("")
+  const [newCustOwnerName, setNewCustOwnerName] = useState("")
+  const { sources: custSources, owners: custOwners } = useAcquisitionOptions(currentBusinessId || "")
+  useEffect(() => {
+    // Default to Direct once the list arrives, without overriding a choice.
+    if (!newCustSourceId && custSources.length) setNewCustSourceId(defaultSourceId(custSources))
+  }, [custSources, newCustSourceId])
 
   const [express, setExpress] = useState(false)
   const [expressCfg, setExpressCfg] = useState<{ enabled: boolean; hours: number | null }>({ enabled: false, hours: null })
@@ -412,9 +423,9 @@ export default function LaundryNewOrder() {
     if (missing.length) { toast({ title: "Complete the address", description: `Required: ${missing.join(", ")}`, variant: "destructive" }); return }
     if (!isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be a 6-digit Indian pincode", variant: "destructive" }); return }
     const addressPayload: AddressRow = { addressLine1: newCustAddress, addressLine2: newCustAddress2, area: newCustArea, landmark: newCustLandmark, city: newCustCity, state: newCustState, pincode: newCustPincode, country: "India" }
-    const resetForm = () => { setNewCustName(""); setNewCustMobile(""); setNewCustAltMobile(""); setNewCustEmail(""); setNewCustAddress(""); setNewCustAddress2(""); setNewCustArea(""); setNewCustLandmark(""); setNewCustCity(""); setNewCustState(""); setNewCustPincode(""); setCustomers([]) }
+    const resetForm = () => { setNewCustName(""); setNewCustMobile(""); setNewCustAltMobile(""); setNewCustEmail(""); setNewCustAddress(""); setNewCustAddress2(""); setNewCustArea(""); setNewCustLandmark(""); setNewCustCity(""); setNewCustState(""); setNewCustPincode(""); setNewCustOwnerId(""); setNewCustOwnerName(""); setCustomers([]) }
     const mobile = newCustMobile
-    const payload = { businessId: currentBusinessId, name: newCustName, mobile, alternateMobile: newCustAltMobile, email: newCustEmail, ...addressPayload }
+    const payload = { businessId: currentBusinessId, name: newCustName, mobile, alternateMobile: newCustAltMobile, email: newCustEmail, customerSourceId: newCustSourceId || null, salesTeamOwnerId: newCustOwnerId || null, salesTeamOwnerName: newCustOwnerName || null, ...addressPayload }
     // ── Production instrumentation (open DevTools console to read the trace) ──
     console.group("%c[Save Customer & Continue]", "color:#2563eb;font-weight:bold")
     console.log("1. payload", payload)
@@ -716,6 +727,14 @@ export default function LaundryNewOrder() {
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Alternate Mobile</Label><Input value={newCustAltMobile} onChange={(e) => setNewCustAltMobile(e.target.value)} placeholder="Enter alternate mobile" className="bg-slate-50 border-slate-200" /></div>
                   </div>
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Email</Label><Input value={newCustEmail} onChange={(e) => setNewCustEmail(e.target.value)} placeholder="Enter email" className="bg-slate-50 border-slate-200" /></div>
+                  <AcquisitionFields
+                    sources={custSources}
+                    owners={custOwners}
+                    sourceId={newCustSourceId}
+                    ownerId={newCustOwnerId}
+                    onSourceChange={setNewCustSourceId}
+                    onOwnerChange={(id, name) => { setNewCustOwnerId(id); setNewCustOwnerName(name) }}
+                  />
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Address Line 1 *</Label><Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="House / Flat / Building" className="bg-slate-50 border-slate-200" /></div>
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Address Line 2</Label><Input value={newCustAddress2} onChange={(e) => setNewCustAddress2(e.target.value)} placeholder="Street / Road (optional)" className="bg-slate-50 border-slate-200" /></div>
                   <div className="grid grid-cols-2 gap-3">

@@ -42,7 +42,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const customer = await scopedCustomer(businessId, id)
     if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const stats = await customerStats(id)
-    return NextResponse.json({ success: true, data: { ...shape(customer), stats } })
+    // The profile shows a NAME, so resolve it here rather than making every
+    // caller fetch the master. There is no Prisma relation to join through —
+    // the master is laundry-scoped while Customer is platform-scoped.
+    const src = customer.customerSourceId
+      ? await prisma.laundryCustomerSource.findUnique({
+          where: { id: customer.customerSourceId }, select: { name: true, active: true },
+        })
+      : null
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...shape(customer),
+        stats,
+        // Null source reads as the default rather than blank: a customer
+        // created before this existed was still won somehow, and Direct is the
+        // honest assumption. Nothing is written until the record is next saved.
+        customerSourceName: src?.name ?? "Direct",
+        customerSourceActive: src?.active ?? true,
+      },
+    })
   } catch (e) {
     console.error("[laundry-customers] GET[id]", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -80,6 +99,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(b.avatar !== undefined && { avatar: b.avatar || null }),
         ...(b.gstNumber !== undefined && { gstNumber: b.gstNumber || null }),
         ...(b.accountType !== undefined && { accountType: b.accountType }),
+        // Acquisition. Editable for the life of the customer — how they were
+        // won is often learnt after the record is first made.
+        ...(b.customerSourceId !== undefined && { customerSourceId: b.customerSourceId || null }),
+        ...(b.salesTeamOwnerId !== undefined && {
+          salesTeamOwnerId: b.salesTeamOwnerId || null,
+          // Name travels with the id, so the record keeps the person who won
+          // them even after that person leaves the staff list.
+          salesTeamOwnerName: b.salesTeamOwnerId ? (b.salesTeamOwnerName || null) : null,
+        }),
         ...(b.loyaltyTier !== undefined && { loyaltyTier: b.loyaltyTier }),
         ...(b.status !== undefined && { status: b.status, isActive: b.status === "ACTIVE" }),
         ...(b.notes !== undefined && { notes: b.notes || "" }),

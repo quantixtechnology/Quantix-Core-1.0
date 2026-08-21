@@ -110,3 +110,69 @@ describe('every route is scoped to one tenant', () => {
     expect(ONE).toContain('where: { id, businessId: biz.id }')
   })
 })
+
+// ── UI surfaces ─────────────────────────────────────────────────────────────
+describe('the feature is reachable, not just implemented', () => {
+  const SETTINGS = read('src/components/laundry/views/laundry-workspace-settings.tsx')
+  const FORM = read('src/components/laundry/views/laundry-customer-sources-form.tsx')
+  const FIELDS = read('src/components/laundry/customers/acquisition-fields.tsx')
+  const CUSTOMERS = read('src/components/laundry/views/laundry-customers-view.tsx')
+  const NEW_ORDER = read('src/components/laundry/views/laundry-new-order.tsx')
+  const CREATE = read('src/app/api/laundry/customers/route.ts')
+  const UPDATE = read('src/app/api/laundry/customers/[id]/route.ts')
+
+  it('Workspace Settings renders the Customer Sources section', () => {
+    expect(SETTINGS).toContain('<LaundryCustomerSourcesForm businessId={businessId} />')
+  })
+
+  it('the section can add, rename, toggle and reorder', () => {
+    expect(FORM).toContain('const add = async ()')
+    expect(FORM).toContain('const rename = async (id: string)')
+    expect(FORM).toContain('const toggle = (r: Source)')
+    expect(FORM).toContain('order: next.map((r) => r.id)')
+  })
+
+  it('one field component serves both forms, so they cannot drift', () => {
+    expect(CUSTOMERS).toContain('<AcquisitionFields')
+    expect(NEW_ORDER).toContain('<AcquisitionFields')
+  })
+
+  it('a new customer starts on Direct', () => {
+    expect(FIELDS).toContain('s.name.toLowerCase() === "direct"')
+    expect(NEW_ORDER).toContain('setNewCustSourceId(defaultSourceId(custSources))')
+    // And the server defaults too, for callers that send nothing.
+    expect(CREATE).toContain('await defaultCustomerSourceId(laundryBusiness.id)')
+  })
+
+  it('an inactive source is not offered, but is kept where already used', () => {
+    expect(FIELDS).toContain('sources.filter((s) => s.active || s.id === sourceId)')
+  })
+
+  it('the owner is optional', () => {
+    expect(FIELDS).toContain('<option value="">Select Sales Team Owner</option>')
+  })
+
+  it('both fields persist on create and on edit', () => {
+    expect(CREATE).toContain('customerSourceId: body.customerSourceId')
+    expect(UPDATE).toContain('b.customerSourceId !== undefined')
+    expect(UPDATE).toContain('b.salesTeamOwnerId !== undefined')
+  })
+
+  it('the profile shows Source and Owner, with a dash for no owner', () => {
+    expect(CUSTOMERS).toContain('Acquisition')
+    expect(CUSTOMERS).toContain('{detail.customerSourceName || "Direct"}')
+    expect(CUSTOMERS).toContain('{detail.salesTeamOwnerName || "—"}')
+  })
+
+  it('a customer with no source reads as Direct without a migration', () => {
+    expect(UPDATE).toContain('customerSourceName: src?.name ?? "Direct"')
+  })
+
+  it('the CRM workflow was not touched', () => {
+    // No conversion, no stage behaviour — the fields are manual by design.
+    for (const src of [CREATE, UPDATE, FIELDS, FORM]) {
+      expect(src).not.toContain('laundryCrmOpportunity')
+      expect(src).not.toContain('laundryCrmLead')
+    }
+  })
+})

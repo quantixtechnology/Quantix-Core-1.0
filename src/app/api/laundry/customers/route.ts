@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { defaultCustomerSourceId } from "@/lib/laundry-customer-source"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
@@ -124,7 +125,16 @@ export async function POST(request: Request) {
         gstNumber: body.gstNumber || null,
         ...(body.accountType && { accountType: body.accountType }),
         customerCode,
+        // Channel — the long-standing field, unchanged.
         source: "LAUNDRY_OS",
+        // Acquisition — how the business won them, chosen by a person. Falls
+        // back to the business's default (Direct) when the caller says nothing,
+        // so a customer created from an older screen is still classified.
+        customerSourceId: body.customerSourceId
+          ? String(body.customerSourceId)
+          : await defaultCustomerSourceId(laundryBusiness.id),
+        salesTeamOwnerId: body.salesTeamOwnerId ? String(body.salesTeamOwnerId) : null,
+        salesTeamOwnerName: body.salesTeamOwnerName ? String(body.salesTeamOwnerName) : null,
         isGuest: false,
         tags: JSON.stringify(Array.isArray(body.tags) ? [...new Set(body.tags.map(String))] : []),
         metadata,
