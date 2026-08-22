@@ -149,28 +149,60 @@ describe('the upload survives the proxy, and never parses HTML as JSON', () => {
   })
 })
 
-describe('the website header wears the square app mark', () => {
+describe('the website header wears the wordmark; the phone wears the app mark', () => {
   const LAYOUT = read('src/components/storefront/web/storefront-layout.tsx')
 
-  it('the header resolves the Customer App icon, not the landscape logo', () => {
+  // Two assets, two jobs. A 3:1 lockup spends most of a PHONE header on one
+  // image, so there the square Customer App icon stands in — it is the mark
+  // customers already meet on their home screen. A DESKTOP header has room for
+  // the real thing, and a shop that leads with an app icon reads like an app.
+  //
+  // The header used to show the square mark everywhere, and its class fixed
+  // BOTH axes (w-11 h-11) — so on a custom domain, where the icon lookup
+  // returned null and the landscape logo was used instead, object-contain
+  // shrank a 900×300 wordmark into a 44px-wide sliver beside the shop's name.
+
+  it('desktop and tablet get the tenant landscape logo', () => {
+    expect(LAYOUT).toContain('src={currentBusinessLogo || headerMark || "/placeholder-logo.svg"}')
+    expect(LAYOUT).toContain('className="hidden sm:block h-9 lg:h-10 w-auto max-w-[180px] lg:max-w-[220px] object-contain object-left"')
+  })
+
+  it('the wordmark height is fixed and its width runs free', () => {
+    // Fixing both axes is what produced the sliver.
+    const desktop = LAYOUT.slice(LAYOUT.indexOf('DESKTOP / TABLET'), LAYOUT.indexOf('The name is shown on phones'))
+    expect(desktop).toContain('w-auto')
+    // Read the code, not the comment above it — which quotes the old class.
+    // The slice begins INSIDE that comment, so cut from where it closes.
+    const code = desktop.slice(desktop.indexOf('*/') + 2)
+    expect(code).not.toMatch(/\bw-(?:9|10|11|12)\b/)
+    // Contained, so it is never stretched and never cropped.
+    expect(desktop).toContain('object-contain')
+  })
+
+  it('a very wide logo cannot crowd the search field', () => {
+    expect(LAYOUT).toContain('max-w-[180px] lg:max-w-[220px]')
+  })
+
+  it('phones keep the square Customer App icon', () => {
+    expect(LAYOUT).toContain('src={headerMark || currentBusinessLogo || "/placeholder-logo.svg"}')
+    expect(LAYOUT).toContain('className="sm:hidden h-9 w-9 object-contain rounded-lg"')
+  })
+
+  it('the app icon is still the app icon, resolved per tenant', () => {
     expect(LAYOUT).toContain('/api/core/app-icon/${slug}/customer/192.png')
-    expect(LAYOUT).toContain('src={headerMark || currentBusinessLogo')
   })
 
-  it('the slug comes from the host, with no fetch and no PWA code touched', () => {
-    expect(LAYOUT).toContain('const slug = host.slice(0, -(base.length + 1))')
-    expect(LAYOUT).toContain('if (!slug || slug.includes("."))')
+  it('the slug comes from the resolved tenant, not from the hostname', () => {
+    // A customer's own domain has no slug in it: slicing the host returned null
+    // there, which is how the phone ended up with the squeezed wordmark.
+    expect(LAYOUT).toContain('const slug = currentBusinessSlug')
+    expect(LAYOUT).toContain('if (!slug || !/^[a-z0-9-]+$/i.test(slug)) return null')
+    expect(LAYOUT).not.toContain('host.slice(0, -(base.length + 1))')
   })
 
-  it('a square mark sits in a square box, fixed on both axes', () => {
-    // A width that can grow is what let one asset eat a phone header.
-    expect(LAYOUT).toContain('className="h-10 w-10 shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"')
-    expect(LAYOUT).toContain('className="h-10 w-10 sm:h-11 sm:w-11 object-contain rounded-lg"')
-  })
-
-  it('it is contained, never stretched, and never circular', () => {
-    expect(LAYOUT).toContain('className="h-full w-full object-contain rounded-md"')
-    expect(LAYOUT).not.toContain('rounded-full object-contain')
+  it('the name is not printed twice beside a wordmark', () => {
+    // The wordmark IS the name. Beside it, the text repeats it.
+    expect(LAYOUT).toContain('className="sm:hidden font-bold text-gray-900 text-sm leading-tight truncate"')
   })
 
   it('the header URL is versioned, like the manifest', () => {
@@ -182,8 +214,9 @@ describe('the website header wears the square app mark', () => {
     expect(CTX).toContain('appLogos: true')
   })
 
-  it('off a tenant host it falls back rather than breaking', () => {
-    expect(LAYOUT).toContain('if (!host.endsWith(`.${base}`)) return null')
+  it('neither asset is hardcoded to a tenant', () => {
+    expect(LAYOUT.toLowerCase()).not.toContain('vastrasudha')
+    expect(LAYOUT).toContain('currentBusinessLogo')
   })
 })
 

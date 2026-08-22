@@ -56,7 +56,7 @@ export function InstallAppButton({ brandColor = "#10B981", mode = "pwa", playsto
   }
 
   const btnClass = [
-    "relative flex items-center gap-1.5 px-3 h-9 rounded-xl border",
+    "relative flex items-center gap-1.5 px-3.5 h-10 rounded-xl border",
     "transition-all duration-200 overflow-hidden select-none cursor-pointer",
     "focus-visible:outline-none disabled:opacity-60",
     className,

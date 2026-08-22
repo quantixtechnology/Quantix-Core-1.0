@@ -41,19 +41,20 @@ export function StorefrontLayout({
   onOpenAddressSheet,
   storeClosed,
 }: StorefrontLayoutProps) {
-  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentBusinessSlug, currentPwaAppearance, currentBusinessType } = useAdminStore()
 
   /**
-   * The header mark: the SQUARE Customer App icon from Mobile Apps branding.
+   * The SQUARE Customer App icon — used on PHONES only.
    *
-   * Business.logo is a landscape wordmark, and a 4.33:1 lockup spends most of a
-   * phone header on one asset. The square icon says the same thing in a
-   * fraction of the width, and it is the mark customers already meet on their
-   * home screen — one identity in both places.
+   * A 3:1 wordmark spends most of a phone header on one asset, and the square
+   * icon is the mark customers already meet on their home screen. On a desktop
+   * header there is room for the real thing, and a website that leads with an
+   * app icon reads like an app, not a shop — so from `sm` up the tenant's
+   * landscape logo is used instead. Two assets, two jobs, never swapped.
    *
-   * The storefront host IS the tenant slug, so this resolves without a fetch
-   * and without reaching into the PWA code. Off a tenant host — a preview, a
-   * local run — it falls back to whatever logo the business has.
+   * Resolved from the tenant slug rather than by slicing the hostname, because
+   * a customer's own domain has no slug in it — parsing the host returned null
+   * there and the phone fell back to a wordmark squeezed into a 44px box.
    */
   // Published by the storefront bootstrap once store-context resolves.
   const [iconVersion, setIconVersion] = useState<string>("")
@@ -69,11 +70,8 @@ export function StorefrontLayout({
 
   const headerMark = useMemo(() => {
     if (typeof window === "undefined") return null
-    const host = window.location.hostname
-    const base = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
-    if (!host.endsWith(`.${base}`)) return null
-    const slug = host.slice(0, -(base.length + 1))
-    if (!slug || slug.includes(".")) return null
+    const slug = currentBusinessSlug
+    if (!slug || !/^[a-z0-9-]+$/i.test(slug)) return null
     // Versioned, exactly like the manifest. An unversioned URL is stable while
     // its contents are not, so a browser that cached it once keeps showing an
     // icon the tenant has since replaced.
@@ -81,7 +79,7 @@ export function StorefrontLayout({
       ? (window as unknown as { __qxCustomerIconV?: string }).__qxCustomerIconV
       : undefined
     return `/api/core/app-icon/${slug}/customer/192.png?v=${v || "d"}`
-  }, [iconVersion])
+  }, [iconVersion, currentBusinessSlug])
   const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType, deliveryAddress } = useCartStore()
 
   // Stamp the active workspace type onto the shared Quantix Cart Engine — makes
@@ -563,43 +561,64 @@ export function StorefrontLayout({
       {/* ── Full web header ────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center h-16 gap-3">
+          <div className="flex items-center h-16 lg:h-[72px] gap-3 lg:gap-4">
 
-            {/* Logo + Business name + location */}
-            <button onClick={() => nav.go("home")} className="flex items-center gap-2 min-w-0 shrink mr-1 sm:mr-2 sm:gap-2.5">
-              <img
-                src={headerMark || currentBusinessLogo || "/placeholder-logo.svg"}
-                alt={currentBusinessName || "Store"}
-                /* A brand mark is not an avatar. Fixing width AND height to 36px
-                   squeezed a wide lockup into a thumbnail; letting the width run
-                   free at a fixed height lets a landscape logo use the header's
-                   64px properly, while a square one simply stays 40px. */
-                className="h-10 w-10 sm:h-11 sm:w-11 object-contain rounded-lg"
-                onError={(e) => {
-                  const img = e.currentTarget
-                  if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
-                }}
-              />
-              <div className="hidden sm:block text-left">
-                <div className="font-bold text-gray-900 text-sm leading-tight">
+            {/* Brand + location.
+                The logo is the primary element here: a shop's header leads with
+                its name, not with a thumbnail beside one. */}
+            <div className="flex items-center gap-2.5 min-w-0 shrink-0 mr-1 sm:mr-3">
+              <button onClick={() => nav.go("home")} className="flex items-center gap-2.5 min-w-0" aria-label={currentBusinessName || "Home"}>
+                {/* PHONE: the square app mark — the header is too narrow for a
+                    3:1 lockup, and this is the mark on their home screen. */}
+                <img
+                  src={headerMark || currentBusinessLogo || "/placeholder-logo.svg"}
+                  alt={currentBusinessName || "Store"}
+                  className="sm:hidden h-9 w-9 object-contain rounded-lg"
+                  onError={(e) => {
+                    const img = e.currentTarget
+                    if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                  }}
+                />
+                {/* DESKTOP / TABLET: the real landscape wordmark.
+                    Height is fixed and width runs FREE — the previous class
+                    fixed both (w-11 h-11), so object-contain shrank a 900×300
+                    lockup to a 44px-wide sliver. max-w keeps a very wide logo
+                    from crowding the search field; object-contain guarantees it
+                    is never stretched or cropped, whatever shape it is. */}
+                <img
+                  src={currentBusinessLogo || headerMark || "/placeholder-logo.svg"}
+                  alt={currentBusinessName || "Store"}
+                  className="hidden sm:block h-9 lg:h-10 w-auto max-w-[180px] lg:max-w-[220px] object-contain object-left"
+                  onError={(e) => {
+                    const img = e.currentTarget
+                    if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                  }}
+                />
+              </button>
+
+              <div className="min-w-0">
+                {/* The name is shown on phones, where the mark beside it is a
+                    symbol. Beside the wordmark it would simply say the name
+                    twice. */}
+                <div className="sm:hidden font-bold text-gray-900 text-sm leading-tight truncate">
                   {currentBusinessName || "Store"}
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); onOpenAddressSheet() }}
-                  className="flex items-center gap-0.5 text-[10px] leading-tight hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-1 text-[11px] sm:text-xs leading-tight hover:opacity-80 transition-opacity"
                   style={{ color: brandColor }}
                 >
-                  <MapPin className="w-2.5 h-2.5 shrink-0" />
-                  <span className="max-w-[150px] truncate">
-                    Delivering To {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
+                  <MapPin className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[120px] sm:max-w-[170px] truncate font-medium">
+                    {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
                   </span>
-                  <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                  <ChevronDown className="w-3 h-3 shrink-0" />
                 </button>
               </div>
-            </button>
+            </div>
 
             {/* Desktop search bar */}
-            <div className="flex-1 max-w-xl hidden md:block">
+            <div className="flex-1 max-w-2xl hidden md:block">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -620,7 +639,7 @@ export function StorefrontLayout({
               {/* Cart */}
               <button
                 onClick={() => setCartOpen(true)}
-                className="relative flex items-center gap-1.5 px-3 h-9 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors"
+                className="relative flex items-center gap-1.5 px-3.5 h-10 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <ShoppingCart className="w-4 h-4 text-gray-700" />
                 <span className="text-sm font-medium text-gray-700 hidden sm:block">Cart</span>
@@ -637,7 +656,7 @@ export function StorefrontLayout({
               {/* Account */}
               <button
                 onClick={() => nav.go(isAuthenticated ? "profile" : "auth")}
-                className="flex items-center gap-1.5 px-3 h-9 text-sm font-medium rounded-xl border border-gray-200 hover:border-gray-300 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3.5 h-10 text-sm font-medium rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors whitespace-nowrap"
               >
                 <User className="w-4 h-4 text-gray-600" />
                 <span className="hidden sm:block text-gray-700">

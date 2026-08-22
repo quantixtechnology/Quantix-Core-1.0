@@ -156,22 +156,32 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
   return (
     <div className="pb-16">
       {/* Hero */}
-      <section className="px-4 pt-6 pb-8 sm:px-6" style={{ background: `linear-gradient(135deg, ${brandColor}14, transparent)` }}>
-        <h1 className="text-2xl sm:text-4xl font-extrabold text-gray-900 leading-tight whitespace-pre-line">
-          Professional Laundry,{"\n"}Picked Up &amp; Delivered.
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-gray-500">Fresh clothes. Simple scheduling. Transparent pricing.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button onClick={() => setActiveService(popular[0] || services[0] || null)} disabled={storeClosed}
-            className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>
-            {storeClosed ? "Store is currently closed" : "Schedule Pickup"}
-          </button>
-          <button onClick={() => document.getElementById("laundry-services")?.scrollIntoView({ behavior: "smooth" })} className="rounded-xl px-5 py-2.5 text-sm font-semibold border border-gray-200 text-gray-700 active:bg-gray-50">View Services</button>
-        </div>
-        <div className="mt-5 relative max-w-xl">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search services or garments..."
-            className="w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 py-2.5 text-sm outline-none focus:border-gray-300" />
+      {/* Hero.
+          The background stays full-bleed; the CONTENT is constrained to the
+          same 7xl column as the header, so the two line up instead of the page
+          starting at the window edge. On a wide screen a single left-aligned
+          text column left most of the viewport empty — not minimal, just
+          lopsided — so from lg the block centres and the whitespace falls
+          evenly either side. No artwork is invented to fill it. */}
+      <section className="px-4 pt-8 pb-10 sm:px-6 lg:pt-16 lg:pb-14" style={{ background: `linear-gradient(135deg, ${brandColor}14, transparent)` }}>
+        <div className="max-w-7xl mx-auto lg:text-center">
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-gray-900 leading-tight whitespace-pre-line lg:max-w-3xl lg:mx-auto">
+            Professional Laundry,{"\n"}Picked Up &amp; Delivered.
+          </h1>
+          <p className="mt-2 lg:mt-4 text-sm sm:text-base lg:text-lg text-gray-500 lg:max-w-2xl lg:mx-auto">Fresh clothes. Simple scheduling. Transparent pricing.</p>
+          <div className="mt-5 lg:mt-7 flex flex-wrap gap-2.5 lg:justify-center">
+            <button onClick={() => setActiveService(popular[0] || services[0] || null)} disabled={storeClosed}
+              className="rounded-xl px-6 h-11 inline-flex items-center text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>
+              {storeClosed ? "Store is currently closed" : "Schedule Pickup"}
+            </button>
+            <button onClick={() => document.getElementById("laundry-services")?.scrollIntoView({ behavior: "smooth" })}
+              className="rounded-xl px-6 h-11 inline-flex items-center text-sm font-semibold border border-gray-200 bg-white text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100">View Services</button>
+          </div>
+          <div className="mt-6 lg:mt-8 relative max-w-xl lg:mx-auto">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search services or garments..."
+              className="w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 h-11 text-sm text-left outline-none focus:border-gray-300 shadow-sm" />
+          </div>
         </div>
       </section>
 
@@ -182,10 +192,30 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
       ) : (
         <>
           {/* Section 1 — Our Services (uses the shared ServiceCard) */}
-          <section id="laundry-services" className="px-4 sm:px-6 mt-6">
-            <h2 className="text-lg font-bold text-gray-900">Our Services</h2>
+          <section id="laundry-services" className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 lg:mt-12">
+            <h2 className="text-lg lg:text-2xl font-bold text-gray-900">Our Services</h2>
             {filteredServices.length === 0 ? (
-              <p className="text-sm text-gray-400 py-8 text-center">No laundry services configured yet.</p>
+              /* No catalog to show. Nothing is invented to fill the gap — but a
+                 customer reading "No laundry services configured yet" is being
+                 shown an admin's to-do list, and a shop that says only that has
+                 no way to take their business. The pickup request does not
+                 depend on the catalog, so it stays offered. */
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50/60 px-6 py-10 lg:py-14 text-center">
+                <p className="text-base font-semibold text-gray-900">
+                  {q ? `No match for "${search.trim()}"` : "Our price list is being finalised"}
+                </p>
+                <p className="mt-1.5 text-sm text-gray-500 max-w-md mx-auto">
+                  {q
+                    ? "Try another service or garment name."
+                    : "Pickup and delivery are running as usual — book a slot and we will confirm your items on collection."}
+                </p>
+                {!q && (
+                  <button onClick={() => setActiveService(popular[0] || services[0] || null)} disabled={storeClosed}
+                    className="mt-5 rounded-xl px-6 h-11 inline-flex items-center text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" style={accentBg}>
+                    {storeClosed ? "Store is currently closed" : "Schedule Pickup"}
+                  </button>
+                )}
+              </div>
             ) : (
               /* Compact catalog: 2-up mobile → 3 tablet → 4 desktop → 5 wide;
                  fixed 16:9 image so cards stay compact and never stretch. */
@@ -224,8 +254,8 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
 
           {/* Section 2 — Subscription Plans (SAME ServiceCard as Services) */}
           {plans.length > 0 && (
-            <section className="px-4 sm:px-6 mt-6">
-              <h2 className="text-lg font-bold text-gray-900">Subscription Plans</h2>
+            <section className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 lg:mt-12">
+              <h2 className="text-lg lg:text-2xl font-bold text-gray-900">Subscription Plans</h2>
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
                 {plans.map((p) => {
                   const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
@@ -272,7 +302,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
               Denser grid, minimal padding, essential garment + price only, whole
               card tappable with a small inline CTA (no full-width button). */}
           {popular.length > 0 && (
-            <section className="px-4 sm:px-6 mt-6">
+            <section className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 lg:mt-12">
               <h2 className="text-base font-bold text-gray-900">Popular Services</h2>
               <div className="mt-2 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                 {popular.slice(0, 8).map((s) => (
@@ -293,8 +323,8 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
           )}
 
           {/* Section 4 — How It Works */}
-          <section className="px-4 sm:px-6 mt-8">
-            <h2 className="text-lg font-bold text-gray-900">How It Works</h2>
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 mt-10 lg:mt-14">
+            <h2 className="text-lg lg:text-2xl font-bold text-gray-900">How It Works</h2>
             <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { icon: Calendar, t: "Schedule Pickup", d: "Book a slot that suits you." },
