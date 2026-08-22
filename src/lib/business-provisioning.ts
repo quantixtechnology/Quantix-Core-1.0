@@ -9,6 +9,10 @@ import { getCompleteProductProfile } from '@/lib/product-management'
 import { ProductProvisionerRegistry, provisionWithRegistry } from '@/lib/product-provisioner-registry'
 import { hashPassword, generateTempPassword } from '@/lib/password-utils'
 import { normaliseEmail, mustChangePasswordFor, planOwnerAccount } from '@/lib/owner-account'
+import {
+  classifyProvisioningFailure, isRetryable, retryDelayMs, MAX_STEP_ATTEMPTS,
+  type FailureKind,
+} from '@/lib/provisioning-retry'
 
 /** Options threaded into a provisioning run. */
 export interface ProvisionOptions {
@@ -44,6 +48,18 @@ export interface OwnerProvisionContext {
 export interface ProvisioningStep {
   name: string
   execute: () => Promise<void>
+  /**
+   * Whether a run that is resuming after a failure may skip this step because
+   * it already completed.
+   *
+   * Every step here is idempotent, so skipping is an optimisation and never a
+   * correctness requirement — which is why the default is to run again. The
+   * steps that merely read the CURRENT configuration are re-run deliberately:
+   * an admin who fixed a plan and pressed Provision again must not be served
+   * the allocation computed from the old one. Only the steps that do real,
+   * expensive work are skipped.
+   */
+  skipOnResume?: boolean
 }
 
 export interface ProvisioningResult {
@@ -51,11 +67,25 @@ export interface ProvisioningResult {
   workspaceId: string
   steps: Array<{
     name: string
-    status: 'COMPLETED' | 'FAILED'
+    status: 'COMPLETED' | 'FAILED' | 'SKIPPED'
     duration: number
     error?: string
+    /** How many times the step ran. >1 means a transient failure was retried. */
+    attempts?: number
   }>
+  /** How many steps the pipeline has, so a UI can say "step 4 of 10". */
+  stepsTotal?: number
+  /** Steps skipped because a previous attempt had already completed them. */
+  resumedFrom?: string
   error?: string
+  /**
+   * Whether the failure is worth another attempt. PERMANENT means the run
+   * stopped on something a retry cannot fix, and the admin has to act — which
+   * is the only case that should show them a Retry button.
+   */
+  failureKind?: FailureKind
+  /** The step that failed, so the UI can point at it. */
+  failedStep?: string
   // Set only when provisioning generated a temporary owner password
   // (i.e. the Super Admin did not supply one). Surface it so it can be shared.
   ownerTempPassword?: string
@@ -101,6 +131,10 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
   const steps: ProvisioningResult['steps'] = []
   // Holder so the owner-account step can report a generated temp password.
   const ownerCtx: OwnerProvisionContext = {}
+  let failedStep: string | undefined
+  let failureKind: FailureKind | undefined
+  let resumedFrom: string | undefined
+  let stepsTotal: number | undefined
 
   try {
     // Get business and product information
@@ -137,6 +171,10 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
       .replace(/\/+$/, '')
       .split('/')[0]
 
+    // Read BEFORE the row is flipped to IN_PROGRESS below, or the answer is
+    // always "no" and resume never engages.
+    const wasCompletedBefore = workspace?.provisioningStatus === 'COMPLETED'
+
     if (!workspace) {
       workspace = await db.platformWorkspace.create({
         data: {
@@ -163,30 +201,53 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
 
     // Execute platform provisioning steps in order
     const provisioningSteps = getPlatformProvisioningSteps(businessId, workspace.id, business.productCode, opts, ownerCtx)
+    stepsTotal = provisioningSteps.length
+
+    // Resume. A workspace that has never completed and is being provisioned
+    // again is recovering from a failure part-way down the list — so the
+    // expensive steps it already got through are not done twice. A workspace
+    // that HAS completed is being deliberately re-provisioned, and runs whole.
+    const alreadyDone = wasCompletedBefore
+      ? new Set<string>()
+      : await completedStepNames(workspace.id)
 
     for (const step of provisioningSteps) {
+      if (step.skipOnResume && alreadyDone.has(step.name)) {
+        resumedFrom ??= step.name
+        steps.push({ name: step.name, status: 'SKIPPED', duration: 0, attempts: 0 })
+        continue
+      }
+
       const stepStartTime = Date.now()
-      try {
-        await logProvisioningStep(workspace.id, businessId, step.name, 'STARTED')
-        await step.execute()
-        const duration = Date.now() - stepStartTime
-        await logProvisioningStep(workspace.id, businessId, step.name, 'COMPLETED', undefined, duration)
-        steps.push({
-          name: step.name,
-          status: 'COMPLETED',
-          duration,
-        })
-      } catch (error) {
-        const duration = Date.now() - stepStartTime
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        await logProvisioningStep(workspace.id, businessId, step.name, 'FAILED', errorMessage, duration)
-        steps.push({
-          name: step.name,
-          status: 'FAILED',
-          duration,
-          error: errorMessage,
-        })
-        throw error
+      let attempts = 0
+      // Retry loop. A dropped socket or a momentarily busy database is not a
+      // reason to send the admin back to the button — see provisioning-retry.
+      for (;;) {
+        attempts++
+        try {
+          await logProvisioningStep(workspace.id, businessId, step.name, 'STARTED')
+          await step.execute()
+          const duration = Date.now() - stepStartTime
+          await logProvisioningStep(workspace.id, businessId, step.name, 'COMPLETED', undefined, duration)
+          steps.push({ name: step.name, status: 'COMPLETED', duration, attempts })
+          break
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          const retriable = isRetryable(error) && attempts < MAX_STEP_ATTEMPTS
+          if (retriable) {
+            // Recorded, so the audit log shows the attempt that failed rather
+            // than pretending the step went cleanly.
+            await logProvisioningStep(workspace.id, businessId, step.name, 'FAILED', `${errorMessage} (attempt ${attempts}, retrying)`, Date.now() - stepStartTime)
+            await sleep(retryDelayMs(attempts))
+            continue
+          }
+          const duration = Date.now() - stepStartTime
+          await logProvisioningStep(workspace.id, businessId, step.name, 'FAILED', errorMessage, duration)
+          steps.push({ name: step.name, status: 'FAILED', duration, error: errorMessage, attempts })
+          failedStep = step.name
+          failureKind = classifyProvisioningFailure(error)
+          throw error
+        }
       }
     }
 
@@ -214,6 +275,8 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
       success: true,
       workspaceId: workspace.id,
       steps,
+      stepsTotal,
+      resumedFrom,
       ownerTempPassword: ownerCtx.tempPassword,
       ownerLinkedExistingUser: ownerCtx.linkedExistingUser,
       ownerPasswordUnchanged: ownerCtx.ownerPasswordUnchanged,
@@ -250,9 +313,33 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
       success: false,
       workspaceId: workspace?.id || '',
       steps,
+      stepsTotal,
+      resumedFrom,
       error: errorMessage,
+      failedStep,
+      // Classified even when the throw happened before any step ran (a missing
+      // business or product), so the UI always knows whether to offer Retry.
+      failureKind: failureKind ?? classifyProvisioningFailure(error),
     }
   }
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Step names this workspace has already got through.
+ *
+ * Read from the audit log rather than tracked on the workspace row, because
+ * that log is already written on every attempt — there is nothing new to keep
+ * in step. A step that failed and later succeeded appears as both; the
+ * COMPLETED row is the one that decides.
+ */
+async function completedStepNames(workspaceId: string): Promise<Set<string>> {
+  const rows = await db.provisioningAuditLog.findMany({
+    where: { workspaceId, status: 'COMPLETED' },
+    select: { step: true },
+  })
+  return new Set(rows.map((r) => r.step))
 }
 
 /**
@@ -271,6 +358,9 @@ function getPlatformProvisioningSteps(businessId: string, workspaceId: string, p
     },
     {
       name: 'create_owner_account',
+      // Hashing a password and writing two rows; and its own early return
+      // already refuses to make a second owner.
+      skipOnResume: true,
       execute: async () => createOwnerAccountStep(businessId, opts, ownerCtx),
     },
     {
@@ -291,6 +381,10 @@ function getPlatformProvisioningSteps(businessId: string, workspaceId: string, p
     },
     {
       name: 'call_product_provisioner',
+      // The one genuinely expensive step: it hands over to the product, which
+      // seeds an entire workspace. Repeating a completed hand-off on every
+      // retry is what made re-provisioning feel like starting from scratch.
+      skipOnResume: true,
       execute: async () => callProductProvisionerStep(businessId, workspaceId, productCode),
     },
     {

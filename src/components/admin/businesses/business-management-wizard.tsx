@@ -75,6 +75,25 @@ const SECTIONS = [
 
 const GATEWAYS = ['COD', 'Razorpay', 'PhonePe', 'Stripe', 'Cashfree', 'PayU', 'CCAvenue']
 
+// How many steps the platform pipeline runs. Only used to draw progress before
+// the server has reported its own total, which then wins.
+const PROVISION_STEP_COUNT = 10
+
+// What each step is doing, in words a person reading a progress line can use.
+const PROVISION_STEP_LABELS: Record<string, string> = {
+  validate_product: 'Validating product',
+  validate_subscription_plan: 'Validating subscription plan',
+  create_owner_account: 'Preparing owner account',
+  assign_licensed_features: 'Assigning licensed features',
+  apply_platform_roles: 'Applying platform roles',
+  apply_platform_permissions: 'Applying permissions',
+  allocate_storage: 'Allocating storage',
+  call_product_provisioner: 'Provisioning the workspace',
+  generate_website_config: 'Generating website configuration',
+  generate_workspace_config: 'Generating workspace configuration',
+}
+const stepLabel = (name?: string) => (name ? PROVISION_STEP_LABELS[name] ?? name.replace(/_/g, ' ') : '')
+
 function Field({ label, value, mono }: { label: string; value?: string | number | null; mono?: boolean }) {
   return (
     <div>
@@ -131,6 +150,18 @@ export function BusinessManagementWizard({ businessId }: Props) {
   const [section, setSection] = useState(0)
   const [saving, setSaving] = useState(false)
   const [provStatus, setProvStatus] = useState<{ status?: string; steps?: Array<{ name: string; status: string; error?: string | null }> } | null>(null)
+  // The provisioning run itself. One click starts it; the pipeline retries its
+  // own transient failures and resumes past what it already finished, so the
+  // only thing left for the Super Admin to do is read the outcome.
+  const [prov, setProv] = useState<{
+    running: boolean
+    done: number
+    total: number
+    current?: string
+    outcome?: 'READY' | 'ACTION_REQUIRED'
+    error?: string
+    failedStep?: string
+  }>({ running: false, done: 0, total: PROVISION_STEP_COUNT })
 
   type Form = Partial<Biz> & { ownerName?: string | null; ownerEmail?: string | null; ownerPhone?: string | null; ownerPassword?: string; ownerPasswordConfirm?: string }
   const [form, setForm] = useState<Form>({ country: 'India', primaryColor: '#10B981' })
@@ -264,6 +295,21 @@ export function BusinessManagementWizard({ businessId }: Props) {
   const provision = async () => {
     if (!bizId || !biz) return
     setSaving(true)
+    setProv({ running: true, done: 0, total: PROVISION_STEP_COUNT, outcome: undefined, error: undefined })
+    // The run happens inside one request, so progress is read from the audit
+    // log while it is in flight. Without this the admin watches a spinner for a
+    // minute with no idea whether anything is happening — which is most of why
+    // the button got clicked again.
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/admin/businesses/provision?businessId=${encodeURIComponent(bizId)}`, { headers: getAuthHeaders() })
+        const j = await r.json()
+        const seen: string[] = Array.from(new Set((j.data?.steps ?? [])
+          .filter((x: { status: string }) => x.status === 'COMPLETED')
+          .map((x: { name: string }) => x.name)))
+        setProv((p) => (p.running ? { ...p, done: Math.min(seen.length, p.total), current: seen[seen.length - 1] } : p))
+      } catch { /* a missed poll is not a failed provision */ }
+    }, 1500)
     try {
       if (biz.productCode && biz.subscriptionPlanCode) {
         await fetch('/api/admin/businesses/assign-product', {
@@ -287,7 +333,18 @@ export function BusinessManagementWizard({ businessId }: Props) {
         }),
       })
       const json = await res.json()
-      if (!res.ok || json.success === false) throw new Error(json.data?.error || json.error || 'Provisioning failed')
+      if (!res.ok || json.success === false) {
+        const err = new Error(json.data?.error || json.error || 'Provisioning failed')
+        // A transient failure was already retried inside the run, so anything
+        // that reaches here needs a person. Say which step, and say what.
+        setProv((p) => ({
+          ...p, running: false, outcome: 'ACTION_REQUIRED',
+          error: err.message, failedStep: json.data?.failedStep,
+        }))
+        throw err
+      }
+      const total = json.data?.stepsTotal ?? PROVISION_STEP_COUNT
+      setProv({ running: false, done: total, total, outcome: 'READY' })
       const temp = json.data?.ownerTempPassword
       // The Super Admin's chosen password has been hashed and stored; drop the
       // plain text from state rather than leaving it in the form.
@@ -306,8 +363,10 @@ export function BusinessManagementWizard({ businessId }: Props) {
       }
       load(bizId)
     } catch (e) {
+      setProv((p) => (p.outcome ? p : { ...p, running: false, outcome: 'ACTION_REQUIRED', error: e instanceof Error ? e.message : 'Provisioning failed' }))
       toast.error(e instanceof Error ? e.message : 'Provisioning failed')
     } finally {
+      clearInterval(poll)
       setSaving(false)
     }
   }
@@ -641,15 +700,68 @@ export function BusinessManagementWizard({ businessId }: Props) {
           {/* ── 4 — PROVISION WORKSPACE ─────────────────────────────────── */}
           {section === 3 && bizId && (
             <Card className="p-6 space-y-3">
-              <p className="text-xs text-muted-foreground">{biz?.status === 'ACTIVE' ? 'Workspace is provisioned. Re-running is idempotent.' : 'Provision the tenant workspace and create the owner account.'}</p>
+              <p className="text-xs text-muted-foreground">{biz?.status === 'ACTIVE' ? 'Workspace is provisioned. Every step is idempotent, so running it again changes nothing that is already correct.' : 'One click runs the whole pipeline. Transient failures are retried automatically and a resumed run skips what already finished.'}</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field label="Workspace Status" value={biz?.status} />
                 <Field label="Provisioning" value={provStatus?.status || '—'} />
                 <Field label="Product / Plan" value={`${biz?.productCode ?? '—'} / ${biz?.subscriptionPlanCode ?? '—'}`} />
               </div>
-              <Button size="sm" className="gap-1 bg-indigo-600 hover:bg-indigo-700 text-white w-max" onClick={provision} disabled={saving || !biz?.productCode || !biz?.subscriptionPlanCode}>
-                {saving ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />} {biz?.status === 'ACTIVE' ? 'Provision Again' : 'Provision Workspace'}
-              </Button>
+              {/* ONE action. The pipeline retries its own transient failures and
+                  resumes past what it already finished, so there is nothing to
+                  click twice — and while it runs the button is not clickable at
+                  all, which is what stopped the repeated attempts. */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button size="sm" className="gap-1 bg-indigo-600 hover:bg-indigo-700 text-white w-max"
+                  onClick={provision}
+                  disabled={prov.running || saving || !biz?.productCode || !biz?.subscriptionPlanCode}>
+                  {prov.running ? <Loader2 className="size-3 animate-spin" /> : prov.outcome === 'READY' || biz?.status === 'ACTIVE' ? <Check className="size-3" /> : <Rocket className="size-3" />}
+                  {prov.running
+                    ? 'Provisioning Workspace…'
+                    : prov.outcome === 'ACTION_REQUIRED'
+                      ? 'Retry Provisioning'
+                      : prov.outcome === 'READY' || biz?.status === 'ACTIVE'
+                        ? 'Workspace Ready ✓'
+                        : 'Provision Workspace'}
+                </Button>
+                {prov.running && (
+                  <span className="text-xs text-muted-foreground">
+                    Step {Math.min(prov.done + 1, prov.total)} of {prov.total}{prov.current ? ` — ${stepLabel(prov.current)}` : ''}
+                  </span>
+                )}
+                {!prov.running && (prov.outcome === 'READY' || biz?.status === 'ACTIVE') && (
+                  <Button variant="outline" size="sm" className="gap-1" disabled={!workspaceUrl} onClick={() => window.open(workspaceUrl, '_blank')}>
+                    <ExternalLink className="size-3" /> Open Workspace
+                  </Button>
+                )}
+              </div>
+
+              {prov.running && (
+                <div className="h-1.5 w-full max-w-md rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full bg-indigo-600 transition-all duration-500" style={{ width: `${Math.round((prov.done / Math.max(prov.total, 1)) * 100)}%` }} />
+                </div>
+              )}
+
+              {!prov.running && prov.outcome === 'READY' && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-1 text-xs text-emerald-800">
+                  <p className="font-semibold flex items-center gap-1.5"><Check className="size-3.5" /> Workspace provisioned</p>
+                  <p>✓ Owner account ready</p>
+                  <p>✓ Licensed features assigned</p>
+                  <p>✓ Configuration applied</p>
+                  <p className="pt-1 font-semibold">STATUS: {biz?.status ?? 'ACTIVE'}</p>
+                </div>
+              )}
+
+              {!prov.running && prov.outcome === 'ACTION_REQUIRED' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1 text-xs text-amber-800">
+                  {/* Transient failures never reach here — they were retried
+                      inside the run. This is the only case worth a person. */}
+                  <p className="font-semibold">Action Required</p>
+                  {prov.failedStep && <p>Stopped at: <span className="font-mono">{stepLabel(prov.failedStep)}</span></p>}
+                  <p>{prov.error}</p>
+                  <p className="text-[11px] text-amber-700">Fix the cause and press Retry — completed steps are not run again.</p>
+                </div>
+              )}
+
               {!biz?.productCode || !biz?.subscriptionPlanCode ? <p className="text-xs text-amber-600">Assign a product and plan in Licensed Features first.</p> : null}
               {provStatus?.steps?.length ? (
                 <div className="space-y-1 text-xs font-mono pt-2 border-t">

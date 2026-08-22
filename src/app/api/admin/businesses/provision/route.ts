@@ -70,6 +70,13 @@ export const POST = withMiddleware({
             success: result.success,
             error: result.error,
             steps: result.steps,
+            stepsTotal: result.stepsTotal,
+            // Whether the admin can do anything about it. Only a PERMANENT
+            // failure should put a Retry button in front of them — a transient
+            // one has already been retried, here, automatically.
+            failureKind: result.failureKind,
+            failedStep: result.failedStep,
+            resumedFrom: result.resumedFrom,
             // Present only when the Super Admin did not supply a password.
             ownerTempPassword: result.ownerTempPassword,
             // The email already had a platform account and was reused. If it
