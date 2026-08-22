@@ -566,8 +566,8 @@ export function StorefrontLayout({
             {/* Brand + location.
                 The logo is the primary element here: a shop's header leads with
                 its name, not with a thumbnail beside one. */}
-            <div className="flex items-center gap-2.5 min-w-0 shrink-0 mr-1 sm:mr-3">
-              <button onClick={() => nav.go("home")} className="flex items-center gap-2.5 min-w-0" aria-label={currentBusinessName || "Home"}>
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink mr-1 sm:mr-3">
+              <button onClick={() => nav.go("home")} className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink-0" aria-label={currentBusinessName || "Home"}>
                 {/* PHONE: the square app mark — the header is too narrow for a
                     3:1 lockup, and this is the mark on their home screen. */}
                 <img
@@ -609,7 +609,7 @@ export function StorefrontLayout({
                   style={{ color: brandColor }}
                 >
                   <MapPin className="w-3 h-3 shrink-0" />
-                  <span className="max-w-[120px] sm:max-w-[170px] truncate font-medium">
+                  <span className="max-w-[90px] sm:max-w-[170px] truncate font-medium">
                     {deliveryAddress ? shortAddressLabel(deliveryAddress) : "Set Delivery Address"}
                   </span>
                   <ChevronDown className="w-3 h-3 shrink-0" />
@@ -633,13 +633,13 @@ export function StorefrontLayout({
             </div>
 
             {/* Right actions */}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
               <InstallAppButton brandColor={brandColor} />
 
               {/* Cart */}
               <button
                 onClick={() => setCartOpen(true)}
-                className="relative flex items-center gap-1.5 px-3.5 h-10 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                className="relative flex items-center gap-1.5 px-2.5 sm:px-3.5 h-10 rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <ShoppingCart className="w-4 h-4 text-gray-700" />
                 <span className="text-sm font-medium text-gray-700 hidden sm:block">Cart</span>
@@ -656,7 +656,7 @@ export function StorefrontLayout({
               {/* Account */}
               <button
                 onClick={() => nav.go(isAuthenticated ? "profile" : "auth")}
-                className="flex items-center gap-1.5 px-3.5 h-10 text-sm font-medium rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3.5 h-10 text-sm font-medium rounded-xl border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors whitespace-nowrap"
               >
                 <User className="w-4 h-4 text-gray-600" />
                 <span className="hidden sm:block text-gray-700">
