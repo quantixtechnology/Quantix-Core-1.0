@@ -19,7 +19,7 @@ import { Loader2, ArrowRight, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { COMMERCE_BUSINESS_CATEGORIES, commerceCategoryLabel } from "@/lib/commerce/commerce-categories"
-import { getProductCategories } from "@/lib/products/product-categories"
+import { getProductCategories, businessCategoryLabel } from "@/lib/products/product-categories"
 
 interface Consequence {
   current: { category: string; label: string }
@@ -55,7 +55,7 @@ export function CommerceCategoryField({
     return (
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{commerceCategoryLabel(value)}</span>
+          <span className="text-sm font-medium">{businessCategoryLabel(productCode, value)}</span>
           <Badge variant="outline" className="text-[10px]">{productCode || "—"}</Badge>
         </div>
         <p className="text-[11px] text-muted-foreground">Category is managed by the {productCode} workspace.</p>

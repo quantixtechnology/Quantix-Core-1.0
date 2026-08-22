@@ -39,8 +39,7 @@ import { LaundryLicensingCard } from '@/components/admin/laundry/laundry-licensi
 import { CommerceTemplateAssignCard, CommerceTemplateReviewField } from '@/components/admin/commerce/commerce-template-assign-card'
 import { CommerceCategoryField } from '@/components/admin/businesses/commerce-category-field'
 import { ProductSelector } from '@/components/admin/businesses/product-selector'
-import { commerceCategoryLabel } from '@/lib/commerce/commerce-categories'
-import { isCategoryValidForProduct } from '@/lib/products/product-categories'
+import { isCategoryValidForProduct, businessCategoryLabel } from '@/lib/products/product-categories'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -157,6 +156,22 @@ export function BusinessManagementWizard({ businessId }: Props) {
       setLoading(false)
     }
   }, [])
+
+  // Follow the prop, do not freeze it. `useState(businessId)` reads its argument
+  // once, at mount — so when the page swaps in a different business without
+  // unmounting, bizId kept pointing at the previous one and every fetch, every
+  // save and the Business Category field went on answering for it. The render
+  // site keys this component per business, which makes this belt-and-braces; it
+  // is here so a future call site that forgets the key is not a data-isolation
+  // bug. Whatever was loaded for the old business is dropped in the same pass,
+  // so no field of theirs can be painted while the new one is still loading.
+  useEffect(() => {
+    setBizId(businessId)
+    setBiz(null)
+    setForm({ country: 'India', primaryColor: '#10B981' })
+    setProvStatus(null)
+    setSection(0)
+  }, [businessId])
 
   useEffect(() => { if (bizId) load(bizId) }, [bizId, load])
 
@@ -599,7 +614,7 @@ export function BusinessManagementWizard({ businessId }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Business" value={biz?.name} />
                 <Field label="Slug" value={biz?.slug} mono />
-                <Field label="Business Category" value={biz?.businessType ? commerceCategoryLabel(biz.businessType) : '—'} />
+                <Field label="Business Category" value={businessCategoryLabel(biz?.productCode, biz?.businessType)} />
                 <Field label="Owner" value={`${biz?.ownerName ?? '—'} (${biz?.ownerEmail ?? '—'})`} />
                 <Field label="Product" value={biz?.productCode} />
                 <Field label="Plan" value={biz?.subscriptionPlanCode} />

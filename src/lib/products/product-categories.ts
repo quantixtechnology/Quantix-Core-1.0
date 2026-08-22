@@ -14,7 +14,7 @@
 // category, and are intentionally NOT reused here. Finer laundry sub-categories
 // (dry-cleaning, pickup-&-delivery, laundromat, commercial) would require new
 // BusinessType enum values + a schema migration and are deferred to Phase 4.
-import { COMMERCE_BUSINESS_CATEGORIES, type CommerceCategoryDef } from "@/lib/commerce/commerce-categories"
+import { COMMERCE_BUSINESS_CATEGORIES, commerceCategoryLabel, type CommerceCategoryDef } from "@/lib/commerce/commerce-categories"
 
 export type BusinessCategoryDef = CommerceCategoryDef
 
@@ -36,4 +36,25 @@ export function getProductCategories(productCode: string | null | undefined): Bu
 export function isCategoryValidForProduct(productCode: string | null | undefined, businessType: string | null | undefined): boolean {
   if (!productCode || !businessType) return false
   return getProductCategories(productCode).some((c) => c.value === businessType)
+}
+
+/**
+ * The label for a business's category, read from ITS OWN product's vocabulary.
+ *
+ * commerceCategoryLabel only knows the Commerce list, and falls back to the raw
+ * enum for anything else — so a laundry tenant's category rendered as "LAUNDRY"
+ * on the business it was being edited from, and as "Laundry & Dry Cleaning"
+ * wherever the product-scoped list was in play. Same stored value, two spellings,
+ * which reads exactly like one business showing another's data.
+ *
+ * Nothing is renamed here: "Laundry & Dry Cleaning" is already the declared
+ * label for LAUNDRY in PRODUCT_BUSINESS_CATEGORIES.
+ */
+export function businessCategoryLabel(
+  productCode: string | null | undefined,
+  businessType: string | null | undefined,
+): string {
+  if (!businessType) return "—"
+  const own = getProductCategories(productCode).find((c) => c.value === businessType)
+  return own ? own.label : commerceCategoryLabel(businessType)
 }

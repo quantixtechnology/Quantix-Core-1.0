@@ -627,8 +627,15 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       // Single business experience: same wizard for Create (no id / resume draft) and Manage (existing id).
-      case "create-business": return <BusinessManagementWizard businessId={resumeBusinessId ?? undefined} />
-      case "manage-business": return <BusinessManagementWizard businessId={manageBusinessId ?? undefined} />
+      // KEYED BY THE BUSINESS. Both cases render the same component at the same
+      // position, so React reuses the instance across them — and the wizard reads
+      // its business id into useState, which only ever runs once. Without a key,
+      // opening a second business (or leaving Manage for Create) left every piece
+      // of state — the loaded business, the form, and the Business Category field —
+      // answering for the business before it. A different business is a different
+      // instance; nothing can carry over.
+      case "create-business": return <BusinessManagementWizard key={`create:${resumeBusinessId ?? "new"}`} businessId={resumeBusinessId ?? undefined} />
+      case "manage-business": return <BusinessManagementWizard key={`manage:${manageBusinessId ?? "none"}`} businessId={manageBusinessId ?? undefined} />
       case "account-billing": return <AccountBillingView />
       case "subscriptions": return <SubscriptionsView />
       case "platform-invoices": return <PlatformInvoicesView />
