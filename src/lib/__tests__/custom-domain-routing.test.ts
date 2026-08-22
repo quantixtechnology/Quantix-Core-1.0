@@ -25,6 +25,7 @@ const PROXY    = read('src/proxy.ts')
 const LAYOUT   = read('src/app/layout.tsx')
 const PAGE     = read('src/app/page.tsx')
 const RESOLVER = read('src/lib/tenant-resolver.ts')
+const AUTH     = read('src/components/auth/auth-provider.tsx')
 
 const BASE = 'quantixtechnology.in'
 
@@ -161,8 +162,6 @@ describe('the client boots the right storefront', () => {
   it('the lookup runs only for a candidate custom host', () => {
     const hook = PAGE.slice(PAGE.indexOf('function useCustomDomainSlug'), PAGE.indexOf('function detectStorefrontSlug'))
     expect(hook).toContain('if (!isCandidateCustomHost(host, _SF_BASE)) return')
-    // Nothing to do when the host already named its tenant.
-    expect(hook).toContain('if (alreadyKnown) return')
   })
 
   it('www is tried before the apex it belongs to', () => {
@@ -170,13 +169,14 @@ describe('the client boots the right storefront', () => {
     expect(hook).toContain('for (const candidate of customHostCandidates(host))')
   })
 
-  it('the platform page is not shown while the answer is on its way', () => {
-    // A marketing page on a customer's own domain is the whole problem.
-    expect(PAGE).toContain('if (customDomain.pending) return <PageLoader />')
+  it('nothing is shown while the answer is on its way', () => {
+    // A marketing page — or an admin login — on a customer's own domain is the
+    // whole problem.
+    expect(PAGE).toContain('if (customDomain.pending) return <SplashLoader />')
   })
 
   it('the host slug still wins when there is one', () => {
-    expect(PAGE).toContain('const storefrontSlug = hostSlug ?? customDomain.slug')
+    expect(PAGE).toContain('const storefrontSlug = hostSlug ?? customDomainSlug ?? null')
   })
 
   it('a reserved name is refused however it arrives', () => {
@@ -201,5 +201,41 @@ describe('the platform keeps its own front door', () => {
     expect(isCandidateCustomHost(`www.${BASE}`, BASE)).toBe(false)
     // and the platform host never even triggers a lookup
     expect(PAGE).toContain('if (!isCandidateCustomHost(host, _SF_BASE)) return')
+  })
+})
+
+describe('the login gate knows about custom domains too', () => {
+  // AuthProvider decides whether to show the admin LoginPage BEFORE AppRouter
+  // renders, and it decided from the hostname's SHAPE. A custom domain is not
+  // shaped like a tenant host, so it got the platform login — and the router
+  // that would have resolved it never ran at all. Fixing the router alone left
+  // the whole feature dead.
+  it('a resolved custom domain counts as a storefront', () => {
+    expect(AUTH).toContain('!!customDomainSlug ||')
+    expect(AUTH).toContain('customDomainSlug = null,')
+  })
+
+  it('the subdomain rule is kept, not replaced', () => {
+    expect(AUTH).toContain('hostname.endsWith(`.${storefrontBase}`) &&')
+    expect(AUTH).toContain('!isReservedHostPrefix(hostname.split(".")[0])')
+  })
+
+  it('an unresolved host still gets the login page', () => {
+    // Falling through with no tenant would spin on a blank screen.
+    expect(AUTH).toContain('if (!isStorefrontSubdomain) {')
+    expect(AUTH).toContain('return <LoginPage />')
+  })
+
+  it('one resolution feeds both gates, so they cannot disagree', () => {
+    expect(PAGE).toContain('const customDomain = useCustomDomainSlug()')
+    expect(PAGE).toContain('<AuthProvider customDomainSlug={customDomain.slug}>')
+    expect(PAGE).toContain('<AppRouter customDomainSlug={customDomain.slug} />')
+  })
+
+  it('the resolution happens above the gate that needs it', () => {
+    const resolve = PAGE.indexOf('const customDomain = useCustomDomainSlug()')
+    const gate = PAGE.indexOf('<AuthProvider customDomainSlug=')
+    expect(resolve).toBeGreaterThan(-1)
+    expect(resolve).toBeLessThan(gate)
   })
 })

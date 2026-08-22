@@ -363,10 +363,19 @@ const POSEnterprise = dynamic(() => import("@/components/business/pos/pos-enterp
 // Suspense fallback shows a spinner (not the login page) while the
 // client-side router initialises, which takes <100 ms.
 export default function Home() {
+  // Resolved HERE, above AuthProvider, because AuthProvider decides whether to
+  // show the admin login before AppRouter ever renders — and it decided from
+  // the hostname's shape. A custom domain is not shaped like a tenant host, so
+  // it got the platform login and the router below never ran at all. One
+  // resolution, handed to both gates, so they cannot disagree about which
+  // hosts are storefronts.
+  const customDomain = useCustomDomainSlug()
+  if (customDomain.pending) return <SplashLoader />
+
   return (
-    <AuthProvider>
+    <AuthProvider customDomainSlug={customDomain.slug}>
       <Suspense fallback={<SplashLoader />}>
-        <AppRouter />
+        <AppRouter customDomainSlug={customDomain.slug} />
       </Suspense>
     </AuthProvider>
   )
@@ -428,11 +437,10 @@ const PLATFORM_HOSTS = new Set([
  * Runs at most once, and not at all unless the hostname is a candidate: on
  * every platform and tenant host this costs nothing and changes nothing.
  */
-function useCustomDomainSlug(alreadyKnown: boolean): { slug: string | null; pending: boolean } {
+function useCustomDomainSlug(): { slug: string | null; pending: boolean } {
   const [state, setState] = useState<{ slug: string | null; pending: boolean }>({ slug: null, pending: false })
 
   useEffect(() => {
-    if (alreadyKnown) return
     const host = window.location.hostname.split(":")[0]
     if (!isCandidateCustomHost(host, _SF_BASE)) return
 
@@ -459,7 +467,7 @@ function useCustomDomainSlug(alreadyKnown: boolean): { slug: string | null; pend
     })()
 
     return () => { cancelled = true }
-  }, [alreadyKnown])
+  }, [])
 
   return state
 }
@@ -517,12 +525,11 @@ function detectProductWorkspace(
   return { productCode: productCode || null, businessId: businessId || null }
 }
 
-function AppRouter() {
+function AppRouter({ customDomainSlug }: { customDomainSlug?: string | null }) {
   const searchParams = useSearchParams()
   const hostSlug = detectStorefrontSlug(searchParams)
-  // A custom domain carries no slug, so it is resolved from DomainMapping.
-  const customDomain = useCustomDomainSlug(!!hostSlug)
-  const storefrontSlug = hostSlug ?? customDomain.slug
+  // A custom domain carries no slug; Home resolved it from DomainMapping.
+  const storefrontSlug = hostSlug ?? customDomainSlug ?? null
   const deliveryEntry = detectDeliveryEntry(searchParams)
   const { productCode: productWorkspaceCode, businessId: workspaceBusinessId } = detectProductWorkspace(searchParams)
   if (typeof window !== "undefined") {
@@ -536,11 +543,6 @@ function AppRouter() {
       "| deliveryEntry=", deliveryEntry,
     )
   }
-  // While a custom domain is being resolved, render nothing rather than the
-  // platform's marketing page — that page on a customer's own domain is the
-  // whole problem this exists to remove.
-  if (customDomain.pending) return <PageLoader />
-
   return (
     <AppContent
       storefrontSlug={storefrontSlug}

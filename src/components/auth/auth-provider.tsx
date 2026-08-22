@@ -65,6 +65,16 @@ interface AuthProviderProps {
   onLogin?: () => void;
   /** Optional callback when user logs out */
   onLogout?: () => void;
+  /**
+   * The tenant this request's hostname belongs to, when that hostname is a
+   * customer's own domain rather than <slug>.<base>.
+   *
+   * Resolved once, above this provider, and passed in — because the test below
+   * used to be the hostname's SHAPE, and a custom domain is not shaped like a
+   * tenant host. It got the admin login, and the router that would have
+   * resolved it never rendered at all.
+   */
+  customDomainSlug?: string | null;
 }
 
 export function AuthProvider({
@@ -72,6 +82,7 @@ export function AuthProvider({
   onSessionExpired,
   onLogin,
   onLogout,
+  customDomainSlug = null,
 }: AuthProviderProps) {
   const {
     initialize,
@@ -267,11 +278,15 @@ export function AuthProvider({
   if (!isAuthenticated) {
     const hostname = window.location.hostname.split(":")[0]
     const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
+    // A storefront is either a tenant subdomain, or a customer's own domain
+    // that DomainMapping resolved. Both have their own CustomerAuth flow inside
+    // CustomerLayout and must never see the admin LoginPage.
     const isStorefrontSubdomain =
-      hostname.endsWith(`.${storefrontBase}`) &&
-      !isReservedHostPrefix(hostname.split(".")[0])
+      !!customDomainSlug ||
+      (hostname.endsWith(`.${storefrontBase}`) &&
+        !isReservedHostPrefix(hostname.split(".")[0]))
 
-    console.log("[AuthProvider] unauthenticated | hostname=", hostname, "| isStorefront=", isStorefrontSubdomain)
+    console.log("[AuthProvider] unauthenticated | hostname=", hostname, "| isStorefront=", isStorefrontSubdomain, "| customDomainSlug=", customDomainSlug)
 
     if (!isStorefrontSubdomain) {
       return <LoginPage />
