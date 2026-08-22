@@ -90,7 +90,7 @@ interface WebsiteRecord {
 interface ValidationResult {
   slug:       string
   domain:     string
-  dns:        { status: string; resolved: string[]; expected: string; pointsToVps: boolean }
+  dns:        { status: string; resolved: string[]; expected: string; pointsToVps: boolean; state?: string; nextStep?: string; names?: Record<string, { state: string; resolved: string[] }> }
   ssl:        { status: string; expiryDate: string | null; httpsReachable: boolean; error: string | null }
   tenant:     { status: string; businessId: string | null; businessName: string | null }
   storefront: { status: string; isOnline: boolean }
@@ -771,9 +771,18 @@ export function DomainsView() {
                   icon: Wifi,
                   label: "DNS",
                   ok: validationResult.dns.status === "active",
-                  detail: validationResult.dns.status === "active"
-                    ? `Resolves → ${validationResult.dns.resolved.join(", ")}${validationResult.dns.pointsToVps ? " ✓ VPS" : " ⚠ wrong IP"}`
-                    : `NXDOMAIN — add wildcard A record for *.${STOREFRONT_BASE}`,
+                  // The server did the lookup and knows what it found. This
+                  // row used to ignore all of it and print "NXDOMAIN — add
+                  // wildcard A record for *.quantixtechnology.in" for ANY
+                  // non-active status — so a custom domain that resolved
+                  // perfectly well to the wrong address was reported as having
+                  // no record at all, and its owner was asked for a wildcard on
+                  // a domain that is not theirs.
+                  detail: validationResult.dns.resolved?.length
+                    ? `Resolves → ${validationResult.dns.resolved.join(", ")}${
+                        validationResult.dns.pointsToVps ? " ✓ VPS" : ""
+                      }${validationResult.dns.nextStep ? ` — ${validationResult.dns.nextStep}` : ""}`
+                    : validationResult.dns.nextStep || "No A record found for this domain.",
                 },
                 {
                   icon: Lock,

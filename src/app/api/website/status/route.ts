@@ -9,10 +9,10 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server'
-import dns from 'dns/promises'
 import { db } from '@/lib/db'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
-import { assessDnsTarget, dnsLabel, type DnsState } from '@/lib/domain-dns'
+import { assessAcrossResolvers, dnsLabel, type DnsState } from '@/lib/domain-dns'
+import { resolveAcrossResolvers } from '@/lib/domain-dns-lookup'
 
 const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 const VPS_IP          = process.env.VPS_HOST || ''   // Set in .env — the public VPS IP
@@ -67,7 +67,11 @@ export const GET = withMiddleware({ requireAuth: true })(
       ssl:        { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
       tenant:     { status: 'not_found', businessId: null, businessName: null },
       storefront: { status: 'unknown', isOnline: false },
-      deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: 'Add wildcard A record for *.quantixtechnology.in to your DNS provider' },
+      // Neutral until something has actually been checked. The old seed asked
+      // for a wildcard on the PLATFORM domain, which is nothing to do with a
+      // customer's own domain — and it survived into the response whenever no
+      // later branch replaced it.
+      deployment: { status: 'PENDING_DNS', label: 'Checking…', nextStep: '' },
       checkedAt:  new Date().toISOString(),
     }
 
@@ -89,15 +93,13 @@ export const GET = withMiddleware({ requireAuth: true })(
     // ── 1. DNS Resolution ──────────────────────────────────────────────────
     // Classified, not merely compared — a domain parked on 127.0.0.1 resolves
     // perfectly well and points nowhere. See lib/domain-dns.
-    let addresses: string[] = []
-    let lookupFailed = false
-    try {
-      addresses = await dns.resolve4(domain)
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code
-      lookupFailed = !(code === 'ENOTFOUND' || code === 'ENODATA')
-    }
-    const dnsCheck = assessDnsTarget(addresses, VPS_IP)
+    // Asked of several resolvers, not just the server's own — that one caches,
+    // and a stale cache is how a customer who had already repointed their
+    // domain was told to repoint it again.
+    const lookup = await resolveAcrossResolvers(domain)
+    const addresses = lookup.union
+    const lookupFailed = false
+    const dnsCheck = assessAcrossResolvers(lookup.answersByResolver, VPS_IP)
     result.dns.resolved    = addresses
     result.dns.pointsToVps = dnsCheck.pointsToVps
     result.dns.state       = dnsCheck.state
@@ -153,8 +155,9 @@ export const GET = withMiddleware({ requireAuth: true })(
         // to 127.0.0.1 reads as "still propagating" and sends nobody to their
         // DNS provider, which is the one place the problem can be fixed.
         label:    dnsLabel(dnsCheck.state),
-        nextStep: dnsCheck.nextStep
-          || `Add wildcard A record: * → ${VPS_IP || '<VPS_IP>'} for ${STOREFRONT_BASE}. Then run: nslookup ${domain}`,
+        // Whatever the assessment says. A wildcard on the platform domain is
+        // never the answer for a customer's own domain.
+        nextStep: dnsCheck.nextStep,
       }
     } else if (domainRecord?.sslStatus === 'provisioning') {
       result.deployment = {

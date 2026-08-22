@@ -33,6 +33,12 @@ export type DnsState =
    * through this path. It is reported as unverified rather than confirmed.
    */
   | 'UNVERIFIED'
+  /**
+   * Some resolvers already see the production VPS and others still hold the
+   * old answer. The record HAS been fixed and is on its way out; the one thing
+   * that must not happen here is telling the customer to change it again.
+   */
+  | 'PROPAGATING'
 
 export interface DnsAssessment {
   state: DnsState
@@ -124,5 +130,41 @@ export function dnsLabel(state: DnsState): string {
     case 'NOT_PUBLIC':       return 'DNS Not Public'
     case 'UNRESOLVED':       return 'DNS Pending'
     case 'UNVERIFIED':       return 'DNS Unverified'
+    case 'PROPAGATING':      return 'DNS Propagating'
   }
+}
+
+/**
+ * One verdict from several resolvers.
+ *
+ * A single lookup is whatever one resolver happens to hold. Right after a
+ * record changes, resolvers disagree for as long as the old TTL runs — and a
+ * verdict built on the unlucky one tells a customer who has already fixed
+ * their DNS to go and fix it again. So the question is asked of several, and
+ * agreement is part of the answer.
+ */
+export function assessAcrossResolvers(answersByResolver: string[][], vpsIp: string): DnsAssessment {
+  const answered = answersByResolver.filter((a) => a.length > 0)
+  const union = Array.from(new Set(answered.flat()))
+  const combined = assessDnsTarget(union, vpsIp)
+
+  if (!vpsIp || answered.length < 2) return combined
+
+  const sees = answered.filter((a) => a.includes(vpsIp)).length
+  const disagree = sees > 0 && sees < answered.length
+
+  if (disagree) {
+    return {
+      ...combined,
+      state: 'PROPAGATING',
+      // The record is right. Nothing is required of the customer.
+      pointsToVps: false,
+      canProvisionSsl: true,
+      nextStep:
+        `The A record has been updated to ${vpsIp} and is still propagating — ` +
+        `${sees} of ${answered.length} public resolvers already return it. ` +
+        `No DNS change is needed; this clears on its own as the old record expires.`,
+    }
+  }
+  return combined
 }

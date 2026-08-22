@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { assessDnsTarget, isNonPublicAddress, dnsLabel } from '@/lib/domain-dns'
+import { assessDnsTarget, assessAcrossResolvers, isNonPublicAddress, dnsLabel } from '@/lib/domain-dns'
 
 // ============================================================================
 // 127.0.0.1 is an answer, not a destination.
@@ -26,6 +26,15 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const VALIDATE = read('src/app/api/website/validate/route.ts')
 const STATUS   = read('src/app/api/website/status/route.ts')
 const HOSTPROV = read('src/lib/product-host-provisioner.ts')
+const DOMAINSUI = read('src/components/admin/domains/domains-view.tsx')
+
+/**
+ * The comment above the fixed row quotes the message it replaced, so an
+ * absence assertion has to read the code rather than the sentence explaining
+ * why the code is the way it is.
+ */
+const codeOnly = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
 
 const VPS = '13.205.43.103'
 
@@ -142,9 +151,9 @@ describe('the routes no longer wave a bad record through', () => {
   })
 
   it('both classify through the same shared assessment', () => {
-    expect(VALIDATE).toContain("import { assessDnsTarget, dnsLabel } from '@/lib/domain-dns'")
-    expect(STATUS).toContain('assessDnsTarget(addresses, VPS_IP)')
-    expect(VALIDATE).toContain('assessDnsTarget(resolved, VPS_IP)')
+    expect(VALIDATE).toContain("import { assessAcrossResolvers, dnsLabel } from '@/lib/domain-dns'")
+    expect(STATUS).toContain('assessAcrossResolvers(lookup.answersByResolver, VPS_IP)')
+    expect(VALIDATE).toContain('assessAcrossResolvers(apexRes.answersByResolver, VPS_IP)')
   })
 
   it('certbot runs only when the record can carry traffic', () => {
@@ -169,7 +178,7 @@ describe('the routes no longer wave a bad record through', () => {
   it('the resolved answer is reported, not an invented expectation', () => {
     // The 127.0.0.1 on screen came from public DNS. Nothing here manufactures
     // an address.
-    expect(VALIDATE).toContain('resolved = await dns.resolve4(domain)')
+    expect(VALIDATE).toContain('resolveAcrossResolvers(domain)')
     expect(VALIDATE).not.toMatch(/expected:\s*['"]127\.0\.0\.1['"]/)
     expect(STATUS).not.toMatch(/expected:\s*['"]127\.0\.0\.1['"]/)
   })
@@ -211,5 +220,106 @@ describe('certbot is not spent on a host that cannot answer', () => {
 
   it('the refusal carries the actionable message, not a bare failure', () => {
     expect(HOSTPROV).toContain('result.error = dnsCheck.nextStep')
+  })
+})
+
+describe('one resolver is not the whole internet', () => {
+  const OLD = '127.0.0.1'
+
+  it('all resolvers agreeing on the VPS is simply correct', () => {
+    const a = assessAcrossResolvers([[VPS], [VPS], [VPS]], VPS)
+    expect(a.state).toBe('POINTS_TO_VPS')
+    expect(a.canProvisionSsl).toBe(true)
+  })
+
+  it('a lagging resolver reads as propagating, not as a mistake', () => {
+    // Exactly what happened: Google still held 127.0.0.1 while Cloudflare and
+    // Quad9 already had the new address.
+    const a = assessAcrossResolvers([[OLD], [VPS], [VPS]], VPS)
+    expect(a.state).toBe('PROPAGATING')
+    expect(a.canProvisionSsl).toBe(true)
+  })
+
+  it('and it does not ask for the record to be changed again', () => {
+    const a = assessAcrossResolvers([[OLD], [VPS], [VPS]], VPS)
+    expect(a.nextStep).toContain('still propagating')
+    expect(a.nextStep).toContain('No DNS change is needed')
+    expect(a.nextStep).not.toMatch(/replace|update the a record/i)
+  })
+
+  it('it says how far along it is', () => {
+    expect(assessAcrossResolvers([[OLD], [VPS], [VPS]], VPS).nextStep).toContain('2 of 3')
+  })
+
+  it('every resolver still on the old answer is a real problem', () => {
+    const a = assessAcrossResolvers([[OLD], [OLD], [OLD]], VPS)
+    expect(a.state).toBe('NOT_PUBLIC')
+    expect(a.canProvisionSsl).toBe(false)
+  })
+
+  it('resolvers that did not answer do not count as votes', () => {
+    // A timeout is a missing vote, not an answer of "no record".
+    const a = assessAcrossResolvers([[], [VPS], []], VPS)
+    expect(a.state).toBe('POINTS_TO_VPS')
+  })
+
+  it('no answer anywhere is still unresolved', () => {
+    expect(assessAcrossResolvers([[], [], []], VPS).state).toBe('UNRESOLVED')
+  })
+
+  it('the lookup asks resolvers from different operators', () => {
+    const LOOKUP = read('src/lib/domain-dns-lookup.ts')
+    expect(LOOKUP).toContain("['1.1.1.1', '8.8.8.8', '9.9.9.9']")
+    // The server's own resolver is asked too — it is the one that may be stale.
+    expect(LOOKUP).toContain('resolveVia(null, host)')
+  })
+})
+
+describe('a custom domain is checked as itself, both names', () => {
+  it('apex and www are both resolved', () => {
+    expect(VALIDATE).toContain('resolveAcrossResolvers(domain)')
+    expect(VALIDATE).toContain('resolveAcrossResolvers(`www.${domain}`)')
+  })
+
+  it('the weaker of the two decides, because the certificate covers both', () => {
+    expect(VALIDATE).toContain('const dnsCheck = apexCheck.canProvisionSsl ? (wwwCheck.canProvisionSsl ? apexCheck : wwwCheck) : apexCheck')
+  })
+
+  it('certbot is still asked for both names', () => {
+    expect(VALIDATE).toContain('-d ${domain} -d www.${domain}')
+    expect(VALIDATE).toContain('server_name ${domain} www.${domain};')
+  })
+
+  it('the message names which of the two is holding it up', () => {
+    expect(VALIDATE).toContain('const blockingName =')
+    expect(VALIDATE).toContain('`${blockingName}: ${dnsCheck.nextStep}`')
+  })
+
+  it('per-name state is reported', () => {
+    expect(VALIDATE).toContain('[`www.${domain}`]: { state: wwwCheck.state, resolved: wwwRes.union }')
+  })
+})
+
+describe('nobody is asked for a wildcard on a domain that is not theirs', () => {
+  it('the demand is gone from the API', () => {
+    expect(STATUS).not.toContain('Add wildcard A record for *.quantixtechnology.in')
+    expect(STATUS).not.toContain('Add wildcard A record: * →')
+  })
+
+  it('and from the UI, which was inventing it', () => {
+    // This row ignored the server's answer entirely and printed NXDOMAIN for
+    // ANY non-active status — so a domain that resolved perfectly well to the
+    // wrong address was reported as having no record at all.
+    expect(codeOnly(DOMAINSUI)).not.toContain('NXDOMAIN')
+    expect(codeOnly(DOMAINSUI)).not.toContain('wildcard')
+  })
+
+  it('the UI shows what the server actually found', () => {
+    expect(DOMAINSUI).toContain('validationResult.dns.resolved?.length')
+    expect(DOMAINSUI).toContain('validationResult.dns.nextStep')
+  })
+
+  it('the neutral seed says nothing rather than something wrong', () => {
+    expect(STATUS).toContain("label: 'Checking…', nextStep: ''")
   })
 })

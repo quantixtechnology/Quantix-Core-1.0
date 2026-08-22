@@ -14,11 +14,11 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server'
-import dns from 'dns/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { db } from '@/lib/db'
-import { assessDnsTarget, dnsLabel } from '@/lib/domain-dns'
+import { assessAcrossResolvers, dnsLabel } from '@/lib/domain-dns'
+import { resolveAcrossResolvers } from '@/lib/domain-dns-lookup'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 
 const execAsync = promisify(exec)
@@ -196,18 +196,41 @@ export const POST = withMiddleware({ requireAuth: true })(
       // 127.0.0.1 used to read as active — because the comparison fell back to
       // `true` when VPS_HOST was unset — and the run went on to spend certbot
       // attempts on a name Let's Encrypt can never reach.
-      let resolved: string[] = []
-      try {
-        console.log("Resolving DNS for", domain)
-        resolved = await dns.resolve4(domain)
-        console.log("DNS RESOLVED", resolved)
-      } catch (dnsErr) {
-        console.log("DNS ERROR", dnsErr instanceof Error ? dnsErr.message : String(dnsErr))
-        resolved = []
+      //
+      // BOTH names are checked, because certbot is asked for both
+      // (-d domain -d www.domain) and Let's Encrypt validates each one
+      // separately: a certificate request covering a name that does not
+      // resolve fails as a whole, taking the name that does with it.
+      //
+      // Each name is resolved through several public resolvers as well as the
+      // server's own, because the server's resolver caches. A stale cache is
+      // how a customer who had already repointed their domain was told to
+      // repoint it again.
+      console.log("Resolving DNS for", domain, "and www." + domain)
+      const [apexRes, wwwRes] = await Promise.all([
+        resolveAcrossResolvers(domain),
+        resolveAcrossResolvers(`www.${domain}`),
+      ])
+      const apexCheck = assessAcrossResolvers(apexRes.answersByResolver, VPS_IP)
+      const wwwCheck = assessAcrossResolvers(wwwRes.answersByResolver, VPS_IP)
+      console.log("DNS STATE", { apex: apexCheck.state, www: wwwCheck.state, VPS_IP })
+
+      // The weaker of the two decides: the certificate covers both names.
+      const dnsCheck = apexCheck.canProvisionSsl ? (wwwCheck.canProvisionSsl ? apexCheck : wwwCheck) : apexCheck
+      const resolved = apexRes.union
+      const names = {
+        [domain]: { state: apexCheck.state, resolved: apexRes.union },
+        [`www.${domain}`]: { state: wwwCheck.state, resolved: wwwRes.union },
       }
-      const dnsCheck = assessDnsTarget(resolved, VPS_IP)
-      console.log("DNS STATE", dnsCheck.state, "VPS_IP", VPS_IP)
-      const dnsField = { status: dnsCheck.pointsToVps ? 'active' : dnsCheck.canProvisionSsl ? 'active' : 'pending', resolved, expected: VPS_IP, pointsToVps: dnsCheck.pointsToVps, state: dnsCheck.state }
+      // Name the one that is holding it up, or the message points at the wrong
+      // half of the pair.
+      const blockingName = !apexCheck.canProvisionSsl ? domain : !wwwCheck.canProvisionSsl ? `www.${domain}` : null
+      const nextStep = blockingName ? `${blockingName}: ${dnsCheck.nextStep}` : dnsCheck.nextStep
+      const dnsField = {
+        status: dnsCheck.canProvisionSsl ? 'active' : 'pending',
+        resolved, expected: VPS_IP, pointsToVps: dnsCheck.pointsToVps,
+        state: dnsCheck.state, nextStep, names,
+      }
 
       if (!dnsCheck.canProvisionSsl) {
         return NextResponse.json({
@@ -220,7 +243,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             // Certbot is NOT run from here. Issuing a certificate requires the
             // domain to answer from the internet, so attempting it against a
             // record that points nowhere only burns Let's Encrypt rate limit.
-            deployment: { status: 'PENDING_DNS', label: dnsLabel(dnsCheck.state), nextStep: dnsCheck.nextStep },
+            deployment: { status: 'PENDING_DNS', label: dnsLabel(dnsCheck.state), nextStep },
             checkedAt,
           },
         })
