@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getProductCodeForHost, getProductEntryRoute, isReservedHostPrefix, SHARED_HOST_PATHS } from '@/lib/product-hosts'
+import { isCandidateCustomHost } from '@/lib/custom-domain'
 
 const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 
@@ -131,6 +132,27 @@ export default function proxy(request: NextRequest) {
         log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
         return withSecurityHeaders(NextResponse.rewrite(url))
       }
+    }
+
+    // 3) A customer's own domain.
+    //
+    // There is no slug to take off the front of it, so the tenant is resolved
+    // server-side from DomainMapping (see app/layout.tsx). All this branch does
+    // is give a custom domain the SAME shape of request a slug host gets:
+    // deep paths collapse to '/' so the storefront SPA boots, which is what it
+    // does for slug hosts and what makes a refresh on an inner page work.
+    //
+    // It cannot confirm the tenant — the edge has no database — so a host that
+    // maps to nothing renders the platform page exactly as it does today. That
+    // is the fallback, not a decision made here.
+    if (isCandidateCustomHost(hostWithoutPort, STOREFRONT_BASE)) {
+      const url = request.nextUrl.clone()
+      const PUBLIC_PATHS = ['/delete-account', '/reset-password']
+      if (!PUBLIC_PATHS.includes(pathname)) {
+        url.pathname = '/'
+      }
+      log(`[proxy] CUSTOM DOMAIN host=${hostWithoutPort} → ${url.toString()}`)
+      return withSecurityHeaders(NextResponse.rewrite(url))
     }
   }
 

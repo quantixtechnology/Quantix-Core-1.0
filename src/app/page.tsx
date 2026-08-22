@@ -16,6 +16,7 @@ import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getProductHostPrefixes, getProductCodeForHost } from "@/lib/product-hosts"
+import { isCandidateCustomHost, customHostCandidates } from "@/lib/custom-domain"
 import { ErrorBoundary } from "@/components/error/error-boundary"
 import { LaundryWorkspaceBootstrap } from "@/components/laundry/laundry-workspace-bootstrap"
 
@@ -409,6 +410,60 @@ const PLATFORM_HOSTS = new Set([
   `www.${_SF_BASE}`,
 ])
 
+/**
+ * The tenant behind a CUSTOM domain — a hostname with no slug in it.
+ *
+ * Every other host answers this question from its own name. A customer's own
+ * domain cannot: the mapping lives in DomainMapping, so it has to be asked for.
+ * It is asked HERE, from the browser, rather than during server rendering,
+ * because reading the request while rendering opts every page on the platform
+ * out of prerendering — the login screens and workspace shells included. One
+ * fetch on the handful of custom-domain requests is the cheaper trade.
+ *
+ * `www.` is tried before the apex it belongs to, which is the one alias nginx
+ * and the certificate already treat as the same domain. Everything else must
+ * match exactly, because the endpoint resolves by exact DomainMapping match —
+ * a host can only ever reach the business that claimed it.
+ *
+ * Runs at most once, and not at all unless the hostname is a candidate: on
+ * every platform and tenant host this costs nothing and changes nothing.
+ */
+function useCustomDomainSlug(alreadyKnown: boolean): { slug: string | null; pending: boolean } {
+  const [state, setState] = useState<{ slug: string | null; pending: boolean }>({ slug: null, pending: false })
+
+  useEffect(() => {
+    if (alreadyKnown) return
+    const host = window.location.hostname.split(":")[0]
+    if (!isCandidateCustomHost(host, _SF_BASE)) return
+
+    let cancelled = false
+    setState({ slug: null, pending: true })
+
+    ;(async () => {
+      for (const candidate of customHostCandidates(host)) {
+        try {
+          const res = await fetch(`/api/core/tenant/resolve?domain=${encodeURIComponent(candidate)}`)
+          if (!res.ok) continue
+          const json = await res.json()
+          const slug = json?.data?.business?.slug
+          if (typeof slug === "string" && slug && !_SF_RESERVED.has(slug)) {
+            if (!cancelled) setState({ slug, pending: false })
+            return
+          }
+        } catch {
+          // An unreachable lookup is not a tenant; fall through to the next
+          // candidate and then to the platform page.
+        }
+      }
+      if (!cancelled) setState({ slug: null, pending: false })
+    })()
+
+    return () => { cancelled = true }
+  }, [alreadyKnown])
+
+  return state
+}
+
 function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>): string | null {
   // Support ?_storefront=slug if a server-side rewrite ever injects it
   const param = searchParams.get("_storefront")
@@ -464,7 +519,10 @@ function detectProductWorkspace(
 
 function AppRouter() {
   const searchParams = useSearchParams()
-  const storefrontSlug = detectStorefrontSlug(searchParams)
+  const hostSlug = detectStorefrontSlug(searchParams)
+  // A custom domain carries no slug, so it is resolved from DomainMapping.
+  const customDomain = useCustomDomainSlug(!!hostSlug)
+  const storefrontSlug = hostSlug ?? customDomain.slug
   const deliveryEntry = detectDeliveryEntry(searchParams)
   const { productCode: productWorkspaceCode, businessId: workspaceBusinessId } = detectProductWorkspace(searchParams)
   if (typeof window !== "undefined") {
@@ -478,6 +536,11 @@ function AppRouter() {
       "| deliveryEntry=", deliveryEntry,
     )
   }
+  // While a custom domain is being resolved, render nothing rather than the
+  // platform's marketing page — that page on a customer's own domain is the
+  // whole problem this exists to remove.
+  if (customDomain.pending) return <PageLoader />
+
   return (
     <AppContent
       storefrontSlug={storefrontSlug}
