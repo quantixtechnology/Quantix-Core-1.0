@@ -18,6 +18,7 @@ import dns from 'dns/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { db } from '@/lib/db'
+import { assessDnsTarget, dnsLabel } from '@/lib/domain-dns'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 
 const execAsync = promisify(exec)
@@ -190,28 +191,36 @@ export const POST = withMiddleware({ requireAuth: true })(
         : { tenant: null, storefront: null }
 
       // 1. DNS Resolution
-      let dnsActive = false
+      //
+      // The answer is CLASSIFIED, not merely compared. A domain parked on
+      // 127.0.0.1 used to read as active — because the comparison fell back to
+      // `true` when VPS_HOST was unset — and the run went on to spend certbot
+      // attempts on a name Let's Encrypt can never reach.
       let resolved: string[] = []
       try {
         console.log("Resolving DNS for", domain)
         resolved = await dns.resolve4(domain)
         console.log("DNS RESOLVED", resolved)
-        dnsActive = VPS_IP ? resolved.includes(VPS_IP) : true
-        console.log("DNS ACTIVE", dnsActive, "VPS_IP", VPS_IP)
       } catch (dnsErr) {
         console.log("DNS ERROR", dnsErr instanceof Error ? dnsErr.message : String(dnsErr))
-        dnsActive = false
+        resolved = []
       }
+      const dnsCheck = assessDnsTarget(resolved, VPS_IP)
+      console.log("DNS STATE", dnsCheck.state, "VPS_IP", VPS_IP)
+      const dnsField = { status: dnsCheck.pointsToVps ? 'active' : dnsCheck.canProvisionSsl ? 'active' : 'pending', resolved, expected: VPS_IP, pointsToVps: dnsCheck.pointsToVps, state: dnsCheck.state }
 
-      if (!dnsActive) {
+      if (!dnsCheck.canProvisionSsl) {
         return NextResponse.json({
           success: true,
           data: {
             slug, domain,
-            dns: { status: 'pending', resolved, expected: VPS_IP, pointsToVps: false },
+            dns: { ...dnsField, status: 'pending' },
             ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
             tenant: ts.tenant, storefront: ts.storefront,
-            deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: `Add A record: * → ${VPS_IP || '<VPS_IP>'}` },
+            // Certbot is NOT run from here. Issuing a certificate requires the
+            // domain to answer from the internet, so attempting it against a
+            // record that points nowhere only burns Let's Encrypt rate limit.
+            deployment: { status: 'PENDING_DNS', label: dnsLabel(dnsCheck.state), nextStep: dnsCheck.nextStep },
             checkedAt,
           },
         })
@@ -222,7 +231,7 @@ export const POST = withMiddleware({ requireAuth: true })(
           success: true,
           data: {
             slug, domain,
-            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            dns: dnsField,
             ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
             tenant: null, storefront: null,
             deployment: { status: 'ERROR', label: 'Tenant Not Found', nextStep: 'Business not found in database.' },
@@ -241,7 +250,7 @@ export const POST = withMiddleware({ requireAuth: true })(
           success: true,
           data: {
             slug, domain,
-            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            dns: dnsField,
             ssl: { status: 'active', expiryDate: null, httpsReachable: true, error: null },
             tenant: ts.tenant, storefront: health,
             deployment: health.isOnline
@@ -257,7 +266,7 @@ export const POST = withMiddleware({ requireAuth: true })(
           success: true,
           data: {
             slug, domain,
-            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            dns: dnsField,
             ssl: { status: 'provisioning', expiryDate: null, httpsReachable: false, error: null },
             tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'SSL_PENDING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
@@ -281,7 +290,7 @@ export const POST = withMiddleware({ requireAuth: true })(
           success: true,
           data: {
             slug, domain,
-            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            dns: dnsField,
             ssl: { status: 'failed', expiryDate: null, httpsReachable: false, error: prereqError },
             tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'ERROR', label: 'SSL Failed', nextStep: prereqError },
@@ -383,7 +392,7 @@ export const POST = withMiddleware({ requireAuth: true })(
         success: true,
         data: {
           slug, domain,
-          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+          dns: dnsField,
           ssl: {
             status: sslResult.status,
             expiryDate: sslResult.expiryDate?.toISOString() ?? null,

@@ -17,6 +17,8 @@
 
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import dns from 'dns/promises'
+import { assessDnsTarget } from '@/lib/domain-dns'
 
 const execAsync = promisify(exec)
 const SSL_EMAIL = process.env.SSL_EMAIL || 'ssl@quantixtechnology.in'
@@ -171,6 +173,25 @@ export async function provisionProductHost(host: string): Promise<ProductHostRes
     if (await certExists(host)) {
       result.ssl = 'existing'
     } else {
+      // Certbot needs Let's Encrypt to reach this host from the internet, so a
+      // record pointing at 127.0.0.1 — or at nothing, or at somebody else's
+      // server — cannot produce a certificate. Attempting it anyway spends a
+      // rate-limited request on a guaranteed failure, and every retry of the
+      // caller spends another. Checked here because this is the single place
+      // every product host is provisioned through.
+      //
+      // The vhost above is left in place: it is correct, idempotent, and ready
+      // for the moment the record is fixed.
+      const dnsCheck = assessDnsTarget(
+        await dns.resolve4(host).catch(() => [] as string[]),
+        process.env.VPS_HOST || '',
+      )
+      if (!dnsCheck.canProvisionSsl) {
+        result.ssl = 'failed'
+        result.error = dnsCheck.nextStep
+        try { await reloadNginx(); result.reload = 'reloaded' } catch { result.reload = 'failed' }
+        return result
+      }
       await runCertbot(host)
       result.ssl = 'issued'
     }

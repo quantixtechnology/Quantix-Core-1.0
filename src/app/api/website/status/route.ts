@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import dns from 'dns/promises'
 import { db } from '@/lib/db'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
+import { assessDnsTarget, dnsLabel, type DnsState } from '@/lib/domain-dns'
 
 const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 const VPS_IP          = process.env.VPS_HOST || ''   // Set in .env — the public VPS IP
@@ -24,7 +25,7 @@ type StorefrontStatus = 'online' | 'offline' | 'unknown'
 interface StatusResponse {
   slug:        string
   domain:      string
-  dns:         { status: DnsStatus;      resolved: string[]; expected: string; pointsToVps: boolean }
+  dns:         { status: DnsStatus;      resolved: string[]; expected: string; pointsToVps: boolean; state?: DnsState; nextStep?: string }
   ssl:         { status: SslStatus;      expiryDate: string | null; httpsReachable: boolean; error: string | null }
   tenant:      { status: TenantStatus;   businessId: string | null; businessName: string | null }
   storefront:  { status: StorefrontStatus; isOnline: boolean }
@@ -86,15 +87,25 @@ export const GET = withMiddleware({ requireAuth: true })(
     }
 
     // ── 1. DNS Resolution ──────────────────────────────────────────────────
+    // Classified, not merely compared — a domain parked on 127.0.0.1 resolves
+    // perfectly well and points nowhere. See lib/domain-dns.
+    let addresses: string[] = []
+    let lookupFailed = false
     try {
-      const addresses = await dns.resolve4(domain)
-      result.dns.resolved = addresses
-      result.dns.status   = 'active'
-      result.dns.pointsToVps = VPS_IP ? addresses.includes(VPS_IP) : true
+      addresses = await dns.resolve4(domain)
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code
-      result.dns.status = code === 'ENOTFOUND' || code === 'ENODATA' ? 'pending' : 'error'
+      lookupFailed = !(code === 'ENOTFOUND' || code === 'ENODATA')
     }
+    const dnsCheck = assessDnsTarget(addresses, VPS_IP)
+    result.dns.resolved    = addresses
+    result.dns.pointsToVps = dnsCheck.pointsToVps
+    result.dns.state       = dnsCheck.state
+    result.dns.nextStep    = dnsCheck.nextStep
+    // "active" now means the record can actually carry traffic. A loopback
+    // answer is a resolved name, but calling it active is what let the rest of
+    // the pipeline proceed as though the domain were live.
+    result.dns.status = lookupFailed ? 'error' : dnsCheck.canProvisionSsl ? 'active' : 'pending'
 
     // ── 3. SSL Status (from DB record) ─────────────────────────────────────
     const domainRecord = business?.domain
@@ -138,8 +149,12 @@ export const GET = withMiddleware({ requireAuth: true })(
     if (result.dns.status !== 'active') {
       result.deployment = {
         status:   'PENDING_DNS',
-        label:    'DNS Pending',
-        nextStep: `Add wildcard A record: * → ${VPS_IP || '<VPS_IP>'} for ${STOREFRONT_BASE}. Then run: nslookup ${domain}`,
+        // Say what is actually wrong. "DNS Pending" over a domain that resolves
+        // to 127.0.0.1 reads as "still propagating" and sends nobody to their
+        // DNS provider, which is the one place the problem can be fixed.
+        label:    dnsLabel(dnsCheck.state),
+        nextStep: dnsCheck.nextStep
+          || `Add wildcard A record: * → ${VPS_IP || '<VPS_IP>'} for ${STOREFRONT_BASE}. Then run: nslookup ${domain}`,
       }
     } else if (domainRecord?.sslStatus === 'provisioning') {
       result.deployment = {
