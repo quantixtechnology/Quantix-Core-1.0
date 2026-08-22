@@ -72,6 +72,13 @@ export const POST = withMiddleware({
             steps: result.steps,
             // Present only when the Super Admin did not supply a password.
             ownerTempPassword: result.ownerTempPassword,
+            // The email already had a platform account and was reused. If it
+            // already had a password it kept it, so the one entered here was
+            // never applied — the Super Admin has to be told, or they hand over
+            // a credential that does not work.
+            ownerLinkedExistingUser: result.ownerLinkedExistingUser,
+            ownerPasswordUnchanged: result.ownerPasswordUnchanged,
+            ownerAccountInactive: result.ownerAccountInactive,
           },
         }),
         { status: result.success ? 200 : 500, headers: { 'Content-Type': 'application/json' } }

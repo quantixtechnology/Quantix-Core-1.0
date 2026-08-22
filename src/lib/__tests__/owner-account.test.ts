@@ -175,8 +175,13 @@ describe("email uniqueness is enforced, not merged", () => {
     expect(OWNER_ROUTE).toContain("already belongs to another user")
   })
 
-  it("provisioning refuses a colliding owner email too", () => {
-    expect(PROVISIONING).toContain("already belongs to another user")
+  it("provisioning reuses the account instead of refusing the email", () => {
+    // It used to throw "already belongs to another user" for ANY existing
+    // account, which made a real address unusable by every future tenant. One
+    // person can own several businesses — that is what BusinessUser is for.
+    // See business-owner-multi-tenant.test.ts.
+    expect(PROVISIONING).not.toContain("already belongs to another user")
+    expect(PROVISIONING).toContain("ownerCtx.linkedExistingUser = true")
   })
 })
 

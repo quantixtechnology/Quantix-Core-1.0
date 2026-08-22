@@ -293,6 +293,17 @@ export function BusinessManagementWizard({ businessId }: Props) {
       // plain text from state rather than leaving it in the form.
       setForm((p) => ({ ...p, ownerPassword: '', ownerPasswordConfirm: '' }))
       toast.success(temp ? `Provisioned. Temp owner password: ${temp}` : 'Provisioned')
+      // That email already had an account, so it was linked rather than
+      // duplicated. Silence here would leave the Super Admin sharing a password
+      // that was never written.
+      if (json.data?.ownerPasswordUnchanged) {
+        toast.info('That email already has a Quantix account — it was linked as owner and kept its existing password.', { duration: 10000 })
+      } else if (json.data?.ownerLinkedExistingUser) {
+        toast.info('That email already has a Quantix account — it was linked as owner of this business.', { duration: 8000 })
+      }
+      if (json.data?.ownerAccountInactive) {
+        toast.warning('That owner account is disabled platform-wide and cannot sign in until it is re-enabled.', { duration: 12000 })
+      }
       load(bizId)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Provisioning failed')

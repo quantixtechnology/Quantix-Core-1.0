@@ -139,3 +139,56 @@ export const isNoOp = (changes: OwnerFieldChanges, setsPassword: boolean): boole
  * "Reset Password" button is untouched and keeps forcing a change.
  */
 export const mustChangePasswordFor = (source: 'ADMIN_SET' | 'GENERATED'): boolean => source === 'GENERATED'
+
+// ── Owner provisioning: reuse or create ──────────────────────────────────────
+//
+// The platform models one person across many businesses:
+//
+//     User (email globally unique) → BusinessUser @@unique([userId, businessId]) → Business
+//
+// so an owner email that already has an account is NOT a conflict. Provisioning
+// used to throw "already belongs to another user" for any existing account,
+// which made a real address permanently unusable by every future tenant.
+//
+// Kept as a pure decision, separate from the writes, so the rule can be tested
+// for what it decides rather than for how it is spelled.
+
+/** The subset of a User row the decision needs. */
+export interface ExistingOwnerUser {
+  id: string
+  passwordHash: string | null
+  isActive: boolean
+}
+
+export type OwnerAccountPlan =
+  | { action: 'CREATE_USER' }
+  | {
+      action: 'REUSE_USER'
+      userId: string
+      /**
+       * Whether the password chosen during provisioning should be written.
+       *
+       * Only ever true for an account that has none. Credentials belong to the
+       * person, not to this business: a Super Admin provisioning workspace B
+       * must not be able to overwrite the password that signs someone into
+       * workspace A. An account with no password at all cannot sign in as an
+       * owner, so filling that gap is the one safe write.
+       */
+      setPassword: boolean
+      /** Their existing password stands — the one entered here was not applied. */
+      passwordUnchanged: boolean
+      /** Disabled platform-wide: linked as owner, but cannot sign in yet. */
+      inactive: boolean
+    }
+
+export function planOwnerAccount(existing: ExistingOwnerUser | null | undefined): OwnerAccountPlan {
+  if (!existing) return { action: 'CREATE_USER' }
+  const setPassword = !existing.passwordHash
+  return {
+    action: 'REUSE_USER',
+    userId: existing.id,
+    setPassword,
+    passwordUnchanged: !setPassword,
+    inactive: !existing.isActive,
+  }
+}

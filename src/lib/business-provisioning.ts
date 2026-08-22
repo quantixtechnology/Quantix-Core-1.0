@@ -8,7 +8,7 @@ import { db } from '@/lib/db'
 import { getCompleteProductProfile } from '@/lib/product-management'
 import { ProductProvisionerRegistry, provisionWithRegistry } from '@/lib/product-provisioner-registry'
 import { hashPassword, generateTempPassword } from '@/lib/password-utils'
-import { normaliseEmail, mustChangePasswordFor } from '@/lib/owner-account'
+import { normaliseEmail, mustChangePasswordFor, planOwnerAccount } from '@/lib/owner-account'
 
 /** Options threaded into a provisioning run. */
 export interface ProvisionOptions {
@@ -22,6 +22,23 @@ export interface ProvisionOptions {
   ownerName?: string
   ownerEmail?: string
   ownerPhone?: string
+}
+
+/**
+ * What the owner step learned while running, surfaced on the result.
+ *
+ * The Super Admin has to be told when the password they typed was not applied,
+ * or they will hand over a credential that does not work.
+ */
+export interface OwnerProvisionContext {
+  /** Set only when provisioning generated the password (none was supplied). */
+  tempPassword?: string
+  /** The email already had a platform account; it was reused, not duplicated. */
+  linkedExistingUser?: boolean
+  /** That account already had a password, so it kept it. */
+  ownerPasswordUnchanged?: boolean
+  /** That account is globally disabled — the owner cannot sign in until it is enabled. */
+  ownerAccountInactive?: boolean
 }
 
 export interface ProvisioningStep {
@@ -42,6 +59,14 @@ export interface ProvisioningResult {
   // Set only when provisioning generated a temporary owner password
   // (i.e. the Super Admin did not supply one). Surface it so it can be shared.
   ownerTempPassword?: string
+  // The owner email already had a platform account (an owner or member of
+  // another business, or a customer). It was reused rather than duplicated.
+  ownerLinkedExistingUser?: boolean
+  // That account kept the password it already had, so the one entered here was
+  // NOT applied. Without this the Super Admin shares a credential that fails.
+  ownerPasswordUnchanged?: boolean
+  // That account is disabled platform-wide; the owner cannot sign in yet.
+  ownerAccountInactive?: boolean
 }
 
 /**
@@ -75,7 +100,7 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
   const startTime = Date.now()
   const steps: ProvisioningResult['steps'] = []
   // Holder so the owner-account step can report a generated temp password.
-  const ownerCtx: { tempPassword?: string } = {}
+  const ownerCtx: OwnerProvisionContext = {}
 
   try {
     // Get business and product information
@@ -190,6 +215,9 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
       workspaceId: workspace.id,
       steps,
       ownerTempPassword: ownerCtx.tempPassword,
+      ownerLinkedExistingUser: ownerCtx.linkedExistingUser,
+      ownerPasswordUnchanged: ownerCtx.ownerPasswordUnchanged,
+      ownerAccountInactive: ownerCtx.ownerAccountInactive,
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -231,7 +259,7 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
  * Get all platform provisioning steps in execution order
  * These are ONLY platform-level steps, not product-specific
  */
-function getPlatformProvisioningSteps(businessId: string, workspaceId: string, productCode: string, opts: ProvisionOptions = {}, ownerCtx: { tempPassword?: string } = {}): ProvisioningStep[] {
+function getPlatformProvisioningSteps(businessId: string, workspaceId: string, productCode: string, opts: ProvisionOptions = {}, ownerCtx: OwnerProvisionContext = {}): ProvisioningStep[] {
   return [
     {
       name: 'validate_product',
@@ -322,7 +350,7 @@ async function validateSubscriptionPlanStep(businessId: string, productCode: str
 /**
  * Step 3: Create Owner Account
  */
-async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions = {}, ownerCtx: { tempPassword?: string } = {}) {
+async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions = {}, ownerCtx: OwnerProvisionContext = {}) {
   const business = await db.business.findUnique({
     where: { id: businessId },
   })
@@ -363,46 +391,98 @@ async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions
   const ownerName = opts.ownerName?.trim() || business.name
   const ownerPhone = opts.ownerPhone?.trim() || business.contactPhone || ''
 
-  // A chosen email must not collide with another account, or the login lookup
-  // (loginId first, then email) becomes ambiguous. Fail loudly here rather than
-  // hitting a bare unique-constraint error mid-provisioning.
-  const clash = await db.user.findFirst({
+  // One person, several businesses — which is exactly what the schema models:
+  //
+  //     User (email globally unique) → BusinessUser @@unique([userId, businessId]) → Business
+  //
+  // So an address that already has an account is not a collision. It is the
+  // same person being given another workspace, and the membership row is what
+  // separates the two. Refusing it made a real email permanently unusable for
+  // every future tenant, which is the opposite of multi-tenant.
+  //
+  // A SECOND user row for the same address is what would break login (the
+  // lookup resolves loginId first, then email, and would be ambiguous) — and
+  // the unique constraint forbids it anyway. Reusing the row is what keeps
+  // that guarantee, not throwing.
+  const existing = await db.user.findFirst({
     where: { OR: [{ email: ownerEmail }, { loginId: ownerEmail }] },
-    select: { id: true },
+    select: { id: true, passwordHash: true, isActive: true },
   })
-  if (clash) {
-    throw new Error(`Owner email "${ownerEmail}" already belongs to another user`)
+
+  // The rule itself lives in owner-account.ts, as a decision over the existing
+  // row — separate from the writes below, so it can be tested for what it
+  // decides.
+  const plan = planOwnerAccount(existing)
+  let ownerUserId: string
+
+  if (plan.action === 'REUSE_USER') {
+    ownerUserId = plan.userId
+    ownerCtx.linkedExistingUser = true
+
+    if (plan.setPassword) {
+      await db.user.update({
+        where: { id: plan.userId },
+        data: {
+          passwordHash,
+          hasPassword: true,
+          authProvider: 'PASSWORD',
+          mustChangePassword: mustChangePasswordFor(adminChosePassword ? 'ADMIN_SET' : 'GENERATED'),
+          passwordChangedAt: new Date(),
+        },
+      })
+    }
+    if (plan.passwordUnchanged) {
+      // Their existing password still applies. Say so — and drop the generated
+      // one, because reporting a password that was never written would send
+      // the Super Admin off to share a credential that does not work.
+      ownerCtx.ownerPasswordUnchanged = true
+      ownerCtx.tempPassword = undefined
+    }
+    // Deliberately NOT reactivated here: a globally disabled account was
+    // disabled for a reason that has nothing to do with this business. Flag it
+    // so provisioning does not report an owner who cannot sign in.
+    if (plan.inactive) ownerCtx.ownerAccountInactive = true
+  } else {
+    // Create owner user account
+    // Use unique loginId based on email + business ID to avoid collisions
+    const loginId = `${business.slug}-owner-${business.id.substring(0, 8)}`
+
+    const ownerUser = await db.user.create({
+      data: {
+        email: ownerEmail,
+        loginId,
+        name: ownerName,
+        phone: ownerPhone,
+        isActive: true,
+        authProvider: 'PASSWORD',
+        passwordHash,
+        hasPassword: true,
+        // A password the Super Admin typed is a real credential they will hand
+        // over, not a temporary one — forcing a rotation would defeat "the owner
+        // can log in with the configured password". A generated one still must
+        // be changed on first login.
+        mustChangePassword: mustChangePasswordFor(adminChosePassword ? 'ADMIN_SET' : 'GENERATED'),
+        emailVerified: true, // owner identity verified by the Super Admin
+        createdBy: 'PROVISIONING',
+      },
+    })
+    ownerUserId = ownerUser.id
   }
 
-  // Create owner user account
-  // Use unique loginId based on email + business ID to avoid collisions
-  const loginId = `${business.slug}-owner-${business.id.substring(0, 8)}`
-
-  const ownerUser = await db.user.create({
-    data: {
-      email: ownerEmail,
-      loginId,
-      name: ownerName,
-      phone: ownerPhone,
-      isActive: true,
-      authProvider: 'PASSWORD',
-      passwordHash,
-      hasPassword: true,
-      // A password the Super Admin typed is a real credential they will hand
-      // over, not a temporary one — forcing a rotation would defeat "the owner
-      // can log in with the configured password". A generated one still must
-      // be changed on first login.
-      mustChangePassword: mustChangePasswordFor(adminChosePassword ? 'ADMIN_SET' : 'GENERATED'),
-      emailVerified: true, // owner identity verified by the Super Admin
-      createdBy: 'PROVISIONING',
-    },
-  })
-
-  // Link user to business as owner
-  await db.businessUser.create({
-    data: {
+  // Link user to business as owner.
+  //
+  // upsert, because the same person may already be in THIS business in another
+  // capacity — staff who is now being made the owner. @@unique([userId,
+  // businessId]) would refuse a second row, so the choice is to promote in
+  // place or to fail; promoting is what the Super Admin asked for, and it is
+  // scoped to this business alone. Their membership of every other business is
+  // a different row and is not touched.
+  await db.businessUser.upsert({
+    where: { userId_businessId: { userId: ownerUserId, businessId } },
+    update: { role: 'CLIENT_OWNER', isActive: true },
+    create: {
       businessId,
-      userId: ownerUser.id,
+      userId: ownerUserId,
       role: 'CLIENT_OWNER',
       isActive: true,
     },
