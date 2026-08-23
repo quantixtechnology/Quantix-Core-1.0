@@ -437,11 +437,121 @@ async function ensureHardwareManagerNavItem(navigationId: string): Promise<void>
   }).catch(() => null)
 }
 
+/**
+ * Give an existing tenant the DEFAULT sections it has never seen.
+ *
+ * ensureNavigationConfig seeds the full default set exactly once, when the
+ * navigation row is created, and returns early ever after. So a module added to
+ * defaultNavigationConfig() later reached new businesses only — CRM could be
+ * enabled in Business Features, licensed, permitted by RBAC, and still never
+ * appear, because the sidebar reads the tenant's PERSISTED sections and a
+ * section that was never written cannot be filtered into existence.
+ *
+ * Each previous module answered this with a hand-written migration of its own
+ * (see the two above). That does not scale and it is why this one was missed.
+ * This is the general form: whatever the defaults gain, existing tenants gain.
+ *
+ * Deliberately conservative about what counts as "never seen":
+ *
+ *   • Only whole sections are added, never individual items into a section the
+ *     tenant already has. An item missing from a section they arranged is
+ *     plausibly one they removed on purpose.
+ *   • A section is skipped if ANY of its screens already appear anywhere in the
+ *     tenant's navigation — they have it, wherever they chose to put it.
+ *   • Nothing existing is renamed, reordered relative to its neighbours,
+ *     hidden, or deleted. The only write to existing rows is the order shift
+ *     that makes room.
+ *
+ * Licensing still decides visibility afterwards: adding the section does not
+ * turn a module on, it just stops the persisted config from being the thing
+ * that permanently hides it.
+ */
+async function ensureDefaultSections(navigationId: string): Promise<void> {
+  const defaults = defaultNavigationConfig()
+
+  const existingSections = await db.laundryNavSection.findMany({
+    where: { navigationId },
+    select: { id: true, name: true, order: true },
+    orderBy: { order: "asc" },
+  }).catch(() => null)
+  if (!existingSections) return
+
+  const existingItems = await db.laundryNavItem.findMany({
+    where: { navigationId }, select: { screenKey: true },
+  }).catch(() => null)
+  if (!existingItems) return
+
+  const haveSection = new Set(existingSections.map((s) => s.name))
+  // Raw keys are safe to compare: syncLaundryPermissions runs immediately
+  // before this in the navigation route and rewrites any legacy nav key to its
+  // canonical form, so by now the stored keys ARE canonical. Importing the
+  // canonicaliser here would be circular — permission-sync already imports
+  // defaultNavigationConfig from this module.
+  const haveScreen = new Set(existingItems.map((i) => i.screenKey))
+
+  for (let di = 0; di < defaults.length; di++) {
+    const sec = defaults[di]
+    if (haveSection.has(sec.name)) continue
+    if (sec.items.some((it) => haveScreen.has(it.screenKey))) continue
+
+    // Place it where the defaults put it: directly after the nearest preceding
+    // default section the tenant actually has. Appending to the end instead
+    // would drop CRM below Administration, which is not where it belongs.
+    let insertAt = 0
+    for (let k = di - 1; k >= 0; k--) {
+      const prev = existingSections.find((e) => e.name === defaults[k].name)
+      if (prev) { insertAt = prev.order + 1; break }
+    }
+
+    await db.laundryNavSection.updateMany({
+      where: { navigationId, order: { gte: insertAt } },
+      data: { order: { increment: 1 } },
+    }).catch(() => null)
+
+    const created = await db.laundryNavSection.create({
+      data: {
+        navigationId,
+        name: sec.name,
+        icon: sec.icon,
+        description: sec.description ?? null,
+        order: insertAt,
+        expanded: sec.expanded,
+        collapsible: sec.collapsible,
+        active: sec.active,
+      },
+    }).catch(() => null)
+    if (!created) continue
+
+    await db.laundryNavItem.createMany({
+      data: sec.items.map((item, ii) => ({
+        navigationId,
+        sectionId: created.id,
+        screenKey: item.screenKey,
+        displayName: item.displayName ?? screenDisplayName(item.screenKey),
+        icon: item.icon ?? screenIcon(item.screenKey),
+        order: ii,
+        active: true,
+        hidden: item.hidden ?? false,
+        badge: item.badge ?? null,
+        comingSoon: item.comingSoon ?? false,
+      })),
+    }).catch(() => null)
+
+    // Keep the in-memory view honest for the sections still to be considered.
+    existingSections.forEach((e) => { if (e.order >= insertAt) e.order += 1 })
+    existingSections.push({ id: created.id, name: sec.name, order: insertAt })
+    haveSection.add(sec.name)
+    sec.items.forEach((it) => haveScreen.add(it.screenKey))
+  }
+}
+
 export async function ensureNavigationConfig(businessId: string): Promise<void> {
   const existing = await db.laundryNavigation.findUnique({ where: { businessId } })
   if (existing) {
     await migrateDeliveryExecutivesToOperations(existing.id)
     await ensureHardwareManagerNavItem(existing.id)
+    // Whatever the defaults have gained since this tenant was seeded.
+    await ensureDefaultSections(existing.id)
     return
   }
 
