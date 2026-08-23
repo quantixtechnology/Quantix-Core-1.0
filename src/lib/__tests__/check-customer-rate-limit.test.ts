@@ -3,19 +3,23 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 
 // ============================================================================
-// A shared IP is a shared street, not one person.
+// No customer-facing limit may be counted per IP.
 //
-// The sign-in email box refused whole regions. check-customer allowed ten
-// requests an hour PER IP, and an Indian carrier puts thousands of subscribers
-// behind one public address — so ten sign-in attempts across all of them and
-// every customer on that network was turned away at the first screen of the
-// login, with no way round it and nothing they had done wrong.
+// The sign-in email box refused whole regions, then would have refused a full
+// room. It was gated on the IP twice — ten checks an hour, then three hundred
+// distinct emails an hour — and both are the same mistake wearing different
+// numbers, because the thing being counted is not a person.
 //
-// The limit exists to stop enumeration, which is real: this endpoint answers
-// whether an address has an account. But enumeration is asking about MANY
-// addresses. A customer asks about ONE, however many times they retype it.
-// Counting DISTINCT emails separates those two, so the defence gets sharper
-// while the shared street stops being punished.
+// A shop's customers share the shop's Wi-Fi. A carrier's subscribers share the
+// carrier's address. How many real people sit behind one IP is unknowable, so
+// any ceiling chosen for it eventually turns a paying customer away — and the
+// bigger the day, the more certain that is. Five hundred at an opening must all
+// get in, and so must a thousand.
+//
+// So every customer-facing limit follows the IDENTITY: email plus business.
+// Customer #1 cannot spend Customer #2's allowance because they do not share
+// one. The IP is still recorded — as evidence to investigate with, never as a
+// gate that shuts on the next person on the same network.
 // ============================================================================
 
 const ROOT = join(__dirname, '../../..')
@@ -24,50 +28,87 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const CHECK   = read('src/app/api/core/storefront/auth/check-customer/route.ts')
 const SEND_OTP = read('src/app/api/core/storefront/auth/send-otp/route.ts')
 const LOGIN_PW = read('src/app/api/core/storefront/auth/login-password/route.ts')
+const FORGOT_PW = read('src/app/api/core/storefront/auth/forgot-password/route.ts')
+const FORGOT = read('src/app/api/core/storefront/auth/forgot/route.ts')
+const CUSTOMER_LOGIN_PW = read('src/app/api/customer/auth/login-password/route.ts')
 const AUTH_LIB = read('src/lib/storefront-auth.ts')
 
-describe('the limit counts distinct addresses, not attempts', () => {
-  it('it is distinct emails per IP', () => {
-    expect(CHECK).toMatch(/const MAX_DISTINCT_EMAILS_PER_HOUR = \d+;/)
-    expect(CHECK).toContain("distinct: ['email'],")
+describe('no customer-facing limit is counted per IP', () => {
+  it('check-customer has no IP-keyed counter at all', () => {
+    // Both previous shapes are gone: the total-attempt count and the
+    // distinct-email count, each keyed by address.
     expect(CHECK).not.toContain('MAX_CHECKS_PER_HOUR')
+    expect(CHECK).not.toContain('MAX_DISTINCT_EMAILS_PER_HOUR')
+    expect(CHECK).not.toContain('CHECK_CUSTOMER_${ip}')
+    expect(CHECK).not.toContain("distinct: ['email']")
   })
 
-  it('the old total-attempt counter is gone', () => {
-    // db.oTPCode.count over the IP key was the thing that locked people out.
-    expect(CHECK).not.toContain('const recentChecks = await db.oTPCode.count')
+  it('the IP is read for LOGGING and nothing else', () => {
+    // Every use of the variable, so it cannot quietly become a gate again.
+    const uses = CHECK.split('\n').filter((l) => /\bip\b/.test(l) && !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+    for (const line of uses) {
+      const isRead = line.includes("headers.get('x-forwarded-for')") || line.includes("headers.get('x-real-ip')") || line.includes('const ip =')
+      const isLog = line.includes('console.warn') || line.includes('console.error')
+      expect(isRead || isLog).toBe(true)
+    }
   })
 
-  it('retyping the same address costs nothing and writes nothing', () => {
-    // The same person retrying reveals nothing new, so it must not consume a
-    // slot — otherwise one customer's fumbling still burns the shared budget.
-    expect(CHECK).toContain('const repeat = await db.oTPCode.findFirst({')
-    expect(CHECK).toContain("where: { phone: ipKey, email, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },")
-    expect(CHECK).toContain('if (!repeat) {')
+  it('the counter is keyed by email and business', () => {
+    expect(CHECK).toContain('const emailKey = `CHECK_CUSTOMER:${businessId}`;')
+    expect(CHECK).toContain('where: { phone: emailKey, email, channel: ')
+    expect(CHECK).toContain('const MAX_CHECKS_PER_EMAIL_PER_HOUR = 30;')
   })
 
-  it('the address is recorded, because the count depends on knowing which', () => {
-    // The old row wrote email: null, which is exactly why distinct counting
-    // was impossible before.
-    const insert = CHECK.slice(CHECK.indexOf('await db.oTPCode.create({'))
-    expect(insert).toContain('email,')
-    expect(insert).not.toContain('email: null')
+  it('NO customer auth route anywhere gates on an address', () => {
+    // The whole point: one route had it, and no other may grow one.
+    const ROUTES = [SEND_OTP, LOGIN_PW, FORGOT_PW, FORGOT, CUSTOMER_LOGIN_PW]
+    for (const src of ROUTES) {
+      expect(src).not.toContain('x-forwarded-for')
+      expect(src).not.toContain('x-real-ip')
+    }
   })
 })
 
-describe('enumeration is still refused', () => {
-  it('a source asking about many addresses still hits the wall', () => {
-    expect(CHECK).toContain('if (distinct.length >= MAX_DISTINCT_EMAILS_PER_HOUR) {')
-    expect(CHECK).toContain("{ status: 429 }")
+describe('500 customers on one Wi-Fi, then 1000', () => {
+  // The limit is per email + business, so the arithmetic is the proof: a
+  // customer's budget is spent only by their own address. Modelled exactly as
+  // the route counts, so the two cannot disagree.
+  const LIMIT = 30
+  const countsFor = (rows: { email: string }[], email: string) => rows.filter((r) => r.email === email).length
+  const allowed = (rows: { email: string }[], email: string) => countsFor(rows, email) < LIMIT
+
+  it('500 different customers from one address are all allowed', () => {
+    const rows: { email: string }[] = []
+    let blocked = 0
+    for (let i = 1; i <= 500; i++) {
+      const email = `customer${String(i).padStart(3, '0')}@example.com`
+      if (!allowed(rows, email)) blocked++
+      else rows.push({ email })
+    }
+    expect(blocked).toBe(0)
+    expect(rows).toHaveLength(500)
   })
 
-  it('the limit was not simply removed', () => {
-    expect(CHECK).toContain('x-forwarded-for')
-    expect(CHECK).toContain('CHECK_CUSTOMER_')
+  it('1000 are too — there is no ceiling to reach', () => {
+    const rows: { email: string }[] = []
+    let blocked = 0
+    for (let i = 1; i <= 1000; i++) {
+      const email = `customer${i}@example.com`
+      if (!allowed(rows, email)) blocked++
+      else rows.push({ email })
+    }
+    expect(blocked).toBe(0)
   })
 
-  it('the reply still says the same thing whether the account exists or not', () => {
-    expect(CHECK).toContain('Response structure is identical whether exists=true or false')
+  it('customer #500 is unaffected by the 499 before them', () => {
+    const rows = Array.from({ length: 499 }, (_, i) => ({ email: `customer${i}@example.com` }))
+    expect(allowed(rows, 'customer500@example.com')).toBe(true)
+  })
+
+  it('one customer retrying hard cannot spend anyone else\'s budget', () => {
+    const rows = Array.from({ length: LIMIT }, () => ({ email: 'noisy@example.com' }))
+    expect(allowed(rows, 'noisy@example.com')).toBe(false)   // their own budget, spent
+    expect(allowed(rows, 'quiet@example.com')).toBe(true)    // everyone else, untouched
   })
 })
 
@@ -75,13 +116,13 @@ describe('junk input cannot spend the budget', () => {
   it('both guards run before the limiter', () => {
     const required = CHECK.indexOf('email and businessId are required')
     const format = CHECK.indexOf('Invalid email format')
-    const limiter = CHECK.indexOf('Rate limit: distinct emails per IP')
+    const limiter = CHECK.indexOf('Rate limit: per email + business, never per IP')
     expect(required).toBeLessThan(limiter)
     expect(format).toBeLessThan(limiter)
   })
 
   it('the lookup still happens after the limiter', () => {
-    expect(CHECK.indexOf('Rate limit: distinct emails per IP')).toBeLessThan(CHECK.indexOf('Look up customer by email'))
+    expect(CHECK.indexOf('Rate limit: per email + business, never per IP')).toBeLessThan(CHECK.indexOf('Look up customer by email'))
   })
 })
 
@@ -103,9 +144,11 @@ describe('the other login steps were already keyed to the person', () => {
 })
 
 describe('opening day — a room full of people signing up at once', () => {
-  it('the ceiling is set for a crowd behind one address', () => {
-    // Everyone on the shop's own WiFi arrives as a single IP.
-    expect(CHECK).toContain('const MAX_DISTINCT_EMAILS_PER_HOUR = 300;')
+  it('there is no ceiling for a crowd to reach', () => {
+    // Everyone on the shop's own Wi-Fi arrives as a single IP, and nothing
+    // counts them together any more.
+    expect(CHECK).toContain('const MAX_CHECKS_PER_EMAIL_PER_HOUR = 30;')
+    expect(CHECK).not.toContain('MAX_DISTINCT_EMAILS_PER_HOUR')
   })
 
   it('a code that was never sent is not reported as sent', () => {

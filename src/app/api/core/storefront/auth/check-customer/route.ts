@@ -6,8 +6,8 @@
 // and whether they have a password set.
 //
 // Security:
-//   • Rate-limited per IP on the number of DISTINCT emails checked, to deter
-//     enumeration — see below for why it counts distinct rather than total.
+//   • Limited PER EMAIL + BUSINESS. There is deliberately NO per-IP ceiling —
+//     see the note on the limit below.
 //   • Response structure is identical whether exists=true or false (no timing
 //     difference that leaks information).
 //   • Does NOT reveal whether the email exists in other businesses.
@@ -18,26 +18,31 @@ import { db } from '@/lib/db';
 import { normalizeEmail } from '@/lib/storefront-auth';
 
 /**
- * Distinct email addresses one IP may ask about in an hour.
+ * How often ONE address may be asked about, per business, in an hour.
  *
- * This used to count TOTAL checks, at ten an hour, which locked out whole
- * regions: an Indian ISP puts thousands of subscribers behind one public
- * address (CGNAT), so ten sign-in attempts across all of them and every
- * customer on that carrier was refused at the email box — the first screen of
- * the login. They had done nothing wrong and had no way round it.
+ * There is no per-IP limit here, and that is a decision rather than an
+ * oversight. This endpoint was gated on the IP twice — ten checks an hour, then
+ * three hundred distinct emails an hour — and both are the same mistake wearing
+ * different numbers, because the quantity being capped is not a person.
  *
- * Counting DISTINCT emails is both kinder and a better signal. Enumeration is
- * asking about MANY addresses; a real customer asks about one, however many
- * times they retype it. So a shared address carries hundreds of legitimate
- * sign-ins, while someone probing a list still stops here.
+ * A shop's customers share the shop's Wi-Fi. A carrier's subscribers share the
+ * carrier's address. The number of real people behind one IP is unknown and
+ * unknowable, so ANY ceiling picked for it eventually turns a paying customer
+ * away at the first screen of the login — and the bigger the day, the more
+ * certain that becomes. Five hundred people at an opening must all get in.
  *
- * The ceiling is set for the worst honest case, which is a shop opening: every
- * customer in the room on the shop's own WiFi, arriving as ONE address. A few
- * hundred sign-ups in an afternoon is a good day, not an attack. Someone
- * working through a list of ten thousand still needs a day and a half per IP,
- * which is the ceiling doing its job.
+ * So the limit follows the identity instead: one email, one business. Customer
+ * #1 cannot spend Customer #2's allowance, because they do not share one. It
+ * stops an address being hammered, and it scales to any number of customers on
+ * one network because each brings their own budget.
+ *
+ * What that costs is stated plainly: this no longer caps how many DIFFERENT
+ * addresses a single source may ask about, so it is not by itself a defence
+ * against someone working through a list to learn which have accounts here. The
+ * IP is still recorded for that — as a signal to investigate with, not a gate
+ * that shuts on ordinary customers.
  */
-const MAX_DISTINCT_EMAILS_PER_HOUR = 300;
+const MAX_CHECKS_PER_EMAIL_PER_HOUR = 30;
 
 export async function POST(request: Request) {
   try {
@@ -62,52 +67,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Rate limit: distinct emails per IP ────────────────────────────────
-    // After validation, so a junk address cannot spend a slot in the budget.
+    // ── Rate limit: per email + business, never per IP ────────────────────
+    // Recorded, not gated on: an IP is evidence for an investigation, not a
+    // reason to refuse the next person on the same Wi-Fi.
     const ip =
       request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
       request.headers.get('x-real-ip') ??
       'unknown';
 
-    const ipKey = `CHECK_CUSTOMER_${ip}`;
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const emailKey = `CHECK_CUSTOMER:${businessId}`;
 
-    if (email) {
-      // Has this address already been asked about from here? If so it is the
-      // same person retrying, and it reveals nothing new — so it costs nothing
-      // and writes nothing.
-      const repeat = await db.oTPCode.findFirst({
-        where: { phone: ipKey, email, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },
-        select: { id: true },
-      });
+    const recentForThisEmail = await db.oTPCode.count({
+      where: { phone: emailKey, email, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },
+    });
 
-      if (!repeat) {
-        const distinct = await db.oTPCode.findMany({
-          where: { phone: ipKey, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },
-          select: { email: true },
-          distinct: ['email'],
-        });
-
-        if (distinct.length >= MAX_DISTINCT_EMAILS_PER_HOUR) {
-          return NextResponse.json(
-            { success: false, error: 'Too many requests. Please try again later.' },
-            { status: 429 }
-          );
-        }
-
-        // Record the address, not just the fact of a check — the count above
-        // depends on knowing which ones have been seen.
-        await db.oTPCode.create({
-          data: {
-            phone: ipKey,
-            email,
-            code: 'CHECK',
-            channel: 'EMAIL_OTP',
-            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-          },
-        });
-      }
+    if (recentForThisEmail >= MAX_CHECKS_PER_EMAIL_PER_HOUR) {
+      console.warn(`[check-customer] per-email limit hit email=${email} businessId=${businessId} ip=${ip}`);
+      return NextResponse.json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      );
     }
+
+    await db.oTPCode.create({
+      data: {
+        phone: emailKey,
+        email,
+        code: 'CHECK',
+        channel: 'EMAIL_OTP',
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
 
     // ── Look up customer by email within this business ────────────────────
     // Check Customer table first (by email + businessId)
