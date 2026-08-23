@@ -144,25 +144,49 @@ export async function createStorefrontSession(opts: {
         },
       });
     } else {
-      const newCode = await generateCustomerCode(businessId)
-      customer = await db.customer.create({
-        data: {
-          businessId,
-          userId: user.id,
-          name,
-          phone: phone || null,
-          email,
-          source: 'STORE_FRONT',
-          isGuest: false,
-          verified: true,
-          emailVerified,
-          lastLoginAt: new Date(),
-          createdStoreId: storeId || null,
-          preferredStoreId: storeId || null,
-          customerCode: newCode,
-          status: 'ACTIVE',
-        },
-      });
+      // generateCustomerCode reads the highest code then returns the next one,
+      // so two people registering in the same moment are handed the SAME one —
+      // and @@unique([businessId, customerCode]) means the second create throws.
+      // Rare on a quiet day; on an opening, when a room full of customers signs
+      // up at once, it is the person standing in front of you being told to try
+      // again. Re-read and retry: the collision proves someone else just took
+      // that number, so the next read returns a fresh one.
+      let created: Awaited<ReturnType<typeof db.customer.create>> | null = null
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const newCode = await generateCustomerCode(businessId)
+        try {
+          created = await db.customer.create({
+            data: {
+              businessId,
+              userId: user.id,
+              name,
+              phone: phone || null,
+              email,
+              source: 'STORE_FRONT',
+              isGuest: false,
+              verified: true,
+              emailVerified,
+              lastLoginAt: new Date(),
+              createdStoreId: storeId || null,
+              preferredStoreId: storeId || null,
+              customerCode: newCode,
+              status: 'ACTIVE',
+            },
+          });
+          break
+        } catch (err) {
+          // Only the code collision is worth another go. Anything else — a
+          // duplicate phone, a bad businessId — would fail identically five
+          // times and must surface now.
+          const isCodeClash =
+            typeof err === 'object' && err !== null &&
+            (err as { code?: string }).code === 'P2002' &&
+            JSON.stringify((err as { meta?: unknown }).meta ?? '').includes('customerCode')
+          if (!isCodeClash || attempt === 5) throw err
+        }
+      }
+      if (!created) throw new Error('Could not allocate a customer code')
+      customer = created
     }
   } else {
     await db.customer.update({

@@ -30,8 +30,14 @@ import { normalizeEmail } from '@/lib/storefront-auth';
  * asking about MANY addresses; a real customer asks about one, however many
  * times they retype it. So a shared address carries hundreds of legitimate
  * sign-ins, while someone probing a list still stops here.
+ *
+ * The ceiling is set for the worst honest case, which is a shop opening: every
+ * customer in the room on the shop's own WiFi, arriving as ONE address. A few
+ * hundred sign-ups in an afternoon is a good day, not an attack. Someone
+ * working through a list of ten thousand still needs a day and a half per IP,
+ * which is the ceiling doing its job.
  */
-const MAX_DISTINCT_EMAILS_PER_HOUR = 40;
+const MAX_DISTINCT_EMAILS_PER_HOUR = 300;
 
 export async function POST(request: Request) {
   try {

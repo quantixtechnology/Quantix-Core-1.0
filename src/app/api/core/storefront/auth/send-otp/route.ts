@@ -93,14 +93,28 @@ export async function POST(request: Request) {
     });
 
     if (!sent) {
-      console.warn(`[storefront/auth/send-otp] delivery failed email=${email}: ${sendError}`);
+      // Say so. The response used to be success:true with "Verification code
+      // sent" whatever happened, and the sign-in screen only reads `success` —
+      // so a customer whose mail was rejected was moved to the code box and
+      // left waiting for something that had never been sent, with nothing on
+      // screen and nothing for the counter staff to see. Under a mail provider
+      // throttling a busy day that is every customer at once, silently.
+      console.error(`[storefront/auth/send-otp] delivery FAILED email=${email}: ${sendError}`);
+      return NextResponse.json(
+        {
+          success: false,
+          sent: false,
+          error: "We couldn't send your code just now. Please try again in a moment.",
+          detail: sendError,
+        },
+        { status: 502 },
+      );
     }
 
     return NextResponse.json({
       success: true,
       message: 'Verification code sent',
       sent,
-      ...(sendError ? { warning: sendError } : {}),
     });
   } catch (error) {
     console.error('[storefront/auth/send-otp]', error);
