@@ -20,9 +20,10 @@ import {
 import {
   Loader2, Plus, Search, Users, ChevronLeft, ChevronRight, MoreHorizontal,
   Pencil, Archive, ArrowRightCircle, Columns3, Download, UserPlus,
-  Phone, Mail, Mic, MessageCircle,
+  Phone, Mail, Mic, MessageCircle, Upload,
 } from "lucide-react"
 import { toast } from "sonner"
+import { CrmLeadImportDialog } from "@/components/laundry/views/crm/crm-lead-import-dialog"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   type CrmLead, type CrmField, useCrmMeta, useCrmActor, parseValues, parseOptions, displayValue, fmtDate,
@@ -36,6 +37,7 @@ import { type CommSettings, useCommSettings, telHref, waHref, mailtoHref, openDe
 const PAGE_SIZE = 20
 
 export function CrmLeads({ businessId }: { businessId: string }) {
+  const [importOpen, setImportOpen] = useState(false)
   const meta = useCrmMeta(businessId)
   const actor = useCrmActor()
   const { settings: commSettings } = useCommSettings(businessId)
@@ -196,9 +198,14 @@ export function CrmLeads({ businessId }: { businessId: string }) {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button variant="outline" size="sm" className="h-9 gap-1 text-xs" onClick={() => setImportOpen(true)}><Upload className="h-3.5 w-3.5" /> Import</Button>
           <Button variant="outline" size="sm" className="h-9 gap-1 text-xs" onClick={exportCsv}><Download className="h-3.5 w-3.5" /> Export</Button>
         </div>
       </div>
+
+      {/* Template and validation both come from the tenant's live Lead Fields —
+          see crm-lead-import-dialog. */}
+      <CrmLeadImportDialog open={importOpen} onClose={() => setImportOpen(false)} businessId={businessId} onImported={load} />
 
       {/* Bulk bar */}
       {selected.size > 0 && (
