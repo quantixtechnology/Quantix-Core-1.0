@@ -307,7 +307,9 @@ describe('a replaced icon is visible without clearing a cache', () => {
   })
 
   it('the manifest points at versioned icon URLs', () => {
-    expect(MAN).toContain('const v = appIconVersion(appLogos[app])')
+    // Versioned from the asset the icon route will SERVE, which may be one
+    // borrowed from another app — see tenant-pwa-branding.test.ts.
+    expect(MAN).toContain('const v = appIconVersion(effectiveAppLogo(appLogos, app))')
     expect(MAN).toContain('/192.png?v=${v}')
     expect(MAN).toContain('/512.png?v=${v}')
   })

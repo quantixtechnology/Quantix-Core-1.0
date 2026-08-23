@@ -16,7 +16,8 @@
 
 import { db } from '@/lib/db'
 import { getProductCodeForHost } from '@/lib/product-hosts'
-import { appDisplayName, appShortName, appIconVersion, parseAppLogos, type AppKey } from '@/lib/app-branding'
+import { appDisplayName, appShortName, appIconVersion, effectiveAppLogo, parseAppLogos, type AppKey } from '@/lib/app-branding'
+import { isCandidateCustomHost, customHostCandidates } from '@/lib/custom-domain'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,6 +107,46 @@ export async function GET(request: Request) {
     }
   }
 
+  // ── …or from the tenant's OWN domain ──────────────────────────────────────
+  // A customer's hostname has no slug to slice off, so the branch above never
+  // matched it and every manifest on a custom domain fell back to the Quantix
+  // logo and a generic name — on all three apps, not one. The tenant is
+  // resolved through DomainMapping instead, by exact hostname (plus the `www`
+  // alias nginx and the certificate already treat as the same domain). Never by
+  // subdomain: a looser rule is how one tenant would serve another's branding.
+  //
+  // The app prefix was already stripped above, so delivery.<domain> and
+  // store.<domain> both arrive here as <domain> and resolve to the same tenant
+  // — which is the point: one business, one mark, three apps.
+  if (!slug && isCandidateCustomHost(host, SF_BASE)) {
+    for (const candidate of customHostCandidates(host)) {
+      try {
+        const mapping = await db.domainMapping.findFirst({
+          where: { domain: candidate },
+          select: {
+            business: {
+              select: {
+                slug: true, name: true, primaryColor: true, description: true, tagline: true,
+                branding: { select: { appLogos: true } },
+              },
+            },
+          },
+        })
+        const biz = mapping?.business
+        if (biz?.slug) {
+          slug        = biz.slug
+          name        = biz.name
+          theme       = biz.primaryColor ?? '#10B981'
+          description = biz.description || biz.tagline || `${biz.name} — delivered fast.`
+          appLogos    = parseAppLogos(biz.branding?.appLogos)
+          break
+        }
+      } catch {
+        // Non-fatal — serve generic manifest
+      }
+    }
+  }
+
   // ── Icon URLs ──────────────────────────────────────────────────────────────
   // For storefront tenants: use the icon generation route which resizes the
   // business logo to the exact declared sizes via sharp.
@@ -129,7 +170,9 @@ export async function GET(request: Request) {
   // produces a new URL and the installed app stops seeing the old bytes.
   const appIcons = (app: AppKey) => {
     if (!slug) return { i192: '/quantix-logo.png', i512: '/quantix-logo.png' }
-    const v = appIconVersion(appLogos[app])
+    // The SAME asset the icon route will serve — including one borrowed from
+    // another app — or a replaced icon never reaches an installed phone.
+    const v = appIconVersion(effectiveAppLogo(appLogos, app))
     return {
       i192: `/api/core/app-icon/${slug}/${app}/192.png?v=${v}`,
       i512: `/api/core/app-icon/${slug}/${app}/512.png?v=${v}`,

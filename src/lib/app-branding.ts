@@ -150,6 +150,35 @@ export interface ResolvedAppBranding {
  * generated default. An existing business that has only ever uploaded one logo
  * keeps working and is never asked to re-upload anything.
  */
+/**
+ * A square icon the tenant configured for SOME app, when the one being asked
+ * for has none of its own.
+ *
+ * A business uploads its mark once and expects to see it on every app it
+ * installs. Without this, configuring the Customer icon left Delivery and Store
+ * on the generated default — two apps branded, one not, from a single upload —
+ * and the only remedy was to upload the same file three more times.
+ *
+ * Customer first because that is the icon a business thinks of as "the app
+ * icon"; the rest are a stable order so the answer never depends on object key
+ * ordering. This shares only what the tenant actually uploaded — it never
+ * reaches for the website logo, which is a landscape lockup and has no business
+ * inside a square launcher tile.
+ *
+ * Exported because the MANIFEST has to version the same asset the icon route
+ * will serve. Versioning `appLogos[app]` instead would stamp "d" on a borrowing
+ * app, and an installed phone would keep the old mark for ever after the tenant
+ * replaced it — the exact caching failure a versioned URL exists to prevent.
+ */
+export function effectiveAppLogo(appLogos: Partial<Record<AppKey, string>>, app: AppKey): string | null {
+  if (appLogos[app]) return appLogos[app] as string
+  for (const key of ["customer", "delivery", "store", "admin"] as const) {
+    const logo = appLogos[key]
+    if (logo) return logo
+  }
+  return null
+}
+
 export async function resolveAppBranding(slug: string, app: AppKey): Promise<ResolvedAppBranding> {
   const empty: ResolvedAppBranding = {
     businessId: null, businessName: null, primaryColor: "#10B981",
@@ -170,7 +199,7 @@ export async function resolveAppBranding(slug: string, app: AppKey): Promise<Res
       businessId: biz.id,
       businessName: biz.name,
       primaryColor: biz.primaryColor || biz.branding?.primaryColor || "#10B981",
-      appLogo: appLogos[app] ?? null,
+      appLogo: effectiveAppLogo(appLogos, app),
       sourceLogo: biz.logo || biz.branding?.logo || null,
       displayName: appDisplayName(app, biz.name),
     }
