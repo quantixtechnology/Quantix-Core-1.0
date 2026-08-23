@@ -1,5 +1,7 @@
 import { db } from "@/lib/db"
 import { SCREEN_MODULES, isScreenAccessible } from "@/lib/laundry-rbac-registry"
+import { resolveLicence } from "@/lib/laundry-licensing-server"
+import type { Licence } from "@/lib/laundry-licensing"
 
 /**
  * Default navigation sections and screen keys for a Quantix Laundry business.
@@ -466,7 +468,7 @@ async function ensureHardwareManagerNavItem(navigationId: string): Promise<void>
  * turn a module on, it just stops the persisted config from being the thing
  * that permanently hides it.
  */
-async function ensureDefaultSections(navigationId: string): Promise<void> {
+async function ensureDefaultSections(navigationId: string, licence: Licence): Promise<void> {
   const defaults = defaultNavigationConfig()
 
   const existingSections = await db.laundryNavSection.findMany({
@@ -493,6 +495,9 @@ async function ensureDefaultSections(navigationId: string): Promise<void> {
     const sec = defaults[di]
     if (haveSection.has(sec.name)) continue
     if (sec.items.some((it) => haveScreen.has(it.screenKey))) continue
+    // Nothing licensed in it yet, so there is nothing to show and no row worth
+    // writing. Licensing it later brings it in on the next load.
+    if (!sec.items.some((it) => licence.isScreenEnabled(it.screenKey))) continue
 
     // Place it where the defaults put it: directly after the nearest preceding
     // default section the tenant actually has. Appending to the end instead
@@ -517,7 +522,10 @@ async function ensureDefaultSections(navigationId: string): Promise<void> {
         order: insertAt,
         expanded: sec.expanded,
         collapsible: sec.collapsible,
-        active: sec.active,
+        // Not `sec.active`: that flag describes how the section ships, not what
+        // this tenant is entitled to. A section created because the licence
+        // enabled something must not arrive switched off.
+        active: true,
       },
     }).catch(() => null)
     if (!created) continue
@@ -545,13 +553,61 @@ async function ensureDefaultSections(navigationId: string): Promise<void> {
   }
 }
 
+/**
+ * A licensed module may not be switched off by presentation state.
+ *
+ * `section.active` is a Navigation Manager control — how a section is
+ * presented. It was doing a second job it was never meant to do: the sidebar
+ * drops any inactive section outright, so a section marked inactive suppressed
+ * a module the tenant was entitled to, permanently and silently. Marketing
+ * ships `active: false` in the defaults, so EVERY tenant carried a licensed
+ * module it could not see, and the only way out was for someone to open
+ * Navigation Manager and switch it on — per tenant, for every module, forever.
+ *
+ * Entitlement is the licence's job. So a section holding at least one licensed
+ * screen is made active, whatever it was before.
+ *
+ * The reverse is deliberately NOT done. An unlicensed section is already absent
+ * at runtime — the navigation route filters its items by licence and drops any
+ * section left empty — so writing `active: false` would buy nothing and would
+ * destroy a flag the tenant may have set. Availability is computed; presentation
+ * is stored. Item-level `hidden` is untouched: that is the tenant's control and
+ * it still works.
+ *
+ * Generic by construction. It reads the licence and the persisted rows, and
+ * names no module — the next one inherits this without a line of code.
+ */
+async function activateLicensedSections(navigationId: string, licence: Licence): Promise<void> {
+  const sections = await db.laundryNavSection.findMany({
+    where: { navigationId, active: false },
+    select: { id: true, items: { select: { screenKey: true } } },
+  }).catch(() => null)
+  if (!sections?.length) return
+
+  const toActivate = sections
+    .filter((sec) => sec.items.some((i) => licence.isScreenEnabled(i.screenKey)))
+    .map((sec) => sec.id)
+  if (!toActivate.length) return
+
+  await db.laundryNavSection.updateMany({
+    where: { id: { in: toActivate } },
+    data: { active: true },
+  }).catch(() => null)
+}
+
 export async function ensureNavigationConfig(businessId: string): Promise<void> {
+  // Entitlement first: both reconciliations below are decided by the licence,
+  // never by what the persisted navigation happens to say.
+  const licence = await resolveLicence(businessId)
+
   const existing = await db.laundryNavigation.findUnique({ where: { businessId } })
   if (existing) {
     await migrateDeliveryExecutivesToOperations(existing.id)
     await ensureHardwareManagerNavItem(existing.id)
     // Whatever the defaults have gained since this tenant was seeded.
-    await ensureDefaultSections(existing.id)
+    await ensureDefaultSections(existing.id, licence)
+    // …and whatever the licence has gained since the section was stored.
+    await activateLicensedSections(existing.id, licence)
     return
   }
 
@@ -573,7 +629,12 @@ export async function ensureNavigationConfig(businessId: string): Promise<void> 
           order: si,
           expanded: sec.expanded,
           collapsible: sec.collapsible,
-          active: sec.active,
+          // The default's own flag describes how the section SHIPS. What this
+          // tenant may see is the licence's call, so a section is seeded active
+          // when the licence enables something in it — otherwise a new business
+          // would be born with a licensed module already switched off, which is
+          // the same bug this whole reconciliation exists to end.
+          active: sec.items.some((it) => licence.isScreenEnabled(it.screenKey)),
         },
       })
 

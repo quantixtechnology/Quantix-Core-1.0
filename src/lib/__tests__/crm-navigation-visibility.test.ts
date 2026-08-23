@@ -118,21 +118,21 @@ describe('5 · a hidden sidebar is not the security mechanism', () => {
 describe('8 · a tenant seeded before the module existed still gets it', () => {
   // The actual defect. Everything else was already right.
   it('an existing tenant is reconciled against the defaults', () => {
-    expect(NAV_CONFIG).toContain('async function ensureDefaultSections(navigationId: string)')
+    expect(NAV_CONFIG).toContain('async function ensureDefaultSections(navigationId: string, licence: Licence)')
     const existing = NAV_CONFIG.slice(NAV_CONFIG.indexOf('if (existing) {'), NAV_CONFIG.indexOf('await db.$transaction'))
-    expect(existing).toContain('await ensureDefaultSections(existing.id)')
+    expect(existing).toContain('await ensureDefaultSections(existing.id, licence)')
   })
 
   it('it is driven by the defaults, not by a list of module names', () => {
     // The next module must not need its own migration.
-    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('export async function ensureNavigationConfig'))
+    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('async function activateLicensedSections'))
     expect(fn).toContain('const defaults = defaultNavigationConfig()')
     expect(fn).not.toContain('"CRM"')
     expect(fn).not.toContain("'CRM'")
   })
 
   it('it lands where the defaults put it, not on the end', () => {
-    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('export async function ensureNavigationConfig'))
+    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('async function activateLicensedSections'))
     expect(fn).toContain('const prev = existingSections.find((e) => e.name === defaults[k].name)')
     expect(fn).toContain('insertAt = prev.order + 1')
   })
@@ -146,7 +146,12 @@ describe('8 · a tenant seeded before the module existed still gets it', () => {
 })
 
 describe('6 & 7 · nothing a tenant arranged is disturbed', () => {
-  const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('export async function ensureNavigationConfig'))
+  // Comments stripped: the next function's doc block sits inside this slice and
+  // quotes the very flags these assertions look for.
+  const fn = NAV_CONFIG
+    .slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('async function activateLicensedSections'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
 
   it('a section the tenant already has is left completely alone', () => {
     expect(fn).toContain('if (haveSection.has(sec.name)) continue')
@@ -198,7 +203,7 @@ describe('9 · no tenant is named anywhere in the fix', () => {
   })
 
   it('visibility does not depend on catalog data', () => {
-    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('export async function ensureNavigationConfig'))
+    const fn = NAV_CONFIG.slice(NAV_CONFIG.indexOf('async function ensureDefaultSections'), NAV_CONFIG.indexOf('async function activateLicensedSections'))
     for (const unrelated of ['garment', 'category', 'service', 'pricing']) {
       expect(fn.toLowerCase()).not.toContain(unrelated)
     }
