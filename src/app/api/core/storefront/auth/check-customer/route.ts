@@ -6,7 +6,8 @@
 // and whether they have a password set.
 //
 // Security:
-//   • Rate-limited to 10 requests/hour per IP to deter enumeration.
+//   • Rate-limited per IP on the number of DISTINCT emails checked, to deter
+//     enumeration — see below for why it counts distinct rather than total.
 //   • Response structure is identical whether exists=true or false (no timing
 //     difference that leaks information).
 //   • Does NOT reveal whether the email exists in other businesses.
@@ -16,44 +17,27 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { normalizeEmail } from '@/lib/storefront-auth';
 
-const MAX_CHECKS_PER_HOUR = 10;
+/**
+ * Distinct email addresses one IP may ask about in an hour.
+ *
+ * This used to count TOTAL checks, at ten an hour, which locked out whole
+ * regions: an Indian ISP puts thousands of subscribers behind one public
+ * address (CGNAT), so ten sign-in attempts across all of them and every
+ * customer on that carrier was refused at the email box — the first screen of
+ * the login. They had done nothing wrong and had no way round it.
+ *
+ * Counting DISTINCT emails is both kinder and a better signal. Enumeration is
+ * asking about MANY addresses; a real customer asks about one, however many
+ * times they retype it. So a shared address carries hundreds of legitimate
+ * sign-ins, while someone probing a list still stops here.
+ */
+const MAX_DISTINCT_EMAILS_PER_HOUR = 40;
 
 export async function POST(request: Request) {
   try {
-    // ── Rate limit by IP ──────────────────────────────────────────────────
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      request.headers.get('x-real-ip') ??
-      'unknown';
-
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentChecks = await db.oTPCode.count({
-      where: {
-        phone: `CHECK_CUSTOMER_${ip}`,  // abuse the phone field as a lightweight counter key
-        channel: 'EMAIL_OTP',
-        createdAt: { gte: oneHourAgo },
-      },
-    });
-
-    if (recentChecks >= MAX_CHECKS_PER_HOUR) {
-      return NextResponse.json(
-        { success: false, error: 'Too many requests. Please try again later.' },
-        { status: 429 }
-      );
-    }
-
-    // Record this check (reuse OTPCode table as a rate-limit log)
-    await db.oTPCode.create({
-      data: {
-        phone: `CHECK_CUSTOMER_${ip}`,
-        email: null,
-        code: 'CHECK',
-        channel: 'EMAIL_OTP',
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-      },
-    });
-
     // ── Parse + validate ──────────────────────────────────────────────────
+    // Before the rate check, because the limit is now about WHICH email is
+    // being asked about, not merely how often someone asked.
     const body = await request.json() as { email?: string; businessId?: string };
     const email = normalizeEmail(body.email ?? '');
     const { businessId } = body;
@@ -70,6 +54,53 @@ export async function POST(request: Request) {
         { success: false, error: 'Invalid email format' },
         { status: 400 }
       );
+    }
+
+    // ── Rate limit: distinct emails per IP ────────────────────────────────
+    // After validation, so a junk address cannot spend a slot in the budget.
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+      request.headers.get('x-real-ip') ??
+      'unknown';
+
+    const ipKey = `CHECK_CUSTOMER_${ip}`;
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    if (email) {
+      // Has this address already been asked about from here? If so it is the
+      // same person retrying, and it reveals nothing new — so it costs nothing
+      // and writes nothing.
+      const repeat = await db.oTPCode.findFirst({
+        where: { phone: ipKey, email, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },
+        select: { id: true },
+      });
+
+      if (!repeat) {
+        const distinct = await db.oTPCode.findMany({
+          where: { phone: ipKey, channel: 'EMAIL_OTP', createdAt: { gte: oneHourAgo } },
+          select: { email: true },
+          distinct: ['email'],
+        });
+
+        if (distinct.length >= MAX_DISTINCT_EMAILS_PER_HOUR) {
+          return NextResponse.json(
+            { success: false, error: 'Too many requests. Please try again later.' },
+            { status: 429 }
+          );
+        }
+
+        // Record the address, not just the fact of a check — the count above
+        // depends on knowing which ones have been seen.
+        await db.oTPCode.create({
+          data: {
+            phone: ipKey,
+            email,
+            code: 'CHECK',
+            channel: 'EMAIL_OTP',
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          },
+        });
+      }
     }
 
     // ── Look up customer by email within this business ────────────────────

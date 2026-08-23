@@ -30,10 +30,19 @@ export async function POST(request: Request) {
     const rows: ImportRow[] = Array.isArray(b.rows) ? b.rows : []
     if (!rows.length) return NextResponse.json({ success: false, error: "No rows to import." }, { status: 400 })
 
-    const [services, garments] = await Promise.all([
+    // Active services are the importable columns — the same rule the matrix and
+    // the template are built from. Deactivated ones are read too, but ONLY so a
+    // row naming one can be told what actually happened: without them the
+    // message is "Unknown service", which is wrong and sends the user looking
+    // for a typo in a service that is sitting right there in the master.
+    // Reading them changes nothing: an inactive service is still refused, still
+    // not reactivated, and still not duplicated.
+    const [services, inactiveServices, garments] = await Promise.all([
       prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, select: { id: true, name: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: false }, select: { name: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId }, select: { id: true, code: true, name: true } }),
     ])
+    const inactiveByName = new Set(inactiveServices.map((s) => s.name.trim().toLowerCase()))
     const svcByName = new Map(services.map((s) => [s.name.trim().toLowerCase(), s]))
     const svcNameById = new Map(services.map((s) => [s.id, s.name]))
     const garmentByCode = new Map(garments.filter((g) => g.code).map((g) => [g.code!.trim().toLowerCase(), g]))
@@ -55,8 +64,17 @@ export async function POST(request: Request) {
 
       const cells: Cell[] = []
       for (const c of r.cells || []) {
-        const svc = svcByName.get(String(c.service || "").trim().toLowerCase())
-        if (!svc) { errors.push({ row: rn, code, message: `Unknown service "${c.service}".` }); continue }
+        const svcKey = String(c.service || "").trim().toLowerCase()
+        const svc = svcByName.get(svcKey)
+        if (!svc) {
+          errors.push({
+            row: rn, code,
+            message: inactiveByName.has(svcKey)
+              ? `"${c.service}" is deactivated in Services. Reactivate it there to price it — importing cannot.`
+              : `Unknown service "${c.service}".`,
+          })
+          continue
+        }
         const billing = String(c.billing || "NOT_AVAILABLE").trim().toUpperCase().replace(/[\s-]/g, "_")
         const mode = billing === "NA" ? "NOT_AVAILABLE" : billing
         if (!MODES.has(mode)) { errors.push({ row: rn, code, message: `Invalid billing "${c.billing}" for ${svc.name}.` }); continue }
