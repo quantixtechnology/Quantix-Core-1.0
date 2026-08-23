@@ -38,10 +38,41 @@ export function CrmLeadImportDialog({
 
   const reset = () => { setFileName(""); setRows([]); setCounts(null); setReport([]); setIgnored([]); setDone(null); if (fileInput.current) fileInput.current.value = "" }
 
-  const downloadTemplate = (format: "xlsx" | "csv") => {
-    // Straight to the server route: the template is this tenant's live field
-    // configuration, so it must not be assembled here.
-    window.open(`/api/laundry/crm/leads/template?businessId=${encodeURIComponent(businessId)}&format=${format}`, "_blank")
+  /**
+   * Fetch the template, then hand the BYTES to the browser.
+   *
+   * window.open() cannot do this. A Laundry OS tenant user authenticates with
+   * an Authorization: Bearer token held in localStorage, and a navigation the
+   * browser performs itself carries no such header — so the route answered
+   * "Not authenticated" to a perfectly valid session. The token stays out of
+   * the URL, where it would end up in history, logs and referrers.
+   *
+   * The download itself is the pattern already used by Export on this screen:
+   * an object URL on a real <a download>.
+   */
+  const downloadTemplate = async (format: "xlsx" | "csv") => {
+    setBusy(true)
+    try {
+      const res = await fetch(
+        `/api/laundry/crm/leads/template?businessId=${encodeURIComponent(businessId)}&format=${format}`,
+        { headers: getAuthHeaders() },
+      )
+      if (!res.ok) {
+        // The body is JSON on failure and a spreadsheet on success, so read it
+        // only when something went wrong.
+        const msg = await res.json().catch(() => null)
+        throw new Error(msg?.error || `Could not build the template (HTTP ${res.status})`)
+      }
+      const blob = await res.blob()
+      const a = document.createElement("a")
+      a.href = URL.createObjectURL(blob)
+      a.download = `lead-import-template.${format}`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      toast.success(`Template downloaded (.${format})`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not download the template")
+    } finally { setBusy(false) }
   }
 
   const post = async (mode: "validate" | "commit", parsed: Record<string, unknown>[], name: string) => {

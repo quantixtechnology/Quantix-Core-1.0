@@ -306,3 +306,78 @@ describe('Q & R · nothing that already worked was changed', () => {
     expect(IMPORT).toContain('rejected')
   })
 })
+
+describe('10 & 11 · the download is an authenticated request, not a navigation', () => {
+  // A Laundry OS tenant user authenticates with an Authorization: Bearer token
+  // held in localStorage. window.open() makes the browser navigate, and a
+  // navigation carries no such header — so the template route answered "Not
+  // authenticated" to a perfectly valid session. Fetch the bytes, then hand
+  // them to the browser.
+
+  it('the template is fetched with the app\'s auth headers', () => {
+    expect(DIALOG).toContain('`/api/laundry/crm/leads/template?businessId=${encodeURIComponent(businessId)}&format=${format}`')
+    const fn = DIALOG.slice(DIALOG.indexOf('const downloadTemplate'), DIALOG.indexOf('const post ='))
+    expect(fn).toContain('headers: getAuthHeaders()')
+  })
+
+  it('it is no longer a browser navigation', () => {
+    const code = DIALOG.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).not.toContain('window.open')
+  })
+
+  it('the bytes are delivered the way Export already does it', () => {
+    const fn = DIALOG.slice(DIALOG.indexOf('const downloadTemplate'), DIALOG.indexOf('const post ='))
+    expect(fn).toContain('const blob = await res.blob()')
+    expect(fn).toContain("document.createElement(\"a\")")
+    expect(fn).toContain('URL.createObjectURL(blob)')
+    expect(fn).toContain('URL.revokeObjectURL')
+  })
+
+  it('no token is ever put in the URL', () => {
+    // History, server logs and referrers would all keep it.
+    expect(DIALOG).not.toContain('token=')
+    expect(DIALOG).not.toContain('access_token')
+    expect(TEMPLATE).not.toContain('searchParams.get("token")')
+  })
+
+  it('EVERY new bulk call carries auth — not just the one that broke', () => {
+    const calls = DIALOG.match(/fetch\(/g) ?? []
+    const authed = DIALOG.match(/getAuthHeaders\(\)/g) ?? []
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    expect(authed.length).toBe(calls.length)
+  })
+
+  it('the failure body is only read when the request failed', () => {
+    // On success the body is a spreadsheet; parsing it as JSON would throw.
+    const fn = DIALOG.slice(DIALOG.indexOf('const downloadTemplate'), DIALOG.indexOf('const post ='))
+    expect(fn).toContain('if (!res.ok) {')
+    expect(fn).toContain('await res.json().catch(() => null)')
+  })
+
+  it('authentication is still ENFORCED — it was not removed to make this work', () => {
+    // The whole risk of an auth "fix" is that it quietly makes a route public.
+    expect(TEMPLATE).toContain('const guard = await requireLaundryPermission(request, businessId, "crm.leads.create")')
+    expect(TEMPLATE).toContain('if (!guard.ok) return guard.res')
+    expect(TEMPLATE).toContain('const biz = await requireCrmBusiness(businessId)')
+  })
+
+  it('the requested business is authorised, never taken on trust', () => {
+    // requireLaundryPermission resolves the tenant and the caller's rights on
+    // it; the businessId in the query is an input to that, not a bypass.
+    const guardAt = TEMPLATE.indexOf('requireLaundryPermission')
+    const readAt = TEMPLATE.indexOf('prisma.laundryCrmLeadField.findMany')
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(guardAt).toBeLessThan(readAt)
+  })
+
+  it('both formats go through the same guard', () => {
+    // The csv branch is inside the handler, after the guard — not a second path.
+    const csvAt = TEMPLATE.indexOf('if (format === "csv")')
+    expect(TEMPLATE.indexOf('requireLaundryPermission')).toBeLessThan(csvAt)
+    expect(TEMPLATE.indexOf('requireCrmBusiness')).toBeLessThan(csvAt)
+  })
+
+  it('an unlicensed tenant still gets the CRM licensing response', () => {
+    expect(TEMPLATE).toContain('if (e instanceof CrmAccessError) return NextResponse.json({ error: e.message }, { status: e.status })')
+  })
+})
