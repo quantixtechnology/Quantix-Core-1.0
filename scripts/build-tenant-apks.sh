@@ -31,21 +31,34 @@ VERSION_CODE="${QUANTIX_APP_VERSION_CODE:-2}"
 mkdir -p "$OUT"
 echo "sdk.dir=$ANDROID_HOME" > "$WRAP/local.properties"
 
-# app-key | launch host | display name | package suffix | branding key | flavour
+# The build configuration comes from the PLATFORM, not from this script.
 #
-# The flavour decides whether the app may open a camera at all: `scanner`
-# declares CAMERA, `viewer` does not declare it anywhere. Delivery scans bag
-# QRs and Store scans garments and bags; the Customer app never scans.
-APPS=(
-  "customer|$SLUG.$BASE|Laundry Customer|customer|customer|viewer"
-  "delivery|delivery.$SLUG.$BASE|Laundry Delivery|delivery|delivery|scanner"
-  "store|store.$SLUG.$BASE|Laundry Store|store|store|scanner"
-)
+# Hosts used to be composed here as <slug>.<base>, which is right only for a
+# tenant who never brought a domain of their own — everyone else got an APK
+# pointing at a hostname with no certificate on it. The app installed, opened,
+# and failed on its first request. So the canonical host, the label, the Android
+# id, the flavour and the icon are all read from the tenant's own configuration.
+CONFIG_URL="$ICON_HOST/api/core/apk-build-config/$SLUG"
+echo "Reading build configuration: $CONFIG_URL"
+CONFIG="$(curl -fsS --max-time 60 "$CONFIG_URL")" || {
+  echo "Could not read the build configuration for \"$SLUG\". Is the slug right, and is $ICON_HOST reachable?"
+  exit 1
+}
+
+BUSINESS_NAME="$(printf '%s' "$CONFIG" | python3 -c 'import sys,json;print(json.load(sys.stdin)["businessName"])')"
+echo "Tenant: $BUSINESS_NAME"
+
+# key|url|label|packageId|flavour|iconPath — one line per app, straight from the
+# platform. Nothing below invents any of it.
+APPS=()
+while IFS= read -r line; do APPS+=("$line"); done < <(printf '%s' "$CONFIG" | python3 -c '
+import sys, json
+for a in json.load(sys.stdin)["apps"]:
+    print("|".join([a["key"], a["url"], a["label"], a["packageId"], a["flavour"], a["iconPath"]]))
+')
 
 for row in "${APPS[@]}"; do
-  IFS='|' read -r key host label pkg brand flavour <<<"$row"
-  url="https://$host/"
-  appId="in.quantixtechnology.laundry.$pkg.$(echo "$SLUG" | tr -cd '[:alnum:]')"
+  IFS='|' read -r key url label appId flavour iconPath <<<"$row"
 
   echo "── $label"
   echo "   url     $url"
@@ -58,7 +71,7 @@ for row in "${APPS[@]}"; do
     set -- $d
     dir="$WRAP/app/src/main/res/mipmap-$1"
     mkdir -p "$dir"
-    curl -fsS --max-time 60 "$ICON_HOST/api/core/app-icon/$SLUG/$brand/192.png" -o "$dir/ic_launcher.png"
+    curl -fsS --max-time 60 "$ICON_HOST$iconPath" -o "$dir/ic_launcher.png"
   done
 
   task="assemble$(echo "${flavour:0:1}" | tr '[:lower:]' '[:upper:]')${flavour:1}Release"

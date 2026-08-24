@@ -60,9 +60,13 @@ describe('only the apps that scan may open a camera', () => {
   })
 
   it('the builder gives each app the right flavour', () => {
-    expect(SCRIPT).toContain('"customer|$SLUG.$BASE|Laundry Customer|customer|customer|viewer"')
-    expect(SCRIPT).toContain('"delivery|delivery.$SLUG.$BASE|Laundry Delivery|delivery|delivery|scanner"')
-    expect(SCRIPT).toContain('"store|store.$SLUG.$BASE|Laundry Store|store|store|scanner"')
+    // The flavour now comes from the platform with the rest of the build
+    // configuration, so the script cannot disagree with it.
+    const CONFIG = read('src/lib/apk-build-config.ts')
+    expect(CONFIG).toContain('customer: "viewer",   // never scans')
+    expect(CONFIG).toContain('delivery: "scanner",')
+    expect(CONFIG).toContain('store: "scanner",')
+    expect(SCRIPT).toContain("IFS='|' read -r key url label appId flavour iconPath <<<\"$row\"")
   })
 
   it('a manifest placeholder is not used for it', () => {
@@ -120,14 +124,19 @@ describe('one source tree, one app per tenant', () => {
 
   it('the package id is unique per app AND per tenant', () => {
     // Two tenants installing "the delivery app" must not collide, and neither
-    // must the three apps of one tenant.
-    expect(SCRIPT).toContain('appId="in.quantixtechnology.laundry.$pkg.$(echo "$SLUG" | tr -cd \'[:alnum:]\')"')
+    // must the three apps of one tenant. Composed once, on the platform.
+    const CONFIG = read('src/lib/apk-build-config.ts')
+    expect(CONFIG).toContain('return `in.quantixtechnology.laundry.${app}.${segment}`')
+    expect(SCRIPT).not.toContain('appId="in.quantixtechnology')
   })
 
   it('the launcher icon is the one configured in Mobile Apps', () => {
     // Same route the manifest points at, so the installed icon and the icon in
-    // the admin screen cannot disagree.
-    expect(SCRIPT).toContain('/api/core/app-icon/$SLUG/$brand/192.png')
+    // the admin screen cannot disagree — and the path is handed over versioned,
+    // so a replaced icon reaches a rebuilt APK.
+    const CONFIG = read('src/lib/apk-build-config.ts')
+    expect(CONFIG).toContain('iconPath: `/api/core/app-icon/${slug}/${key}/192.png?v=${v}`')
+    expect(SCRIPT).toContain('curl -fsS --max-time 60 "$ICON_HOST$iconPath"')
     expect(SCRIPT).toContain('mipmap-$1')
   })
 
