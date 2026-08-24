@@ -20,7 +20,7 @@ import {
 import {
   Loader2, Plus, Search, Users, ChevronLeft, ChevronRight, MoreHorizontal,
   Pencil, Archive, ArrowRightCircle, Columns3, Download, UserPlus,
-  Phone, Mail, Mic, MessageCircle, Upload,
+  Phone, Mail, Mic, MessageCircle, Upload, ArchiveRestore, AlertCircle, RefreshCw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { CrmLeadImportDialog } from "@/components/laundry/views/crm/crm-lead-import-dialog"
@@ -57,6 +57,13 @@ export function CrmLeads({ businessId }: { businessId: string }) {
   const [fieldFilters, setFieldFilters] = useState<Record<string, string>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [visibleCols, setVisibleCols] = useState<Set<string> | null>(null)
+  // Archiving a lead is reversible in the database (`archived: true`, never a
+  // row delete) but was one-way on screen: nothing here ever asked for
+  // archived: 1, so an archived lead left no trace and no way back. That reads
+  // as "the lead was deleted".
+  const [view, setView] = useState<"ACTIVE" | "ARCHIVED">("ACTIVE")
+  // An empty list and a failed request rendered the same "No Leads Yet".
+  const [loadError, setLoadError] = useState(false)
 
   const [editorLead, setEditorLead] = useState<CrmLead | null>(null) // edit target
   const [creating, setCreating] = useState(false)
@@ -67,6 +74,11 @@ export function CrmLeads({ businessId }: { businessId: string }) {
   // Table columns from field config (showInList) — displayName/status/source are fixed.
   const listFields = useMemo(() => meta.fields.filter((f) => f.showInList && !["first_name", "last_name"].includes(f.fieldKey)), [meta.fields])
   const cols = visibleCols ?? new Set(listFields.map((f) => f.fieldKey))
+  const hasFilters = q.trim() !== "" || statusId !== "ALL" || sourceId !== "ALL" || priorityId !== "ALL"
+    || Object.values(fieldFilters).some((v) => v && v !== "ALL")
+  const clearFilters = () => {
+    setPage(1); setQInput(""); setQ(""); setStatusId("ALL"); setSourceId("ALL"); setPriorityId("ALL"); setFieldFilters({})
+  }
   const filterableFields = useMemo(() => meta.fields.filter((f) => f.filterable && ["SELECT", "RADIO"].includes(f.type)), [meta.fields])
 
   const load = useCallback(async () => {
@@ -78,12 +90,14 @@ export function CrmLeads({ businessId }: { businessId: string }) {
       if (sourceId !== "ALL") params.set("sourceId", sourceId)
       if (priorityId !== "ALL") params.set("priorityId", priorityId)
       for (const [k, v] of Object.entries(fieldFilters)) if (v && v !== "ALL") params.set(`f_${k}`, v)
+      if (view === "ARCHIVED") params.set("archived", "1")
       const j = await fetch(`/api/laundry/crm/leads?${params}`).then((r) => r.json())
+      setLoadError(!j.success)
       setRows(j.success ? j.data : [])
-      setTotal(j.total || 0)
+      setTotal(j.success ? j.total || 0 : 0)
       setSelected(new Set())
-    } catch { setRows([]) } finally { setLoading(false) }
-  }, [businessId, q, page, statusId, sourceId, priorityId, fieldFilters])
+    } catch { setLoadError(true); setRows([]); setTotal(0) } finally { setLoading(false) }
+  }, [businessId, q, page, statusId, sourceId, priorityId, fieldFilters, view])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -146,6 +160,13 @@ export function CrmLeads({ businessId }: { businessId: string }) {
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search name, phone, email, ID…" className="pl-8 h-9 w-[260px]" />
         </div>
+        <Select value={view} onValueChange={(v) => { setPage(1); setSelected(new Set()); setView(v as "ACTIVE" | "ARCHIVED") }}>
+          <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ACTIVE">Active Leads</SelectItem>
+            <SelectItem value="ARCHIVED">Archived Leads</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={statusId} onValueChange={(v) => { setPage(1); setStatusId(v) }}>
           <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -218,7 +239,11 @@ export function CrmLeads({ businessId }: { businessId: string }) {
             <SelectContent>{meta.statuses.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
           </Select>
           <BulkAssign onAssign={(name) => bulkPatch({ assignedToId: name, assignedToName: name }, "assigned")} />
-          <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => bulkPatch({ archived: true }, "archived")}><Archive className="h-3.5 w-3.5" /> Archive</Button>
+          {view === "ARCHIVED" ? (
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => bulkPatch({ archived: false }, "restored")}><ArchiveRestore className="h-3.5 w-3.5" /> Restore</Button>
+          ) : (
+            <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => bulkPatch({ archived: true }, "archived")}><Archive className="h-3.5 w-3.5" /> Archive</Button>
+          )}
         </div>
       )}
 
@@ -228,12 +253,36 @@ export function CrmLeads({ businessId }: { businessId: string }) {
           {loading ? (
             <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading leads…</div>
           ) : rows.length === 0 ? (
-            <div className="py-16 text-center">
-              <Users className="h-8 w-8 mx-auto text-slate-300" />
-              <p className="mt-2 text-sm font-medium text-slate-600">No Leads Yet</p>
-              <p className="text-xs text-slate-400">Create your first lead to start managing your sales pipeline.</p>
-              <Button onClick={() => setCreating(true)} size="sm" className="mt-3 gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> New Lead</Button>
-            </div>
+            loadError ? (
+              // Never claim the list is empty when we failed to read it. A lead
+              // that exists and a request that failed are different facts.
+              <div className="py-16 text-center">
+                <AlertCircle className="h-8 w-8 mx-auto text-amber-500" />
+                <p className="mt-2 text-sm font-medium text-slate-700">Could not load leads</p>
+                <p className="text-xs text-slate-500">Your leads are not lost — this request failed. Check your connection or permissions and try again.</p>
+                <Button onClick={() => load()} size="sm" variant="outline" className="mt-3 gap-1"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+              </div>
+            ) : view === "ARCHIVED" ? (
+              <div className="py-16 text-center">
+                <ArchiveRestore className="h-8 w-8 mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-600">No Archived Leads</p>
+                <p className="text-xs text-slate-400">Archived leads are kept, not deleted. Any you archive will appear here.</p>
+              </div>
+            ) : hasFilters ? (
+              <div className="py-16 text-center">
+                <Users className="h-8 w-8 mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-600">No Leads Match These Filters</p>
+                <p className="text-xs text-slate-400">Clear the filters, or check Archived Leads — archiving hides a lead from this list without deleting it.</p>
+                <Button onClick={clearFilters} size="sm" variant="outline" className="mt-3">Clear Filters</Button>
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <Users className="h-8 w-8 mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-600">No Leads Yet</p>
+                <p className="text-xs text-slate-400">Create your first lead, or check Archived Leads if one is missing.</p>
+                <Button onClick={() => setCreating(true)} size="sm" className="mt-3 gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> New Lead</Button>
+              </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -285,7 +334,11 @@ export function CrmLeads({ businessId }: { businessId: string }) {
                               {!l.converted && (
                                 <DropdownMenuItem className="text-xs gap-2 text-green-700" onClick={() => setConvertLead(l)}><ArrowRightCircle className="h-3.5 w-3.5" /> Convert to Opportunity</DropdownMenuItem>
                               )}
-                              <DropdownMenuItem className="text-xs gap-2 text-red-600" onClick={() => bulkOne(l.id)}><Archive className="h-3.5 w-3.5" /> Archive</DropdownMenuItem>
+                              {view === "ARCHIVED" ? (
+                                <DropdownMenuItem className="text-xs gap-2 text-green-700" onClick={() => restoreOne(l.id)}><ArchiveRestore className="h-3.5 w-3.5" /> Restore</DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem className="text-xs gap-2 text-red-600" onClick={() => bulkOne(l.id)}><Archive className="h-3.5 w-3.5" /> Archive</DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -335,6 +388,15 @@ export function CrmLeads({ businessId }: { businessId: string }) {
       )}
     </div>
   )
+
+  async function restoreOne(id: string) {
+    await fetch(`/api/laundry/crm/leads/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessId, archived: false, ...actor }),
+    })
+    toast.success("Lead restored")
+    load()
+  }
 
   async function bulkOne(id: string) {
     await fetch(`/api/laundry/crm/leads/${id}?businessId=${encodeURIComponent(businessId)}`, { method: "DELETE" })
