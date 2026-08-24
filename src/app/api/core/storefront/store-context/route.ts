@@ -22,6 +22,7 @@ import { appIconVersion, parseAppLogos } from '@/lib/app-branding';
 import { resolveBusinessFromDomain } from '@/lib/tenant-resolver';
 import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
 import { getStorefrontSettings } from '@/lib/core/address-serviceability';
+import { readCustomerOrderingMode } from "@/lib/customer-ordering"
 
 export async function GET(request: Request) {
   try {
@@ -191,6 +192,11 @@ export async function GET(request: Request) {
           slug: business.slug,
           businessType: business.businessType,
           isOnline: business.isOnline,
+          // Whether the clock closes ordering for this tenant. The storefront
+          // and the customer PWA both read it so neither shows "closed" to a
+          // business that takes orders round the clock — the server gate makes
+          // the same call, so the button and the API cannot disagree.
+          customerOrderingMode: readCustomerOrderingMode(business.settings),
           // The header wears the SQUARE Customer App icon and needs the same
           // version the manifest uses. Without it the header requests a stable
           // URL whose contents change — which is how a browser keeps showing an

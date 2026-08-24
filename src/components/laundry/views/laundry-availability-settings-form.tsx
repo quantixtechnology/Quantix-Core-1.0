@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Loader2, Save, Store as StoreIcon, Clock, Info, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
 
 interface TimingRow { day: number; open: string; close: string; isClosed: boolean }
@@ -69,6 +70,10 @@ export function LaundryAvailabilitySettingsForm({ businessId }: { businessId: st
   const [override, setOverride] = useState<"AUTOMATIC" | "FORCE_OPEN" | "FORCE_CLOSED">("AUTOMATIC")
   const [overrideExpiresAt, setOverrideExpiresAt] = useState("")
   const [hasStandard, setHasStandard] = useState(false)
+  // Business-level, not per store. Absent means FOLLOW_STORE_HOURS, which is
+  // what every tenant that has never touched this gets.
+  const [ordering, setOrdering] = useState<"FOLLOW_STORE_HOURS" | "ALWAYS_OPEN">("FOLLOW_STORE_HOURS")
+  const [orderingSaving, setOrderingSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<{ status: string; reason: string | null; until: string | null; hours: string | null } | null>(null)
 
   const load = useCallback(async () => {
@@ -82,6 +87,9 @@ export function LaundryAvailabilitySettingsForm({ businessId }: { businessId: st
         const storeList: StoreRef[] = Array.isArray(d.stores) ? d.stores : []
         setStores(storeList)
         setHasStandard(Array.isArray(d.standard?.timings) && d.standard.timings.length > 0)
+        if (d.customerOrderingMode === "ALWAYS_OPEN" || d.customerOrderingMode === "FOLLOW_STORE_HOURS") {
+          setOrdering(d.customerOrderingMode)
+        }
 
         // Auto-select the first store (or keep the current one)
         if (!storeId && storeList.length > 0) {
@@ -179,6 +187,57 @@ export function LaundryAvailabilitySettingsForm({ businessId }: { businessId: st
           <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /> Loading…</div>
         ) : (
           <>
+            {/* ── Customer Ordering Availability (business-level) ─────────── */}
+            <div className="rounded-lg border border-slate-200 p-4 space-y-3">
+              <div>
+                <Label className="text-xs font-semibold text-slate-700">Customer Ordering Availability</Label>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Applies to this business, not to a single branch.
+                </p>
+              </div>
+
+              {([
+                ["FOLLOW_STORE_HOURS", "Follow Store Working Hours", "Customers can order while the store is open, using the schedule below."],
+                ["ALWAYS_OPEN", "24/7 Ordering", "Customers can place orders at any time. Pickup and delivery slots continue to follow your operational schedule."],
+              ] as const).map(([value, title, help]) => (
+                <label key={value} className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="customerOrderingMode"
+                    className="mt-0.5"
+                    checked={ordering === value}
+                    disabled={orderingSaving}
+                    onChange={async () => {
+                      const previous = ordering
+                      setOrdering(value)          // optimistic — reverted below if the save fails
+                      setOrderingSaving(true)
+                      try {
+                        const res = await fetch("/api/laundry/availability", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                          body: JSON.stringify({ businessId, customerOrderingMode: value }),
+                        })
+                        const j = await res.json()
+                        if (!res.ok || j.success === false) throw new Error(j.error || "Could not save")
+                        toast.success(value === "ALWAYS_OPEN" ? "Customers can now order 24/7" : "Ordering follows your working hours")
+                      } catch (e) {
+                        setOrdering(previous)
+                        toast.error(e instanceof Error ? e.message : "Could not save")
+                      } finally { setOrderingSaving(false) }
+                    }}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-slate-800">{title}</span>
+                    <span className="block text-[11px] text-slate-500">{help}</span>
+                  </span>
+                </label>
+              ))}
+
+              <p className="text-[11px] text-slate-400 border-t pt-2">
+                Your working hours below are unchanged either way — they always decide which pickup and delivery slots a customer can choose, and staff and processing schedules are unaffected.
+              </p>
+            </div>
+
             {/* ── Store selector ──────────────────────────────────────────── */}
             {stores.length > 0 && (
               <div className="rounded-lg border border-slate-200 p-4 space-y-2">

@@ -714,7 +714,17 @@ export function slotsWithinWorkingHours(
  * Returns { isOpen: true } when all checks pass.
  * Returns { isOpen: false, reason: "..." } with a customer-friendly message.
  */
-export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> {
+/**
+ * @param opts.ignoreWorkingHours  Skip ONLY the scheduled-hours check.
+ *   For a tenant on 24/7 Customer Ordering the clock no longer closes ordering
+ *   — but "offline", "temporarily closed" and the operator's force-closed
+ *   switch still do, because those are someone deciding not to trade rather
+ *   than the hour of the day. See lib/customer-ordering.
+ */
+export async function checkStoreOpen(
+  storeId: string,
+  opts: { ignoreWorkingHours?: boolean } = {},
+): Promise<StoreOpenResult> {
   const store = await db.store.findUnique({
     where: { id: storeId },
     select: {
@@ -774,7 +784,9 @@ export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> 
   }
 
   // Check store timings (use IST — UTC+5:30)
-  if (store.storeTimings.length > 0) {
+  // Skipped entirely under 24/7 ordering: every deliberate closure above has
+  // already had its say, and this branch is the only one about the clock.
+  if (!opts.ignoreWorkingHours && store.storeTimings.length > 0) {
     const now = new Date();
     // Convert to IST
     const istOffset = 5.5 * 60 * 60 * 1000; // 5h30m in ms

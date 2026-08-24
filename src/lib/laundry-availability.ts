@@ -30,6 +30,7 @@ import {
 } from "@/lib/core/store"
 import type { StoreDayTiming, StoreOpenResult } from "@/lib/core/store"
 import { PRINT_TIMEZONE as BUSINESS_TIMEZONE } from "@/lib/print-timestamp"
+import { readCustomerOrderingMode, bypassesStoreHours } from "@/lib/customer-ordering"
 
 export interface LaundryAvailability {
   storeId: string | null
@@ -94,8 +95,12 @@ export async function getLaundryAvailability(
       where: { id: sid },
       select: { closedReason: true, closedUntil: true, storeTimings: { orderBy: { day: "asc" } } },
     }),
-    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { isOnline: true } }),
-    checkStoreOpen(sid),
+    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { isOnline: true, settings: true } }),
+    // The mode is read first so the "open right now" answer this returns is the
+    // SAME one the booking guard will give — a customer app that shows an open
+    // shop and a server that then refuses the order is the worst of both.
+    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { settings: true } })
+      .then((b) => checkStoreOpen(sid, { ignoreWorkingHours: bypassesStoreHours(readCustomerOrderingMode(b?.settings)) })),
   ])
   if (!store) return empty
 
@@ -276,10 +281,11 @@ export interface BookingOpenResult {
 export async function assertLaundryStoreOpen(
   input: string | null | undefined,
   storeId?: string | null,
+  opts: { ignoreWorkingHours?: boolean } = {},
 ): Promise<BookingOpenResult> {
   const { storeId: sid } = await resolvePlatformStore(input, storeId)
   if (!sid) return { ok: false, error: "Store is currently unavailable", opensAt: null }
-  const r = await checkStoreOpen(sid)
+  const r = await checkStoreOpen(sid, opts)
   if (!r.isOpen) return { ok: false, error: r.reason || "Store is currently closed", opensAt: r.opensAt ?? null, reason: r.reason || null }
   return { ok: true }
 }
@@ -309,12 +315,44 @@ export interface BookingGuardOptions {
   backupSlot?: string | null
 }
 
+/**
+ * The tenant's Customer Ordering Availability.
+ *
+ * Resolved from the PLATFORM business row, because the setting belongs to the
+ * business rather than to one of its stores — a tenant does not take orders
+ * round the clock at one branch and not another.
+ */
+export async function resolveCustomerOrderingMode(
+  input: string | null | undefined,
+): Promise<ReturnType<typeof readCustomerOrderingMode>> {
+  if (!input) return readCustomerOrderingMode(null)
+  const biz = await resolveLaundryBusiness(input).catch(() => null)
+  if (!biz?.platformBusinessId) return readCustomerOrderingMode(null)
+  const row = await prisma.business.findUnique({
+    where: { id: biz.platformBusinessId },
+    select: { settings: true },
+  }).catch(() => null)
+  return readCustomerOrderingMode(row?.settings)
+}
+
 export async function assertLaundryBookingOpen(
   input: string | null | undefined,
   opts: BookingGuardOptions = {},
 ): Promise<{ ok: true; storeId: string } | { ok: false; error: string }> {
-  const open = await assertLaundryStoreOpen(input, opts.storeId)
+  // Is the tenant on 24/7 Customer Ordering? Read from the business's own
+  // settings — absent means FOLLOW_STORE_HOURS, so every tenant that has never
+  // touched this behaves exactly as before.
+  const ordering = await resolveCustomerOrderingMode(input)
+
+  // "Open right now" — the ONLY check 24/7 relaxes, and only its hours branch.
+  const open = await assertLaundryStoreOpen(input, opts.storeId, {
+    ignoreWorkingHours: bypassesStoreHours(ordering),
+  })
   if (!open.ok) return { ok: false, error: open.error || "Store is currently closed" }
+
+  // Everything below is untouched by the mode. A midnight order is accepted,
+  // and then has to pick a pickup and delivery slot the shop can actually
+  // work — which is the existing slot logic, unchanged.
 
   const { storeId } = await resolvePlatformStore(input, opts.storeId)
   if (!storeId) return { ok: false, error: "Store is currently unavailable" }

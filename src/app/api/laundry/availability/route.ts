@@ -16,6 +16,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { updateStoreTimings, getStandardStoreSchedule } from "@/lib/core/store"
 import { getLaundryAvailability, resolvePlatformStore, parseBranchHoursOverride, serializeBranchHoursOverride } from "@/lib/laundry-availability"
 import { logActivity } from "@/lib/core/audit"
+import { readCustomerOrderingMode, writeCustomerOrderingMode, isCustomerOrderingMode } from "@/lib/customer-ordering"
 
 export const runtime = "nodejs"
 
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
 
+
     const { storeId: platformStoreId } = await resolvePlatformStore(biz.id, storeId)
     const businessIdEff = biz.platformBusinessId || biz.id
 
@@ -78,6 +80,13 @@ export async function GET(request: Request) {
     ])
 
     const availability = await getLaundryAvailability(biz.id, storeId)
+    // Business-level, not per store: a tenant does not take orders round the
+    // clock at one branch and not another.
+    const bizRow = await prisma.business.findUnique({
+      where: { id: biz.platformBusinessId || biz.id },
+      select: { settings: true },
+    }).catch(() => null)
+    const customerOrderingMode = readCustomerOrderingMode(bizRow?.settings)
     const branchOverrideRows = parseBranchHoursOverride(branch?.businessHoursOverride)
 
     return NextResponse.json({
@@ -97,6 +106,7 @@ export async function GET(request: Request) {
           ? branchOverrideRows
           : (platformStore?.storeTimings && platformStore.storeTimings.length > 0 ? platformStore.storeTimings : []),
         availability,
+        customerOrderingMode,
       },
     })
   } catch (e) {
@@ -110,9 +120,26 @@ export async function PUT(request: Request) {
     const b = await request.json().catch(() => ({}))
     const guard = await requireLaundryPermission(request, b.businessId, "laundry.settings.edit")
     if (!guard.ok) return guard.res
+
     const isOwner = !!guard.resolved.isOwner
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
+
+    // ── Customer Ordering Availability (business-level) ───────────────────
+    // Its own branch: it belongs to the business, not to a store, and it must
+    // not disturb any other key already in settings.
+    if (b.customerOrderingMode !== undefined) {
+      if (!isCustomerOrderingMode(b.customerOrderingMode)) {
+        return NextResponse.json({ error: "Invalid customerOrderingMode" }, { status: 400 })
+      }
+      const target = biz.platformBusinessId || biz.id
+      const current = await prisma.business.findUnique({ where: { id: target }, select: { settings: true } })
+      await prisma.business.update({
+        where: { id: target },
+        data: { settings: writeCustomerOrderingMode(current?.settings, b.customerOrderingMode) },
+      })
+      return NextResponse.json({ success: true, customerOrderingMode: b.customerOrderingMode })
+    }
     const { storeId } = await resolvePlatformStore(biz.id, b.storeId)
     if (!storeId) return NextResponse.json({ success: false, error: "No online store configured for this business" }, { status: 404 })
     const businessIdEff = biz.platformBusinessId || biz.id

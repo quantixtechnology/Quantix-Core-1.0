@@ -106,6 +106,7 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
     const store = json.data?.store ?? {}
 
     const isOnline = biz.isOnline !== false
+    const alwaysOpen = biz.customerOrderingMode === "ALWAYS_OPEN"
 
     // Administrator override (FORCE_OPEN / FORCE_CLOSED — testing control set by
     // the business owner / super admin). Takes precedence over every automatic check.
@@ -134,6 +135,14 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
     } else if (isOnline && closedReason && !closedUntilDate) {
       isOpen = false
       message = closedReason || "Store is temporarily closed"
+    } else if (isOnline && alwaysOpen) {
+      // 24/7 Customer Ordering. Every deliberate closure above has already had
+      // its say — offline, temporarily closed, operator override — and this is
+      // the only branch that is merely about the hour, so it is skipped. The
+      // shop's configured hours are untouched and still govern which pickup and
+      // delivery slots the customer can choose.
+      isOpen = true
+      message = ""
     } else if (isOnline && store.storeTimings && store.storeTimings.length > 0) {
       const istOffset = 5.5 * 60 * 60 * 1000
       const istNow    = new Date(Date.now() + istOffset)
