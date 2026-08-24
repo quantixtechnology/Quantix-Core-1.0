@@ -87,7 +87,10 @@ describe('the owner list is the CRM Lead Owner field, not the staff list', () =>
     // CRM → Settings → Lead Fields → Lead Owner is a SELECT whose options
     // carry an active flag. That IS the configured sales-people list, so the
     // customer dropdown and the lead dropdown agree by construction.
-    expect(OWNERS).toContain('const LEAD_OWNER_FIELD_KEY = "lead_owner"')
+    // The key now comes from the CRM defaults, where the field is a protected
+    // system field — one definition shared, rather than a copy here that could
+    // drift from the one the seed uses.
+    expect(OWNERS).toContain('import { LEAD_OWNER_FIELD_KEY } from "@/lib/laundry-crm"')
     expect(OWNERS).toContain('prisma.laundryCrmLeadField.findFirst')
     expect(OWNERS).toContain('fieldKey: LEAD_OWNER_FIELD_KEY')
   })
