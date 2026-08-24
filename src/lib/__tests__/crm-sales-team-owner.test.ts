@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { LEAD_OWNER_FIELD_KEY } from '@/lib/laundry-crm'
+import { LEAD_OWNER_FIELD_KEY } from '@/lib/crm-field-keys'
 
 // ============================================================================
 // One Sales Team Owner field, for every tenant, that nobody has to create.
@@ -36,7 +36,7 @@ describe('the canonical field is the one already in use', () => {
 
   it('the Customer form and the defaults share ONE definition', () => {
     // Two copies of a key is how they drift apart.
-    expect(OWNERS).toContain('import { LEAD_OWNER_FIELD_KEY } from "@/lib/laundry-crm"')
+    expect(OWNERS).toContain('import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"')
     expect(OWNERS).not.toContain('const LEAD_OWNER_FIELD_KEY =')
   })
 

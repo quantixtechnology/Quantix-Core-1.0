@@ -330,15 +330,8 @@ type FieldSeed = {
   options?: { value: string; label: string; order: number; active: boolean }[]
 }
 
-/**
- * The canonical Sales Team Owner field.
- *
- * "lead_owner" and not "sales_team_owner": this is the key the Customer form
- * already reads through /api/laundry/settings/sales-owners, so it is the one
- * that exists in tenants configured by hand. A second key would not be a fix,
- * it would be a second answer to the same question.
- */
-export const LEAD_OWNER_FIELD_KEY = "lead_owner"
+export { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
+import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
 
 /**
  * Labels that mean this field in a tenant somebody configured by hand, before

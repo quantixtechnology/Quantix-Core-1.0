@@ -24,7 +24,7 @@ export const runtime = "nodejs"
 
 /** The CRM field that holds the configured owners. */
 // The canonical key, from the CRM defaults — one definition, not two.
-import { LEAD_OWNER_FIELD_KEY } from "@/lib/laundry-crm"
+import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
 
 interface FieldOption { value: string; label?: string; order?: number; active?: boolean }
 

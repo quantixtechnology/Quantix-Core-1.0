@@ -24,6 +24,8 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { CrmLeadImportDialog } from "@/components/laundry/views/crm/crm-lead-import-dialog"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   type CrmLead, type CrmField, useCrmMeta, useCrmActor, parseValues, parseOptions, displayValue, fmtDate,
@@ -390,9 +392,25 @@ export function LeadFormDialog({ businessId, fields, sources, priorities, lead, 
   const isEdit = !!lead
   const actor = useCrmActor()
   const { user } = useAuthStore()
+  // `lead_owner` is deliberately NOT rendered here. Its OPTIONS are the sales
+  // roster — the list of people who may own a lead, configured once in CRM
+  // Settings — and the Lead Owner selector below is fed from them. Rendering it
+  // as a per-lead field as well put a second box labelled "Lead Owner" in this
+  // form, competing with the assignment that Reports, Opportunity inheritance
+  // and the Customer form all read.
   const formFields = fields
-    .filter((f) => f.active && (isEdit ? f.showInEdit : f.showInCreate))
+    .filter((f) => f.active && f.fieldKey !== LEAD_OWNER_FIELD_KEY && (isEdit ? f.showInEdit : f.showInCreate))
     .sort((a, b) => a.displayOrder - b.displayOrder)
+
+  // The roster, from that same field's options.
+  const [owners, setOwners] = useState<{ value: string; label: string }[]>([])
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/laundry/settings/sales-owners?businessId=${encodeURIComponent(businessId)}`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((j) => { if (j?.success && Array.isArray(j.data)) setOwners(j.data) })
+      .catch(() => { /* no roster is a free-text field, never a broken form */ })
+  }, [businessId])
 
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     if (lead) return parseValues(lead.fieldValues)
@@ -454,10 +472,39 @@ export function LeadFormDialog({ businessId, fields, sources, priorities, lead, 
           </div>
           <div className="space-y-1.5">
             {/* The single source of truth for deal ownership — an Opportunity
-                created from this lead inherits this person. */}
+                created from this lead inherits this person, Reports group by it,
+                and the Customer form reads it. Chosen from the roster rather
+                than typed, so two spellings of one person cannot both exist.
+                An owner already on the lead who is no longer on the roster
+                stays selectable, because history is not a validation error. */}
             <label className="text-xs font-medium text-slate-600">Lead Owner</label>
-            <Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} placeholder="Employee name" className="h-9" />
+            {owners.length > 0 ? (
+              <Select value={assignedToName || undefined} onValueChange={setAssignedToName}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select owner…" /></SelectTrigger>
+                <SelectContent>
+                  {owners.map((o) => <SelectItem key={o.value} value={o.value}>{o.label || o.value}</SelectItem>)}
+                  {assignedToName && !owners.some((o) => o.value === assignedToName) && (
+                    <SelectItem value={assignedToName}>{assignedToName}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            ) : (
+              // No roster configured yet — the field still works.
+              <Input value={assignedToName} onChange={(e) => setAssignedToName(e.target.value)} placeholder="Employee name" className="h-9" />
+            )}
           </div>
+
+          {/* Who made the lead. A DIFFERENT column from the owner above —
+              createdByName is stamped once by the server from the session and
+              never changes, while the owner can be reassigned any number of
+              times. They look alike on a fresh lead only because the person who
+              creates one is assigned it by default. */}
+          {isEdit && lead?.createdByName && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Created By</label>
+              <Input value={lead.createdByName} readOnly disabled className="h-9 bg-slate-50 text-slate-600" />
+            </div>
+          )}
           {(priorities && priorities.filter((p) => p.active).length > 0) && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-600">Priority</label>
