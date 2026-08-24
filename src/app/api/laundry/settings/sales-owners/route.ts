@@ -23,7 +23,8 @@ import { requireLaundryMember } from "@/lib/laundry-rbac"
 export const runtime = "nodejs"
 
 /** The CRM field that holds the configured owners. */
-const LEAD_OWNER_FIELD_KEY = "lead_owner"
+// The canonical key, from the CRM defaults — one definition, not two.
+import { LEAD_OWNER_FIELD_KEY } from "@/lib/laundry-crm"
 
 interface FieldOption { value: string; label?: string; order?: number; active?: boolean }
 

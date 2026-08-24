@@ -330,6 +330,23 @@ type FieldSeed = {
   options?: { value: string; label: string; order: number; active: boolean }[]
 }
 
+/**
+ * The canonical Sales Team Owner field.
+ *
+ * "lead_owner" and not "sales_team_owner": this is the key the Customer form
+ * already reads through /api/laundry/settings/sales-owners, so it is the one
+ * that exists in tenants configured by hand. A second key would not be a fix,
+ * it would be a second answer to the same question.
+ */
+export const LEAD_OWNER_FIELD_KEY = "lead_owner"
+
+/**
+ * Labels that mean this field in a tenant somebody configured by hand, before
+ * it was a default. Matched only when the canonical key is absent, so an
+ * existing field is ADOPTED rather than duplicated beside it.
+ */
+const LEAD_OWNER_ALIASES = ["lead owner", "sales team owner", "sales owner", "owner"]
+
 // System fields (first_name, phone, email) drive the promoted displayName/phone/
 // email columns on LaundryCrmLead — protected from deletion/deactivation.
 const DEFAULT_FIELDS: FieldSeed[] = [
@@ -348,7 +365,104 @@ const DEFAULT_FIELDS: FieldSeed[] = [
   { fieldKey: "pin_code", label: "PIN Code", type: "TEXT" },
   { fieldKey: "expected_closing_date", label: "Expected Closing Date", type: "DATE" },
   { fieldKey: "notes", label: "Notes", type: "TEXTAREA" },
+  // The Sales Team Owner the Customer form and New Order read. SYSTEM because
+  // it carries the CRM → Customer → Order ownership chain: deactivate it and
+  // the owner dropdown downstream is silently empty, with nothing on screen to
+  // say why. isSystem already blocks deactivation and deletion.
+  //
+  // Its OPTIONS are deliberately empty. The field is global; the people in it
+  // are not — one tenant's agents are nobody else's, and seeding a name here
+  // would put a stranger in every business's dropdown.
+  { fieldKey: LEAD_OWNER_FIELD_KEY, label: "Lead Owner", type: "SELECT", isSystem: true, filterable: true, showInList: true },
 ]
+
+/**
+ * Give an existing tenant the SYSTEM lead fields it has never seen.
+ *
+ * ensureCrmDefaults seeds the field list exactly once — `if (fieldCount === 0)`
+ * — and returns ever after. So a field added to DEFAULT_FIELDS later reaches
+ * new businesses only, and a tenant configured before it existed keeps a CRM
+ * without it. That is the same shape of bug the navigation defaults had, and
+ * the same answer applies: reconcile, do not re-seed.
+ *
+ * Deliberately narrow about what it will touch:
+ *
+ *   • SYSTEM fields only. An optional default a tenant chose to remove is a
+ *     decision; a system field is part of how the product works.
+ *   • Canonical key present → its REQUIRED properties are asserted and nothing
+ *     else is. The label may have been renamed and the options are the tenant's
+ *     own people; neither is ours to rewrite.
+ *   • Canonical key absent but a field that plainly means it present → that one
+ *     is adopted, key and all, rather than a second one appearing beside it.
+ *   • Otherwise created, with NO options — the field is global, the people in
+ *     it are not.
+ *
+ * Idempotent: run it a hundred times and the second run writes nothing.
+ */
+export async function ensureSystemLeadFields(businessId: string): Promise<void> {
+  const existing = await prisma.laundryCrmLeadField.findMany({
+    where: { businessId },
+    select: { id: true, fieldKey: true, label: true, isSystem: true, active: true, displayOrder: true },
+  }).catch(() => null)
+  if (!existing) return
+
+  const byKey = new Map(existing.map((f) => [f.fieldKey, f]))
+  let nextOrder = existing.reduce((max, f) => Math.max(max, f.displayOrder), -1) + 1
+
+  for (const seed of DEFAULT_FIELDS) {
+    if (!seed.isSystem) continue
+
+    const canonical = byKey.get(seed.fieldKey)
+    if (canonical) {
+      // Assert only what makes it a system field. A tenant that renamed it or
+      // filled its options keeps both.
+      if (!canonical.isSystem || !canonical.active) {
+        await prisma.laundryCrmLeadField.update({
+          where: { id: canonical.id },
+          data: { isSystem: true, active: true },
+        }).catch(() => null)
+      }
+      continue
+    }
+
+    // No canonical key. Adopt an equivalent the tenant already configured by
+    // hand rather than leaving them with two fields meaning the same thing.
+    const aliases = seed.fieldKey === LEAD_OWNER_FIELD_KEY ? LEAD_OWNER_ALIASES : []
+    const equivalent = aliases.length
+      ? existing.find((f) => !byKey.has(seed.fieldKey) && aliases.includes(f.label.trim().toLowerCase()))
+      : undefined
+
+    if (equivalent) {
+      await prisma.laundryCrmLeadField.update({
+        where: { id: equivalent.id },
+        // The key becomes canonical; the label and options stay theirs.
+        data: { fieldKey: seed.fieldKey, isSystem: true, active: true },
+      }).catch(() => null)
+      byKey.set(seed.fieldKey, { ...equivalent, fieldKey: seed.fieldKey })
+      continue
+    }
+
+    const created = await prisma.laundryCrmLeadField.create({
+      data: {
+        businessId,
+        fieldKey: seed.fieldKey,
+        label: seed.label,
+        type: seed.type,
+        required: !!seed.required,
+        isSystem: true,
+        active: true,
+        displayOrder: nextOrder++,
+        searchable: !!seed.searchable,
+        filterable: !!seed.filterable,
+        showInList: !!seed.showInList,
+        placeholder: seed.placeholder || null,
+        // Never seeded with people. See LEAD_OWNER_FIELD_KEY.
+        options: seed.options ? JSON.stringify(seed.options) : null,
+      },
+    }).catch(() => null)
+    if (created) byKey.set(created.fieldKey, created as never)
+  }
+}
 
 export async function ensureCrmDefaults(businessId: string): Promise<void> {
   const [statusCount, sourceCount, stageCount, reasonCount, typeCount, fieldCount, priorityCount, taskTypeCount] = await Promise.all([
@@ -394,6 +508,11 @@ export async function ensureCrmDefaults(businessId: string): Promise<void> {
     data: DEFAULT_TASK_TYPES.map((name, i) => ({ businessId, name, displayOrder: i })),
   }))
   if (work.length) await Promise.all(work)
+
+  // Whatever the system defaults have gained since this tenant was seeded. Runs
+  // after the first-time seed above so a brand-new tenant is already complete
+  // and this finds nothing to do.
+  await ensureSystemLeadFields(businessId)
 }
 
 // ─── Dynamic field value validation ─────────────────────────────────────────
