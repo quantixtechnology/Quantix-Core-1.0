@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     // Canonical customer — resolved from auth userid (server-side) when
     // authenticated, or from client-provided values as a guest fallback.
     const resolved = await resolveOrCreateLaundryCustomer({
-      platformBusinessId: platformId, businessCodeForCode: biz.businessCode,
+      platformBusinessId: platformId,
       userId: resolvedUser?.id || undefined,
       name: resolvedUser?.name || customer?.name || undefined,
       phone: resolvedUser?.phone || customer?.phone || undefined,

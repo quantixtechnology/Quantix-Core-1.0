@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
-import { generateCustomerCode } from '@/lib/customer-code'
+import { peekCustomerCode } from '@/lib/customer-code'
 
 function isLocalRequest(req: NextRequest): boolean {
   const host = req.headers.get('host') || ''
@@ -162,7 +162,9 @@ async function handler(req: NextRequest) {
   }
 
   // ── Next codes (sequence preview) ──────────────────────────────────────────
-  const nextCustomerCode = await generateCustomerCode(businessId)
+  // Peeked, never generated: the customer sequence is a monotonic counter now,
+  // so previewing with the generator would consume a number per page load.
+  const nextCustomerCode = await peekCustomerCode(businessId)
 
   const today = new Date()
   const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`

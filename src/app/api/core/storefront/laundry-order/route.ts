@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     //    authenticated, or from client-provided values as a guest fallback.
     //    Never trust client-provided name/phone for authenticated users.
     const custResolved = await resolveOrCreateLaundryCustomer({
-      platformBusinessId: platformId, businessCodeForCode: biz.businessCode,
+      platformBusinessId: platformId,
       userId: resolvedUser?.id || undefined,
       name: resolvedUser?.name || customer?.name || undefined,
       phone: resolvedUser?.phone || customer?.phone || undefined,

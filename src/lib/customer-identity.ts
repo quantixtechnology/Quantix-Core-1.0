@@ -13,13 +13,12 @@
 // (tenant) scope. Name is never used as an identity key.
 import { prisma } from "@/lib/prisma"
 import { normalizePhone, normalizeEmail } from "@/lib/storefront-auth"
-import { generateCustomerCode } from "@/lib/laundry-codes"
+import { generateCustomerCode } from "@/lib/customer-code"
 
 export { normalizePhone, normalizeEmail }
 
 export interface ResolveCustomerInput {
   platformBusinessId: string
-  businessCodeForCode: string   // used only for a NEW customer's customerCode
   name?: string | null
   phone?: string | null
   email?: string | null
@@ -58,7 +57,9 @@ export async function resolveOrCreateLaundryCustomer(input: ResolveCustomerInput
 
   // No canonical match → this is a NEW customer.
   if (input.emailRequiredForNew && !email) return { customer: null, created: false as const, error: "Email is required to create your account" }
-  const code = await generateCustomerCode(input.businessCodeForCode)
+  // Keyed on the tenant, not on a code string the caller happens to hold — the
+  // generator resolves the canonical Business Code itself.
+  const code = await generateCustomerCode(businessId)
   customer = await prisma.customer.create({
     data: {
       businessId, userId: input.userId || null, name: input.name || "Customer",

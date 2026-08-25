@@ -131,13 +131,16 @@ export async function generateItemNumber(orderNumber: string): Promise<string> {
   return `${prefix}${padNumber(next, 4)}`
 }
 
-// ─── Customer Code: CUS-{businessCode}-NNNNNN ──────────────────────────────
-// Example: CUS-BUS-202606-0005-000001  (sequential within the business)
-export async function generateCustomerCode(businessCode: string): Promise<string> {
-  const prefix = `${CODES.CUSTOMER_PREFIX}-${businessCode}-`
-  const next = await getNextSequential("customer", "customerCode", prefix)
-  return `${prefix}${padNumber(next, 6)}`
-}
+// ─── Customer Code — REMOVED. There is one generator, in customer-code.ts. ──
+//
+// This one took a code STRING, so whatever the caller was holding ended up
+// inside a permanent customer identifier — a laundry workspace's own `LND-…`
+// code, or a legacy `BIZ-{SLUG}-{Date.now()}`. It also numbered by scanning for
+// the highest existing code, which reissues a number once the top customer is
+// hard-deleted.
+//
+// generateCustomerCode(businessId) in src/lib/customer-code.ts resolves the
+// canonical Business Code itself and draws from a monotonic counter.
 
 // ─── Packet Number: PKT-{orderNumber} ──────────────────────────────────────
 // Example: PKT-ORD-STR-BUS-202606-0005-001-000001  (QR opens the order)

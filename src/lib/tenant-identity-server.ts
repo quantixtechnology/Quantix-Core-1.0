@@ -79,6 +79,19 @@ export async function getTenantIdentityPrefix(
  * cannot free their number for reuse.
  */
 export async function nextEmployeeSequence(businessId: string, namespace: EmployeeNamespace): Promise<number> {
+  return nextTenantSequence(businessId, namespace)
+}
+
+/**
+ * The same counter, for any tenant-scoped namespace.
+ *
+ * TenantEmployeeSequence is named for its first use; it is really one
+ * monotonic counter per (business, namespace), and customer numbers use it
+ * under "CUS". Reusing it rather than adding a second table keeps ONE place
+ * where a tenant sequence is issued — and one place that is already known to
+ * be atomic.
+ */
+export async function nextTenantSequence(businessId: string, namespace: string): Promise<number> {
   const row = await prisma.tenantEmployeeSequence.upsert({
     where: { businessId_namespace: { businessId, namespace } },
     create: { businessId, namespace, next: 2 },
@@ -87,6 +100,32 @@ export async function nextEmployeeSequence(businessId: string, namespace: Employ
   // upsert returns the row AFTER the update, so the value just issued is next-1
   // on the update path and 1 on the create path.
   return row.next - 1
+}
+
+/** Does this namespace already have a counter? Used to seed it exactly once. */
+export async function tenantSequenceExists(businessId: string, namespace: string): Promise<boolean> {
+  const row = await prisma.tenantEmployeeSequence.findUnique({
+    where: { businessId_namespace: { businessId, namespace } },
+    select: { id: true },
+  }).catch(() => null)
+  return !!row
+}
+
+/** The value the namespace WOULD issue next, without consuming it. */
+export async function peekTenantSequence(businessId: string, namespace: string): Promise<number | null> {
+  const row = await prisma.tenantEmployeeSequence.findUnique({
+    where: { businessId_namespace: { businessId, namespace } },
+    select: { next: true },
+  }).catch(() => null)
+  return row?.next ?? null
+}
+
+/** Start a namespace's counter at `next`, only if it has none yet. */
+export async function seedTenantSequence(businessId: string, namespace: string, next: number): Promise<void> {
+  if (!Number.isFinite(next) || next < 1) return
+  await prisma.tenantEmployeeSequence
+    .create({ data: { businessId, namespace, next } })
+    .catch(() => null) // already created by a concurrent caller — theirs stands
 }
 
 /**

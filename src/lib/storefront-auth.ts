@@ -144,13 +144,11 @@ export async function createStorefrontSession(opts: {
         },
       });
     } else {
-      // generateCustomerCode reads the highest code then returns the next one,
-      // so two people registering in the same moment are handed the SAME one —
-      // and @@unique([businessId, customerCode]) means the second create throws.
-      // Rare on a quiet day; on an opening, when a room full of customers signs
-      // up at once, it is the person standing in front of you being told to try
-      // again. Re-read and retry: the collision proves someone else just took
-      // that number, so the next read returns a fresh one.
+      // generateCustomerCode now draws from an atomic counter, so two people
+      // registering in the same moment get different numbers. The retry stays
+      // as belt-and-braces for any OTHER unique clash on this create (phone,
+      // for instance) — it costs nothing and this is the path where a room full
+      // of customers signs up at once.
       let created: Awaited<ReturnType<typeof db.customer.create>> | null = null
       for (let attempt = 1; attempt <= 5; attempt++) {
         const newCode = await generateCustomerCode(businessId)

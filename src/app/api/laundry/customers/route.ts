@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode } from "@/lib/india"
-import { generateCustomerCode } from "@/lib/laundry-codes"
+import { generateCustomerCode } from "@/lib/customer-code"
 import { mergeMeta, type CommPrefs } from "@/lib/laundry-customer"
 
 export const runtime = "nodejs"
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
     }
 
     // Enterprise ID via the shared generator: CUS-{businessCode}-NNNNNN
-    const customerCode = await generateCustomerCode(laundryBusiness.businessCode)
+    const customerCode = await generateCustomerCode(laundryBusiness.platformBusinessId!)
 
     // Full profile extras live in metadata (JSON); tags in the tags JSON.
     const metadata = mergeMeta("{}", {
