@@ -692,7 +692,11 @@ describe('the correction only touches prefixes this convention could not have ma
     expect(db.tenantIdentity[0].prefix).toBe('V5')
   })
 
-  it.each(['V5', 'L8', 'V5A1'])('leaves %s alone', async (good) => {
+  // 'L5' is the rename case: a different initial, but the tenant's OWN business
+  // number, so it stays. A prefix carrying a DIFFERENT number (V2 on a
+  // BUS-…-0008 tenant) is not this tenant's prefix and is corrected — see
+  // platform-business-code.test.ts.
+  it.each(['V5', 'L5', 'V5A1'])('leaves %s alone', async (good) => {
     db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: good })
     const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
     expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)

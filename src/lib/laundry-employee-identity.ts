@@ -14,7 +14,7 @@
  * the Business Code lives.
  */
 import { prisma } from "@/lib/prisma"
-import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix } from "@/lib/tenant-identity"
+import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix, prefixBusinessNumber, businessNumber } from "@/lib/tenant-identity"
 import { isBusinessOwnerRole } from "@/lib/laundry-rbac"
 import { ensureBusinessCode, isCanonicalBusinessCode } from "@/lib/business-code"
 import { getTenantIdentityPrefix, healEmployeeSequence, nextEmployeeSequence } from "@/lib/tenant-identity-server"
@@ -109,25 +109,48 @@ export function isCurrentFormat(code: string | null | undefined, prefix: string,
  * read or written.
  */
 /**
- * Move a tenant off an interim prefix, if it is on one. Cheap (one indexed
- * read) and a no-op for every tenant that never saw the interim format.
+ * Move a tenant off a prefix that is not the one its Business Code says it
+ * should have. A no-op for every tenant already on the right one.
+ *
+ * THREE things disqualify a persisted prefix:
+ *
+ *   1. it is not shaped like one this convention could issue (R1XDJE, 8T5);
+ *   2. it is `[A-Z]0` — which passes the shape test but means "no business
+ *      number was found", an absence wearing the shape of an identity;
+ *   3. it encodes a DIFFERENT business number than the Business Code does.
+ *
+ * (3) is what shape-checking alone could never catch, and it is the live
+ * symptom of the LND defect: VASTRASUDHA sat on V2, a perfectly conventional
+ * prefix — derived from the laundry product code LND-202608-0002 — while its
+ * Business Code was BUS-202608-0008 and its number was 8.
+ *
+ * Only the NUMBER is compared, never the initial. A rename changes the initial,
+ * and §13 is explicit that a rename must not move an established namespace.
+ * The clash form keeps its base number (V8A1 → 8), so a tenant that legitimately
+ * took a clash suffix is never dragged off it.
  */
 export async function correctInterimTenantPrefix(platformBusinessId: string, laundryBusinessId: string): Promise<boolean> {
   const identity = await prisma.tenantIdentity.findUnique({
     where: { businessId: platformBusinessId },
     select: { id: true, prefix: true },
   }).catch(() => null)
-  // "V0" passes the shape test but means "no business number was found". Once
-  // the code is repaired it must be allowed to move to the real number.
-  const placeholder = /^[A-Z]0$/.test(identity?.prefix ?? "")
-  if (!identity || (isConventionalPrefix(identity.prefix) && !placeholder)) return false
-  // Captured before the swap below, so this never depends on whether the row
-  // handed back is a snapshot or a live reference.
-  const old = identity.prefix
+  if (!identity) return false
 
+  // Resolved before the decision, because the decision needs the canonical
+  // business number — and this is what repairs the platform code if it is
+  // missing, so the number being compared against is a real one.
   const src = await businessIdentitySource(platformBusinessId, laundryBusinessId)
   const code = normaliseBusinessCode(src.code)
   const name = src.name
+
+  const placeholder = /^[A-Z]0$/.test(identity.prefix)
+  const expected = businessNumber(code)
+  const wrongNumber = expected !== null && prefixBusinessNumber(identity.prefix) !== expected
+  if (isConventionalPrefix(identity.prefix) && !placeholder && !wrongNumber) return false
+
+  // Captured before the swap below, so this never depends on whether the row
+  // handed back is a snapshot or a live reference.
+  const old = identity.prefix
 
   let next: string | null = null
   for (const candidate of tenantPrefixCandidates(code, name)) {

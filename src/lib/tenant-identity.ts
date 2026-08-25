@@ -148,6 +148,25 @@ export function isConventionalPrefix(prefix: string): boolean {
   return /^[A-Z][0-9]+(A[0-9]+)?$/.test(prefix)
 }
 
+/**
+ * The business number a prefix ENCODES: V5 → 5, L12 → 12, V5A1 → 5.
+ *
+ * This is what makes a wrong prefix detectable. A prefix can be perfectly
+ * well-shaped and still belong to a different code: VASTRASUDHA held V2,
+ * derived from the laundry product code LND-202608-0002, while its Business
+ * Code said BUS-202608-0008 and its number was 8. Shape alone cannot see that;
+ * comparing the encoded number against the Business Code's can.
+ *
+ * Returns null for anything not issued by this convention — those are handled
+ * by isConventionalPrefix() instead.
+ */
+export function prefixBusinessNumber(prefix: string | null | undefined): number | null {
+  const m = /^[A-Z]([0-9]+)(?:A[0-9]+)?$/.exec(String(prefix ?? "").trim().toUpperCase())
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return Number.isFinite(n) ? n : null
+}
+
 /** A prefix is machine-issued; this is what one is allowed to look like. */
 export function isValidTenantPrefix(prefix: string): boolean {
   // A letter, then at least one digit — V5, L12, and the V5A1 clash form.

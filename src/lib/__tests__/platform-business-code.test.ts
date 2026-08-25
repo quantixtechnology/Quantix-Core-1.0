@@ -368,6 +368,49 @@ describe('§4 — employee identity derives from the Business Code', () => {
     expect(await resolveTenantByEmployeeId('ZZ9EMP001')).toBeNull()
   })
 
+  it('a prefix carrying the WRONG business number is corrected — the live VASTRASUDHA case', async () => {
+    // Exactly production before the fix: the Business Code says 8, but the
+    // persisted prefix says 2 because it was derived from LND-202608-0002.
+    db.business.find((b) => b.id === VASTRASUDHA)!.businessCode = 'BUS-202608-0008'
+    db.tenantIdentity.push({ id: 'ti_vs', businessId: VASTRASUDHA, businessCode: 'LND-202608-0002', prefix: 'V2' })
+    db.businessUser.push(
+      { id: 'bu_1', userId: 'u_1', businessId: VASTRASUDHA, employeeCode: 'V2EMP001', role: 'STORE_EXECUTIVE', createdAt: new Date(1) },
+      { id: 'bu_2', userId: 'u_2', businessId: VASTRASUDHA, employeeCode: 'V2EMP002', role: 'STORE_EXECUTIVE', createdAt: new Date(2) },
+    )
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_vs', employeeCode: 'V2DL001', createdAt: new Date(1) })
+
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(VASTRASUDHA, 'lb_vs')).toBe(true)
+
+    expect(db.tenantIdentity[0].prefix).toBe('V8')
+    // Every sequence NUMBER is carried across; only the prefix moves.
+    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V8EMP001')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V8EMP002')
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V8DL001')
+  })
+
+  it('a prefix carrying the RIGHT number is never touched', async () => {
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    db.tenantIdentity.push({ id: 'ti_dc', businessId: DRYCLEANERS, businessCode: 'BUS-202606-0012', prefix: 'L12' })
+    expect(await correctInterimTenantPrefix(DRYCLEANERS, 'lb_dc')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe('L12')
+  })
+
+  it('a RENAME never moves a namespace — only the number is compared', async () => {
+    db.tenantIdentity.push({ id: 'ti_vs', businessId: VASTRASUDHA, businessCode: 'BUS-202606-0005', prefix: 'V5' })
+    db.business.find((b) => b.id === VASTRASUDHA)!.name = 'Zenith Laundry'   // V → Z
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(VASTRASUDHA, 'lb_vs')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe('V5')
+  })
+
+  it('a clash suffix keeps its base number and is left alone', async () => {
+    db.tenantIdentity.push({ id: 'ti_vs', businessId: VASTRASUDHA, businessCode: 'BUS-202606-0005', prefix: 'V5A1' })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(VASTRASUDHA, 'lb_vs')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe('V5A1')
+  })
+
   it('a prefix already issued survives a Business Code repair — §3', async () => {
     const { laundryTenantPrefix } = await import('@/lib/laundry-employee-identity')
     const before = await laundryTenantPrefix(VASTRASUDHA, 'lb_vs')
