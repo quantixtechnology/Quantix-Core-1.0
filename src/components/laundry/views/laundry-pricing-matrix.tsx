@@ -73,9 +73,38 @@ export function LaundryPricingMatrix() {
   // Built on the server: the community build of `xlsx` silently drops cell
   // styling, freeze panes and data validation, so a template written here could
   // not carry the YES/NO dropdown or keep its headers legible.
-  const downloadTemplate = () => {
-    if (!currentBusinessId) return
-    window.location.href = `/api/laundry/pricing-matrix/template?businessId=${encodeURIComponent(currentBusinessId)}`
+  //
+  // Fetched, never navigated to. Laundry OS authenticates with a Bearer token
+  // that LaundryAuthBridge attaches by patching window.fetch — a
+  // `window.location.href` is a navigation, not a fetch, so it carries no token
+  // and the endpoint answers 401 "Not authenticated". The bytes come back
+  // through the same authenticated path as every other call and are handed to
+  // the browser as a blob.
+  const [templating, setTemplating] = useState(false)
+  const downloadTemplate = async () => {
+    if (!currentBusinessId || templating) return
+    setTemplating(true)
+    try {
+      const res = await fetch(`/api/laundry/pricing-matrix/template?businessId=${encodeURIComponent(currentBusinessId)}`)
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Could not build the template (${res.status})`)
+      }
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "pricing-template.xlsx"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Revoked on the next tick: revoking synchronously can cancel the
+      // download before the browser has read the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not download the template")
+    } finally {
+      setTemplating(false)
+    }
   }
 
   const exportMatrix = () => {
@@ -107,7 +136,7 @@ export function LaundryPricingMatrix() {
           <p className="text-sm text-slate-500">Pricing only, keyed by Garment Code. Every active service is a column; set NA / Per Piece / Per KG per cell. Names can change without breaking pricing.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" className="gap-1" onClick={downloadTemplate}><FileSpreadsheet className="h-4 w-4" /> Template</Button>
+          <Button variant="outline" className="gap-1" onClick={downloadTemplate} disabled={templating}>{templating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />} Template</Button>
           <Button variant="outline" className="gap-1" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4" /> Import Pricing</Button>
           <Button variant="outline" className="gap-1" onClick={exportMatrix}><Download className="h-4 w-4" /> Export</Button>
           <Button variant="outline" className="gap-1 text-rose-600 border-rose-200 hover:bg-rose-50" onClick={() => setBulkOpen(true)}><Trash2 className="h-4 w-4" /> Bulk Delete</Button>

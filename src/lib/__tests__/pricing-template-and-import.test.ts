@@ -235,6 +235,33 @@ describe('the export carries the same contract', () => {
 
   it('the template comes from the server, where the formatting survives', () => {
     expect(UI).toContain('/api/laundry/pricing-matrix/template?businessId=')
-    expect(UI).not.toContain('pricing-template.xlsx"')   // no client-built template
+    expect(UI).not.toContain('aoa_to_sheet([headers, sample])')   // no client-built template
+  })
+
+  // The download 401'd as "Not authenticated" because it was a navigation.
+  // Laundry OS authenticates with a Bearer token that LaundryAuthBridge
+  // attaches by patching window.fetch — a navigation is not a fetch, so it
+  // carries no token. Anything that pulls bytes from /api/laundry must go
+  // through fetch.
+  it('is FETCHED, never navigated to, so the Bearer token is attached', () => {
+    const fn = UI.slice(UI.indexOf('const downloadTemplate'), UI.indexOf('const exportMatrix'))
+    expect(fn).toContain('await fetch(`/api/laundry/pricing-matrix/template')
+    expect(fn).not.toContain('window.location')
+    expect(fn).not.toContain('window.open')
+    // and the bytes are handed over as a blob
+    expect(fn).toContain('URL.createObjectURL(await res.blob())')
+    expect(fn).toContain('a.download = "pricing-template.xlsx"')
+  })
+
+  it('surfaces a failure instead of downloading an error page', () => {
+    const fn = UI.slice(UI.indexOf('const downloadTemplate'), UI.indexOf('const exportMatrix'))
+    expect(fn).toContain('if (!res.ok)')
+    expect(fn).toContain('toast.error')
+  })
+
+  it('the patched fetch covers this URL', () => {
+    // LaundryAuthBridge only augments URLs containing /api/laundry.
+    expect(UI).toContain('/api/laundry/pricing-matrix/template')
+    expect(read('src/components/laundry/laundry-auth-bridge.tsx')).toContain('url.includes("/api/laundry")')
   })
 })
