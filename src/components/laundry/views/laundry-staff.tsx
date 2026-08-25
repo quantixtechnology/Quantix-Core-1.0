@@ -328,7 +328,9 @@ function ResetPasswordDialog({ emp, businessId, onClose, onDone }: { emp: Emp; b
   const { toast } = useToast()
   const [mode, setMode] = useState<"random" | "manual">("random")
   const [pw, setPw] = useState("")
-  const [force, setForce] = useState(true)
+  // Off by default: a password the admin sets should simply work. Forcing a
+  // change is opt-in, not the norm.
+  const [force, setForce] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {

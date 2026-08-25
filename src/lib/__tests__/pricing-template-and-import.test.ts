@@ -265,8 +265,9 @@ describe('the export carries the same contract', () => {
   })
 
   it('the patched fetch covers this URL', () => {
-    // LaundryAuthBridge only augments URLs containing /api/laundry.
+    // LaundryAuthBridge augments every same-origin /api/ path — it used to
+    // match only /api/laundry, which left ~40 /api/core calls unauthenticated.
     expect(UI).toContain('/api/laundry/pricing-matrix/template')
-    expect(read('src/components/laundry/laundry-auth-bridge.tsx')).toContain('url.includes("/api/laundry")')
+    expect(read('src/components/laundry/laundry-auth-bridge.tsx')).toContain('path.startsWith("/api/")')
   })
 })
