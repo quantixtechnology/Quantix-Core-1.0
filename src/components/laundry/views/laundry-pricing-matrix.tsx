@@ -132,7 +132,14 @@ export function LaundryPricingMatrix() {
               <tr key={g.id} className={`hover:bg-slate-50/60 ${selected.has(g.id) ? "bg-blue-50/40" : ""}`}>
                 <td className="px-3 py-2.5 sticky left-0 bg-white" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(g.id)} onChange={() => toggleSel(g.id)} /></td>
                 <td className="px-3 py-2.5 font-mono text-xs text-slate-500 cursor-pointer" onClick={() => setEdit(g)}>{g.code}</td>
-                <td className="px-3 py-2.5 font-medium text-slate-800 cursor-pointer" onClick={() => setEdit(g)}>{g.name}</td>
+                <td className="px-3 py-2.5 font-medium text-slate-800 cursor-pointer" onClick={() => setEdit(g)}>
+                  <div>{g.name}</div>
+                  {/* The garment half of the AND, read back from the server on
+                      every load — never from local state. */}
+                  <div className={`text-[9px] font-medium ${g.subscriptionIncluded ? "text-emerald-600" : "text-slate-400"}`}>
+                    Subscription: {g.subscriptionIncluded ? "Included" : "Not included"}
+                  </div>
+                </td>
                 <td className="px-3 py-2.5 text-slate-500 cursor-pointer" onClick={() => setEdit(g)}>{g.categoryName || "—"}</td>
                 {services.map((s) => { const c = g.cells[s.id]; const na = !c || c.mode === "NOT_AVAILABLE"; return <td key={s.id} className={`px-3 py-2.5 text-right tabular-nums cursor-pointer ${na ? "text-slate-300" : "font-medium text-slate-700"}`} onClick={() => setEdit(g)}>{cellLabel(c)}</td> })}
               </tr>
@@ -154,6 +161,7 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
   const [code, setCode] = useState(row?.code || "")
   const [categoryId, setCategoryId] = useState(row?.categoryId || "")
   const [avgWeight, setAvgWeight] = useState(row?.averageWeight != null ? String(row.averageWeight) : "")
+  const [subIncluded, setSubIncluded] = useState(!!row?.subscriptionIncluded)
   const [cells, setCells] = useState<Record<string, { mode: Mode; price: string }>>(() => {
     const m: Record<string, { mode: Mode; price: string }> = {}
     for (const s of services) { const c = row?.cells[s.id]; m[s.id] = { mode: (c?.mode as Mode) || "NOT_AVAILABLE", price: c && c.mode !== "NOT_AVAILABLE" ? String(c.price) : "" } }
@@ -169,12 +177,12 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
     try {
       let garmentId = row?.id
       if (!garmentId) {
-        const j = await fetch("/api/laundry/garments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: name.trim(), code: code.trim() || undefined, categoryId: categoryId || null, averageWeight: avgWeight || null }) }).then((r) => r.json())
+        const j = await fetch("/api/laundry/garments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: name.trim(), code: code.trim() || undefined, categoryId: categoryId || null, averageWeight: avgWeight || null, subscriptionIncluded: subIncluded }) }).then((r) => r.json())
         if (!j.success) throw new Error(j.error || "Could not create garment")
         garmentId = j.data.id
       }
       const cellPayload = services.map((s) => ({ serviceId: s.id, mode: cells[s.id].mode, price: cells[s.id].mode === "NOT_AVAILABLE" ? 0 : Number(cells[s.id].price) || 0 }))
-      const res = await fetch(`/api/laundry/garments/${garmentId}/pricing`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, categoryId: categoryId || null, averageWeight: avgWeight || null, cells: cellPayload }) })
+      const res = await fetch(`/api/laundry/garments/${garmentId}/pricing`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, categoryId: categoryId || null, averageWeight: avgWeight || null, subscriptionIncluded: subIncluded, cells: cellPayload }) })
       const jj = await res.json()
       if (!res.ok || jj.success === false) throw new Error(jj.error || "Could not save pricing")
       toast.success("Saved"); onSaved()
@@ -197,10 +205,27 @@ function GarmentEditor({ row, services, categories, businessId, onClose, onSaved
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm bg-white"><option value="">—</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             </div>
             <div className="space-y-1.5"><label className="text-sm text-slate-600">Average Weight (kg)</label><Input type="number" min={0} step="0.05" value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} className="h-10" placeholder="0.30" /></div>
-            {/* No control here on purpose: a garment-wide switch could only
-                say "covered everywhere" or "nowhere", which is what made
-                turning Express off turn every other service off too. */}
-            <p className="col-span-2 text-[12px] text-slate-400">Subscription eligibility is configured per service in Services → Edit Service.</p>
+            {/* Coverage is an AND: this garment must be included AND the
+                service must be eligible. The service half lives in Services →
+                Edit Service, which is what lets Wash & Fold cover a shirt while
+                Express does not. This half was previously not editable at all,
+                so a garment left at the default could never be included in a
+                subscription by any means other than a bulk import. Both states
+                are offered, so the choice is always reversible. */}
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-sm text-slate-600">Subscription</label>
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-4">
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <input type="radio" name="sub" checked={subIncluded} onChange={() => setSubIncluded(true)} /> Include in Subscription
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <input type="radio" name="sub" checked={!subIncluded} onChange={() => setSubIncluded(false)} /> Not Included in Subscription
+                </label>
+              </div>
+              <p className="text-[12px] text-slate-400">
+                A garment is covered only where the service is also eligible for subscription — set that per service in Services → Edit Service.
+              </p>
+            </div>
           </div>
           {row && <p className="text-[12px] text-slate-400 -mt-2">Code is permanent — pricing and history reference it, so the name can change freely.</p>}
           <div className="space-y-2">

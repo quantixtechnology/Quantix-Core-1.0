@@ -5,29 +5,41 @@ import { join } from 'path'
 const MATRIX = readFileSync(join(process.cwd(), 'src/components/laundry/views/laundry-pricing-matrix.tsx'), 'utf8')
 const API = readFileSync(join(process.cwd(), 'src/app/api/laundry/pricing-matrix/route.ts'), 'utf8')
 
-// One garment-wide switch could only say "included everywhere" or "nowhere", so
-// turning it off for Express Wash & Fold turned it off for Wash & Fold too.
-describe('subscription eligibility is per SERVICE, not per garment', () => {
-  it('the garment editor no longer writes a garment-wide flag', () => {
-    expect(MATRIX).not.toContain('subscriptionIncluded: sub')
-    expect(MATRIX).not.toContain('const [sub, setSub]')
-  })
-
-  it('the garment modal carries only a note, never a control', () => {
-    expect(MATRIX).toContain('configured per service in Services')
-    expect(MATRIX).not.toContain('onCheckedChange={setSub}')
-  })
-
-  it('each service column states its own status', () => {
+// Coverage is an AND: LaundryService.subscriptionEligible AND
+// LaundryGarment.subscriptionIncluded.
+//
+// A garment-wide switch on its own could only say "included everywhere" or
+// "nowhere", so turning it off for Express Wash & Fold turned it off for Wash &
+// Fold too. That is why the SERVICE flag exists and why it is what varies per
+// service. It is not a reason for the garment half to be uneditable — with the
+// AND in place, per-service granularity survives either way, and leaving the
+// garment half unreachable meant a garment at the schema default (false) could
+// never be included again except by bulk import.
+describe('subscription eligibility is an AND over service and garment', () => {
+  it('the service flag is what varies per service — the granularity is preserved', () => {
     expect(MATRIX).toContain('Subscription: {s.subscriptionEligible ? "Included" : "Not included"}')
   })
 
-  it('the garment-level Subscription column is gone from the table and export', () => {
-    expect(MATRIX).not.toContain('g.subscriptionIncluded ? "Yes" : "No"')
+  it('the garment half is editable in BOTH directions', () => {
+    expect(MATRIX).toContain('Include in Subscription')
+    expect(MATRIX).toContain('Not Included in Subscription')
+    expect(MATRIX).toContain('subscriptionIncluded: subIncluded')
+  })
+
+  it('the engine requires both, so neither flag alone grants coverage', () => {
+    const SERVER = readFileSync(join(process.cwd(), 'src/lib/laundry-subscription-server.ts'), 'utf8')
+    expect(SERVER).toContain('subscriptionEligible: true')
+    expect(SERVER).toContain('subscriptionIncluded: true')
+    expect(SERVER).toContain('BOTH dimensions must agree')
+  })
+
+  it('the garment state is shown on its own row, not as a separate column', () => {
+    // Read back from the server on every load, never from local state.
+    expect(MATRIX).toContain('Subscription: {g.subscriptionIncluded ? "Included" : "Not included"}')
     expect(MATRIX).not.toMatch(/"Category", "Subscription"/)
   })
 
-  it('column count matches the removed column', () => {
+  it('the table still has four fixed columns', () => {
     expect(MATRIX).toContain('colSpan={4 + services.length}')
   })
 
