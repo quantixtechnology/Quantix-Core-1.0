@@ -7,6 +7,10 @@ import { prisma } from "@/lib/prisma"
 // ────────────────────────────────────────────────────────────────────────────
 
 const CODES = {
+  // Laundry's DOCUMENT-SERIES namespace — INV-LND-…, RCT-LND-…, PAY-LND-…,
+  // SUB-LND-…. It marks which product issued the document and carries no
+  // business number, so it is not a business identity and never was one.
+  // The business identity is the canonical Business Code, passed in.
   BUSINESS_PREFIX: "LND",
   STORE_PREFIX: "STR",
   PROCESSING_CENTER_PREFIX: "PC",
@@ -51,13 +55,21 @@ async function getNextSequential(
   return parseInt(parts[parts.length - 1], 10) + 1
 }
 
-// ─── Business Code: LND-YYYYMM-NNNN ─────────────────────────────────────────
-// Example: LND-202606-0001
-export async function generateBusinessCode(): Promise<string> {
-  const prefix = `${CODES.BUSINESS_PREFIX}-${getMonthPrefix()}-`
-  const next = await getNextSequential("laundryBusiness", "businessCode", prefix)
-  return `${prefix}${padNumber(next)}`
-}
+// ─── Business Code — REMOVED. There is no laundry business code. ────────────
+//
+// This module used to mint `LND-YYYYMM-NNNN` off a laundry-only sequence, and
+// that value was written into the PLATFORM Business row as well as the laundry
+// one — giving a tenant a second, competing business identity that read
+// LND-202608-0002 where the platform had already issued BUS-202606-0005.
+//
+// The canonical Business Code has exactly one generator, for every product:
+// allocateBusinessCode() in src/lib/business-code.ts. Laundry consumes it; it
+// does not mint one. Every generator below takes a `businessCode` argument and
+// is agnostic about which product the tenant runs — that is the whole point.
+//
+// Existing tenants keep the LND-… value already stored on LaundryBusiness: it
+// is legacy/internal, their store, customer and order series embed it, and
+// renumbering them would strand identifiers that are still in daily use.
 
 // ─── Pickup Bag Code: PB-YYYYMM-NNNNNN ──────────────────────────────────────
 // One physical pickup bag (one per booked service). QR at pickup.
@@ -76,16 +88,16 @@ export async function generateProcessingPackageCode(): Promise<string> {
   return `${prefix}${padNumber(next, 6)}`
 }
 
-// ─── Store Code: STR-LND-YYYYMM-NNNN-NNN ────────────────────────────────────
-// Example: STR-LND-202606-0001-001
+// ─── Store Code: STR-{businessCode}-NNN ─────────────────────────────────────
+// Example: STR-BUS-202606-0005-001
 export async function generateStoreCode(businessCode: string): Promise<string> {
   const prefix = `${CODES.STORE_PREFIX}-${businessCode}-`
   const next = await getNextSequential("laundryStore", "storeCode", prefix)
   return `${prefix}${padNumber(next, 3)}`
 }
 
-// ─── Processing Center Code: PC-LND-YYYYMM-NNNN-NNN ─────────────────────────
-// Example: PC-LND-202606-0001-001
+// ─── Processing Center Code: PC-{businessCode}-NNN ──────────────────────────
+// Example: PC-BUS-202606-0005-001
 export async function generateProcessingCenterCode(businessCode: string): Promise<string> {
   const prefix = `${CODES.PROCESSING_CENTER_PREFIX}-${businessCode}-`
   const next = await getNextSequential("laundryProcessingCenter", "centerCode", prefix)
@@ -93,7 +105,7 @@ export async function generateProcessingCenterCode(businessCode: string): Promis
 }
 
 // ─── Order Number: ORD-STR-{storeCode}-NNNNNN ──────────────────────────────
-// Example: ORD-STR-LND-202606-0001-001-000001
+// Example: ORD-STR-BUS-202606-0005-001-000001
 // Scoped per store — sequential within the store.
 export async function generateOrderNumber(storeCode: string): Promise<string> {
   const prefix = `${CODES.ORDER_PREFIX}-${storeCode}-`
@@ -111,7 +123,7 @@ export async function generateOrderNumber(storeCode: string): Promise<string> {
 }
 
 // ─── Item / Garment Tag Number: ITM-{orderNumber}-NNNN ─────────────────────
-// Example: ITM-ORD-STR-LND-202606-0001-001-000001-0001
+// Example: ITM-ORD-STR-BUS-202606-0005-001-000001-0001
 // Scoped per order — sequential within the order.
 export async function generateItemNumber(orderNumber: string): Promise<string> {
   const prefix = `${CODES.ITEM_PREFIX}-${orderNumber}-`
@@ -120,7 +132,7 @@ export async function generateItemNumber(orderNumber: string): Promise<string> {
 }
 
 // ─── Customer Code: CUS-{businessCode}-NNNNNN ──────────────────────────────
-// Example: CUS-LND-202607-0001-000001  (sequential within the business)
+// Example: CUS-BUS-202606-0005-000001  (sequential within the business)
 export async function generateCustomerCode(businessCode: string): Promise<string> {
   const prefix = `${CODES.CUSTOMER_PREFIX}-${businessCode}-`
   const next = await getNextSequential("customer", "customerCode", prefix)
@@ -128,7 +140,7 @@ export async function generateCustomerCode(businessCode: string): Promise<string
 }
 
 // ─── Packet Number: PKT-{orderNumber} ──────────────────────────────────────
-// Example: PKT-ORD-STR-LND-202607-0001-001-000001  (QR opens the order)
+// Example: PKT-ORD-STR-BUS-202606-0005-001-000001  (QR opens the order)
 export function generatePacketNumber(orderNumber: string): string {
   return `${CODES.PACKET_PREFIX}-${orderNumber}`
 }
@@ -146,8 +158,8 @@ export const generateMembershipNumber = () => monthScoped("SUB", "customerSubscr
 export const generateReceiptNumber = () => monthScoped(CODES.RECEIPT_PREFIX, "laundryPayment", "receiptNumber")
 export const generatePaymentNumber = () => monthScoped(CODES.PAYMENT_PREFIX, "laundryPayment", "paymentNumber")
 
-// ─── Transport Batch Number: TB-LND-YYYYMM-NNNN-NNNNNN ────────────────────
-// Example: TB-LND-202606-0001-000001
+// ─── Transport Batch Number: TB-{businessCode}-NNNNNN ──────────────────────
+// Example: TB-BUS-202606-0005-000001
 // Scoped per business.
 export async function generateTransportBatchNumber(businessCode: string): Promise<string> {
   const prefix = `${CODES.TRANSPORT_BATCH_PREFIX}-${businessCode}-`
@@ -225,9 +237,16 @@ export async function backfillGarScanCodes(chunkSize = 50): Promise<number> {
 }
 
 // ─── Examples ───────────────────────────────────────────────────────────────
-// Business Code:        LND-202606-0001
-// Store Code:           STR-LND-202606-0001-001
-// Processing Center:    PC-LND-202606-0001-001
-// Order Number:         ORD-STR-LND-202606-0001-001-000001
-// Item / Garment Tag:   ITM-ORD-STR-LND-202606-0001-001-000001-0001
-// Transport Batch:      TB-LND-202606-0001-000001
+// Every one of these embeds the CANONICAL Business Code, which the platform
+// issues and laundry only consumes.
+//
+// Business Code:        BUS-202606-0005   ← src/lib/business-code.ts
+// Store Code:           STR-BUS-202606-0005-001
+// Processing Center:    PC-BUS-202606-0005-001
+// Order Number:         ORD-STR-BUS-202606-0005-001-000001
+// Item / Garment Tag:   ITM-ORD-STR-BUS-202606-0005-001-000001-0001
+// Customer Code:        CUS-BUS-202606-0005-000001
+// Transport Batch:      TB-BUS-202606-0005-000001
+//
+// Tenants provisioned before this correction embed the retired LND-… value and
+// KEEP it — those identifiers are live and must stay resolvable.

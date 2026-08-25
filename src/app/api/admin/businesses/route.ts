@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { getReservedHostPrefixes } from '@/lib/product-hosts';
+import { allocateBusinessCode, retryOnBusinessCodeClash } from '@/lib/business-code';
 
 /**
  * POST /api/admin/businesses
@@ -153,13 +154,18 @@ export const POST = withMiddleware({
       );
     }
 
-    // Create business with all provided information
-    const business = await db.business.create({
+    // Create business with all provided information.
+    //
+    // The Business Code comes from the platform allocator, like every other
+    // creation path. This route used to mint `BIZ-{SLUG}-{Date.now()}`, a third
+    // competing identity that no downstream generator could parse — and which
+    // made core store codes fail their own STR-BUS-… format check outright.
+    const business = await retryOnBusinessCodeClash(async () => db.business.create({
       data: {
         name: businessName.trim(),
         slug: slug.toLowerCase().trim(),
         businessType,
-        businessCode: `BIZ-${slug.toUpperCase()}-${Date.now()}`,
+        businessCode: await allocateBusinessCode(db as never),
         address: address1.trim(),
         city: city.trim(),
         state: state.trim(),
@@ -170,7 +176,7 @@ export const POST = withMiddleware({
         status: 'ONBOARDING',
         isOnline: false,
       },
-    });
+    }));
 
     return NextResponse.json({
       success: true,

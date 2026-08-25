@@ -102,8 +102,7 @@ export async function POST(request: Request) {
     }
 
     // Enterprise ID via the shared generator: CUS-{businessCode}-NNNNNN
-    const lb = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusiness.id }, select: { businessCode: true } })
-    const customerCode = await generateCustomerCode(lb?.businessCode || `LND-${laundryBusiness.id}`)
+    const customerCode = await generateCustomerCode(laundryBusiness.businessCode)
 
     // Full profile extras live in metadata (JSON); tags in the tags JSON.
     const metadata = mergeMeta("{}", {

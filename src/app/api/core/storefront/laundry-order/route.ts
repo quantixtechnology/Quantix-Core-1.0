@@ -69,13 +69,12 @@ export async function POST(request: Request) {
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const lbId = biz.id
     const platformId = biz.platformBusinessId || businessId
-    const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
 
     // ── Canonical customer — resolved from auth userid (server-side) when
     //    authenticated, or from client-provided values as a guest fallback.
     //    Never trust client-provided name/phone for authenticated users.
     const custResolved = await resolveOrCreateLaundryCustomer({
-      platformBusinessId: platformId, businessCodeForCode: lb?.businessCode || `LND-${lbId}`,
+      platformBusinessId: platformId, businessCodeForCode: biz.businessCode,
       userId: resolvedUser?.id || undefined,
       name: resolvedUser?.name || customer?.name || undefined,
       phone: resolvedUser?.phone || customer?.phone || undefined,
@@ -180,7 +179,7 @@ export async function POST(request: Request) {
       ? (await resolveOrderBilling(lbId, { storeId: store.id, customerType: sub ? null : customerType, pickup: isPickup, delivery: isPickup }, items!)).lines
       : []
 
-    const orderNumber = await generateOrderNumber(store.storeCode || lb?.businessCode || `LND-${lbId}`)
+    const orderNumber = await generateOrderNumber(store.storeCode || biz.businessCode)
     interface Line { serviceId: string | null; serviceName: string; garmentId: string | null; garmentName: string; categoryId: string | null; pricingRuleId: string | null; pricingType: string; quantity: number; unitPrice: number; lineAmount: number; gstPercent: number; gstAmount: number; total: number }
     const orderLines: Line[] = []
 

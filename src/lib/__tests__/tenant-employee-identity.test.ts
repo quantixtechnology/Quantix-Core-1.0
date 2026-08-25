@@ -647,10 +647,14 @@ describe('a tenant whose platform Business carries no Business Code', () => {
     db.business.find((b) => b.id === BIZ_A)!.businessCode = null
   })
 
-  it('reads the number from the laundry Business Code instead of guessing', async () => {
+  it('repairs the PLATFORM code and numbers from that — never from LND-…', async () => {
     const { laundryTenantPrefix } = await import('@/lib/laundry-employee-identity')
-    // LND-202606-0003 → business number 3, name VASTRASUDHA → V3
-    expect(await laundryTenantPrefix(BIZ_A, 'lb_a')).toBe('V3')
+    // The laundry row holds LND-202606-0003. That is a product code, not a
+    // business identity, so it is NOT read: the platform code is repaired to
+    // its creation ordinal (BIZ_A is the first business) and the prefix follows
+    // from that. Reading the laundry sequence would have said V3.
+    expect(await laundryTenantPrefix(BIZ_A, 'lb_a')).toBe('V1')
+    expect(db.business.find((b) => b.id === BIZ_A)!.businessCode).toBe('BUS-202606-0001')
   })
 
   it('never produces a hashed prefix again', async () => {
@@ -671,10 +675,10 @@ describe('a tenant whose platform Business carries no Business Code', () => {
     const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
     expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
 
-    expect(db.tenantIdentity[0].prefix).toBe('V3')
-    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V3EMP001')
-    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V3EMP002')
-    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V3DL001')
+    expect(db.tenantIdentity[0].prefix).toBe('V1')
+    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V1EMP001')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V1EMP002')
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V1DL001')
   })
 })
 

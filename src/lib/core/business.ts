@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { generateStoreCode } from '@/lib/core/store';
 import { triggerMobileProvisioning } from '@/lib/mobile-provision';
+import { allocateBusinessCode, retryOnBusinessCodeClash } from '@/lib/business-code';
 import type {
   BusinessListFilters,
   BusinessStats,
@@ -232,11 +233,13 @@ export async function createBusiness(data: CreateBusinessRequest) {
   const nextBillingDate = renewalDateObj || periodEnd;
 
   // 5. Create business + subscription + modules + onboarding steps + main store in a transaction
-  const result = await db.$transaction(async (tx) => {
-    // Generate human-readable IDs inside the transaction for sequential assignment
-    const bizCount = await tx.business.count();
-    const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const businessCode = `BUS-${yyyymm}-${String(bizCount + 1).padStart(4, '0')}`;
+  //
+  // The Business Code comes from the platform allocator — the ONE generator, for
+  // every product. It is allocated inside the transaction so the number reflects
+  // the tenant count at insert time, and the whole transaction is retried if two
+  // creates race for the same number (the probe re-runs and lands on the next).
+  const result = await retryOnBusinessCodeClash(() => db.$transaction(async (tx) => {
+    const businessCode = await allocateBusinessCode(tx as never, now);
     // Primary store of every business → STR-{businessCode}-001
     const storeCodeVal = `STR-${businessCode}-001`;
 
@@ -603,7 +606,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         loginId: storeEmail,
       },
     };
-  });
+  }));
 
   // Return the created business with relations plus owner credentials
   const business = await getBusiness(result.business.id);

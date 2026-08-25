@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { prisma } from "@/lib/prisma"
-import { generateBusinessCode } from "@/lib/laundry-codes"
+import { ensureBusinessCode } from "@/lib/business-code"
 import { ensureScalingLimitForNewBusiness } from "@/lib/laundry-scaling-limits"
 
 // ── Debug helper (env-var gated) ─────────────────────────────────────────────
@@ -74,7 +74,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
   if (business.name) {
     const orphan = await prisma.laundryBusiness.findFirst({
       where: { businessName: business.name, platformBusinessId: null },
-      select: { id: true },
+      select: { id: true, businessCode: true },
     })
     if (orphan) {
       if (DEBUG) console.log("[resolveLaundryBusiness] orphan found:", orphan.id, "— backfilling platformBusinessId →", business.id)
@@ -83,7 +83,12 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
         data: { platformBusinessId: business.id },
       })
       if (DEBUG) console.log("[resolveLaundryBusiness] orphan repaired → returning id:", orphan.id)
-      return { id: orphan.id, platformBusinessId: business.id, businessCode: business.businessCode || `LND-${orphan.id}` }
+      // The orphan's OWN code — the same value every later request gets, once
+      // the link above makes step 2 match. This used to return the platform
+      // code (or fabricate `LND-<cuid>`), so the request that performed the
+      // repair embedded a different business identity in whatever it created
+      // than every request after it.
+      return { id: orphan.id, platformBusinessId: business.id, businessCode: orphan.businessCode }
     }
     if (DEBUG) console.log("[resolveLaundryBusiness] no orphan matches name:", business.name)
   }
@@ -91,9 +96,21 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
   // ── Step 4 — Create new LaundryBusiness ─────────────────────────────────────
   if (DEBUG) console.log("[resolveLaundryBusiness] creating new LaundryBusiness for Business", business.id)
   try {
+    // A NEW workspace embeds the CANONICAL Business Code — repaired first if the
+    // platform row is missing one. It used to mint `LND-YYYYMM-NNNN` from a
+    // laundry-only sequence, giving the tenant a second business identity that
+    // every store, customer and order code then carried.
+    //
+    // Existing workspaces are deliberately untouched: their code is returned
+    // as-is above, so their store/customer/order series stay unbroken.
+    const canonical = await ensureBusinessCode(business.id)
+    if (!canonical) {
+      console.error("[resolveLaundryBusiness] no Business Code for", business.id, "— refusing to invent one")
+      return null
+    }
     const created = await prisma.laundryBusiness.create({
       data: {
-        businessCode: await generateBusinessCode(),
+        businessCode: canonical,
         businessName: business.name || "Laundry",
         ownerName: business.name || "Owner",
         mobile: business.contactPhone || "",

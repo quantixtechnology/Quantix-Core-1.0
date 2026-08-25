@@ -79,12 +79,13 @@ export function normaliseBusinessCode(code: string | null | undefined): string {
 }
 
 /**
- * Parse the canonical `XXX-YYYYMM-NNNN` shape.
+ * Parse the `XXX-YYYYMM-NNNN` shape STRUCTURALLY, returning the domain token
+ * alongside the number.
  *
- * Both live generators produce it — `BUS-{yyyymm}-{pad4}` for platform
- * businesses and `LND-{yyyymm}-{pad4}` for laundry ones — but the sample in the
- * spec is not assumed to be the only possibility: anything that does not parse
- * is handled by the hash fallback rather than rejected.
+ * This answers "does this string have the shape", not "is this a Business
+ * Code" — a retired `LND-202606-0001` still parses here so that a legacy value
+ * can be read and reasoned about. Whether a code is THE platform Business Code
+ * is isCanonicalBusinessCode() in business-code.ts, which requires domain BUS.
  */
 export function parseBusinessCode(code: string | null | undefined): ParsedBusinessCode | null {
   const c = normaliseBusinessCode(code)

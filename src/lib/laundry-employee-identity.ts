@@ -14,9 +14,9 @@
  * the Business Code lives.
  */
 import { prisma } from "@/lib/prisma"
-import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix, parseBusinessCode } from "@/lib/tenant-identity"
+import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix } from "@/lib/tenant-identity"
 import { isBusinessOwnerRole } from "@/lib/laundry-rbac"
-import { ensureBusinessCode } from "@/lib/business-code"
+import { ensureBusinessCode, isCanonicalBusinessCode } from "@/lib/business-code"
 import { getTenantIdentityPrefix, healEmployeeSequence, nextEmployeeSequence } from "@/lib/tenant-identity-server"
 
 export const STAFF_NAMESPACE = "EMP" as const
@@ -49,25 +49,28 @@ const LEGACY_EXEC_CODE = /^EXE(\d+)$/i
 /**
  * The Business Code and name the prefix is built from.
  *
- * Order matters, and it is: an EXISTING code always beats a reconstructed one.
+ * There is exactly ONE source, and it is the platform:
  *
- *   1. Business.businessCode      — the platform source of truth (BUS-…)
- *   2. LaundryBusiness.businessCode — the product's own code (LND-…), for a
- *      tenant provisioned outside createBusiness()
- *   3. only if neither carries a business number, repair the platform code
+ *   1. Business.businessCode, if it is canonical (BUS-YYYYMM-NNNN)
+ *   2. otherwise repair the platform code and use that
  *
- * Step 3 is what stops a prefix like V0, which is not an identity — it is the
- * absence of one wearing the shape of one. It is reached only when there is
- * genuinely nothing to read.
+ * LaundryBusiness.businessCode is deliberately NOT consulted for the identity.
+ * It used to be step 2, which meant a tenant's employee numbers could be built
+ * from the laundry product's own sequence — an LND-202608-0002 tenant getting
+ * prefix V2 while the platform had already issued it BUS-202606-0005 and V5.
+ * The laundry row is still read, but only for the business NAME, and only as a
+ * fallback for a platform row that carries none.
+ *
+ * Step 2 is also what stops a prefix like V0, which is not an identity — it is
+ * the absence of one wearing the shape of one.
  */
 export async function businessIdentitySource(platformBusinessId: string, laundryBusinessId: string) {
   const [biz, lb] = await Promise.all([
     prisma.business.findUnique({ where: { id: platformBusinessId }, select: { businessCode: true, name: true } }).catch(() => null),
-    prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } }).catch(() => null),
+    prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { businessName: true } }).catch(() => null),
   ])
   const name = biz?.name || lb?.businessName
-  if (parseBusinessCode(biz?.businessCode)) return { code: biz!.businessCode, name }
-  if (parseBusinessCode(lb?.businessCode)) return { code: lb!.businessCode, name }
+  if (isCanonicalBusinessCode(biz?.businessCode)) return { code: biz!.businessCode, name }
   return { code: await ensureBusinessCode(platformBusinessId).catch(() => null), name }
 }
 

@@ -186,12 +186,12 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
         <Card>
           <CardContent className="p-6 space-y-4">
             <div>
-              <Label>Auto-Generated Business ID</Label>
+              <Label>Auto-Generated Business Code</Label>
               <div className="mt-1 flex items-center gap-3">
                 <Input value={generatedCode} readOnly className="font-mono text-lg bg-gray-50" />
                 {generatedCode && <Badge className="bg-green-100 text-green-700">Unique</Badge>}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Format: LND-YYYYMM-XXXX. This ID will be used for all future references.</p>
+              <p className="text-xs text-gray-400 mt-1">Format: BUS-YYYYMM-NNNN — the platform Business Code, shared by every product. This is the canonical business identity and is used for all future references.</p>
             </div>
             <div className="bg-amber-50 rounded-lg p-3 text-sm text-amber-800">
               <p className="font-medium">Summary</p>

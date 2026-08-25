@@ -27,12 +27,12 @@ import {
 export async function getTenantIdentityPrefix(
   businessId: string,
   /**
-   * The product's own Business Code and name, used only when the platform
-   * Business row carries none. A laundry tenant provisioned outside
-   * createBusiness() has a null Business.businessCode while LaundryBusiness
-   * holds a perfectly good LND-YYYYMM-NNNN — that is still "the existing
-   * Business Code", and reading it is what keeps the prefix a real business
-   * number instead of a placeholder.
+   * A Business Code and name to fall back on when the platform Business row
+   * carries none — supplied by the product after it has repaired the platform
+   * code (see businessIdentitySource in laundry-employee-identity.ts). It is
+   * NOT a place for a product-specific code: a prefix built from a product's
+   * own sequence is a second business identity, which is the whole defect this
+   * module exists to prevent.
    */
   fallback?: { code?: string | null; name?: string | null },
 ): Promise<string> {

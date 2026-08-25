@@ -70,7 +70,6 @@ export async function POST(request: Request) {
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const lbId = biz.id
     const platformId = biz.platformBusinessId || businessId
-    const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
 
     // ── Availability guard — store must be open now AND every requested
     //    date/slot must fall inside that day's working hours. This reuses the
@@ -89,7 +88,7 @@ export async function POST(request: Request) {
     // Canonical customer — resolved from auth userid (server-side) when
     // authenticated, or from client-provided values as a guest fallback.
     const resolved = await resolveOrCreateLaundryCustomer({
-      platformBusinessId: platformId, businessCodeForCode: lb?.businessCode || `LND-${lbId}`,
+      platformBusinessId: platformId, businessCodeForCode: biz.businessCode,
       userId: resolvedUser?.id || undefined,
       name: resolvedUser?.name || customer?.name || undefined,
       phone: resolvedUser?.phone || customer?.phone || undefined,
@@ -164,7 +163,7 @@ export async function POST(request: Request) {
       const subtotal = lines.reduce((s, l) => s + l.lineAmount, 0)
       const gstTotal = lines.reduce((s, l) => s + l.gstAmount, 0)
       const grandTotal = Math.round((subtotal + gstTotal) * 100) / 100
-      const orderNumber = await generateOrderNumber(store.storeCode || lb?.businessCode || `LND-${lbId}`)
+      const orderNumber = await generateOrderNumber(store.storeCode || biz.businessCode)
       // ── Delivery slot capacity — reject bookings on full (date + time slot)
       //    for BOTH the Standard and the Backup (Alternate) delivery schedule.
       const slotChecks: ReturnType<typeof assertDeliverySlotAvailable>[] = []

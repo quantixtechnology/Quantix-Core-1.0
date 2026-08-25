@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
     const result = await resolveOrCreateLaundryCustomer({
       platformBusinessId: biz.platformBusinessId,
-      businessCodeForCode: biz.businessCode || `LND-${biz.id}`,
+      businessCodeForCode: biz.businessCode,
       userId: user.id,
       name: user.name,
       email: user.email,

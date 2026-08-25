@@ -59,10 +59,9 @@ export async function POST(request: Request) {
     // ORD-{storeCode}-NNNNNN. Falls back to a business-scoped number if the
     // store has no code yet.
     const storeRow = storeId ? await prisma.laundryStore.findUnique({ where: { id: storeId }, select: { storeCode: true } }) : null
-    const businessCodeRow = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusiness.id }, select: { businessCode: true } })
     const orderNumber = storeRow?.storeCode
       ? await generateOrderNumber(storeRow.storeCode)
-      : await generateOrderNumber(businessCodeRow?.businessCode || `LND-${laundryBusiness.id}`)
+      : await generateOrderNumber(laundryBusiness.businessCode)
 
     // ── Resolve the financial snapshot from the Pricing Engine (server-side,
     //    authoritative) and persist it on the order. Never recalculated later. ──

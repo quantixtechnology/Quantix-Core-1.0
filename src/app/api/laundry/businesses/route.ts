@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { generateBusinessCode } from "@/lib/laundry-codes"
+import { allocateBusinessCode, retryOnBusinessCodeClash } from "@/lib/business-code"
 import { hashPassword, generateTempPassword } from "@/lib/password-utils"
 import { ensureScalingLimitForNewBusiness } from "@/lib/laundry-scaling-limits"
 import { platformOnly } from "@/lib/platform-guard"
@@ -98,24 +98,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Business name, owner name, and mobile are required" }, { status: 400 })
     }
 
-    const businessCode = await generateBusinessCode()
-    const slug = businessCode.toLowerCase()
-
     // Create a platform Business record so the business owner can log in
-    // through the existing auth flow with businessType LAUNDRY
-    const platformBusiness = await prisma.business.create({
-      data: {
-        name: businessName,
-        slug,
-        businessType: "LAUNDRY",
-        status: status === "ACTIVE" ? "ACTIVE" : "ONBOARDING",
-        businessCode,
-        contactEmail: email || null,
-        contactPhone: mobile,
-        address: address || undefined,
-        gstNumber: gstNumber || null,
-      },
+    // through the existing auth flow with businessType LAUNDRY.
+    //
+    // The Business Code comes from the PLATFORM allocator. This route used to
+    // call the laundry generator and write its `LND-YYYYMM-NNNN` into both this
+    // row and the LaundryBusiness row — which is how a tenant's canonical
+    // identity came to read LND-202608-0002. Laundry is a product; it does not
+    // get to name the business.
+    const platformBusiness = await retryOnBusinessCodeClash(async () => {
+      const code = await allocateBusinessCode(prisma as never)
+      return prisma.business.create({
+        data: {
+          name: businessName,
+          slug: code.toLowerCase(),
+          businessType: "LAUNDRY",
+          status: status === "ACTIVE" ? "ACTIVE" : "ONBOARDING",
+          businessCode: code,
+          contactEmail: email || null,
+          contactPhone: mobile,
+          address: address || undefined,
+          gstNumber: gstNumber || null,
+        },
+      })
     })
+    // The canonical code, and the only business identity anything downstream
+    // (stores, customers, orders, logins) is allowed to embed.
+    const businessCode = platformBusiness.businessCode as string
 
     const business = await prisma.laundryBusiness.create({
       data: {
