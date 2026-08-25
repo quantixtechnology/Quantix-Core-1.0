@@ -277,7 +277,10 @@ describe('existing staff actions still work', () => {
     expect(ROUTE).toContain('export async function PATCH')
     expect(ROUTE).toContain('laundry.staff.assign_role')
     expect(ROUTE).toContain('laundry.staff.edit')
-    expect(UI).toContain('resetPassword')
+    // Reset-password is still there, but as a DIALOG — the key icon used to
+    // POST on click, which silently replaced a working password.
+    expect(UI).toContain('ResetPasswordDialog')
+    expect(UI).toContain('setResetting(e)')
     expect(UI).toContain('toggleActive')
   })
 })

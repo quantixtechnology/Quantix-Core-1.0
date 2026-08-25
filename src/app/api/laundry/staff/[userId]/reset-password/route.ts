@@ -1,7 +1,12 @@
 // POST /api/laundry/staff/[userId]/reset-password — the Business Owner resets an
 // employee's password (tenant-scoped; guarded by Laundry RBAC, not Core RBAC).
-// Sets mustChangePassword so the employee changes it on next login. Returns the
-// temporary credentials for the owner to hand over.
+// Returns the credential once, for the owner to hand over.
+//
+// Same contract as the delivery-executive reset
+// (/api/laundry/delivery-executives/[id], action "reset-password"): a supplied
+// `password` is used as-is, a blank one generates a temporary password, and
+// `forceChange` decides whether the employee must change it at next login —
+// defaulting to true, the way the executive flow does.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission, rbacAudit } from "@/lib/laundry-rbac"
@@ -23,11 +28,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 })
 
-  const rawPassword = String(b.newPassword || "").trim() || genPassword()
+  // `password` is the executive flow's field name; `newPassword` is kept so an
+  // older client keeps working.
+  const supplied = String(b.password ?? b.newPassword ?? "").trim()
+  const mode = supplied ? "MANUAL" : "RANDOM"
+  const rawPassword = supplied || genPassword()
   if (rawPassword.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
+  const forceChange = b.forceChange !== false
   const passwordHash = await hashPassword(rawPassword)
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash, authProvider: "PASSWORD", hasPassword: true, mustChangePassword: true } })
-  await rbacAudit(platformBusinessId, "EMPLOYEE_PASSWORD_RESET", { targetUserId: userId, actorName: guard.ctx.userName })
+  await prisma.user.update({
+    where: { id: userId },
+    // failedLoginAttempts/lockedUntil are cleared here too, so an account left
+    // locked by the old retry limit is freed by a reset.
+    data: { passwordHash, authProvider: "PASSWORD", hasPassword: true, mustChangePassword: forceChange, failedLoginAttempts: 0, lockedUntil: null },
+  })
+  await rbacAudit(platformBusinessId, "EMPLOYEE_PASSWORD_RESET", { targetUserId: userId, actorName: guard.ctx.userName, detail: { mode, forceChange } })
 
-  return NextResponse.json({ success: true, data: { email: user.email, tempPassword: rawPassword } })
+  return NextResponse.json({ success: true, data: { email: user.email, tempPassword: rawPassword, mode, forceChange } })
 }

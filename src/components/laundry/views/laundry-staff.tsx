@@ -116,12 +116,9 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     toast({ title: e.active ? "Employee deactivated" : "Employee activated" }); if (businessId) clearRuntimeAuthCache(businessId); load()
   }
 
-  const resetPassword = async (e: Emp) => {
-    const res = await fetch(`/api/laundry/staff/${e.userId}/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) })
-    const j = await res.json()
-    if (!res.ok || !j.success) { toast({ title: "Reset failed", description: j.error, variant: "destructive" }); return }
-    setCreds({ loginId: e.loginId || e.email || "", tempPassword: j.data.tempPassword, mustChange: true })
-  }
+  // The key icon OPENS the dialog. It used to POST straight away, so a stray
+  // click silently replaced someone's working password.
+  const [resetting, setResetting] = useState<Emp | null>(null)
 
   const confirmDelete = async () => {
     if (!deleting) return
@@ -187,7 +184,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-1">
                     {can("laundry.staff.edit") && <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit" onClick={() => openEdit(e)}><Pencil className="h-3.5 w-3.5 text-slate-500" /></Button>}
-                    {can("laundry.staff.edit") && <Button size="icon" variant="ghost" className="h-7 w-7" title="Reset password" onClick={() => resetPassword(e)}><KeyRound className="h-3.5 w-3.5 text-slate-500" /></Button>}
+                    {can("laundry.staff.edit") && <Button size="icon" variant="ghost" className="h-7 w-7" title="Reset password" onClick={() => setResetting(e)}><KeyRound className="h-3.5 w-3.5 text-slate-500" /></Button>}
                     {can("laundry.staff.edit") && !e.isOwner && <Button size="icon" variant="ghost" className="h-7 w-7" title={e.active ? "Deactivate" : "Activate"} onClick={() => toggleActive(e)}><Power className={`h-3.5 w-3.5 ${e.active ? "text-rose-500" : "text-emerald-500"}`} /></Button>}
                     {/* Quantix Super Admin only, and never for the owner — the
                         server refuses both regardless of what is rendered. */}
@@ -290,6 +287,20 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         </DialogContent>
       </Dialog>
 
+      {resetting && (
+        <ResetPasswordDialog
+          emp={resetting}
+          businessId={businessId}
+          onClose={() => setResetting(null)}
+          onDone={(tempPassword, mustChange) => {
+            const e = resetting
+            setResetting(null)
+            setCreds({ loginId: e?.loginId || e?.email || "", tempPassword, mustChange })
+            load()
+          }}
+        />
+      )}
+
       {/* Credentials reveal (create / reset) */}
       <Dialog open={!!creds} onOpenChange={(o) => { if (!o) setCreds(null) }}>
         <DialogContent className="max-w-sm">
@@ -308,5 +319,50 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+// ── Reset password — same simple flow as the Delivery Executive dialog:
+//    generate one, or type one, then reveal it once. ──
+function ResetPasswordDialog({ emp, businessId, onClose, onDone }: { emp: Emp; businessId: string | null; onClose: () => void; onDone: (tempPassword: string, mustChange: boolean) => void }) {
+  const { toast } = useToast()
+  const [mode, setMode] = useState<"random" | "manual">("random")
+  const [pw, setPw] = useState("")
+  const [force, setForce] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (mode === "manual" && pw.trim().length < 6) { toast({ title: "Password must be at least 6 characters", variant: "destructive" }); return }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/laundry/staff/${emp.userId}/reset-password`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, password: mode === "manual" ? pw.trim() : undefined, forceChange: force }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Reset failed")
+      onDone(j.data.tempPassword, !!j.data.forceChange)
+    } catch (e) { toast({ title: e instanceof Error ? e.message : "Reset failed", variant: "destructive" }) } finally { setBusy(false) }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-amber-600" /> Reset Password · {emp.name}</DialogTitle>
+          <DialogDescription>They sign in with <span className="font-mono">{emp.employeeCode || emp.loginId}</span>. Nothing changes until you press Reset.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700"><input type="radio" checked={mode === "random"} onChange={() => setMode("random")} /> Generate a temporary password</label>
+          <label className="flex items-center gap-2 text-sm text-slate-700"><input type="radio" checked={mode === "manual"} onChange={() => setMode("manual")} /> Set it myself</label>
+          {mode === "manual" && <Input value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" autoFocus />}
+          <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> Ask them to change it at next login</label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={busy} className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Reset</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

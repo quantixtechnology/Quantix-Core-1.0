@@ -79,6 +79,13 @@ export async function POST(request: Request) {
     // have employee number 001, with the same password, and still never
     // resolve to each other's account.
     const employeeIdentity = await resolveTenantByEmployeeId(identifier).catch(() => null);
+    // Staff sign in with their Employee ID, and this is an internal business
+    // application: a counter user mistyping a password must not lock themselves
+    // out mid-shift. The lockout below is therefore skipped for an employee-id
+    // login — and ONLY for that. Platform and customer accounts, reachable from
+    // the open internet by email, keep it.
+    const isEmployeeLogin = !!employeeIdentity
+
     const employeeUserId = employeeIdentity
       ? (await db.businessUser.findFirst({
           where: { businessId: employeeIdentity.businessId, employeeCode: identifier.toUpperCase() },
@@ -89,7 +96,7 @@ export async function POST(request: Request) {
     // through to the email/loginId lookups below: falling through is how an
     // identifier naming tenant A could end up matching an account in tenant B.
     if (employeeIdentity && !employeeUserId) {
-      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
+      return NextResponse.json({ success: false, error: isEmployeeLogin ? 'Invalid Employee ID or password' : 'Invalid email or password' }, { status: 401 });
     }
 
     // Lookup order: employee id → loginId → email exact → email case-insensitive
@@ -127,8 +134,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Account is deactivated. Please contact support.' }, { status: 403 });
     }
 
+    // Staff sign in with their Employee ID, and this is an internal business
+    // application: a counter user mistyping a password must not lock themselves
+    // out mid-shift. The lockout is therefore skipped for an employee-id login —
+    // and ONLY for that. Platform and customer accounts, which are reachable
+    // from the open internet by email, keep it.
     // Account lockout: block while locked.
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
+    if (!isEmployeeLogin && user.lockedUntil && user.lockedUntil > new Date()) {
       const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
       console.log(`[login] FAIL — account locked for ${user.email} (${mins}m left)`);
       return NextResponse.json({ success: false, error: `Account locked. Try again in ${mins} minute(s).` }, { status: 423 });
@@ -139,12 +151,16 @@ export async function POST(request: Request) {
     console.log(`[login] Password comparison result: ${isValid ? 'VALID' : 'INVALID'} for ${user.email}`);
 
     if (!isValid) {
-      // Lockout: count consecutive failures; lock for 15 min after 5.
-      const MAX_ATTEMPTS = 5;
-      const LOCK_MINUTES = 15;
-      const attempts = (user.failedLoginAttempts ?? 0) + 1;
-      const lockedUntil = attempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCK_MINUTES * 60000) : null;
-      await db.user.update({ where: { id: user.id }, data: { failedLoginAttempts: attempts, lockedUntil } }).catch(() => null);
+      // No counter and no lock for an employee id — a wrong password is just a
+      // wrong password, and the account is left exactly as it was.
+      if (!isEmployeeLogin) {
+        // Lockout: count consecutive failures; lock for 15 min after 5.
+        const MAX_ATTEMPTS = 5;
+        const LOCK_MINUTES = 15;
+        const attempts = (user.failedLoginAttempts ?? 0) + 1;
+        const lockedUntil = attempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCK_MINUTES * 60000) : null;
+        await db.user.update({ where: { id: user.id }, data: { failedLoginAttempts: attempts, lockedUntil } }).catch(() => null);
+      }
       try {
         await logAuthActivity(null, 'auth.login_failed', { email: normalizedEmail, reason: 'invalid_password' }, request as unknown as { headers?: { get(name: string): string | null } });
       } catch { /* audit logging is non-blocking */ }
