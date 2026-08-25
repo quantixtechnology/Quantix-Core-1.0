@@ -191,7 +191,20 @@ export async function POST(request: Request) {
       role = user.platformRole as Role;
       isPlatformAdmin = true;
     } else if (user.businessUsers.length > 0) {
-      const primaryBU = user.businessUsers[0];
+      // Which business is this session for?
+      //
+      // An EMPLOYEE ID names its own — that is the whole point of the prefix —
+      // so it selects the matching membership. Taking businessUsers[0] instead
+      // is arbitrary the moment someone belongs to more than one business, and
+      // people do: VASTRASUDHA's owner is also a CUSTOMER of two other shops,
+      // so signing in as V8EMP001 handed him the CUSTOMER membership of a
+      // completely different business, with no permissions. The workspace then
+      // said "Access Denied", which was true of the business it had picked.
+      //
+      // Email logins are untouched and still take the first membership.
+      const primaryBU =
+        (employeeIdentity && user.businessUsers.find((bu) => bu.business.id === employeeIdentity.businessId)) ||
+        user.businessUsers[0];
       role = primaryBU.role as Role;
       businessId = primaryBU.business.id;
       businessName = primaryBU.business.name;
@@ -227,10 +240,10 @@ export async function POST(request: Request) {
     // platform host itself.
     const requestHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
     if (isPlatformAppHost(requestHost, STOREFRONT_BASE) && !isPlatformAdmin) {
-      const workspaceHost = productHostForCode(
-        user.businessUsers[0]?.business?.productCode ?? null,
-        STOREFRONT_BASE,
-      );
+      const chosen =
+        (employeeIdentity && user.businessUsers.find((bu) => bu.business.id === employeeIdentity.businessId)) ||
+        user.businessUsers[0];
+      const workspaceHost = productHostForCode(chosen?.business?.productCode ?? null, STOREFRONT_BASE);
       console.log(`[login] REFUSED platform host for tenant role=${role} user=${user.id}`);
       return NextResponse.json({
         success: false,

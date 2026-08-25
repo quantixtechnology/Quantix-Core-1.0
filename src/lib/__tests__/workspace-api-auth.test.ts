@@ -72,3 +72,36 @@ describe('password reset stays simple', () => {
     expect(fail).toContain('if (!isEmployeeLogin) {')
   })
 })
+
+// ============================================================================
+// An employee id names its own business. Taking businessUsers[0] is arbitrary
+// once someone belongs to several — VASTRASUDHA's owner is also a CUSTOMER of
+// two other shops, so V8EMP001 was handed a CUSTOMER membership of a different
+// business with zero permissions, and the workspace said "Access Denied".
+// ============================================================================
+describe('the session is for the business the employee id names', () => {
+  const LOGIN = read('src/app/api/core/auth/login/route.ts')
+
+  it('an employee-id login selects the matching membership', () => {
+    expect(LOGIN).toContain('user.businessUsers.find((bu) => bu.business.id === employeeIdentity.businessId)')
+  })
+
+  it('and falls back to the first only when it is NOT an employee id', () => {
+    const block = LOGIN.slice(LOGIN.indexOf('} else if (user.businessUsers.length > 0) {'), LOGIN.indexOf('const validStatuses'))
+    expect(block.replace(/\s+/g, ' ')).toContain('|| user.businessUsers[0]')
+    // The email path is unchanged: no employeeIdentity, so [0] still applies.
+    expect(block).toContain('employeeIdentity &&')
+  })
+
+  it('the workspace redirect hint follows the same choice', () => {
+    expect(LOGIN).toContain('productHostForCode(chosen?.business?.productCode ?? null, STOREFRONT_BASE)')
+  })
+
+  it('the business relationship is read from BusinessUser, never derived from the id', () => {
+    // employeeIdentity comes from TenantIdentity -> BusinessUser.employeeCode.
+    expect(LOGIN).toContain('resolveTenantByEmployeeId(identifier)')
+    expect(LOGIN).toContain('employeeCode: identifier.toUpperCase()')
+    // No arithmetic on the prefix anywhere in the login path.
+    expect(LOGIN).not.toMatch(/businessNumber|prefixBusinessNumber/)
+  })
+})
