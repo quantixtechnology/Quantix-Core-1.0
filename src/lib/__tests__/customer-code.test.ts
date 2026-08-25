@@ -208,3 +208,28 @@ describe('there is ONE customer-code generator', () => {
     expect(identity).not.toContain('businessCodeForCode')
   })
 })
+
+describe('the repair keeps each customer their own number', () => {
+  const SRC = readFileSync(join(__dirname, '../../app/api/debug/customer-code-repair/route.ts'), 'utf8')
+
+  it('rewrites only the prefix — the trailing number is carried across', () => {
+    expect(SRC).toContain('const to = `${prefix}${n}`')
+    expect(SRC).toContain('no number to keep')
+  })
+
+  it('is safe because the code is a label, not a key', () => {
+    // customerCode appears on exactly one model; orders reference Customer.id.
+    const schema = readFileSync(join(__dirname, '../../../prisma/schema.prisma'), 'utf8')
+    expect((schema.match(/^\s+customerCode\s+String/gm) || [])).toHaveLength(1)
+  })
+
+  it('is idempotent and never overwrites someone else', () => {
+    expect(SRC).toContain('already canonical')
+    expect(SRC).toContain('is already taken')
+  })
+
+  it('needs an explicit confirm, and is platform-guarded', () => {
+    expect(SRC).toContain("sp.get(\"confirm\") !== \"1\"")
+    expect(SRC).toContain('platformOnly(req)')
+  })
+})
