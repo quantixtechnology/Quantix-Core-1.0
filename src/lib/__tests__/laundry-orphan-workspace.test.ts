@@ -13,13 +13,19 @@ const state = {
   counts: {} as Record<string, number>,
   deleted: [] as string[],
   parentDeleted: false,
+  stores: [] as Row[],
+  inbound: { laundryAccessAssignment: 0, laundryDeliveryExecutive: 0, laundryOrder: 0 } as Record<string, number>,
 }
 
 vi.mock('@/lib/platform-guard', () => ({ platformOnly: vi.fn(async () => null) }))
 
 vi.mock('@/lib/prisma', () => {
   const table = (name: string) => ({
-    count: vi.fn(async () => state.counts[name] ?? 0),
+    count: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      // The inbound soft-reference probes query by storeId, not businessId.
+      if (args?.where && 'storeId' in args.where) return state.inbound[name] ?? 0
+      return state.counts[name] ?? 0
+    }),
     deleteMany: vi.fn(async () => {
       const n = state.counts[name] ?? 0
       if (n > 0) state.deleted.push(name)
@@ -37,7 +43,11 @@ vi.mock('@/lib/prisma', () => {
           }
         }
         if (prop === 'laundryStore') {
-          return { count: vi.fn(async () => state.counts.laundryStore ?? 0), deleteMany: vi.fn(async () => ({ count: 0 })) }
+          return {
+            count: vi.fn(async () => state.counts.laundryStore ?? 0),
+            findMany: vi.fn(async () => state.stores),
+            deleteMany: vi.fn(async () => ({ count: 0 })),
+          }
         }
         return table(prop)
       },
@@ -50,6 +60,7 @@ const url = (q: string) => `http://internal/api/debug/laundry-orphan-workspace${
 
 const reset = () => {
   state.row = { ...ORPHAN }; state.counts = {}; state.deleted = []; state.parentDeleted = false
+  state.stores = []; state.inbound = { laundryAccessAssignment: 0, laundryDeliveryExecutive: 0, laundryOrder: 0 }
 }
 
 describe('the orphan workspace endpoint', () => {
@@ -103,6 +114,18 @@ describe('the orphan workspace endpoint', () => {
     expect(body.stillResolvable).toBe(false)
     // Dependents go BEFORE the parent, or they point at a row that is gone.
     expect(state.deleted.length).toBeGreaterThan(0)
+  })
+
+  it('REFUSES when a live record still points at one of its stores', async () => {
+    // No foreign key stands behind LaundryAccessAssignment.storeId, so nothing
+    // would block this delete and nothing would report it afterwards.
+    state.stores = [{ id: 'st_1', storeCode: 'STR-X-001', storeName: 'Old Store' }]
+    state.inbound.laundryAccessAssignment = 1
+    const { POST } = await import('@/app/api/debug/laundry-orphan-workspace/route')
+    const res = await POST(new Request(url('?code=LND-202606-0001&confirm=1'), { method: 'POST' }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).verdict.reasons.join(' ')).toMatch(/access assignment/)
+    expect(state.parentDeleted).toBe(false)
   })
 
   it('404s on a code that names nothing', async () => {

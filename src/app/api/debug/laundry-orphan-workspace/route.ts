@@ -53,6 +53,26 @@ async function countAll(businessId: string) {
   return counts
 }
 
+/**
+ * Soft references — a storeId held somewhere with no foreign key behind it, so
+ * nothing would stop the delete and nothing would report it afterwards. If a
+ * live tenant points at one of this workspace's stores, that is a dependency
+ * whatever the counts say.
+ */
+async function inboundStoreRefs(businessId: string) {
+  const stores = await prisma.laundryStore
+    .findMany({ where: { laundryBusinessId: businessId }, select: { id: true, storeCode: true, storeName: true } })
+    .catch(() => [])
+  const ids = stores.map((s) => s.id)
+  if (!ids.length) return { stores, assignments: 0, executives: 0, orders: 0 }
+  const [assignments, executives, orders] = await Promise.all([
+    prisma.laundryAccessAssignment.count({ where: { storeId: { in: ids } } }).catch(() => -1),
+    prisma.laundryDeliveryExecutive.count({ where: { storeId: { in: ids }, businessId: { not: businessId } } }).catch(() => -1),
+    prisma.laundryOrder.count({ where: { storeId: { in: ids }, businessId: { not: businessId } } }).catch(() => -1),
+  ])
+  return { stores, assignments, executives, orders }
+}
+
 async function load(code: string) {
   return prisma.laundryBusiness.findFirst({
     where: { businessCode: code },
@@ -60,12 +80,17 @@ async function load(code: string) {
   })
 }
 
-function verdict(row: { platformBusinessId: string | null }, counts: Record<string, number>) {
+type Inbound = { assignments: number; executives: number; orders: number }
+
+function verdict(row: { platformBusinessId: string | null }, counts: Record<string, number>, inbound: Inbound) {
   const nonZero = Object.entries(counts).filter(([, n]) => n > 0)
   const live = nonZero.filter(([k]) => OPERATIONAL.has(k))
   const reasons: string[] = []
   if (row.platformBusinessId) reasons.push(`linked to platform business ${row.platformBusinessId} — NOT an orphan`)
   for (const [k, n] of live) reasons.push(`${k} has ${n} row(s) — operational data`)
+  if (inbound.assignments > 0) reasons.push(`${inbound.assignments} access assignment(s) point at this workspace's stores`)
+  if (inbound.executives > 0) reasons.push(`${inbound.executives} executive(s) from another workspace point at these stores`)
+  if (inbound.orders > 0) reasons.push(`${inbound.orders} order(s) from another workspace point at these stores`)
   return { safe: reasons.length === 0, reasons, nonZero: Object.fromEntries(nonZero) }
 }
 
@@ -78,7 +103,8 @@ export async function GET(req: Request) {
   const row = await load(code)
   if (!row) return NextResponse.json({ found: false, code })
   const counts = await countAll(row.id)
-  return NextResponse.json({ found: true, target: row, verdict: verdict(row, counts), counts })
+  const inbound = await inboundStoreRefs(row.id)
+  return NextResponse.json({ found: true, target: row, verdict: verdict(row, counts, inbound), inbound, counts })
 }
 
 export async function POST(req: Request) {
@@ -95,8 +121,9 @@ export async function POST(req: Request) {
   // Re-counted here rather than trusting the GET: the decision to delete must
   // be made against the state at the moment of deletion.
   const counts = await countAll(row.id)
-  const v = verdict(row, counts)
-  if (!v.safe) return NextResponse.json({ deleted: false, target: row, verdict: v, counts }, { status: 409 })
+  const inbound = await inboundStoreRefs(row.id)
+  const v = verdict(row, counts, inbound)
+  if (!v.safe) return NextResponse.json({ deleted: false, target: row, verdict: v, inbound, counts }, { status: 409 })
 
   const removed: Record<string, number> = {}
   // The undeclared ones first — nothing cascades them, so they must go before
@@ -114,6 +141,7 @@ export async function POST(req: Request) {
     deleted: true,
     target: row,
     removedDependents: removed,
+    storesRemoved: inbound.stores,
     cascaded: CASCADE.filter((c) => (counts[c] ?? 0) > 0).map((c) => ({ [c]: counts[c] })),
     stillResolvable: !!after,
   })
