@@ -510,3 +510,107 @@ describe('prefix stability and login resolution', () => {
     expect(await lookup('V5EMP999')).toBeNull()
   })
 })
+
+// ─── Acceptance criteria, in the order they were specified ──────────────────
+
+describe('acceptance: initial + business number + EMP/DL + 3 digits', () => {
+  const BIZ_C = 'biz_c'
+  const CODE_C = 'BUS-202606-0008'
+
+  beforeEach(() => {
+    reset()
+    db.business.push({ id: BIZ_C, businessCode: CODE_C, name: 'Laundry & Drycleaners' })
+  })
+
+  const prefixOf = async (id: string) => (await import('@/lib/tenant-identity-server')).getTenantIdentityPrefix(id)
+  const issue = async (id: string, ns: 'EMP' | 'DL') =>
+    (await import('@/lib/tenant-identity-server')).issueEmployeeId(id, ns)
+
+  it('1. VASTRASUDHA + BUS-202606-0005 → V5', async () => {
+    expect(await prefixOf(BIZ_A)).toBe('V5')
+  })
+
+  it('2/3. first and second staff → V5EMP001, V5EMP002', async () => {
+    expect(await issue(BIZ_A, 'EMP')).toBe('V5EMP001')
+    expect(await issue(BIZ_A, 'EMP')).toBe('V5EMP002')
+    expect(await issue(BIZ_A, 'EMP')).toBe('V5EMP003')
+  })
+
+  it('4/5. first and second delivery executive → V5DL001, V5DL002', async () => {
+    expect(await issue(BIZ_A, 'DL')).toBe('V5DL001')
+    expect(await issue(BIZ_A, 'DL')).toBe('V5DL002')
+    expect(await issue(BIZ_A, 'DL')).toBe('V5DL003')
+  })
+
+  it('6. the two sequences are independent in both directions', async () => {
+    expect(await issue(BIZ_A, 'EMP')).toBe('V5EMP001')
+    expect(await issue(BIZ_A, 'DL')).toBe('V5DL001')
+    expect(await issue(BIZ_A, 'EMP')).toBe('V5EMP002')   // DL did not move EMP
+    expect(await issue(BIZ_A, 'DL')).toBe('V5DL002')     // EMP did not move DL
+  })
+
+  it('7/8. Laundry & Drycleaners + BUS-202606-0008 → L8, from its OWN name and code', async () => {
+    expect(await prefixOf(BIZ_C)).toBe('L8')
+    expect(await issue(BIZ_C, 'EMP')).toBe('L8EMP001')
+    expect(await issue(BIZ_C, 'EMP')).toBe('L8EMP002')
+    expect(await issue(BIZ_C, 'DL')).toBe('L8DL001')
+    expect(await issue(BIZ_C, 'DL')).toBe('L8DL002')
+    // and it is not VASTRASUDHA's namespace
+    expect(await prefixOf(BIZ_C)).not.toBe(await prefixOf(BIZ_A))
+  })
+
+  it('9. an existing employee id is never overwritten', async () => {
+    db.businessUser.push({ id: 'bu_x', userId: 'u_x', businessId: BIZ_A, employeeCode: 'V5EMP002', role: 'STORE_EXECUTIVE', createdAt: new Date(1) })
+    const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
+    await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
+    expect(db.businessUser[0].employeeCode).toBe('V5EMP002')
+  })
+
+  it('10. concurrent creation cannot duplicate, per namespace', async () => {
+    const emp = await Promise.all(Array.from({ length: 50 }, () => issue(BIZ_A, 'EMP')))
+    const dl = await Promise.all(Array.from({ length: 50 }, () => issue(BIZ_A, 'DL')))
+    expect(new Set(emp).size).toBe(50)
+    expect(new Set(dl).size).toBe(50)
+    expect(new Set([...emp, ...dl]).size).toBe(100)
+  })
+
+  it('11. editing an employee never regenerates the id', () => {
+    // Proven at the source: neither edit route writes the column.
+    const staffEdit = codeOnly(read('src/app/api/laundry/staff/[userId]/route.ts'))
+    const execEdit = codeOnly(read('src/app/api/laundry/delivery-executives/[id]/route.ts'))
+    // The column may be READ (the detail response shows it); what must never
+    // happen is a WRITE. Check every prisma create/update in these routes.
+    for (const src of [staffEdit, execEdit]) {
+      const writes = [...src.matchAll(/prisma\.\w+\.(?:update|create|upsert)\(([\s\S]*?)\)\s*(?:\.catch|;|\n)/g)].map((m) => m[1])
+      for (const w of writes) expect(w).not.toMatch(/employeeCode/)
+      expect(src).not.toMatch(/issueEmployeeId|issueStaffEmployeeId|issueDeliveryEmployeeId/)
+    }
+    expect(staffEdit).not.toMatch(/employeeCode/)   // staff edit never mentions it at all
+  })
+
+  it('12/13. DL never carries EMP and EMP never carries DL', async () => {
+    for (let i = 0; i < 4; i++) {
+      expect(await issue(BIZ_A, 'DL')).toMatch(/^V5DL\d{3}$/)
+      expect(await issue(BIZ_A, 'EMP')).toMatch(/^V5EMP\d{3}$/)
+    }
+  })
+
+  it('14. the shared login URL cannot collide across tenants', async () => {
+    const { resolveTenantByEmployeeId } = await import('@/lib/tenant-identity-server')
+    await prefixOf(BIZ_A)
+    await prefixOf(BIZ_C)
+    const a = await issue(BIZ_A, 'EMP')   // V5EMP001
+    const c = await issue(BIZ_C, 'EMP')   // L8EMP001
+    expect(a).not.toBe(c)
+    expect((await resolveTenantByEmployeeId(a))!.businessId).toBe(BIZ_A)
+    expect((await resolveTenantByEmployeeId(c))!.businessId).toBe(BIZ_C)
+  })
+
+  it('the prefix never contains BUS, the month, or the padded code', async () => {
+    const id = await issue(BIZ_A, 'EMP')
+    expect(id).toBe('V5EMP001')
+    expect(id).not.toMatch(/BUS/)
+    expect(id).not.toMatch(/202606/)
+    expect(id).not.toMatch(/0005/)
+  })
+})
