@@ -277,12 +277,51 @@ export async function reconcileStaffEmployeeIds(platformBusinessId: string, laun
 }
 
 /**
+ * Make each employee's User ID be their employee id.
+ *
+ * Staff sign in with V8EMP001, so that is what `User.loginId` should hold. It
+ * used to hold the email, which meant the "User ID" an administrator was shown
+ * and the identifier the employee actually types were two different things.
+ *
+ * Nobody is locked out by this: the login route resolves an employee id from
+ * BusinessUser.employeeCode (not from loginId) and still falls back to an email
+ * lookup, so both the old and the new identifier keep working.
+ *
+ * Non-destructive: only a loginId that is not already an employee id is moved,
+ * a clash leaves the record exactly as it was, and the Business Owner — who
+ * holds no employee id — keeps their email.
+ */
+export async function reconcileStaffLoginIds(platformBusinessId: string): Promise<number> {
+  const members = await prisma.businessUser.findMany({
+    where: { businessId: platformBusinessId, employeeCode: { not: null } },
+    select: { userId: true, employeeCode: true },
+  })
+  let changed = 0
+  for (const m of members) {
+    const code = (m.employeeCode || "").toUpperCase()
+    if (!parseEmployeeId(code)) continue
+    const user = await prisma.user.findUnique({ where: { id: m.userId }, select: { loginId: true } }).catch(() => null)
+    if (!user || (user.loginId || "").toUpperCase() === code) continue
+    // Already carrying SOME employee id (a second tenant's) — leave it; login
+    // resolves either one from the membership rows regardless.
+    if (parseEmployeeId(user.loginId)) continue
+    const ok = await prisma.user
+      .update({ where: { id: m.userId }, data: { loginId: code } })
+      .then(() => true)
+      .catch(() => false) // loginId is @unique — a clash changes nothing
+    if (ok) changed++
+  }
+  return changed
+}
+
+/**
  * Everything a tenant's employee screens need, reconciled and idempotent.
  * Cheap on a healthy tenant: two indexed reads and no writes.
  */
 export async function ensureEmployeeIdentity(platformBusinessId: string, laundryBusinessId: string): Promise<string> {
   const prefix = await getTenantIdentityPrefix(platformBusinessId)
   await reconcileStaffEmployeeIds(platformBusinessId, laundryBusinessId).catch(() => 0)
+  await reconcileStaffLoginIds(platformBusinessId).catch(() => 0)
   await reconcileDeliveryExecutiveIds(platformBusinessId, laundryBusinessId).catch(() => 0)
   return prefix
 }

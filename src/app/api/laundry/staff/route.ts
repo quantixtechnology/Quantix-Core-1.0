@@ -10,7 +10,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission, rbacAudit, isBusinessOwnerRole } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
-import { issueStaffEmployeeId, reconcileStaffEmployeeIds } from "@/lib/laundry-employee-identity"
+import { issueStaffEmployeeId, reconcileStaffEmployeeIds, reconcileStaffLoginIds } from "@/lib/laundry-employee-identity"
 
 export const runtime = "nodejs"
 
@@ -31,11 +31,14 @@ export async function GET(request: Request) {
   // Runtime reconciliation, same philosophy as the navigation/CRM defaults:
   // idempotent, tenant-independent, non-destructive, nothing to configure.
   await reconcileStaffEmployeeIds(platformBusinessId, laundryBusinessId).catch(() => 0)
+  // The User ID an employee signs in with is their employee id; bring existing
+  // rows that still carry an email into line. Idempotent, one read per member.
+  await reconcileStaffLoginIds(platformBusinessId).catch(() => 0)
 
   const [members, assignments, stores, execs, ownerRoles] = await Promise.all([
     prisma.businessUser.findMany({
       where: { businessId: platformBusinessId, role: { not: "CUSTOMER" } },
-      include: { user: { select: { id: true, email: true, name: true, phone: true, isActive: true, lastLoginAt: true, createdAt: true } } },
+      include: { user: { select: { id: true, email: true, loginId: true, name: true, phone: true, isActive: true, lastLoginAt: true, createdAt: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.laundryAccessAssignment.findMany({ where: { businessId: platformBusinessId }, include: { role: { select: { id: true, code: true, name: true, isOwner: true } } } }),
@@ -87,6 +90,9 @@ export async function GET(request: Request) {
       // Null for the Business Owner by design — see §5. The UI shows
       // "Not required" rather than an empty cell.
       employeeCode: bu.employeeCode,
+      // What the employee actually types to sign in — their employee id once
+      // reconciled, the email for the Business Owner who has no employee id.
+      loginId: bu.user.loginId || bu.user.email,
       email: bu.user.email,
       name: bu.user.name,
       phone: bu.user.phone,
@@ -126,22 +132,37 @@ export async function POST(request: Request) {
   const existing = await prisma.user.findFirst({ where: { email }, select: { id: true } })
   if (existing) return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 })
 
+  // A password the administrator TYPED is the password. Only one they did not
+  // supply is a temporary one, and only a temporary one forces a change at
+  // first login — setting a specific password and then demanding it be changed
+  // is why a manually-entered password looked like it had been ignored.
+  // `forceChange` lets the caller override either way; same contract as the
+  // delivery-executive reset.
+  const mode = String(b.password || "").trim() ? "MANUAL" : "RANDOM"
   const rawPassword = String(b.password || "").trim() || genPassword()
   if (rawPassword.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
+  const mustChangePassword = b.forceChange !== undefined ? !!b.forceChange : mode === "RANDOM"
   const passwordHash = await hashPassword(rawPassword)
 
-  const user = await prisma.user.create({
-    data: {
-      email, loginId: email, name, phone: b.phone ? String(b.phone).trim() : null,
-      passwordHash, authProvider: "PASSWORD", isActive: true, hasPassword: true,
-      mustChangePassword: true, emailVerified: true, createdBy: guard.ctx.userId,
-    },
-  })
   // The Business Owner is the business, not an employee of it, and the existing
   // staff surface already treats that row differently — so no EMP number is
   // consumed for them. Everyone else gets one, issued by the shared platform
   // counter and never typed by an administrator.
+  //
+  // Issued BEFORE the User row because it IS the User ID: staff sign in with
+  // V8EMP001, not with an email. Email is still stored (it must be unique, and
+  // it is how they are contacted), but it is no longer the login identifier.
+  // The owner has no employee id, so their login identifier stays their email.
   const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId, laundryBusinessId)
+  const loginId = employeeCode ?? email
+
+  const user = await prisma.user.create({
+    data: {
+      email, loginId, name, phone: b.phone ? String(b.phone).trim() : null,
+      passwordHash, authProvider: "PASSWORD", isActive: true, hasPassword: true,
+      mustChangePassword, emailVerified: true, createdBy: guard.ctx.userId,
+    },
+  })
   await prisma.businessUser.create({
     data: {
       userId: user.id, businessId: platformBusinessId, employeeCode,
@@ -158,5 +179,8 @@ export async function POST(request: Request) {
   }
   await rbacAudit(platformBusinessId, "EMPLOYEE_CREATED", { targetUserId: user.id, roleId: role?.id ?? null, actorName: guard.ctx.userName, detail: { email, role: role?.name ?? null } })
 
-  return NextResponse.json({ success: true, data: { userId: user.id, email, employeeCode, tempPassword: rawPassword } }, { status: 201 })
+  return NextResponse.json({
+    success: true,
+    data: { userId: user.id, loginId, email, employeeCode, tempPassword: rawPassword, mode, mustChangePassword },
+  }, { status: 201 })
 }

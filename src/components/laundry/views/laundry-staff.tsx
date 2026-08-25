@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, UsersRound, Plus, Search, Pencil, KeyRound, Power, Shield, Lock, Copy, Trash2, AlertTriangle } from "lucide-react"
 
 interface Emp {
-  userId: string; businessUserId: string; employeeCode: string | null; email: string; name: string; phone: string | null
+  userId: string; businessUserId: string; employeeCode: string | null; loginId: string; email: string; name: string; phone: string | null
   active: boolean; lastLoginAt: string | null; roleId: string | null; roleCode: string | null
   roleName: string | null; isOwner: boolean; storeId: string | null; storeName: string | null
 }
@@ -47,7 +47,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
   const [fName, setFName] = useState(""); const [fEmail, setFEmail] = useState(""); const [fPhone, setFPhone] = useState("")
   const [fPassword, setFPassword] = useState(""); const [fRoleId, setFRoleId] = useState(""); const [fStoreId, setFStoreId] = useState("")
   const [saving, setSaving] = useState(false)
-  const [creds, setCreds] = useState<{ email: string; tempPassword: string } | null>(null)
+  const [creds, setCreds] = useState<{ loginId: string; tempPassword: string; mustChange: boolean } | null>(null)
   // Deletion is a Quantix Super Admin action, confirmed before it runs.
   const [deleting, setDeleting] = useState<Emp | null>(null)
   const [deletingBusy, setDeletingBusy] = useState(false)
@@ -102,7 +102,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         const res = await fetch(`/api/laundry/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), email: fEmail.trim(), phone: fPhone.trim() || null, password: fPassword.trim() || undefined, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Create failed")
-        setFormOpen(false); setCreds({ email: j.data.email, tempPassword: j.data.tempPassword }); if (businessId) clearRuntimeAuthCache(businessId); load()
+        setFormOpen(false); setCreds({ loginId: j.data.loginId || j.data.email, tempPassword: j.data.tempPassword, mustChange: !!j.data.mustChangePassword }); if (businessId) clearRuntimeAuthCache(businessId); load()
       }
     } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
   }
@@ -118,7 +118,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     const res = await fetch(`/api/laundry/staff/${e.userId}/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) })
     const j = await res.json()
     if (!res.ok || !j.success) { toast({ title: "Reset failed", description: j.error, variant: "destructive" }); return }
-    setCreds({ email: j.data.email, tempPassword: j.data.tempPassword })
+    setCreds({ loginId: e.loginId || e.email, tempPassword: j.data.tempPassword, mustChange: true })
   }
 
   const confirmDelete = async () => {
@@ -138,7 +138,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     } finally { setDeletingBusy(false) }
   }
 
-  const copyCreds = () => { if (creds) navigator.clipboard?.writeText(`${creds.email} / ${creds.tempPassword}`).then(() => toast({ title: "Copied" })).catch(() => {}) }
+  const copyCreds = () => { if (creds) navigator.clipboard?.writeText(`${creds.loginId} / ${creds.tempPassword}`).then(() => toast({ title: "Copied" })).catch(() => {}) }
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Loading…</div>
 
@@ -212,7 +212,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><UsersRound className="h-5 w-5 text-blue-600" /> {editing ? "Edit Employee" : "Create Employee"}</DialogTitle>
-            <DialogDescription>{editing ? "Update details, role and store." : "A temporary password is generated (or set one). The employee changes it on first login."}</DialogDescription>
+            <DialogDescription>{editing ? "Update details, role and store." : "The employee signs in with their Employee ID. Set a password, or leave it blank for a temporary one."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="grid grid-cols-2 gap-2">
@@ -234,10 +234,10 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
               <p className="text-[11px] text-slate-400">
                 {editing?.isOwner
                   ? "The Business Owner does not need an employee ID."
-                  : "Generated from your business initial and Business Code. Permanent, and never reused."}
+                  : "This is also the User ID the employee signs in with. Generated from your business initial and Business Code — permanent, and never reused."}
               </p>
             </div>
-            {!editing && <div className="space-y-1"><Label className="text-xs text-slate-600">Password <span className="text-slate-400">(optional — auto-generated if blank)</span></Label><Input value={fPassword} onChange={(e) => setFPassword(e.target.value)} placeholder="Leave blank to auto-generate" /></div>}
+            {!editing && <div className="space-y-1"><Label className="text-xs text-slate-600">Password <span className="text-slate-400">(optional)</span></Label><Input value={fPassword} onChange={(e) => setFPassword(e.target.value)} placeholder="Leave blank to auto-generate" /><p className="text-[11px] text-slate-400">{fPassword.trim() ? "This exact password is set. The employee is not asked to change it." : "A temporary password is generated and must be changed at first login."}</p></div>}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">Role</Label>
@@ -292,11 +292,11 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
       <Dialog open={!!creds} onOpenChange={(o) => { if (!o) setCreds(null) }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5 text-emerald-600" /> Temporary Credentials</DialogTitle>
-            <DialogDescription>Share these with the employee. They must change the password on first login.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5 text-emerald-600" /> Login Credentials</DialogTitle>
+            <DialogDescription>Share these with the employee.{creds?.mustChange ? " They must change the password on first login." : " This is the password you set — no change is required."}</DialogDescription>
           </DialogHeader>
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-slate-500">Email</span><span className="font-medium text-slate-800">{creds?.email}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">User ID</span><span className="font-mono font-semibold text-slate-800">{creds?.loginId}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Password</span><span className="font-mono font-semibold text-slate-800">{creds?.tempPassword}</span></div>
           </div>
           <DialogFooter>
