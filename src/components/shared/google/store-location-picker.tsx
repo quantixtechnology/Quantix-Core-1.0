@@ -82,6 +82,16 @@ export function StoreLocationPicker({
      
     (google: any, lat: number, lng: number, placeId: string | null, formattedAddress: string | null) => {
       mapInstance.current?.setCenter({ lat, lng })
+      // The marker exists only once a location has actually been chosen — see
+      // the map init below for why showing one by default was misleading.
+      if (!markerInstance.current && mapInstance.current) {
+        const m = new google.maps.Marker({ position: { lat, lng }, map: mapInstance.current, draggable: true })
+        m.addListener("dragend", () => {
+          const p = m.getPosition()
+          if (p) applyLocationRef.current?.(google, p.lat(), p.lng(), null, null)
+        })
+        markerInstance.current = m
+      }
       markerInstance.current?.setPosition({ lat, lng })
       if (mapInstance.current?.setZoom) mapInstance.current.setZoom(16)
       setResolving(true)
@@ -126,6 +136,11 @@ export function StoreLocationPicker({
     [onChange]
   )
 
+  // Map listeners are registered once, so they call through a ref rather than
+  // capturing the first applyLocation and going stale.
+  const applyLocationRef = useRef<typeof applyLocation | null>(null)
+  useEffect(() => { applyLocationRef.current = applyLocation }, [applyLocation])
+
   // Initialize the map once the loader is ready.
   useEffect(() => {
     if (!hasGoogleMapsKey()) return
@@ -136,32 +151,44 @@ export function StoreLocationPicker({
         if (!mounted || !mapRef.current) return
         googleRef.current = google
 
-        const start =
+        const hasLocation =
           typeof value.latitude === "number" && typeof value.longitude === "number"
-            ? { lat: value.latitude, lng: value.longitude }
-            : DEFAULT_CENTER
+        const start = hasLocation
+          ? { lat: value.latitude as number, lng: value.longitude as number }
+          : DEFAULT_CENTER
          
         const map = new google.maps.Map(mapRef.current as HTMLElement, {
           center: start,
-          zoom: 16,
+          zoom: hasLocation ? 16 : 11,
           gestureHandling: "cooperative",
           fullscreenControl: false,
           streetViewControl: false,
         })
         mapInstance.current = map
 
-         
-        const marker = new google.maps.Marker({
-          position: start,
-          map,
-          draggable: true,
-        })
-        markerInstance.current = marker
+        // A marker is drawn ONLY when a location has been chosen. Showing one at
+        // the default centre made an unset store look pinned — the map said
+        // "here" while the panel said LOCATION NOT SAVED.
+        if (hasLocation) {
+           
+          const marker = new google.maps.Marker({ position: start, map, draggable: true })
+          markerInstance.current = marker
+          marker.addListener("dragend", () => {
+            const pos = marker.getPosition()
+            if (pos) applyLocationRef.current?.(google, pos.lat(), pos.lng(), value.googlePlaceId ?? null, null)
+          })
+        }
 
-        marker.addListener("dragend", () => {
-          const pos = marker.getPosition()
-          if (!pos) return
-          applyLocation(google, pos.lat(), pos.lng(), value.googlePlaceId ?? null, null)
+        // Clicking the map places the pin. This is the obvious way to "drop a
+        // pin", and it was missing: the only way to move the marker was to
+        // discover it could be dragged, which the screen never said.
+         
+        map.addListener("click", (e: any) => {
+          const lat = e?.latLng?.lat?.()
+          const lng = e?.latLng?.lng?.()
+          if (typeof lat === "number" && typeof lng === "number") {
+            applyLocationRef.current?.(google, lat, lng, null, null)
+          }
         })
 
         setMapsReady(true)
@@ -302,6 +329,12 @@ export function StoreLocationPicker({
             </p>
           )}
         </div>
+      )}
+
+      {/* The map is the fallback when the device cannot locate itself, so say
+          that it is interactive — previously nothing on screen did. */}
+      {!noKey && mapsReady && (
+        <p className="text-[11px] text-gray-500">Click the map to drop the pin, or drag it to fine-tune.</p>
       )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
