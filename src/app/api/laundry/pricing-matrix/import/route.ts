@@ -1,9 +1,21 @@
 // POST /api/laundry/pricing-matrix/import — bulk pricing import, keyed by the
-// immutable Garment Code. Pricing import NEVER creates garments; it only
-// references existing garments by code. Rows with an unknown code or an unknown
-// service are rejected. Validates every row first; nothing is written unless all
-// rows pass. Optional `replaceExisting` wipes the whole base-scope matrix first
-// (garments are untouched), then imports the new pricing.
+// immutable Garment Code.
+//
+// The file is the complete pricing master: a code that does not exist yet is
+// CREATED from the row's Garment Name and Category, using the code exactly as
+// written. That is what makes "bulk delete, then import my sheet" a real
+// workflow — the importer used to reject those rows with "Unknown garment
+// code", which forced every garment to be created by hand first.
+//
+// A code that DOES exist is reused, never duplicated, and its name is left
+// alone (history and the Pricing Matrix reference garment identity, and §16
+// says not to change existing data unnecessarily). An archived one is
+// reactivated, because a garment listed in the current master is by definition
+// part of it.
+//
+// Rows with an unknown service are still rejected. Validates every row first;
+// nothing is written unless all rows pass. Optional `replaceExisting` wipes the
+// whole base-scope matrix first (garments are untouched), then imports.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
@@ -32,7 +44,7 @@ function parseSubscription(v: string | null | undefined): boolean | undefined | 
   if (["NO", "N", "FALSE", "0", "NOT INCLUDED", "EXCLUDED"].includes(t)) return false
   return null // present but unrecognised → a row error, never a silent default
 }
-interface ImportRow { code?: string; cells?: ImportCell[] }
+interface ImportRow { code?: string; name?: string; category?: string; cells?: ImportCell[] }
 
 export async function POST(request: Request) {
   try {
@@ -54,11 +66,16 @@ export async function POST(request: Request) {
     // for a typo in a service that is sitting right there in the master.
     // Reading them changes nothing: an inactive service is still refused, still
     // not reactivated, and still not duplicated.
-    const [services, inactiveServices, garments] = await Promise.all([
+    const [services, inactiveServices, garments, categories] = await Promise.all([
       prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, select: { id: true, name: true } }),
       prisma.laundryService.findMany({ where: { businessId: lbId, isActive: false }, select: { name: true } }),
-      prisma.laundryGarment.findMany({ where: { businessId: lbId }, select: { id: true, code: true, name: true } }),
+      // Every garment of THIS tenant, archived ones included — codes are unique
+      // per business (@@unique([businessId, code])), so another tenant's
+      // GAR00001 is invisible here and can never be matched or overwritten.
+      prisma.laundryGarment.findMany({ where: { businessId: lbId }, select: { id: true, code: true, name: true, isActive: true } }),
+      prisma.laundryCategory.findMany({ where: { businessId: lbId }, select: { id: true, name: true } }),
     ])
+    const catByName = new Map(categories.map((c) => [c.name.trim().toLowerCase(), c]))
     const inactiveByName = new Set(inactiveServices.map((s) => s.name.trim().toLowerCase()))
     const svcByName = new Map(services.map((s) => [s.name.trim().toLowerCase(), s]))
     const svcNameById = new Map(services.map((s) => [s.id, s.name]))
@@ -67,7 +84,7 @@ export async function POST(request: Request) {
     // ── Validate every row ──────────────────────────────────────────────────
     const errors: { row: number; code: string; message: string }[] = []
     const seen = new Set<string>()
-    const prepared: { garmentId: string; garmentName: string; cells: Cell[] }[] = []
+    const prepared: { garmentId: string | null; garmentName: string; cells: Cell[]; create: { code: string; name: string; categoryId: string | null } | null; reactivate: boolean }[] = []
 
     rows.forEach((r, idx) => {
       const rn = idx + 1
@@ -76,8 +93,23 @@ export async function POST(request: Request) {
       const key = code.toLowerCase()
       if (seen.has(key)) { errors.push({ row: rn, code, message: `Duplicate code "${code}" in file.` }); return }
       seen.add(key)
+      // Unknown code → the row DEFINES a new garment rather than failing.
       const garment = garmentByCode.get(key)
-      if (!garment) { errors.push({ row: rn, code, message: `Unknown garment code "${code}".` }); return }
+      let create: { code: string; name: string; categoryId: string | null } | null = null
+      if (!garment) {
+        const name = String(r.name ?? "").trim()
+        if (!name) { errors.push({ row: rn, code, message: `"${code}" is a new garment, so Garment Name is required to create it.` }); return }
+        let categoryId: string | null = null
+        const catName = String(r.category ?? "").trim()
+        if (catName) {
+          const cat = catByName.get(catName.toLowerCase())
+          // Categories are not invented from a spreadsheet cell — a typo would
+          // silently create one, and the master would fill with near-duplicates.
+          if (!cat) { errors.push({ row: rn, code, message: `Unknown category "${catName}" for ${code}. Create it in Categories first, or leave the cell blank.` }); return }
+          categoryId = cat.id
+        }
+        create = { code, name, categoryId }
+      }
 
       const cells: Cell[] = []
       for (const c of r.cells || []) {
@@ -109,7 +141,16 @@ export async function POST(request: Request) {
         if (isNaN(price) || price < 0) { errors.push({ row: rn, code, message: `Invalid price for ${svc.name}.` }); continue }
         cells.push({ serviceId: svc.id, mode: mode as CellMode, price, subscriptionIncluded: sub })
       }
-      prepared.push({ garmentId: garment.id, garmentName: garment.name, cells })
+      prepared.push({
+        garmentId: garment?.id ?? null,
+        garmentName: garment?.name ?? create!.name,
+        cells,
+        create,
+        // A garment named in the current master belongs in it. Archiving is how
+        // the Garments master "deletes", so without this an archived code would
+        // be priced and still stay invisible.
+        reactivate: !!garment && !garment.isActive,
+      })
     })
 
     if (errors.length) return NextResponse.json({ success: false, errors }, { status: 422 })
@@ -120,12 +161,26 @@ export async function POST(request: Request) {
     }
 
     // ── Import (all rows valid) ─────────────────────────────────────────────
-    let imported = 0
+    let imported = 0, created = 0, reactivated = 0
     for (const p of prepared) {
-      await saveGarmentCells(lbId, p.garmentId, p.garmentName, p.cells, (sid) => svcNameById.get(sid) || "Service")
+      let garmentId = p.garmentId
+      if (!garmentId && p.create) {
+        // The code is written exactly as supplied — never regenerated. Codes are
+        // unique per business, so this cannot collide with another tenant.
+        const g = await prisma.laundryGarment.create({
+          data: { businessId: lbId, code: p.create.code, name: p.create.name, categoryId: p.create.categoryId, isActive: true },
+          select: { id: true },
+        })
+        garmentId = g.id
+        created++
+      } else if (garmentId && p.reactivate) {
+        await prisma.laundryGarment.update({ where: { id: garmentId }, data: { isActive: true } })
+        reactivated++
+      }
+      await saveGarmentCells(lbId, garmentId!, p.garmentName, p.cells, (sid) => svcNameById.get(sid) || "Service")
       imported++
     }
-    return NextResponse.json({ success: true, imported, replaced: !!b.replaceExisting })
+    return NextResponse.json({ success: true, imported, created, reactivated, replaced: !!b.replaceExisting })
   } catch (e) {
     console.error("[pricing-matrix-import] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

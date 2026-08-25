@@ -317,6 +317,10 @@ function ImportDialog({ services, businessId, onTemplate, onClose, onImported }:
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
       const rows = json.map((o) => ({
         code: String(o["Garment Code"] ?? ""),
+        // Used only when the code does not exist yet — the importer creates the
+        // garment from these rather than rejecting the row.
+        name: String(o["Garment Name"] ?? ""),
+        category: String(o["Category"] ?? ""),
         cells: services.map((s) => ({
           service: s.name,
           price: o[s.name],
@@ -330,7 +334,11 @@ function ImportDialog({ services, businessId, onTemplate, onClose, onImported }:
       const j = await res.json()
       if (res.status === 422 && j.errors) { setErrors(j.errors); toast.error(`${j.errors.length} row error(s) — nothing imported`); return }
       if (!j.success) throw new Error(j.error || "Import failed")
-      toast.success(`${j.imported} garment${j.imported === 1 ? "" : "s"} priced${j.replaced ? " (replaced all)" : ""}`); onImported()
+      const bits = [`${j.imported} garment${j.imported === 1 ? "" : "s"} priced`]
+      if (j.created) bits.push(`${j.created} created`)
+      if (j.reactivated) bits.push(`${j.reactivated} restored`)
+      if (j.replaced) bits.push("replaced all")
+      toast.success(bits.join(" · ")); onImported()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Import failed") } finally { setBusy(false) }
   }
 
@@ -338,7 +346,7 @@ function ImportDialog({ services, businessId, onTemplate, onClose, onImported }:
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Import Pricing</DialogTitle></DialogHeader>
-        <p className="text-sm text-slate-500">Upload an .xlsx or .csv matching the template. Rows are keyed by <b>Garment Code</b> (pricing never creates garments). Every row is validated first — nothing imports unless all rows pass.</p>
+        <p className="text-sm text-slate-500">Upload an .xlsx or .csv matching the template. Rows are keyed by <b>Garment Code</b>. A code that does not exist yet is <b>created</b> from the row&apos;s Garment Name and Category, so a complete sheet can rebuild the whole master. Every row is validated first — nothing imports unless all rows pass.</p>
         <Button variant="outline" className="gap-1 w-full" onClick={onTemplate}><FileSpreadsheet className="h-4 w-4" /> Download Template</Button>
         <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-800 cursor-pointer">
           <Switch checked={replace} onCheckedChange={setReplace} className="data-[state=checked]:bg-amber-600" />
@@ -366,19 +374,20 @@ function BulkDeleteDialog({ services, categories, businessId, selectedIds, onClo
   const [scope, setScope] = useState<"garments" | "service" | "category" | "all">(selectedIds.length ? "garments" : "service")
   const [serviceId, setServiceId] = useState(services[0]?.id || "")
   const [categoryId, setCategoryId] = useState(categories[0]?.id || "")
+  const [withGarments, setWithGarments] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const run = async () => {
     setBusy(true)
     try {
-      const body: Record<string, unknown> = { businessId, scope }
+      const body: Record<string, unknown> = { businessId, scope, removeGarments: withGarments }
       if (scope === "garments") body.garmentIds = selectedIds
       if (scope === "service") body.serviceId = serviceId
       if (scope === "category") body.categoryId = categoryId
       const res = await fetch("/api/laundry/pricing-matrix/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Delete failed")
-      toast.success(`${j.deleted} pricing row(s) deleted`); onDeleted()
+      toast.success(j.archived ? `${j.deleted} pricing row(s) deleted · ${j.archived} garment(s) removed from the master` : `${j.deleted} pricing row(s) deleted`); onDeleted()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Delete failed") } finally { setBusy(false) }
   }
 
@@ -390,12 +399,23 @@ function BulkDeleteDialog({ services, categories, businessId, selectedIds, onClo
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle className="text-rose-700">Bulk Delete Pricing</DialogTitle></DialogHeader>
-        <p className="text-sm text-slate-500">Deletes Pricing Matrix rows only. Garments are never deleted and order history is untouched.</p>
+        <p className="text-sm text-slate-500">This clears the current <b>pricing master</b>. Orders, order items, invoices, payments and reports are never touched — past orders keep the garment name and price they were processed with.</p>
         <div className="space-y-2.5">
           <Opt v="garments" label={`Selected garments (${selectedIds.length})`} disabled={!selectedIds.length} />
           <div className="flex items-center gap-2"><Opt v="service" label="By service:" /><select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="h-9 rounded-md border border-slate-200 px-2 text-sm bg-white flex-1">{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           <div className="flex items-center gap-2"><Opt v="category" label="By category:" /><select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="h-9 rounded-md border border-slate-200 px-2 text-sm bg-white flex-1">{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <Opt v="all" label="Entire pricing matrix" />
+          <label className={`mt-1 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${withGarments ? "border-rose-200 bg-rose-50/60 text-rose-800" : "border-slate-200 text-slate-600"} ${scope === "service" ? "opacity-40" : "cursor-pointer"}`}>
+            <input type="checkbox" className="mt-0.5" checked={withGarments} disabled={scope === "service"} onChange={(e) => setWithGarments(e.target.checked)} />
+            <span>
+              Also remove the garments from the master
+              <span className="block text-[11px] opacity-80">
+                {scope === "service"
+                  ? "Not available when deleting a single service’s prices — the garments still use the others."
+                  : "They are archived, never destroyed: history keeps them, and re-importing the same code brings the garment back rather than creating a second one."}
+              </span>
+            </span>
+          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

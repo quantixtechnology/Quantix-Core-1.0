@@ -15,7 +15,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const state = {
   services: [] as { name: string; isActive: boolean; id: string }[],
   inactive: [] as { name: string }[],
-  garments: [] as { id: string; code: string; name: string }[],
+  garments: [] as { id: string; code: string; name: string; isActive: boolean }[],
   saved: [] as { garmentId: string; cells: unknown[] }[],
 }
 
@@ -34,11 +34,16 @@ vi.mock('@/lib/prisma', () => ({
         return state.services.filter((s) => s.isActive)
       }),
     },
-    laundryCategory: { findMany: vi.fn(async () => [{ name: 'Men' }]) },
     laundryGarment: {
       findFirst: vi.fn(async () => state.garments[0] ?? null),
       findMany: vi.fn(async () => state.garments),
+      // The importer creates a garment for an unknown code and reactivates an
+      // archived one; neither happens in this file's fixtures, but the mock
+      // must carry them or a 500 hides the real assertion.
+      create: vi.fn(async ({ data }: never) => { const g = { id: `g${state.garments.length + 1}`, isActive: true, ...(data as object) } as never; state.garments.push(g); return g }),
+      update: vi.fn(async () => ({})),
     },
+    laundryCategory: { findMany: vi.fn(async () => [{ id: 'cat_men', name: 'Men' }]) },
     laundryPricingRule: { deleteMany: vi.fn(async () => ({ count: 0 })) },
   },
 }))
@@ -47,7 +52,7 @@ const ACTIVE = ['Wash & Fold', 'Wash & Iron', 'Dry Clean']
 const reset = () => {
   state.services = ACTIVE.map((name, i) => ({ id: `s${i}`, name, isActive: true }))
   state.inactive = []
-  state.garments = [{ id: 'g1', code: 'GAR00001', name: 'Shirt' }]
+  state.garments = [{ id: 'g1', code: 'GAR00001', name: 'Shirt', isActive: true }]
   state.saved = []
 }
 
