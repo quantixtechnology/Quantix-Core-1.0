@@ -152,7 +152,7 @@ function Login({ onLoggedIn, brand }: { onLoggedIn: (t: string, e: Exec) => void
             {/* Executives sign in with what they know — their mobile number or
                 their employee code. Internal user IDs are never shown or used. */}
             <label className="text-xs font-medium text-slate-500">Mobile Number / Employee Code</label>
-            <input value={mobile} onChange={(e) => setMobile(e.target.value)} autoCapitalize="characters" placeholder="9876543210 or EMP-001" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} autoCapitalize="characters" placeholder="9876543210 or your Employee ID" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Password</label>

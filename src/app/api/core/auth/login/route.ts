@@ -13,6 +13,7 @@ import { isPlatformOwnerEmail } from '@/lib/permissions';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 import { isPlatformAppHost, productHostForCode } from '@/lib/product-hosts';
+import { resolveTenantByEmployeeId } from '@/lib/tenant-identity-server';
 
 const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 20 };
 const REFRESH_TOKEN_EXPIRY_DAYS = 60;
@@ -69,15 +70,39 @@ export async function POST(request: Request) {
       salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
     } as const;
 
-    // Lookup order: loginId first → email exact → email case-insensitive fallback
-    let user = await db.user.findUnique({ where: { loginId: identifier }, select: userSelect });
+    // ── Employee id: the identifier names its own tenant ───────────────────
+    //
+    // Laundry OS is reached at one shared hostname, so an unprefixed EMP001
+    // could not say which business it belonged to. A prefixed id (8T5EMP001)
+    // resolves to exactly one Business through the platform tenant identity,
+    // and then to exactly one membership within it — so two tenants may both
+    // have employee number 001, with the same password, and still never
+    // resolve to each other's account.
+    const employeeIdentity = await resolveTenantByEmployeeId(identifier).catch(() => null);
+    const employeeUserId = employeeIdentity
+      ? (await db.businessUser.findFirst({
+          where: { businessId: employeeIdentity.businessId, employeeCode: identifier.toUpperCase() },
+          select: { userId: true },
+        }))?.userId ?? null
+      : null;
+    // A well-formed employee id that matches no membership must NOT fall
+    // through to the email/loginId lookups below: falling through is how an
+    // identifier naming tenant A could end up matching an account in tenant B.
+    if (employeeIdentity && !employeeUserId) {
+      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
+    }
 
-    if (!user) {
+    // Lookup order: employee id → loginId → email exact → email case-insensitive
+    let user = employeeUserId
+      ? await db.user.findUnique({ where: { id: employeeUserId }, select: userSelect })
+      : await db.user.findUnique({ where: { loginId: identifier }, select: userSelect });
+
+    if (!user && !employeeIdentity) {
       user = await db.user.findUnique({ where: { email: identifier }, select: userSelect });
     }
 
     // SQLite fallback: case-insensitive search via raw SQL
-    if (!user) {
+    if (!user && !employeeIdentity) {
       console.log(`[login] Exact match failed. Trying LOWER() fallback for: ${identifier}`);
       const rows = await db.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM User WHERE LOWER(loginId) = ${identifier} OR LOWER(email) = ${identifier} LIMIT 1

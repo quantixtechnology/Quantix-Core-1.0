@@ -929,6 +929,9 @@ model BusinessUser {
   id               String                @id @default(cuid())
   userId           String
   businessId       String
+  // Tenant-scoped employee id ({prefix}EMP###). Null for the Business Owner and
+  // for memberships created before this existed. Never reused, never edited.
+  employeeCode     String?
   role             Role
   storeId          String?
   businessRoleId   String?
@@ -946,6 +949,7 @@ model BusinessUser {
   storeAssignments UserStoreAssignment[]
 
   @@unique([userId, businessId])
+  @@unique([businessId, employeeCode])
   @@index([businessId])
   @@index([userId])
   @@index([role])
@@ -6649,4 +6653,34 @@ model LaundryNavItem {
 model LaundryGarSequenceCounter {
   id   String @id @default("singleton")
   next Int    @default(1)
+}
+
+// ─── Platform Tenant Identity ───────────────────────────────────────────────
+// Business Code → Tenant Prefix, persisted once and never rewritten. The
+// derivation (src/lib/tenant-identity.ts) is injective for canonical codes, so
+// this table is a durable RECORD of the identity rather than the thing that
+// invents it — which is what makes the prefix survive a Business Code edit,
+// a rename, or a re-derivation with different code.
+model TenantIdentity {
+  id           String   @id @default(cuid())
+  businessId   String   @unique // platform Business.id
+  businessCode String // the code it was derived from, kept for audit
+  prefix       String   @unique // machine-issued; no admin surface writes this
+  createdAt    DateTime @default(now())
+
+  @@index([prefix])
+}
+
+// Per-tenant, per-namespace monotonic counter. Incremented atomically; never
+// decremented, never healed backwards, so an archived employee's number is
+// never handed to anyone else.
+model TenantEmployeeSequence {
+  id         String   @id @default(cuid())
+  businessId String // platform Business.id
+  namespace  String // EMP | DL | COM …
+  next       Int      @default(1)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([businessId, namespace])
+  @@index([businessId])
 }

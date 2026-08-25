@@ -9,18 +9,17 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
 import { eligibleExecutiveWhere } from "@/lib/laundry-eligible-executives"
+import { issueDeliveryEmployeeId, reconcileDeliveryExecutiveIds } from "@/lib/laundry-employee-identity"
 
 export const runtime = "nodejs"
 
 const BASE_EMPLOYEE_ROLE = "STORE_EXECUTIVE"
 const genPassword = () => `Delivery@${Math.random().toString(36).slice(2, 7).toUpperCase()}`
 
-async function nextEmployeeCode(businessId: string): Promise<string> {
-  const rows = await prisma.laundryDeliveryExecutive.findMany({ where: { businessId }, select: { employeeCode: true } })
-  let max = 0
-  for (const r of rows) { const m = /^EXE(\d+)$/i.exec(r.employeeCode.trim()); if (m) max = Math.max(max, parseInt(m[1], 10)) }
-  return `EXE${String(max + 1).padStart(3, "0")}`
-}
+// Employee codes come from the shared platform counter — see
+// src/lib/tenant-identity-server.ts. The scan-for-max version that used to live
+// here handed the same code to two admins who clicked Create at the same time,
+// and produced codes (EXE001) that named no tenant on a shared login domain.
 
 export async function GET(request: Request) {
   try {
@@ -31,6 +30,10 @@ export async function GET(request: Request) {
     const biz = await resolveLaundryBusiness(businessId!)
     if (!biz) return NextResponse.json({ success: true, data: [], stores: [] })
     const lbId = biz.id
+    // Runtime reconciliation: a tenant created before employee identity existed
+    // heals here, with no migration to run and nothing for an admin to set.
+    // Idempotent — a healthy tenant does two indexed reads and writes nothing.
+    await reconcileDeliveryExecutiveIds(guard.platformBusinessId, lbId).catch(() => 0)
 
     // Dispatch screens pass ?assignable=1&storeId= to get only the executives
     // who may take an order from that store (see laundry-eligible-executives).
@@ -90,13 +93,10 @@ export async function POST(request: Request) {
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 })
     if (!/^\d{7,15}$/.test(mobile.replace(/\D/g, ""))) return NextResponse.json({ error: "A valid mobile number is required" }, { status: 400 })
 
-    let employeeCode = String(b.employeeCode || "").trim()
-    if (employeeCode) {
-      const clash = await prisma.laundryDeliveryExecutive.findFirst({ where: { businessId: lbId, employeeCode }, select: { id: true } })
-      if (clash) return NextResponse.json({ error: `Employee code "${employeeCode}" already exists` }, { status: 409 })
-    } else {
-      employeeCode = await nextEmployeeCode(lbId)
-    }
+    // Always system-issued. The tenant prefix is derived from the Business Code
+    // and must not be typeable, or an admin could put their staff into another
+    // tenant's namespace.
+    const employeeCode = await issueDeliveryEmployeeId(platformBusinessId)
 
     // Provision an auth User (existing auth system). Synthesised unique email; the
     // executive logs in with mobile + password via the PWA (Slice 2).

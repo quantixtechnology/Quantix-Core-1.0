@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma"
 import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveExecutiveTenant } from "@/lib/laundry-executive-tenant"
 import { classifyHostTenant, TENANT_MISMATCH_MESSAGE } from "@/lib/pwa-tenant-boundary"
+import { parseEmployeeId } from "@/lib/tenant-identity"
+import { resolveTenantByEmployeeId } from "@/lib/tenant-identity-server"
 
 export const runtime = "nodejs"
 
@@ -39,6 +41,41 @@ export async function POST(request: Request) {
       }
     }
 
+    // ── Tenant from the IDENTIFIER, on a host that names no tenant ──────────
+    //
+    // laundry.<base> is shared by every tenant, so the host cannot say who is
+    // signing in. Until employee ids carried a tenant prefix, the query below
+    // ran UNSCOPED and picked whichever executive's password happened to
+    // verify: two tenants with EXE001 and the same password meant an executive
+    // of business A could be signed in as the executive of business B, and a
+    // wrong password incremented failedAttempts on both.
+    //
+    // A prefixed id (8T5DL001) names its tenant before any password is read.
+    // The prefix is resolved first, and the lookup is scoped to that business.
+    let identityBusinessId: string | null = null
+    const parsedId = parseEmployeeId(identifier)
+    if (parsedId) {
+      const identity = await resolveTenantByEmployeeId(identifier).catch(() => null)
+      // A well-formed id whose prefix belongs to no tenant is not a reason to
+      // fall back to an unscoped search — that is the exact hole being closed.
+      if (!identity) {
+        return NextResponse.json({ error: "No active delivery executive found for this mobile number or employee code" }, { status: 401 })
+      }
+      const lb = await prisma.laundryBusiness.findFirst({
+        where: { platformBusinessId: identity.businessId },
+        select: { id: true },
+      })
+      if (!lb) {
+        return NextResponse.json({ error: "No active delivery executive found for this mobile number or employee code" }, { status: 401 })
+      }
+      // If the host ALSO names a tenant, the two must agree. Disagreement is an
+      // attempt to sign into one tenant from another tenant's app.
+      if (tenant && tenant.laundryBusinessId !== lb.id) {
+        return NextResponse.json({ error: TENANT_MISMATCH_MESSAGE }, { status: 403 })
+      }
+      identityBusinessId = lb.id
+    }
+
     // Active executives matching the identifier (mobile OR employee code) with
     // a linked login account. Employee codes are matched case-insensitively
     // because they are typed by hand on a phone.
@@ -46,7 +83,10 @@ export async function POST(request: Request) {
       where: {
         isActive: true, userId: { not: null },
         OR: [{ mobile: identifier }, { employeeCode: identifier }, { employeeCode: identifier.toUpperCase() }],
-        ...(tenant ? { businessId: tenant.laundryBusinessId } : {}),
+        // Identity prefix wins when present (it is exact); host scoping is the
+        // fallback. One of the two is always applied unless the identifier is a
+        // bare mobile number on a shared host.
+        ...(identityBusinessId ? { businessId: identityBusinessId } : tenant ? { businessId: tenant.laundryBusinessId } : {}),
       },
       include: { store: { select: { storeName: true } } },
     })

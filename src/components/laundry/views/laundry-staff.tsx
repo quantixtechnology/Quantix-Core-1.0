@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, UsersRound, Plus, Search, Pencil, KeyRound, Power, Shield, Lock, Copy, Trash2, AlertTriangle } from "lucide-react"
 
 interface Emp {
-  userId: string; businessUserId: string; email: string; name: string; phone: string | null
+  userId: string; businessUserId: string; employeeCode: string | null; email: string; name: string; phone: string | null
   active: boolean; lastLoginAt: string | null; roleId: string | null; roleCode: string | null
   roleName: string | null; isOwner: boolean; storeId: string | null; storeName: string | null
 }
@@ -159,6 +159,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         <table className="w-full text-sm">
           <thead><tr className="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
             <th className="text-left font-semibold px-4 py-2.5">Employee</th>
+            <th className="text-left font-semibold px-4 py-2.5">Employee ID</th>
             <th className="text-left font-semibold px-4 py-2.5">Role</th>
             <th className="text-left font-semibold px-4 py-2.5">Store</th>
             <th className="text-left font-semibold px-4 py-2.5">Status</th>
@@ -166,10 +167,17 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
             <th className="text-right font-semibold px-4 py-2.5">Actions</th>
           </tr></thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-12 text-slate-400">No employees found.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-slate-400">No employees found.</td></tr>}
             {filtered.map((e) => (
               <tr key={e.userId} className={`border-b border-slate-100 last:border-0 ${e.active ? "" : "opacity-60"}`}>
                 <td className="px-4 py-2.5"><div className="font-medium text-slate-800 flex items-center gap-1.5">{e.isOwner && <Lock className="h-3 w-3 text-amber-500" />}{e.name}</div><div className="text-[11px] text-slate-400">{e.email}</div></td>
+                {/* The Business Owner is the business, not an employee of it —
+                    no number is consumed for them. */}
+                <td className="px-4 py-2.5">
+                  {e.employeeCode
+                    ? <span className="font-mono text-xs text-slate-700">{e.employeeCode}</span>
+                    : <span className="text-[11px] text-slate-400">{e.isOwner ? "Not required" : "—"}</span>}
+                </td>
                 <td className="px-4 py-2.5">{e.roleName ? <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 gap-1"><Shield className="h-3 w-3" />{e.roleName}</Badge> : <span className="text-slate-300 text-xs">—</span>}</td>
                 <td className="px-4 py-2.5 text-slate-600">{e.storeName || <span className="text-slate-300">All stores</span>}</td>
                 <td className="px-4 py-2.5">{e.active ? <span className="text-[11px] font-medium text-emerald-600">● Active</span> : <span className="text-[11px] font-medium text-slate-400">● Inactive</span>}</td>
@@ -212,6 +220,23 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
               <div className="space-y-1"><Label className="text-xs text-slate-600">Phone</Label><Input value={fPhone} onChange={(e) => setFPhone(e.target.value)} placeholder="Optional" /></div>
             </div>
             <div className="space-y-1"><Label className="text-xs text-slate-600">Email</Label><Input value={fEmail} onChange={(e) => setFEmail(e.target.value)} placeholder="jane@business.com" disabled={!!editing} /></div>
+            {/* Issued by the platform from this business's Business Code. Read
+                only: an administrator must never be able to type a tenant
+                prefix, and must never have to maintain the sequence. */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600">Employee ID</Label>
+              <Input
+                value={editing?.isOwner ? "" : editing?.employeeCode || ""}
+                readOnly disabled
+                placeholder={editing?.isOwner ? "Not required for the Business Owner" : "Generated automatically on save"}
+                className="bg-slate-50 font-mono text-sm"
+              />
+              <p className="text-[11px] text-slate-400">
+                {editing?.isOwner
+                  ? "The Business Owner does not need an employee ID."
+                  : "Generated from your Business Code. Permanent, and never reused."}
+              </p>
+            </div>
             {!editing && <div className="space-y-1"><Label className="text-xs text-slate-600">Password <span className="text-slate-400">(optional — auto-generated if blank)</span></Label><Input value={fPassword} onChange={(e) => setFPassword(e.target.value)} placeholder="Leave blank to auto-generate" /></div>}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">

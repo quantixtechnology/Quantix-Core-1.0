@@ -85,7 +85,7 @@ export function LaundryDeliveryExecutives() {
       const url = editing ? `/api/laundry/delivery-executives/${editing.id}` : "/api/laundry/delivery-executives"
       const payload = editing
         ? { businessId: currentBusinessId, name: form.name, mobile: form.mobile, canReject: form.canReject, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, isActive: form.isActive }
-        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, canReject: form.canReject, employeeCode: form.employeeCode || undefined, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, password: form.password || undefined, isActive: form.isActive }
+        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, canReject: form.canReject, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, password: form.password || undefined, isActive: form.isActive }
       const res = await fetch(url, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.success === false) throw new Error(j.error || "Save failed")
@@ -221,7 +221,20 @@ export function LaundryDeliveryExecutives() {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><Label>Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Rahul Kumar" /></div>
               <div><Label>Mobile *</Label><Input value={form.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="9876543210" /></div>
-              <div><Label>Employee Code</Label><Input value={form.employeeCode} onChange={(e) => set("employeeCode", e.target.value)} placeholder="Auto (EXE001)" disabled={!!editing} className={editing ? "bg-slate-50 font-mono text-sm" : ""} /></div>
+              {/* System-issued from the Business Code — never typed, or an
+                  admin could place staff in another tenant's namespace. */}
+              <div>
+                <Label>Employee ID</Label>
+                <Input
+                  value={editing ? form.employeeCode : ""}
+                  readOnly disabled
+                  placeholder="Generated on save"
+                  className="bg-slate-50 font-mono text-sm"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {editing ? "Permanent — never changes or is reused." : "Generated automatically from your Business Code."}
+                </p>
+              </div>
               <div><Label>Assigned Store</Label>
                 <select value={form.storeId} onChange={(e) => set("storeId", e.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm bg-white"><option value="">—</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.storeName}</option>)}</select>
               </div>

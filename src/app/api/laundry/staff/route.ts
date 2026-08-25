@@ -10,6 +10,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission, rbacAudit, isBusinessOwnerRole } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
+import { issueStaffEmployeeId, reconcileStaffEmployeeIds } from "@/lib/laundry-employee-identity"
 
 export const runtime = "nodejs"
 
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
   if (!guard.ok) return guard.res
   const platformBusinessId = guard.platformBusinessId
   const laundryBusinessId = guard.ctx.laundryBusinessId
+  // Runtime reconciliation, same philosophy as the navigation/CRM defaults:
+  // idempotent, tenant-independent, non-destructive, nothing to configure.
+  await reconcileStaffEmployeeIds(platformBusinessId, laundryBusinessId).catch(() => 0)
 
   const [members, assignments, stores, execs, ownerRoles] = await Promise.all([
     prisma.businessUser.findMany({
@@ -80,6 +84,9 @@ export async function GET(request: Request) {
     return {
       userId: bu.userId,
       businessUserId: bu.id,
+      // Null for the Business Owner by design — see §5. The UI shows
+      // "Not required" rather than an empty cell.
+      employeeCode: bu.employeeCode,
       email: bu.user.email,
       name: bu.user.name,
       phone: bu.user.phone,
@@ -129,9 +136,14 @@ export async function POST(request: Request) {
       mustChangePassword: true, emailVerified: true, createdBy: guard.ctx.userId,
     },
   })
+  // The Business Owner is the business, not an employee of it, and the existing
+  // staff surface already treats that row differently — so no EMP number is
+  // consumed for them. Everyone else gets one, issued by the shared platform
+  // counter and never typed by an administrator.
+  const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId)
   await prisma.businessUser.create({
     data: {
-      userId: user.id, businessId: platformBusinessId,
+      userId: user.id, businessId: platformBusinessId, employeeCode,
       role: role?.isOwner ? "LAUNDRY_OWNER" : BASE_EMPLOYEE_ROLE,
       storeId: null, isActive: true, invitedAt: new Date(), acceptedAt: new Date(),
     },
@@ -145,5 +157,5 @@ export async function POST(request: Request) {
   }
   await rbacAudit(platformBusinessId, "EMPLOYEE_CREATED", { targetUserId: user.id, roleId: role?.id ?? null, actorName: guard.ctx.userName, detail: { email, role: role?.name ?? null } })
 
-  return NextResponse.json({ success: true, data: { userId: user.id, email, tempPassword: rawPassword } }, { status: 201 })
+  return NextResponse.json({ success: true, data: { userId: user.id, email, employeeCode, tempPassword: rawPassword } }, { status: 201 })
 }
