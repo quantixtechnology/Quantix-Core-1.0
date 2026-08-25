@@ -49,7 +49,7 @@ export async function grantAllowance(tx: Tx, sub: { id: string; businessId: stri
   return { kg, pieces }
 }
 
-// Subscription eligibility is defined ONCE, on the SERVICE, never per plan.
+// Subscription eligibility is defined PER GARMENT × SERVICE, never per plan.
 //
 // It used to be read from LaundryGarment.subscriptionIncluded, which cannot
 // express the actual rule: the same shirt is covered under Wash & Fold and not
@@ -70,19 +70,35 @@ export async function subscriptionCoverageRules(laundryBusinessId: string): Prom
   // Both flags already exist — LaundryService.subscriptionEligible and
   // LaundryGarment.subscriptionIncluded — so this is an AND over what the
   // Pricing configuration already stores, not a new eligibility system.
-  const [eligibleServices, eligibleGarments] = await Promise.all([
-    prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }, select: { id: true } }),
-    prisma.laundryGarment.findMany({ where: { businessId: laundryBusinessId, subscriptionIncluded: true }, select: { id: true } }),
+  // The decision is now made PER PAIR, on the pricing rule — the row that IS
+  // the garment × service combination. A Shirt can be covered under Wash & Fold
+  // and not under Dry Clean, which no pair of garment-wide and service-wide
+  // flags can express.
+  //
+  // `rule.subscriptionIncluded` is nullable, and null means "never decided
+  // here". Those pairs fall back to the older AND, so a tenant that has not
+  // touched the new control keeps exactly the coverage it had.
+  const [services, garments, rules] = await Promise.all([
+    prisma.laundryService.findMany({ where: { businessId: laundryBusinessId }, select: { id: true, subscriptionEligible: true } }),
+    prisma.laundryGarment.findMany({ where: { businessId: laundryBusinessId }, select: { id: true, subscriptionIncluded: true } }),
+    prisma.laundryPricingRule.findMany({
+      where: { businessId: laundryBusinessId, serviceId: { not: null }, garmentId: { not: null } },
+      select: { serviceId: true, garmentId: true, pricingType: true, subscriptionIncluded: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+    }),
   ])
-  if (eligibleServices.length === 0 || eligibleGarments.length === 0) return []
-  const sIds = eligibleServices.map((s) => s.id)
-  const gIds = eligibleGarments.map((g) => g.id)
-  const rules = await prisma.laundryPricingRule.findMany({ where: { businessId: laundryBusinessId, serviceId: { in: sIds }, garmentId: { in: gIds } }, select: { serviceId: true, garmentId: true, pricingType: true } })
+  const serviceEligible = new Map(services.map((s) => [s.id, !!s.subscriptionEligible]))
+  const garmentIncluded = new Map(garments.map((g) => [g.id, !!g.subscriptionIncluded]))
+
   const seen = new Set<string>()
   const out: { serviceId: string; garmentId: string | null; mode: AllowanceMode }[] = []
   for (const r of rules) {
-    if (!r.serviceId || !r.garmentId || seen.has(`${r.serviceId}|${r.garmentId}`)) continue
-    seen.add(`${r.serviceId}|${r.garmentId}`)
+    if (!r.serviceId || !r.garmentId) continue
+    const key = `${r.serviceId}|${r.garmentId}`
+    if (seen.has(key)) continue          // newest rule for the pair wins
+    seen.add(key)
+    const covered = r.subscriptionIncluded ?? (!!serviceEligible.get(r.serviceId) && !!garmentIncluded.get(r.garmentId))
+    if (!covered) continue
     out.push({ serviceId: r.serviceId, garmentId: r.garmentId, mode: r.pricingType === "PER_KG" ? "PER_KG" : "PER_PIECE" })
   }
   return out

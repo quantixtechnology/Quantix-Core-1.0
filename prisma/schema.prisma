@@ -5012,6 +5012,13 @@ model LaundryPricingRule {
   gstPercent            Float     @default(0)
   minCharge             Float?
   maxCharge             Float? // optional cap
+  // Subscription eligibility for THIS garment × service pair — the only place
+  // that can express "a Shirt is covered under Wash & Fold but not under Dry
+  // Clean", because this row IS the pair. NULLABLE on purpose: null means "not
+  // decided here", and coverage falls back to the older
+  // service.subscriptionEligible AND garment.subscriptionIncluded rule, so
+  // every existing tenant's eligibility is unchanged with no backfill.
+  subscriptionIncluded  Boolean?
   minWeightKg           Float? // Per-KG minimum billable weight
   maxWeightKg           Float? // Per-KG / Subscription included cap
   extraWeightCharge     Float? // excess rate beyond cap

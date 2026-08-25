@@ -28,17 +28,25 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const gData: Record<string, unknown> = {}
     if (b.categoryId !== undefined) gData.categoryId = b.categoryId || null
     if (b.averageWeight !== undefined) gData.averageWeight = b.averageWeight === "" || b.averageWeight == null ? null : Number(b.averageWeight)
-    if (b.subscriptionIncluded !== undefined) gData.subscriptionIncluded = !!b.subscriptionIncluded
+    // No garment-wide subscription flag is written here any more: eligibility
+    // is per garment × service and lives on the pricing rule, which IS the pair.
     if (Object.keys(gData).length) await prisma.laundryGarment.update({ where: { id }, data: gData })
 
-    const rawCells: { serviceId: string; mode: string; price?: number | null; minWeightKg?: number | null }[] = Array.isArray(b.cells) ? b.cells : []
+    const rawCells: { serviceId: string; mode: string; price?: number | null; minWeightKg?: number | null; subscriptionIncluded?: boolean | null }[] = Array.isArray(b.cells) ? b.cells : []
     const cellServiceIds = rawCells.map((c) => c.serviceId).filter(Boolean)
     const services = cellServiceIds.length ? await prisma.laundryService.findMany({ where: { businessId: lbId, id: { in: cellServiceIds } }, select: { id: true, name: true } }) : []
     const nameById = new Map(services.map((s) => [s.id, s.name]))
 
     const cells: Cell[] = rawCells
       .filter((c) => c.serviceId && nameById.has(c.serviceId) && MODES.has(c.mode))
-      .map((c) => ({ serviceId: c.serviceId, mode: c.mode as CellMode, price: c.price ?? 0, minWeightKg: c.minWeightKg ?? null }))
+      .map((c) => ({
+        serviceId: c.serviceId,
+        mode: c.mode as CellMode,
+        price: c.price ?? 0,
+        minWeightKg: c.minWeightKg ?? null,
+        // Left undefined when the caller sent nothing, so the stored value stands.
+        subscriptionIncluded: c.subscriptionIncluded === undefined ? undefined : !!c.subscriptionIncluded,
+      }))
     await saveGarmentCells(lbId, id, garment.name, cells, (sid) => nameById.get(sid) || "Service")
 
     return NextResponse.json({ success: true })

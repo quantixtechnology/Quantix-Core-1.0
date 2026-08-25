@@ -67,8 +67,12 @@ describe('it calls the deployed APIs and trusts the server for money', () => {
 })
 
 describe('subscription eligibility is shown per row', () => {
-  it('requires the service AND the garment', () => {
-    expect(OWNER).toContain('!!g?.subscriptionIncluded && !!sv?.subscriptionEligible')
+  it('reads the coverage engine own answer, per garment x service pair', () => {
+    // Eligibility is decided per pair, so the screen can no longer work it out
+    // from a garment flag and a service flag — it asks the engine instead, which
+    // is what keeps it from promising cover the engine will not grant.
+    expect(OWNER).toContain('/api/laundry/subscription-coverage?businessId=')
+    expect(OWNER).toContain('coverage.has(`${serviceId}|${garmentId}`)')
   })
 
   it('states both outcomes in plain words', () => {

@@ -128,21 +128,30 @@ export function LaundryStoreAudit() {
       .catch(() => {})
   }, [currentBusinessId])
 
-  // Eligibility = the SERVICE allows subscriptions AND the GARMENT is included.
-  // Same rule the coverage engine applies, read from the same two flags, so the
-  // screen cannot promise cover the engine will not grant.
-  const isEligible = useCallback((garmentId: string | null, serviceId: string | null) => {
-    const g = garments.find((x) => x.id === garmentId) as { subscriptionIncluded?: boolean } | undefined
-    const sv = services.find((x) => x.id === serviceId)
-    return !!g?.subscriptionIncluded && !!sv?.subscriptionEligible
-  }, [garments, services])
+  // Eligibility is decided per garment × SERVICE pair, so it cannot be worked
+  // out from a garment flag and a service flag. This reads the coverage engine's
+  // own answer, so the screen cannot promise cover the engine will not grant.
+  const [coverage, setCoverage] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/subscription-coverage?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => r.json())
+      .then((j) => setCoverage(new Set(((j.data || []) as { serviceId: string; garmentId: string | null }[]).map((p) => `${p.serviceId}|${p.garmentId}`))))
+      .catch(() => {})
+  }, [currentBusinessId])
 
-  /** Which OTHER active services would cover this garment — useful when one will not. */
+  const isEligible = useCallback((garmentId: string | null, serviceId: string | null) => {
+    if (!garmentId || !serviceId) return false
+    return coverage.has(`${serviceId}|${garmentId}`)
+  }, [coverage])
+
+  /** Which OTHER services would cover this garment — useful when one will not. */
   const eligibleElsewhere = useCallback((garmentId: string | null, serviceId: string | null) => {
-    const g = garments.find((x) => x.id === garmentId) as { subscriptionIncluded?: boolean } | undefined
-    if (!g?.subscriptionIncluded) return []
-    return services.filter((sv) => sv.subscriptionEligible && sv.id !== serviceId).map((sv) => sv.name)
-  }, [garments, services])
+    if (!garmentId) return []
+    return services
+      .filter((sv) => sv.id !== serviceId && coverage.has(`${sv.id}|${garmentId}`))
+      .map((sv) => sv.name)
+  }, [coverage, services])
 
   const loadQueue = useCallback(async (silent = false) => {
     if (!currentBusinessId) return

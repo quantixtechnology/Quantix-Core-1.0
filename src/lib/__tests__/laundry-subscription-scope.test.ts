@@ -20,22 +20,18 @@ describe('subscription eligibility is an AND over service and garment', () => {
     expect(MATRIX).toContain('Subscription: {s.subscriptionEligible ? "Included" : "Not included"}')
   })
 
-  it('the garment half is editable in BOTH directions', () => {
-    expect(MATRIX).toContain('Include in Subscription')
-    expect(MATRIX).toContain('Not Included in Subscription')
-    expect(MATRIX).toContain('subscriptionIncluded: subIncluded')
+  it('the decision is made per PAIR, on the service row of the editor', () => {
+    expect(MATRIX).toContain('Included in Subscription')
+    expect(MATRIX).toContain('setCell(s.id, { sub: e.target.checked })')
+    expect(MATRIX).toContain('subscriptionIncluded: cells[s.id].sub')
   })
 
-  it('the engine requires both, so neither flag alone grants coverage', () => {
-    const SERVER = readFileSync(join(process.cwd(), 'src/lib/laundry-subscription-server.ts'), 'utf8')
-    expect(SERVER).toContain('subscriptionEligible: true')
-    expect(SERVER).toContain('subscriptionIncluded: true')
-    expect(SERVER).toContain('BOTH dimensions must agree')
+  it('no garment-wide control remains', () => {
+    expect(MATRIX).not.toContain('setSubIncluded')
+    expect(MATRIX).not.toContain('Not Included in Subscription')
   })
 
-  it('the garment state is shown on its own row, not as a separate column', () => {
-    // Read back from the server on every load, never from local state.
-    expect(MATRIX).toContain('Subscription: {g.subscriptionIncluded ? "Included" : "Not included"}')
+  it('there is still no garment-level Subscription column in the table', () => {
     expect(MATRIX).not.toMatch(/"Category", "Subscription"/)
   })
 
@@ -76,18 +72,20 @@ describe('the Service Creator is where eligibility is set', () => {
   })
 })
 
-describe('the coverage engine keys on the SERVICE', () => {
-  it('reads LaundryService.subscriptionEligible', () => {
-    expect(ENGINE).toContain('prisma.laundryService.findMany({ where: { businessId: laundryBusinessId, subscriptionEligible: true }')
+describe('the coverage engine decides per garment x service pair', () => {
+  it('reads the decision off the pricing rule — the row that IS the pair', () => {
+    expect(ENGINE).toContain('subscriptionIncluded: true')
+    expect(ENGINE).toContain('r.subscriptionIncluded ??')
   })
 
-  // Superseded. Keying on the GARMENT ALONE was the original fault — it could
-  // not express "covered under Wash & Fold, not under Express Wash & Fold". The
-  // service is now required, and the garment is required TOO, so a Blanket under
-  // an eligible service is still excluded. Neither flag decides alone.
-  it('requires the service, and does not rely on the garment alone', () => {
-    expect(ENGINE).toContain('subscriptionEligible: true')
-    expect(ENGINE).toContain('serviceId: { in: sIds }, garmentId: { in: gIds }')
+  // Superseded twice. Keying on the GARMENT alone could not express "covered
+  // under Wash & Fold, not under Express". Keying on service AND garment could
+  // not express it either — it only made both halves all-or-nothing. The pair
+  // itself is the only thing that can, and the legacy AND survives as the
+  // fallback for pairs nobody has decided.
+  it('falls back to the legacy service AND garment rule when undecided', () => {
+    expect(ENGINE).toContain('serviceEligible.get(r.serviceId)')
+    expect(ENGINE).toContain('garmentIncluded.get(r.garmentId)')
   })
 
   it('still derives PER_KG / PER_PIECE from the pricing rule — billing unchanged', () => {
@@ -98,20 +96,16 @@ describe('the coverage engine keys on the SERVICE', () => {
 // ── Coverage needs the SERVICE and the GARMENT to agree ─────────────────────
 // The money bug: Wash & Fold eligible meant every garment under it consumed
 // allowance, including a Blanket the plan never covered.
-describe('subscription coverage is per service AND garment', () => {
+describe('coverage cannot be granted by either legacy flag alone', () => {
   const ENGINE2 = readFileSync(join(process.cwd(), 'src/lib/laundry-subscription-server.ts'), 'utf8')
 
-  it('reads both eligibility flags', () => {
-    expect(ENGINE2).toContain('subscriptionEligible: true')
-    expect(ENGINE2).toContain('subscriptionIncluded: true')
+  it('an undecided pair still needs BOTH legacy flags', () => {
+    expect(ENGINE2).toContain('!!serviceEligible.get(r.serviceId) && !!garmentIncluded.get(r.garmentId)')
   })
 
-  it('narrows the pricing rules by BOTH sets', () => {
-    expect(ENGINE2).toContain('serviceId: { in: sIds }, garmentId: { in: gIds }')
-  })
-
-  it('covers nothing when either side has no eligible rows', () => {
-    expect(ENGINE2).toContain('if (eligibleServices.length === 0 || eligibleGarments.length === 0) return []')
+  it('an explicit per-pair value wins over both of them', () => {
+    expect(ENGINE2).toContain('const covered = r.subscriptionIncluded ??')
+    expect(ENGINE2).toContain('if (!covered) continue')
   })
 
   it('still derives the mode from the pricing rule — billing unchanged', () => {
