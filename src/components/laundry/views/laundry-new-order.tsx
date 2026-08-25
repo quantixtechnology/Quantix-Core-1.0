@@ -228,6 +228,26 @@ export default function LaundryNewOrder() {
   }, [currentBusinessId, loadMasters])
 
   const availableServices = useMemo(() => services.filter((s) => (isPickup ? s.availableForPickup : s.availableInStore)), [services, isPickup])
+
+  // garmentId → the services the Pricing Matrix actually prices it for. A cell
+  // the matrix shows as NA is not orderable: adding it produced a ₹0 line,
+  // because nothing matched and the engine's "No pricing rule" result was kept.
+  const [garmentServices, setGarmentServices] = useState<Record<string, string[]>>({})
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/garment-services?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => r.json())
+      .then((j) => setGarmentServices(j.success ? (j.data || {}) : {}))
+      .catch(() => {})
+  }, [currentBusinessId])
+
+  /** The services offerable for one garment — priced for it AND offered on this
+   *  channel (store vs pickup). Empty until a garment is chosen. */
+  const servicesForGarment = useCallback((garmentId: string) => {
+    if (!garmentId) return []
+    const priced = new Set(garmentServices[garmentId] || [])
+    return availableServices.filter((s) => priced.has(s.id))
+  }, [garmentServices, availableServices])
   const svcById = useCallback((id: string) => services.find((s) => s.id === id), [services])
   const grmById = useCallback((id: string) => garments.find((g) => g.id === id), [garments])
   // Distinct services used across the order's line items (drives TAT + records).
@@ -374,9 +394,24 @@ export default function LaundryNewOrder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addOpen, mGarment, mService, mQty, currentBusinessId, selectedStoreId, customerType])
 
-  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
+  const mServices = useMemo(() => servicesForGarment(mGarment), [servicesForGarment, mGarment])
+  // Choosing a different garment can invalidate the selected service, so the
+  // selection follows the garment rather than being left stale.
+  useEffect(() => {
+    if (!mGarment) { setMService(""); return }
+    if (!mServices.some((s) => s.id === mService)) setMService(mServices[0]?.id || "")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mGarment, mServices])
+
+  const openAddGarment = () => { setMGarment(""); setMService(""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
+    // Last line of defence in the UI; the API refuses it too.
+    if (!mServices.some((s) => s.id === mService)) {
+      const sv = svcById(mService)?.name || "That service"
+      toast({ title: `${sv} is not available for ${grmById(mGarment)?.name || "this garment"}. Please select an available service.`, variant: "destructive" })
+      return
+    }
     setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1) }])
     setAddOpen(false)
   }
@@ -830,7 +865,15 @@ export default function LaundryNewOrder() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Service</Label>
-                  <SearchableSelect value={mService} onChange={setMService} options={availableServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder="Select service…" />
+                  <SearchableSelect value={mService} onChange={setMService} options={mServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder={mGarment ? (mServices.length ? "Select service…" : "No service priced for this garment") : "Select a garment first…"} />
+                  {mGarment && mServices.length === 0 && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      {grmById(mGarment)?.name || "This garment"} has no service priced in the Pricing Matrix. Add a price there before it can be ordered.
+                    </p>
+                  )}
+                  {mGarment && mServices.length > 0 && mServices.length < availableServices.length && (
+                    <p className="text-[11px] text-slate-400 mt-1">Only services priced for this garment are listed.</p>
+                  )}
                 </div>
                 {/* Billing Type is resolved from the saved pricing — read only. */}
                 {mGarment && mService && (

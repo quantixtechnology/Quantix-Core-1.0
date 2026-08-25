@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
+import { unavailableCombinationError } from "@/lib/laundry-garment-services"
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { createLaundryOrder, defaultOrderSource } from "@/lib/laundry-order-engine"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
@@ -76,6 +77,12 @@ export async function POST(request: Request) {
         billingItems,
       )
     }
+    // A garment can only be ordered under a service the Pricing Matrix prices it
+    // for. Refused here as well as in the UI, so a stale screen or a direct API
+    // call cannot create a ₹0 line for a combination that has no price.
+    const unavailable = billing ? unavailableCombinationError(billing.lines) : null
+    if (unavailable) return NextResponse.json({ error: unavailable, code: "SERVICE_NOT_AVAILABLE_FOR_GARMENT" }, { status: 400 })
+
     const q = billing?.quote
     const grandTotal = q?.grandTotal ?? 0
 

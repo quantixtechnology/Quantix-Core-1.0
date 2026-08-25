@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
+import { unavailableCombinationError } from "@/lib/laundry-garment-services"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
@@ -43,6 +44,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       { storeId: order.storeId, customerType: order.customerType || null, pickup: false, delivery: false },
       clean.map((it) => ({ serviceId: it.serviceId || null, garmentId: it.garmentId || null, quantity: Number(it.quantity) || 0, weightKg: Number(it.weightKg) || 0 })),
     )
+
+    // Same rule as booking: a garment recorded under a service it has no price
+    // for cannot be added, however it reached here.
+    const unavailable = unavailableCombinationError(lines)
+    if (unavailable) return NextResponse.json({ error: unavailable, code: "SERVICE_NOT_AVAILABLE_FOR_GARMENT" }, { status: 400 })
 
     // PER_KG lines bill ₹0 until weighed. The auditor entered a PER-GARMENT weight
     // at intake, so price each PER_KG line by ITS OWN weight × rate (single source
