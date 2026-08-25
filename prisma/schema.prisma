@@ -932,6 +932,13 @@ model BusinessUser {
   // Tenant-scoped employee id ({prefix}EMP###). Null for the Business Owner and
   // for memberships created before this existed. Never reused, never edited.
   employeeCode     String?
+  // The staff member's OWN contact address. Deliberately nullable and NOT
+  // unique, exactly like Customer.email — a person's contact details are not an
+  // account identity, and the same address may legitimately appear on a
+  // Customer record and on a Staff record because one person can be both.
+  // User.email stays @unique and stays the ACCOUNT identity; staff sign in with
+  // their employee id, so the two never collide.
+  contactEmail     String?
   role             Role
   storeId          String?
   businessRoleId   String?

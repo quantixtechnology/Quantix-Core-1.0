@@ -98,9 +98,11 @@ export async function GET(request: Request) {
       // What the employee actually types to sign in — their employee id once
       // reconciled, the email for the Business Owner who has no employee id.
       loginId: bu.user.loginId || bu.user.email,
-      // A synthesised address is storage, not a contact detail — the UI shows
-      // nothing rather than an address nobody can write to.
-      email: isPlaceholderEmail(bu.user.email) ? null : bu.user.email,
+      // The staff member's own contact address. Falls back to the account
+      // address for memberships created before contactEmail existed; a
+      // synthesised account address is storage, not a contact detail, so it
+      // shows as nothing rather than as an address nobody can write to.
+      email: bu.contactEmail || (isPlaceholderEmail(bu.user.email) ? null : bu.user.email),
       name: bu.user.name,
       phone: bu.user.phone,
       active: bu.isActive && bu.user.isActive,
@@ -126,13 +128,18 @@ export async function POST(request: Request) {
   const platformBusinessId = guard.platformBusinessId
   const laundryBusinessId = guard.ctx.laundryBusinessId
 
-  // Email is OPTIONAL. Staff sign in with their Employee ID, so an address is a
-  // contact detail, not a credential — and User.email being @unique platform-wide
-  // meant a perfectly ordinary person could not be hired: someone who is already
-  // a CUSTOMER of this same business. BusinessUser is @@unique([userId, businessId]),
-  // so that person cannot hold a customer membership AND a staff membership at
-  // once; reusing their account would silently convert them from one to the other.
+  // One person may be a Customer AND a member of staff. Those are two separate
+  // business relationships, so they get two separate accounts and neither is
+  // linked to, merged with, or modified because of the other.
+  //
+  // An address is a CONTACT detail, not an account identity. It is stored on the
+  // membership (BusinessUser.contactEmail — nullable, not unique, exactly like
+  // Customer.email), so the same address may appear on a Customer record and on
+  // a Staff record at the same time. User.email stays @unique because 19 auth
+  // call sites resolve accounts through it; the staff account therefore carries
+  // its own internal address and nobody ever signs in with it.
   const email = String(b.email || "").trim().toLowerCase()
+  const phone = b.phone ? String(b.phone).trim() : ""
   const name = String(b.name || "").trim()
   if (email && !isEmail(email)) return NextResponse.json({ error: "That email address is not valid" }, { status: 400 })
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 })
@@ -141,21 +148,25 @@ export async function POST(request: Request) {
   const role = b.roleId ? await prisma.laundryAccessRole.findFirst({ where: { id: b.roleId, businessId: platformBusinessId }, select: { id: true, name: true, isOwner: true } }) : null
   if (b.roleId && !role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
 
-  // A taken address is reported precisely — who holds it, and what to do —
-  // rather than as a bare "already exists" that names nothing and offers nothing.
-  if (email) {
-    const existing = await prisma.user.findFirst({
-      where: { email },
-      select: { id: true, name: true, businessUsers: { where: { businessId: platformBusinessId }, select: { role: true } } },
+  // Duplicate STAFF, not duplicate person. This is scoped to existing employees
+  // of THIS business and deliberately never consults Customer rows: a customer
+  // with the same details is a different relationship, not an existing employee.
+  // It exists so a double-submitted form cannot mint two employee ids for one
+  // hire — the reason it matches on contact details rather than on the employee
+  // id, which the server issues and the form never carries.
+  if (email || phone) {
+    const clashes = [
+      email ? { contactEmail: email } : null,
+      phone ? { user: { is: { phone } } } : null,
+    ].filter(Boolean) as object[]
+    const twin = await prisma.businessUser.findFirst({
+      where: { businessId: platformBusinessId, role: { not: "CUSTOMER" }, isActive: true, OR: clashes },
+      select: { employeeCode: true, user: { select: { name: true } } },
     })
-    if (existing) {
-      const here = existing.businessUsers[0]
-      const who = existing.name ? `by ${existing.name}` : "by another account"
-      const where = here
-        ? `, who is already ${here.role === "CUSTOMER" ? "a customer" : "a member"} of this business`
-        : " on the platform"
+    if (twin) {
+      const who = twin.user?.name ? `${twin.user.name}${twin.employeeCode ? ` (${twin.employeeCode})` : ""}` : twin.employeeCode || "an employee"
       return NextResponse.json({
-        error: `${email} is already used ${who}${where}. Staff sign in with their Employee ID, so an email is optional — leave it blank, or use a different address.`,
+        error: `${who} is already an employee of this business with those contact details. Edit that employee instead of creating a second record.`,
       }, { status: 409 })
     }
   }
@@ -178,24 +189,30 @@ export async function POST(request: Request) {
   // counter and never typed by an administrator.
   //
   // Issued BEFORE the User row because it IS the User ID: staff sign in with
-  // V8EMP001, not with an email. Email is still stored (it must be unique, and
-  // it is how they are contacted), but it is no longer the login identifier.
-  // The owner has no employee id, so their login identifier stays their email.
+  // V8EMP001, not with an email.
   const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId, laundryBusinessId)
 
-  // User.email is required and @unique, so an employee with no address still
-  // needs a value. Synthesised the same way a delivery executive's is — it is
-  // never shown and never signed in with. The Business Owner has no employee id
-  // to build one from, so they must supply a real address.
-  const storedEmail = email || (employeeCode
+  // The ACCOUNT address. User.email is required and @unique, so it cannot hold a
+  // contact address that someone else already carries — a customer, typically,
+  // who is the same human. The staff account therefore gets its own internal
+  // address whenever the real one is taken or absent, synthesised the way a
+  // delivery executive's already is. It is never shown and never signed in with;
+  // the real address lives on the membership as contactEmail.
+  //
+  // The Business Owner has no employee id to build one from and still signs in
+  // by email, so theirs must be a real, free address.
+  const emailFree = email ? !(await prisma.user.findUnique({ where: { email }, select: { id: true } })) : false
+  const accountEmail = (emailFree ? email : "") || (employeeCode
     ? `staff.${employeeCode.toLowerCase()}.${Math.random().toString(36).slice(2, 8)}@${PLACEHOLDER_EMAIL_DOMAIN}`
     : "")
-  if (!storedEmail) return NextResponse.json({ error: "An email is required for the Business Owner" }, { status: 400 })
-  const loginId = employeeCode ?? storedEmail
+  if (!accountEmail) {
+    return NextResponse.json({ error: `${email} is already in use, and the Business Owner signs in by email. Use a different address.` }, { status: 409 })
+  }
+  const loginId = employeeCode ?? accountEmail
 
   const user = await prisma.user.create({
     data: {
-      email: storedEmail, loginId, name, phone: b.phone ? String(b.phone).trim() : null,
+      email: accountEmail, loginId, name, phone: phone || null,
       passwordHash, authProvider: "PASSWORD", isActive: true, hasPassword: true,
       mustChangePassword, emailVerified: true, createdBy: guard.ctx.userId,
     },
@@ -203,6 +220,9 @@ export async function POST(request: Request) {
   await prisma.businessUser.create({
     data: {
       userId: user.id, businessId: platformBusinessId, employeeCode,
+      // The address the administrator typed, kept whether or not the account
+      // address could be the same one.
+      contactEmail: email || null,
       role: role?.isOwner ? "LAUNDRY_OWNER" : BASE_EMPLOYEE_ROLE,
       storeId: null, isActive: true, invitedAt: new Date(), acceptedAt: new Date(),
     },

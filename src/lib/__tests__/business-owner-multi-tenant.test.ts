@@ -140,7 +140,10 @@ describe('5 & 6 · sharing an email shares nothing else', () => {
   })
 
   it('membership is what scopes a user to a tenant, and it is per business', () => {
-    const model = SCHEMA.slice(SCHEMA.indexOf('model BusinessUser {'), SCHEMA.indexOf('model BusinessUser {') + 1400)
+    // The model BLOCK, not a fixed character count — a magic width silently
+    // stops covering the fields it is meant to check the moment one is added.
+    const start = SCHEMA.indexOf('model BusinessUser {')
+    const model = SCHEMA.slice(start, SCHEMA.indexOf('\n}', start))
     expect(model).toContain('businessId       String')
     expect(model).toContain('onDelete: Cascade')
     expect(model).toContain('@@index([businessId])')
