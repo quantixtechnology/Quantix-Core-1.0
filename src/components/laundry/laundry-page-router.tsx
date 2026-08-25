@@ -31,8 +31,6 @@ const LaundryPaymentsLedger = dynamic(() => import("@/components/laundry/views/l
 const LaundryGarmentLookup = dynamic(() => import("@/components/laundry/views/laundry-garment-lookup").then(m => ({ default: m.LaundryGarmentLookup })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
-const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
-const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
 const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.ServicesMasterPage })), { loading: () => <PageLoader /> })
 const LaundryPricingMatrix = dynamic(() => import("@/components/laundry/views/laundry-pricing-matrix").then(m => ({ default: m.LaundryPricingMatrix })), { loading: () => <PageLoader /> })
 const LaundrySubscriptionPlansPage = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.SubscriptionPlansPage })), { loading: () => <PageLoader /> })
@@ -100,8 +98,6 @@ export function LaundryPageRouter() {
     case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
     case "navigation": return <LaundryNavigationManager businessId={wsBusinessId} />
     case "hardware-manager": return <LaundryHardwareManager />
-    case "categories": return <LaundryCategoriesMaster />
-    case "garments": return <LaundryGarmentsMaster />
     case "services": return <LaundryServicesMaster />
     case "pricing": return <LaundryPricingMatrix />
     case "subscription-plans": return <LaundrySubscriptionPlansPage />

@@ -231,8 +231,6 @@ const LaundryDeliveryExecutives = dynamic(() => import("@/components/laundry/vie
 const LaundryMobileApps = dynamic(() => import("@/components/laundry/views/laundry-mobile-apps").then(m => ({ default: m.LaundryMobileApps })), { loading: () => <PageLoader /> })
 const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryReadyForDelivery })), { loading: () => <PageLoader /> })
 const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laundry-order-detail").then(m => ({ default: m.LaundryOrderDetail })), { loading: () => <PageLoader /> })
-const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
-const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
 const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.ServicesMasterPage })), { loading: () => <PageLoader /> })
 const LaundryPricingMatrix = dynamic(() => import("@/components/laundry/views/laundry-pricing-matrix").then(m => ({ default: m.LaundryPricingMatrix })), { loading: () => <PageLoader /> })
 const LaundrySubscriptionPlansPage = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.SubscriptionPlansPage })), { loading: () => <PageLoader /> })

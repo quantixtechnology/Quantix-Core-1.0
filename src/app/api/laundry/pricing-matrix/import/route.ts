@@ -7,6 +7,10 @@
 // workflow — the importer used to reject those rows with "Unknown garment
 // code", which forced every garment to be created by hand first.
 //
+// A Category named in the row is created if the tenant has none by that name —
+// there is no separate Categories screen any more, so the sheet is where they
+// come from. Matched case-insensitively so "Men" and "men" stay one category.
+//
 // A code that DOES exist is reused, never duplicated, and its name is left
 // alone (history and the Pricing Matrix reference garment identity, and §16
 // says not to change existing data unnecessarily). An archived one is
@@ -84,7 +88,7 @@ export async function POST(request: Request) {
     // ── Validate every row ──────────────────────────────────────────────────
     const errors: { row: number; code: string; message: string }[] = []
     const seen = new Set<string>()
-    const prepared: { garmentId: string | null; garmentName: string; cells: Cell[]; create: { code: string; name: string; categoryId: string | null } | null; reactivate: boolean }[] = []
+    const prepared: { garmentId: string | null; garmentName: string; cells: Cell[]; create: { code: string; name: string; categoryName: string } | null; reactivate: boolean }[] = []
 
     rows.forEach((r, idx) => {
       const rn = idx + 1
@@ -95,20 +99,16 @@ export async function POST(request: Request) {
       seen.add(key)
       // Unknown code → the row DEFINES a new garment rather than failing.
       const garment = garmentByCode.get(key)
-      let create: { code: string; name: string; categoryId: string | null } | null = null
+      let create: { code: string; name: string; categoryName: string } | null = null
       if (!garment) {
         const name = String(r.name ?? "").trim()
         if (!name) { errors.push({ row: rn, code, message: `"${code}" is a new garment, so Garment Name is required to create it.` }); return }
-        let categoryId: string | null = null
-        const catName = String(r.category ?? "").trim()
-        if (catName) {
-          const cat = catByName.get(catName.toLowerCase())
-          // Categories are not invented from a spreadsheet cell — a typo would
-          // silently create one, and the master would fill with near-duplicates.
-          if (!cat) { errors.push({ row: rn, code, message: `Unknown category "${catName}" for ${code}. Create it in Categories first, or leave the cell blank.` }); return }
-          categoryId = cat.id
-        }
-        create = { code, name, categoryId }
+        // A category named in the sheet is part of the pricing master, not a
+        // prerequisite to be built somewhere else first — there is no longer a
+        // Categories screen to send anyone to. An unknown one is created during
+        // the import; a known one is reused, matched case-insensitively so
+        // "Men" and "men" cannot become two categories.
+        create = { code, name, categoryName: String(r.category ?? "").trim() }
       }
 
       const cells: Cell[] = []
@@ -162,13 +162,27 @@ export async function POST(request: Request) {
 
     // ── Import (all rows valid) ─────────────────────────────────────────────
     let imported = 0, created = 0, reactivated = 0
+    const newCategories: string[] = []
+
+    /** The category id for a name, creating it once if the tenant has none. */
+    const categoryIdFor = async (raw: string): Promise<string | null> => {
+      const name = raw.trim()
+      if (!name) return null
+      const hit = catByName.get(name.toLowerCase())
+      if (hit) return hit.id
+      const cat = await prisma.laundryCategory.create({ data: { businessId: lbId, name, isActive: true }, select: { id: true, name: true } })
+      catByName.set(name.toLowerCase(), cat)   // so a repeat in the same file reuses it
+      newCategories.push(cat.name)
+      return cat.id
+    }
+
     for (const p of prepared) {
       let garmentId = p.garmentId
       if (!garmentId && p.create) {
         // The code is written exactly as supplied — never regenerated. Codes are
         // unique per business, so this cannot collide with another tenant.
         const g = await prisma.laundryGarment.create({
-          data: { businessId: lbId, code: p.create.code, name: p.create.name, categoryId: p.create.categoryId, isActive: true },
+          data: { businessId: lbId, code: p.create.code, name: p.create.name, categoryId: await categoryIdFor(p.create.categoryName), isActive: true },
           select: { id: true },
         })
         garmentId = g.id
@@ -180,7 +194,7 @@ export async function POST(request: Request) {
       await saveGarmentCells(lbId, garmentId!, p.garmentName, p.cells, (sid) => svcNameById.get(sid) || "Service")
       imported++
     }
-    return NextResponse.json({ success: true, imported, created, reactivated, replaced: !!b.replaceExisting })
+    return NextResponse.json({ success: true, imported, created, reactivated, newCategories, replaced: !!b.replaceExisting })
   } catch (e) {
     console.error("[pricing-matrix-import] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

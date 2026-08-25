@@ -48,8 +48,6 @@ export const SCREEN_MODULES: ModuleEntry[] = [
       { key: "charges_rules", label: "Charges & Rules" },
       { key: "pricing_simulator", label: "Pricing Simulator" },
       { key: "services", label: "Services" },
-      { key: "categories", label: "Categories" },
-      { key: "garments", label: "Garments" },
       { key: "pricing", label: "Pricing" },
       { key: "stores", label: "Stores" },
       { key: "staff", label: "Staff" },

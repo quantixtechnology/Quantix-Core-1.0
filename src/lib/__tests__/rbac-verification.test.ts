@@ -109,11 +109,30 @@ describe("Gate 2: Legacy-to-new permission migration", () => {
     "customer_app.orders": ["view"],
   }
 
+  // Screens deliberately RETIRED since this snapshot was taken. Categories and
+  // Garments are managed from Pricing now, so their old permission keys map to
+  // nothing on purpose — a stored role row carrying one is inert (the garment
+  // and category APIs guard on laundry.pricing.edit_pricing, and no screen
+  // renders them). They are excluded from the mapping guarantee and asserted
+  // separately, so the retirement cannot be mistaken for a migration gap.
+  const RETIRED_SCREENS = new Set(["laundry.categories", "laundry.garments"])
+
   // Generate all old-style permission keys
   const allOldKeys: string[] = []
+  const retiredOldKeys: string[] = []
   for (const [sKey, actions] of Object.entries(OLD_ACTIONS)) {
-    for (const action of actions) allOldKeys.push(`${sKey}.${action}`)
+    for (const action of actions) {
+      (RETIRED_SCREENS.has(sKey) ? retiredOldKeys : allOldKeys).push(`${sKey}.${action}`)
+    }
   }
+
+  it("retired screens no longer resolve, and are not silently still present", () => {
+    expect(retiredOldKeys.length).toBeGreaterThan(0)
+    for (const key of retiredOldKeys) {
+      const screenKey = key.split(".").slice(0, -1).join(".")
+      expect(isValidScreenKey(screenKey)).toBe(false)
+    }
+  })
 
   it("every old permission key maps to a valid screen+level", () => {
     const unmapped: string[] = []
@@ -175,7 +194,8 @@ describe("Gate 3: Registry audit", () => {
     for (const m of SCREEN_MODULES) for (const s of m.screens) expected.push(`${m.key}.${s.key}`)
     expect(allScreens.sort()).toEqual(expected.sort())
     // 25 laundry + 7 crm + 9 processing + 11 store_ops + 4 customer_app + 11 marketing
-    expect(allScreens.length).toBe(67)
+    // 65 since Categories and Garments were retired into Pricing.
+    expect(allScreens.length).toBe(65)
   })
 
   it("every screen key validates correctly", () => {

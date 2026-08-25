@@ -337,6 +337,7 @@ function ImportDialog({ services, businessId, onTemplate, onClose, onImported }:
       const bits = [`${j.imported} garment${j.imported === 1 ? "" : "s"} priced`]
       if (j.created) bits.push(`${j.created} created`)
       if (j.reactivated) bits.push(`${j.reactivated} restored`)
+      if (j.newCategories?.length) bits.push(`${j.newCategories.length} new categor${j.newCategories.length === 1 ? "y" : "ies"}`)
       if (j.replaced) bits.push("replaced all")
       toast.success(bits.join(" · ")); onImported()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Import failed") } finally { setBusy(false) }

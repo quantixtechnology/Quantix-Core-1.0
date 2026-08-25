@@ -49,7 +49,13 @@ vi.mock('@/lib/prisma', () => ({
       }),
     },
     laundryService: { findMany: vi.fn(async ({ where }: never) => db.services.filter((s) => like(s, where as Record<string, unknown>))) },
-    laundryCategory: { findMany: vi.fn(async () => db.categories) },
+    laundryCategory: {
+      findMany: vi.fn(async () => db.categories),
+      create: vi.fn(async ({ data }: never) => {
+        const c = { id: `cat${++seq}`, ...(data as object) } as { id: string; name: string }
+        db.categories.push(c); return c
+      }),
+    },
     laundryPricingRule: {
       deleteMany: vi.fn(async ({ where }: never) => {
         const w = where as Record<string, unknown>
@@ -184,13 +190,39 @@ describe('the guards around creating garments', () => {
     expect(db.garments.some((g) => g.code === 'GAR00003')).toBe(false)   // nothing written
   })
 
-  it('an unknown category is refused rather than invented', async () => {
+  // There is no Categories screen any more, so a category named in the sheet is
+  // part of the pricing master rather than a prerequisite built elsewhere.
+  it('a category the tenant does not have yet is CREATED from the sheet', async () => {
     db.garments = db.garments.filter((g) => g.code !== 'GAR00003')
-    const rows = sheet().map((r) => (r.code === 'GAR00003' ? { ...r, category: 'Menz' } : r))
+    const rows = sheet().map((r) => (r.code === 'GAR00003' ? { ...r, category: 'Household' } : r))
     const { status, body } = await importSheet(rows)
-    expect(status).toBe(422)
-    expect(body.errors[0].message).toContain('Unknown category "Menz"')
+    expect(status).toBe(200)
+    expect(body.newCategories).toEqual(['Household'])
+    const made = db.categories.find((c) => c.name === 'Household')!
+    expect(made).toBeTruthy()
+    expect(db.garments.find((g) => g.code === 'GAR00003')!.categoryId).toBe(made.id)
+  })
+
+  it('an existing category is reused, case-insensitively — no near-duplicates', async () => {
+    db.garments = db.garments.filter((g) => g.code === 'GAR00001')
+    const rows = [{ ...sheet()[0], category: 'men' }, { ...sheet()[1], code: 'GAR00090', name: 'New One', category: 'MEN' }]
+    const { status, body } = await importSheet(rows)
+    expect(status).toBe(200)
+    expect(body.newCategories).toEqual([])
     expect(db.categories).toHaveLength(1)
+    expect(db.garments.find((g) => g.code === 'GAR00090')!.categoryId).toBe('cat_men')
+  })
+
+  it('the same new category twice in one file is created once', async () => {
+    db.garments = []
+    const rows = [
+      { ...sheet()[0], code: 'GAR00101', name: 'A', category: 'Household' },
+      { ...sheet()[1], code: 'GAR00102', name: 'B', category: 'Household' },
+    ]
+    const { status, body } = await importSheet(rows)
+    expect(status).toBe(200)
+    expect(body.newCategories).toEqual(['Household'])
+    expect(db.categories.filter((c) => c.name === 'Household')).toHaveLength(1)
   })
 
   it('a blank category is allowed', async () => {

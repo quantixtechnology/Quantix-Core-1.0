@@ -33,8 +33,6 @@ export const SCREEN_PAGE_MAP: Record<string, string> = {
   "laundry.charges_rules": "charges-rules",
   "laundry.pricing_simulator": "pricing-simulator",
   "laundry.services": "services",
-  "laundry.categories": "categories",
-  "laundry.garments": "garments",
   "laundry.pricing": "pricing",
   "laundry.stores": "stores",
   "laundry.staff": "staff",
@@ -98,8 +96,6 @@ const SCREEN_ICONS: Record<string, string> = {
   "laundry.customers": "Users",
   "laundry.subscriptions": "Repeat",
   "laundry.services": "Tags",
-  "laundry.categories": "Tags",
-  "laundry.garments": "Shirt",
   "laundry.pricing": "IndianRupee",
   "laundry.stores": "Store",
   "laundry.staff": "UsersRound",
@@ -245,8 +241,13 @@ export function defaultNavigationConfig(): DefaultSection[] {
         { screenKey: "laundry.garment_lookup", displayName: "Garment Lookup", icon: "Search" },
         { screenKey: "laundry.subscriptions", displayName: "Subscriptions" },
         { screenKey: "laundry.services", displayName: "Services" },
-        { screenKey: "laundry.categories", displayName: "Categories" },
-        { screenKey: "laundry.garments", displayName: "Garments" },
+        // Categories and Garments are pricing-master DATA, not configuration of
+        // their own: both are managed from Pricing (the matrix edits a garment's
+        // code, name, category and per-service pricing, and the Garments tab
+        // sits inside the pricing screen), and the Excel import creates them in
+        // bulk. Separate entry points meant a garment had to be built in three
+        // places before it could be priced. Services stay — they decide what the
+        // product offers, which is configuration.
         { screenKey: "laundry.pricing", displayName: "Pricing" },
         { screenKey: "laundry.stores", displayName: "Stores" },
         { screenKey: "laundry.bags", displayName: "Reusable Bags" },
@@ -656,6 +657,23 @@ export async function ensureNavigationConfig(businessId: string): Promise<void> 
   })
 
   await convergeProcessingNav(businessId)
+  await removeRetiredNavItems(businessId)
+}
+
+// Screen keys that no longer exist. Their nav items are DELETED rather than
+// hidden, exactly as the obsolete processing keys are: the registry no longer
+// defines them, so they could only render as a dead link.
+const RETIRED_SCREEN_KEYS = ["laundry.categories", "laundry.garments"] as const
+
+/** Idempotently drop retired entries from an existing business's stored
+ *  navigation. Nothing else is touched, and a business that never had them
+ *  does one indexed delete that matches nothing. */
+export async function removeRetiredNavItems(businessId: string): Promise<void> {
+  const nav = await db.laundryNavigation.findUnique({ where: { businessId }, select: { id: true } })
+  if (!nav) return
+  await db.laundryNavItem.deleteMany({
+    where: { navigationId: nav.id, screenKey: { in: [...RETIRED_SCREEN_KEYS] } },
+  }).catch(() => null)
 }
 
 // Processing Center convergence under the approved operational model:

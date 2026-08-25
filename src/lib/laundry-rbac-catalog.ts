@@ -128,8 +128,6 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     { screenKey: "laundry.pricing_simulator", level: Level.VIEW },
     { screenKey: "laundry.subscriptions", level: Level.VIEW },
     { screenKey: "laundry.services", level: Level.VIEW },
-    { screenKey: "laundry.categories", level: Level.VIEW },
-    { screenKey: "laundry.garments", level: Level.VIEW },
     { screenKey: "laundry.pricing", level: Level.VIEW },
     { screenKey: "laundry.reports", level: Level.EDIT },
     { screenKey: "store_ops.payment_collection", level: Level.VIEW },
