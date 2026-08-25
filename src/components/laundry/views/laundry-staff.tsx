@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, UsersRound, Plus, Search, Pencil, KeyRound, Power, Shield, Lock, Copy, Trash2, AlertTriangle } from "lucide-react"
 
 interface Emp {
-  userId: string; businessUserId: string; employeeCode: string | null; loginId: string; email: string; name: string; phone: string | null
+  userId: string; businessUserId: string; employeeCode: string | null; loginId: string; email: string | null; name: string; phone: string | null
   active: boolean; lastLoginAt: string | null; roleId: string | null; roleCode: string | null
   roleName: string | null; isOwner: boolean; storeId: string | null; storeName: string | null
 }
@@ -84,13 +84,15 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     setFRoleId(roles.find((r) => !r.isOwner)?.id || ""); setFStoreId(""); setFormOpen(true)
   }
   const openEdit = (e: Emp) => {
-    setEditing(e); setFName(e.name); setFEmail(e.email); setFPhone(e.phone || ""); setFPassword("")
+    setEditing(e); setFName(e.name); setFEmail(e.email || ""); setFPhone(e.phone || ""); setFPassword("")
     setFRoleId(e.roleId || ""); setFStoreId(e.storeId || ""); setFormOpen(true)
   }
 
   const submit = async () => {
     if (!fName.trim()) { toast({ title: "Name is required", variant: "destructive" }); return }
-    if (!editing && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fEmail.trim())) { toast({ title: "A valid email is required", variant: "destructive" }); return }
+    // Email is optional — staff sign in with their Employee ID. Only its shape
+    // is checked, and only when one was actually typed.
+    if (!editing && fEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fEmail.trim())) { toast({ title: "That email address is not valid", variant: "destructive" }); return }
     setSaving(true)
     try {
       if (editing) {
@@ -99,12 +101,12 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
         if (!res.ok || !j.success) throw new Error(j.error || "Update failed")
         toast({ title: "Employee updated" }); setFormOpen(false); refreshLaundryPermissions(businessId); if (businessId) clearRuntimeAuthCache(businessId); load()
       } else {
-        const res = await fetch(`/api/laundry/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), email: fEmail.trim(), phone: fPhone.trim() || null, password: fPassword.trim() || undefined, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
+        const res = await fetch(`/api/laundry/staff`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: fName.trim(), email: fEmail.trim() || undefined, phone: fPhone.trim() || null, password: fPassword.trim() || undefined, roleId: fRoleId || undefined, storeId: fStoreId || null }) })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Create failed")
         setFormOpen(false); setCreds({ loginId: j.data.loginId || j.data.email, tempPassword: j.data.tempPassword, mustChange: !!j.data.mustChangePassword }); if (businessId) clearRuntimeAuthCache(businessId); load()
       }
-    } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
+    } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive", duration: 10000 }) } finally { setSaving(false) }
   }
 
   const toggleActive = async (e: Emp) => {
@@ -118,7 +120,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
     const res = await fetch(`/api/laundry/staff/${e.userId}/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) })
     const j = await res.json()
     if (!res.ok || !j.success) { toast({ title: "Reset failed", description: j.error, variant: "destructive" }); return }
-    setCreds({ loginId: e.loginId || e.email, tempPassword: j.data.tempPassword, mustChange: true })
+    setCreds({ loginId: e.loginId || e.email || "", tempPassword: j.data.tempPassword, mustChange: true })
   }
 
   const confirmDelete = async () => {
@@ -170,7 +172,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
             {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-slate-400">No employees found.</td></tr>}
             {filtered.map((e) => (
               <tr key={e.userId} className={`border-b border-slate-100 last:border-0 ${e.active ? "" : "opacity-60"}`}>
-                <td className="px-4 py-2.5"><div className="font-medium text-slate-800 flex items-center gap-1.5">{e.isOwner && <Lock className="h-3 w-3 text-amber-500" />}{e.name}</div><div className="text-[11px] text-slate-400">{e.email}</div></td>
+                <td className="px-4 py-2.5"><div className="font-medium text-slate-800 flex items-center gap-1.5">{e.isOwner && <Lock className="h-3 w-3 text-amber-500" />}{e.name}</div><div className="text-[11px] text-slate-400">{e.email || e.loginId}</div></td>
                 {/* The Business Owner is the business, not an employee of it —
                     no number is consumed for them. */}
                 <td className="px-4 py-2.5">
@@ -219,7 +221,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
               <div className="space-y-1"><Label className="text-xs text-slate-600">Full name</Label><Input value={fName} onChange={(e) => setFName(e.target.value)} placeholder="Jane Doe" /></div>
               <div className="space-y-1"><Label className="text-xs text-slate-600">Phone</Label><Input value={fPhone} onChange={(e) => setFPhone(e.target.value)} placeholder="Optional" /></div>
             </div>
-            <div className="space-y-1"><Label className="text-xs text-slate-600">Email</Label><Input value={fEmail} onChange={(e) => setFEmail(e.target.value)} placeholder="jane@business.com" disabled={!!editing} /></div>
+            <div className="space-y-1"><Label className="text-xs text-slate-600">Email <span className="text-slate-400">(optional)</span></Label><Input value={fEmail} onChange={(e) => setFEmail(e.target.value)} placeholder="Optional — for contact only" disabled={!!editing} />{!editing && <p className="text-[11px] text-slate-400">Contact only. The employee signs in with their Employee ID, not this.</p>}</div>
             {/* Issued by the platform from this business's Business Code. Read
                 only: an administrator must never be able to type a tenant
                 prefix, and must never have to maintain the sequence. */}

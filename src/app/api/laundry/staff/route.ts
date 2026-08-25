@@ -14,6 +14,11 @@ import { issueStaffEmployeeId, reconcileStaffEmployeeIds, reconcileStaffLoginIds
 
 export const runtime = "nodejs"
 
+/** Where an employee with no email address is parked. Never shown, never used to sign in. */
+const PLACEHOLDER_EMAIL_DOMAIN = "staff.quantix.local"
+const isPlaceholderEmail = (e: string | null | undefined) =>
+  !!e && e.toLowerCase().endsWith(`@${PLACEHOLDER_EMAIL_DOMAIN}`)
+
 // New laundry employees carry a generic laundry BusinessUser role so
 // getLaundryAuthContext resolves them; their real permissions come from the
 // assigned Laundry RBAC role (authoritative). Owners get LAUNDRY_OWNER so they
@@ -93,7 +98,9 @@ export async function GET(request: Request) {
       // What the employee actually types to sign in — their employee id once
       // reconciled, the email for the Business Owner who has no employee id.
       loginId: bu.user.loginId || bu.user.email,
-      email: bu.user.email,
+      // A synthesised address is storage, not a contact detail — the UI shows
+      // nothing rather than an address nobody can write to.
+      email: isPlaceholderEmail(bu.user.email) ? null : bu.user.email,
       name: bu.user.name,
       phone: bu.user.phone,
       active: bu.isActive && bu.user.isActive,
@@ -119,18 +126,39 @@ export async function POST(request: Request) {
   const platformBusinessId = guard.platformBusinessId
   const laundryBusinessId = guard.ctx.laundryBusinessId
 
+  // Email is OPTIONAL. Staff sign in with their Employee ID, so an address is a
+  // contact detail, not a credential — and User.email being @unique platform-wide
+  // meant a perfectly ordinary person could not be hired: someone who is already
+  // a CUSTOMER of this same business. BusinessUser is @@unique([userId, businessId]),
+  // so that person cannot hold a customer membership AND a staff membership at
+  // once; reusing their account would silently convert them from one to the other.
   const email = String(b.email || "").trim().toLowerCase()
   const name = String(b.name || "").trim()
-  if (!isEmail(email)) return NextResponse.json({ error: "A valid email is required" }, { status: 400 })
+  if (email && !isEmail(email)) return NextResponse.json({ error: "That email address is not valid" }, { status: 400 })
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 })
 
   // Resolve the requested Laundry role (must belong to this tenant).
   const role = b.roleId ? await prisma.laundryAccessRole.findFirst({ where: { id: b.roleId, businessId: platformBusinessId }, select: { id: true, name: true, isOwner: true } }) : null
   if (b.roleId && !role) return NextResponse.json({ error: "Role not found" }, { status: 404 })
 
-  // Email must be unique platform-wide.
-  const existing = await prisma.user.findFirst({ where: { email }, select: { id: true } })
-  if (existing) return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 })
+  // A taken address is reported precisely — who holds it, and what to do —
+  // rather than as a bare "already exists" that names nothing and offers nothing.
+  if (email) {
+    const existing = await prisma.user.findFirst({
+      where: { email },
+      select: { id: true, name: true, businessUsers: { where: { businessId: platformBusinessId }, select: { role: true } } },
+    })
+    if (existing) {
+      const here = existing.businessUsers[0]
+      const who = existing.name ? `by ${existing.name}` : "by another account"
+      const where = here
+        ? `, who is already ${here.role === "CUSTOMER" ? "a customer" : "a member"} of this business`
+        : " on the platform"
+      return NextResponse.json({
+        error: `${email} is already used ${who}${where}. Staff sign in with their Employee ID, so an email is optional — leave it blank, or use a different address.`,
+      }, { status: 409 })
+    }
+  }
 
   // A password the administrator TYPED is the password. Only one they did not
   // supply is a temporary one, and only a temporary one forces a change at
@@ -154,11 +182,20 @@ export async function POST(request: Request) {
   // it is how they are contacted), but it is no longer the login identifier.
   // The owner has no employee id, so their login identifier stays their email.
   const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId, laundryBusinessId)
-  const loginId = employeeCode ?? email
+
+  // User.email is required and @unique, so an employee with no address still
+  // needs a value. Synthesised the same way a delivery executive's is — it is
+  // never shown and never signed in with. The Business Owner has no employee id
+  // to build one from, so they must supply a real address.
+  const storedEmail = email || (employeeCode
+    ? `staff.${employeeCode.toLowerCase()}.${Math.random().toString(36).slice(2, 8)}@${PLACEHOLDER_EMAIL_DOMAIN}`
+    : "")
+  if (!storedEmail) return NextResponse.json({ error: "An email is required for the Business Owner" }, { status: 400 })
+  const loginId = employeeCode ?? storedEmail
 
   const user = await prisma.user.create({
     data: {
-      email, loginId, name, phone: b.phone ? String(b.phone).trim() : null,
+      email: storedEmail, loginId, name, phone: b.phone ? String(b.phone).trim() : null,
       passwordHash, authProvider: "PASSWORD", isActive: true, hasPassword: true,
       mustChangePassword, emailVerified: true, createdBy: guard.ctx.userId,
     },
@@ -177,10 +214,10 @@ export async function POST(request: Request) {
       update: { roleId: role.id, storeId: b.storeId || null, active: true },
     })
   }
-  await rbacAudit(platformBusinessId, "EMPLOYEE_CREATED", { targetUserId: user.id, roleId: role?.id ?? null, actorName: guard.ctx.userName, detail: { email, role: role?.name ?? null } })
+  await rbacAudit(platformBusinessId, "EMPLOYEE_CREATED", { targetUserId: user.id, roleId: role?.id ?? null, actorName: guard.ctx.userName, detail: { email: email || null, employeeCode, role: role?.name ?? null } })
 
   return NextResponse.json({
     success: true,
-    data: { userId: user.id, loginId, email, employeeCode, tempPassword: rawPassword, mode, mustChangePassword },
+    data: { userId: user.id, loginId, email: email || null, employeeCode, tempPassword: rawPassword, mode, mustChangePassword },
   }, { status: 201 })
 }

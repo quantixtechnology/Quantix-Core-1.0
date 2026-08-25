@@ -115,12 +115,47 @@ describe('a staff member signs in with their employee id', () => {
   })
 })
 
+describe('an employee who is already a customer of the same business', () => {
+  const api = codeOnly(read('src/app/api/laundry/staff/route.ts'))
+
+  // The blocker: User.email is @unique platform-wide, and BusinessUser is
+  // @@unique([userId, businessId]) — so someone who already holds a CUSTOMER
+  // membership here cannot also hold a staff one. Reusing their account would
+  // silently convert them from customer to staff.
+  it('does not require an email at all — the Employee ID is the credential', () => {
+    expect(api).toMatch(/if \(email && !isEmail\(email\)\)/)
+    expect(api).not.toMatch(/if \(!isEmail\(email\)\) return/)
+  })
+
+  it('parks an employee with no email on a synthesised address, never shown', () => {
+    expect(api).toMatch(/PLACEHOLDER_EMAIL_DOMAIN/)
+    expect(api).toMatch(/const storedEmail = email \|\|/)
+    // …and the list hides it rather than presenting it as a contact detail.
+    expect(api).toMatch(/isPlaceholderEmail\(bu\.user\.email\) \? null : bu\.user\.email/)
+  })
+
+  it('never reuses an existing account, and says who holds the address', () => {
+    // No upsert / connect on an existing user — the membership constraint makes
+    // that a conversion, not a link.
+    expect(api).not.toMatch(/businessUser\.upsert/)
+    expect(api).toMatch(/already used/)
+    expect(api).toMatch(/is already \$\{here\.role === "CUSTOMER" \? "a customer" : "a member"\}/)
+    expect(api).toMatch(/leave it blank, or use a different address/)
+  })
+
+  it('still refuses a malformed address that was actually typed', () => {
+    expect(api).toMatch(/That email address is not valid/)
+  })
+})
+
 describe('the staff create route, by its source', () => {
   const api = codeOnly(read('src/app/api/laundry/staff/route.ts'))
 
   it('makes the employee id the login id, with the email only as the owner fallback', () => {
-    expect(api).toMatch(/const loginId = employeeCode \?\? email/)
-    expect(api).toMatch(/email,\s*loginId,/)
+    // Falls back to the stored address only for the Business Owner, who holds
+    // no employee id.
+    expect(api).toMatch(/const loginId = employeeCode \?\? storedEmail/)
+    expect(api).toMatch(/email: storedEmail, loginId,/)
     // The employee id must be issued BEFORE the User row, or it cannot be its id.
     expect(api.indexOf('const employeeCode =')).toBeLessThan(api.indexOf('prisma.user.create'))
   })
