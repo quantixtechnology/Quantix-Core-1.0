@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
+import { requestCoords, geoMessageWithFallback } from "@/lib/geolocation"
 import { X, Loader2, MapPin, Navigation, Check, ChevronDown, ChevronUp } from "lucide-react"
 import { hasGoogleMapsKey, loadGoogleMaps } from "@/lib/google-maps"
 import { reverseGeocodeAddress, formatAddressLine } from "@/lib/delivery-address"
@@ -237,29 +238,26 @@ export function GoogleAddressPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const useMyLocation = () => {
-    if (!navigator.geolocation) {
-      setError("Location is not available on this device.")
+  const useMyLocation = async () => {
+    setError("")
+    setLocating(true)
+    // Coordinates first; Maps only once we have them. POSITION_UNAVAILABLE
+    // (macOS kCLErrorLocationUnknown) is retried briefly rather than reported
+    // straight away — and it is no longer called a permission refusal.
+    const res = await requestCoords()
+    setLocating(false)
+
+    if (!res.ok) {
+      setError(geoMessageWithFallback(res, "address"))
       return
     }
-    setLocating(true)
-    setError("")
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (reverseGeocoderRef.current) {
-          syncLocation(reverseGeocoderRef.current, pos.coords.latitude, pos.coords.longitude)
-        } else {
-          pendingCoordsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-          setAddress((p) => ({ ...(p ?? {}), label: p?.label ?? "My Location", latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
-        }
-        setLocating(false)
-      },
-      () => {
-        setError("Location access denied. Search for your address or drop a pin instead.")
-        setLocating(false)
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    )
+    const { latitude, longitude } = res
+    if (reverseGeocoderRef.current) {
+      syncLocation(reverseGeocoderRef.current, latitude, longitude)
+    } else {
+      pendingCoordsRef.current = { lat: latitude, lng: longitude }
+      setAddress((p) => ({ ...(p ?? {}), label: p?.label ?? "My Location", latitude, longitude }))
+    }
   }
 
   const onPlaceSelected = (addr: DeliveryAddress) => {

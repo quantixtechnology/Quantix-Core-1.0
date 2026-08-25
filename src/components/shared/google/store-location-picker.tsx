@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState, useCallback } from "react"
+import { requestCoords, geoMessageWithFallback } from "@/lib/geolocation"
 import { Navigation, Loader2 } from "lucide-react"
 import { hasGoogleMapsKey, loadGoogleMaps } from "@/lib/google-maps"
 import type { PlaceDetails } from "@/lib/places"
@@ -208,61 +209,32 @@ export function StoreLocationPicker({
     }
   }
 
-  const useMyLocation = () => {
-    if (!navigator.geolocation) {
-      setError("Location is not available on this device.")
-      return
-    }
-    // Every attempt starts clean. A previous failure must never be the state a
-    // later click is judged by — that is what made a granted permission keep
-    // reading "denied" until the page was reloaded.
+  const useMyLocation = async () => {
+    // Every attempt starts clean — a previous failure must never be the state a
+    // later click is judged by.
     setError("")
     setLocating(true)
+    // Coordinates FIRST, with no Google Maps involved. POSITION_UNAVAILABLE
+    // (macOS kCLErrorLocationUnknown) is retried briefly before giving up.
+    const res = await requestCoords()
+    setLocating(false)
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false)
-        const { latitude, longitude } = pos.coords
-        if (googleRef.current) {
-          // Centres the map, moves the marker, reverse geocodes and fills
-          // address/city/state/pincode.
-          applyLocation(googleRef.current, latitude, longitude, null, null)
-        } else {
-          // No Maps yet (or no API key): keep the coordinates rather than
-          // silently discarding a successful fix. Address parts stay null, the
-          // same as when reverse geocoding fails.
-          onChange({
-            latitude, longitude,
-            googlePlaceId: null, formattedAddress: null,
-            address: null, city: null, state: null, pincode: null,
-          })
-        }
-      },
-      (err) => {
-        setLocating(false)
-        // The error says WHICH failure this was. Reporting every one of them as
-        // "denied" is why Chrome could show "Location access allowed" while
-        // this screen insisted access was denied: a high-accuracy fix that
-        // simply timed out was being announced as a permission refusal.
-        switch (err.code) {
-          case err.PERMISSION_DENIED:
-            setError("Location access denied. Search for the store or drop a pin instead.")
-            break
-          case err.POSITION_UNAVAILABLE:
-            setError("Unable to determine your location. Search for the store or drop a pin instead.")
-            break
-          case err.TIMEOUT:
-            setError("Location request timed out. Try again, or search for the store.")
-            break
-          default:
-            setError("Could not get your location. Search for the store or drop a pin instead.")
-        }
-      },
-      // A position fixed in the last minute is good enough for placing a store
-      // and returns instantly; the longer timeout is what a first high-accuracy
-      // fix on a desktop actually needs.
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    )
+    if (!res.ok) {
+      setError(geoMessageWithFallback(res, "store"))
+      return
+    }
+    const { latitude, longitude } = res
+    if (googleRef.current) {
+      // Only now: centre, mark, reverse geocode, fill address/city/state/pincode.
+      applyLocation(googleRef.current, latitude, longitude, null, null)
+    } else {
+      // No Maps yet (or no API key): keep the fix rather than discard it.
+      onChange({
+        latitude, longitude,
+        googlePlaceId: null, formattedAddress: null,
+        address: null, city: null, state: null, pincode: null,
+      })
+    }
   }
 
   const noKey = !hasGoogleMapsKey()

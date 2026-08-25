@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { requestCoords, geoMessageWithFallback } from "@/lib/geolocation"
 import {
   X, MapPin, Navigation, Search, Loader2, Check, Home, Plus,
 } from "lucide-react"
@@ -84,24 +85,23 @@ export function DeliveryAddressSheet({ open, brandColor, onSelect, onClose }: De
     }
   }, [open, fetchSaved])
 
-  const useCurrentLocation = () => {
-    if (!navigator.geolocation) { setError("Location is not available on this device."); return }
-    setGpsBusy(true); setError("")
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const addr: DeliveryAddress = {
-          ...emptyAddr(),
-          label: "My Location",
-          area: "My Location",
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }
-        setPending(addr)
-        setGpsBusy(false)
-      },
-      () => { setError("Location access denied. Search for your address or drop a pin instead."); setGpsBusy(false) },
-      { timeout: 10000, enableHighAccuracy: true }
-    )
+  const useCurrentLocation = async () => {
+    setError("")
+    setGpsBusy(true)
+    const res = await requestCoords()
+    setGpsBusy(false)
+
+    if (!res.ok) {
+      setError(geoMessageWithFallback(res, "address"))
+      return
+    }
+    setPending({
+      ...emptyAddr(),
+      label: "My Location",
+      area: "My Location",
+      latitude: res.latitude,
+      longitude: res.longitude,
+    })
   }
 
   const chooseSaved = (row: SavedAddressRow) => {
