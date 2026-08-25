@@ -2,8 +2,13 @@
 
 // Marketing module — Phase 1 admin screens (Dashboard, Coupons/Vouchers,
 // Discounts, Reports) + placeholders for later phases. Uses /api/core/marketing
-// with the admin token (getAuthHeaders) since those routes are outside the
-// LaundryAuthBridge (/api/laundry) scope. No engine changes.
+// with the admin token (getAuthHeaders).
+//
+// That was originally a workaround: LaundryAuthBridge only covered
+// "/api/laundry", so these routes went out unauthenticated. The bridge now
+// covers every same-origin /api/ path, and it skips requests that already carry
+// an Authorization header — so these explicit headers still win and nothing
+// here changes. Kept as-is rather than churned.
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
