@@ -57,8 +57,18 @@ vi.mock('@/lib/prisma', () => {
       return hit ? { ...hit } : null
     }),
     findMany: vi.fn(async (args?: never) => {
-      const w = (args as { where?: Row } | undefined)?.where
-      return (w ? db[name].filter((r) => match(r, w)) : db[name]).map((r) => ({ ...r }))
+      const a = args as { where?: Row; orderBy?: Row } | undefined
+      const rows = (a?.where ? db[name].filter((r) => match(r, a.where!)) : db[name]).map((r) => ({ ...r }))
+      const ob = a?.orderBy
+      if (ob) {
+        const [key, dir] = Object.entries(ob)[0] as [string, string]
+        rows.sort((x, y) => {
+          const xv = x[key] as never, yv = y[key] as never
+          const c = xv < yv ? -1 : xv > yv ? 1 : 0
+          return dir === 'desc' ? -c : c
+        })
+      }
+      return rows
     }),
     create: vi.fn(async ({ data }: never) => {
       const d: Row = { id: nid(), ...(data as Row) }
@@ -776,10 +786,12 @@ describe('a tenant with no usable Business Code anywhere', () => {
 describe('the workspace shows the tenant its Business Code', () => {
   const read2 = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
-  it('the branding endpoint returns it, repaired if missing', () => {
+  it('the branding endpoint returns the SAME code the prefix is built from', () => {
     const src = codeOnly(read2('src/app/api/laundry/branding/route.ts'))
-    expect(src).toMatch(/ensureBusinessCode/)
-    expect(src).toMatch(/businessCode:/)
+    // Not ensureBusinessCode directly — the shared resolver, so the code shown
+    // and the code the employee ids derive from can never diverge.
+    expect(src).toMatch(/businessIdentitySource/)
+    expect(src).toMatch(/businessCode/)
   })
 
   it('the sidebar renders it under the product name', () => {
@@ -792,5 +804,87 @@ describe('the workspace shows the tenant its Business Code', () => {
     const src = read2('src/components/laundry/layout/laundry-sidebar.tsx')
     expect(src).not.toMatch(/vastrasudha/i)
     expect(src).not.toMatch(/BUS-2026/)
+  })
+})
+
+// ─── One sequence for every tenant, whatever product they run ───────────────
+
+describe('reconcileBusinessCodes', () => {
+  beforeEach(() => {
+    reset()
+    db.business.length = 0
+    // Creation order across three different products — all tenants to us.
+    db.business.push(
+      { id: 'b1', name: 'Ohhh Momos Station', businessCode: 'BUS-202606-0001', createdAt: new Date('2026-06-01') },
+      { id: 'b2', name: 'Pharmacy Demo', businessCode: 'BIZ-PHARMACYDEMO-1784010222908', createdAt: new Date('2026-06-02') },
+      { id: 'b3', name: 'VASTRASUDHA', businessCode: null, createdAt: new Date('2026-06-03') },
+      { id: 'b4', name: 'Laundry & Drycleaners', businessCode: 'BUS-202606-0004', createdAt: new Date('2026-06-04') },
+      { id: 'b5', name: 'Venkys Fresh Meat', businessCode: '', createdAt: new Date('2026-07-05') },
+    )
+  })
+
+  it('repairs only the malformed ones, numbering by creation date', async () => {
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    const out = await reconcileBusinessCodes()
+    expect(out).toEqual({ checked: 5, repaired: 3 })
+
+    const code = (id: string) => db.business.find((b) => b.id === id)!.businessCode
+    expect(code('b1')).toBe('BUS-202606-0001')   // already canonical — untouched
+    expect(code('b2')).toBe('BUS-202606-0002')   // 2nd created
+    expect(code('b3')).toBe('BUS-202606-0003')   // 3rd created
+    expect(code('b4')).toBe('BUS-202606-0004')   // already canonical — untouched
+    expect(code('b5')).toBe('BUS-202607-0005')   // 5th created, its own month
+  })
+
+  it('one sequence spans laundry, commerce and pharmacy alike', async () => {
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    await reconcileBusinessCodes()
+    const numbers = db.business
+      .map((b) => /-(\d{4})$/.exec(String(b.businessCode))?.[1])
+      .map(Number)
+      .sort((a, b) => a - b)
+    // 1..5 with no product restarting its own count
+    expect(numbers).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('never rewrites a canonical code — derived ids stay anchored', async () => {
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    await reconcileBusinessCodes()
+    expect(db.business.find((b) => b.id === 'b1')!.businessCode).toBe('BUS-202606-0001')
+    expect(db.business.find((b) => b.id === 'b4')!.businessCode).toBe('BUS-202606-0004')
+  })
+
+  it('never lands on a number a canonical code already holds', async () => {
+    db.business.length = 0
+    db.business.push(
+      { id: 'x1', name: 'First', businessCode: null, createdAt: new Date('2026-06-01') },
+      { id: 'x2', name: 'Second', businessCode: 'BUS-202606-0001', createdAt: new Date('2026-06-02') },
+    )
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    await reconcileBusinessCodes()
+    // x1 wants 0001, but it is taken by a canonical code, so it steps forward.
+    expect(db.business.find((b) => b.id === 'x1')!.businessCode).toBe('BUS-202606-0002')
+    expect(db.business.find((b) => b.id === 'x2')!.businessCode).toBe('BUS-202606-0001')
+  })
+
+  it('is idempotent — a second run repairs nothing', async () => {
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    await reconcileBusinessCodes()
+    const snapshot = JSON.stringify(db.business)
+    expect((await reconcileBusinessCodes()).repaired).toBe(0)
+    expect(JSON.stringify(db.business)).toBe(snapshot)
+  })
+
+  it('every repaired code parses, so a prefix can be built from it', async () => {
+    const { reconcileBusinessCodes } = await import('@/lib/business-code')
+    const { parseBusinessCode } = await import('@/lib/tenant-identity')
+    await reconcileBusinessCodes()
+    for (const b of db.business) expect(parseBusinessCode(b.businessCode as string)).not.toBeNull()
+  })
+
+  it('the Business Management list repairs on load, for every product', () => {
+    const src = codeOnly(readFileSync(join(ROOT, 'src/app/api/core/businesses/route.ts'), 'utf8'))
+    expect(src).toMatch(/reconcileBusinessCodes\(\)/)
+    expect(src).not.toMatch(/businessType.*reconcile/i)   // not gated on a product
   })
 })

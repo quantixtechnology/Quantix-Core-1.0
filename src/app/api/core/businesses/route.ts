@@ -17,6 +17,7 @@ import {
 import { createBusiness, listBusinesses } from '@/lib/core/business';
 import type { CreateBusinessRequest, BusinessType, BusinessStatus } from '@/lib/core/types';
 import type { NextRequest } from 'next/server';
+import { reconcileBusinessCodes } from '@/lib/business-code';
 
 // ============================================================================
 // GET /api/core/businesses — List businesses with filtering/pagination
@@ -47,6 +48,12 @@ export async function GET(request: NextRequest) {
         : undefined;
 
       const isOnline = isOnlineParam !== null ? isOnlineParam === 'true' : undefined;
+
+      // Runtime reconciliation: any tenant whose Business Code is missing or in
+      // a legacy shape (BIZ-PHARMACYDEMO-1784010222908) is given the canonical
+      // one, numbered by creation date across ALL products. Idempotent, and a
+      // no-op once every code is canonical.
+      await reconcileBusinessCodes().catch(() => null);
 
       const result = await listBusinesses({
         page,

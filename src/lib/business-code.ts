@@ -52,3 +52,54 @@ export async function ensureBusinessCode(platformBusinessId: string): Promise<st
   }
   return biz.businessCode ?? null
 }
+
+
+/**
+ * Give every tenant a Business Code in the canonical shape, numbered by when it
+ * was created.
+ *
+ * ONE sequence for the whole platform. A laundry, a commerce store and a
+ * pharmacy are all tenants to us, so they share the ordering rather than each
+ * counting from 1 — which is what the original generator meant by bizCount + 1.
+ *
+ * Only MALFORMED codes are rewritten: `BIZ-PHARMACYDEMO-1784010222908`, or none
+ * at all. A code already in the canonical shape is left exactly as it is, and
+ * that restraint is not cosmetic — store codes, customer codes, processing
+ * centre codes and transport batch numbers all EMBED the business code
+ * (STR-BUS-202606-0001-001, CUS-BUS-202606-0001-000001). Renumbering a business
+ * that already has a valid code would strand every identifier ever derived from
+ * it. Repairing one that never had a usable code strands nothing, because
+ * nothing valid was derived from it either.
+ *
+ * Idempotent: a platform where every code is canonical does one read and no
+ * writes.
+ */
+export async function reconcileBusinessCodes(): Promise<{ checked: number; repaired: number }> {
+  const all = await prisma.business
+    .findMany({ select: { id: true, businessCode: true, createdAt: true }, orderBy: { createdAt: "asc" } })
+    .catch(() => null)
+  if (!all) return { checked: 0, repaired: 0 }
+
+  // Numbers already spoken for by a canonical code, so a repair never lands on
+  // one and never has to touch the business holding it.
+  const taken = new Set(all.map((b) => b.businessCode).filter((c): c is string => !!c && !!parseBusinessCode(c)))
+
+  let repaired = 0
+  for (let i = 0; i < all.length; i++) {
+    const b = all[i]
+    if (parseBusinessCode(b.businessCode)) continue
+
+    const month = monthOf(b.createdAt)
+    // Position in creation order across ALL tenants — "as per the date created".
+    for (let n = i + 1; n < i + 1 + 500; n++) {
+      const code = `BUS-${month}-${pad4(n)}`
+      if (taken.has(code)) continue
+      const ok = await prisma.business
+        .update({ where: { id: b.id }, data: { businessCode: code } })
+        .then(() => true)
+        .catch(() => false) // unique clash with something outside this snapshot
+      if (ok) { taken.add(code); repaired++; break }
+    }
+  }
+  return { checked: all.length, repaired }
+}
