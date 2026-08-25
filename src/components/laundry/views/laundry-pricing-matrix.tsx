@@ -59,23 +59,40 @@ export function LaundryPricingMatrix() {
   const allVisibleSelected = filtered.length > 0 && filtered.every((g) => selected.has(g.id))
   const toggleAll = () => setSelected((s) => { const n = new Set(s); if (allVisibleSelected) filtered.forEach((g) => n.delete(g.id)); else filtered.forEach((g) => n.add(g.id)); return n })
 
-  // ── Template / Export headers — keyed by Garment Code. Per service: a price
-  //    column and a "<Service> Type" (billing) column. ──
-  const headers = useMemo(() => ["Garment Code", "Garment Name", "Category", ...services.flatMap((s) => [s.name, `${s.name} Type`])], [services])
+  // ── Export headers — keyed by Garment Code. Per ACTIVE service: a price
+  //    column, a "<Service> Type" (billing) column and a "<Service>
+  //    Subscription" column. `services` is the matrix's own active-service
+  //    list, so a deactivated service drops out of the file automatically and
+  //    there is no second list to maintain. Same contract the template and the
+  //    importer use. ──
+  const headers = useMemo(
+    () => ["Garment Code", "Garment Name", "Category", ...services.flatMap((s) => [s.name, `${s.name} Type`, `${s.name} Subscription`])],
+    [services],
+  )
 
+  // Built on the server: the community build of `xlsx` silently drops cell
+  // styling, freeze panes and data validation, so a template written here could
+  // not carry the YES/NO dropdown or keep its headers legible.
   const downloadTemplate = () => {
-    const sample = ["GAR00001", "Shirt", categories[0]?.name || "Men", "Yes", ...services.flatMap((_, i) => (i === 0 ? [100, "PER_KG"] : ["NA", "NA"]))]
-    const ws = XLSX.utils.aoa_to_sheet([headers, sample])
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Pricing")
-    XLSX.writeFile(wb, "pricing-template.xlsx")
+    if (!currentBusinessId) return
+    window.location.href = `/api/laundry/pricing-matrix/template?businessId=${encodeURIComponent(currentBusinessId)}`
   }
 
   const exportMatrix = () => {
     const rows = garments.map((g) => [
       g.code, g.name, g.categoryName || "",
-      ...services.flatMap((s) => { const c = g.cells[s.id]; return c && c.mode !== "NOT_AVAILABLE" ? [c.price, typeLabel(c.mode)] : ["NA", "NA"] }),
+      ...services.flatMap((s) => {
+        const c = g.cells[s.id]
+        const sub = c?.subscriptionIncluded ? "YES" : "NO"
+        // NA is "no price configured" — a different statement from "not in the
+        // subscription", so the subscription column is written either way.
+        return c && c.mode !== "NOT_AVAILABLE" ? [c.price, typeLabel(c.mode), sub] : ["NA", "NA", sub]
+      }),
     ])
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    // Widths are the one piece of formatting the community build does write —
+    // enough that an export opens without the headers being clipped.
+    ws["!cols"] = [{ wch: 16 }, { wch: 24 }, { wch: 18 }, ...services.flatMap(() => [{ wch: 13 }, { wch: 14 }, { wch: 15 }])]
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Pricing")
     XLSX.writeFile(wb, "pricing-matrix.xlsx")
   }
@@ -271,7 +288,14 @@ function ImportDialog({ services, businessId, onTemplate, onClose, onImported }:
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
       const rows = json.map((o) => ({
         code: String(o["Garment Code"] ?? ""),
-        cells: services.map((s) => ({ service: s.name, price: o[s.name], billing: String(o[`${s.name} Type`] ?? "") })),
+        cells: services.map((s) => ({
+          service: s.name,
+          price: o[s.name],
+          billing: String(o[`${s.name} Type`] ?? ""),
+          // Absent column → undefined, so an older sheet without the column
+          // leaves each pair's stored eligibility alone instead of clearing it.
+          subscription: o[`${s.name} Subscription`] === "" || o[`${s.name} Subscription`] == null ? undefined : String(o[`${s.name} Subscription`]),
+        })),
       }))
       const res = await fetch("/api/laundry/pricing-matrix/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, rows, replaceExisting: replace }) })
       const j = await res.json()

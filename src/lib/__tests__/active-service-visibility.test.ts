@@ -83,14 +83,21 @@ describe('3 · deactivating is not deleting', () => {
 
 describe('5 · template and export carry the same columns as the screen', () => {
   it('headers are built from the services the API returned', () => {
-    expect(MATRIX_UI).toContain('const headers = useMemo(() => ["Garment Code", "Garment Name", "Category", ...services.flatMap((s) => [s.name, `${s.name} Type`])], [services])')
+    // Three columns per service now — price, billing type, and subscription.
+    expect(MATRIX_UI).toContain('...services.flatMap((s) => [s.name, `${s.name} Type`, `${s.name} Subscription`])')
+    expect(MATRIX_UI).toContain('[services],')
   })
 
-  it('both the template and the export use those headers', () => {
-    const tpl = MATRIX_UI.slice(MATRIX_UI.indexOf('const downloadTemplate'), MATRIX_UI.indexOf('const exportMatrix'))
+  it('both the template and the export come from that same active list', () => {
     const exp = MATRIX_UI.slice(MATRIX_UI.indexOf('const exportMatrix'))
-    expect(tpl).toContain('aoa_to_sheet([headers, sample])')
     expect(exp).toContain('aoa_to_sheet([headers, ...rows])')
+    // The template is generated server-side — the community build of `xlsx`
+    // drops the styling, freeze pane and dropdowns it needs — but from the SAME
+    // canonical active-service query, so there is still no second list.
+    const tpl = readFileSync(join(process.cwd(), 'src/app/api/laundry/pricing-matrix/template/route.ts'), 'utf8')
+    expect(tpl).toContain('isActive: true')
+    expect(tpl).toContain('`${s.name} Type`')
+    expect(tpl).toContain('`${s.name} Subscription`')
   })
 
   it('so a deactivated service cannot reach either', () => {

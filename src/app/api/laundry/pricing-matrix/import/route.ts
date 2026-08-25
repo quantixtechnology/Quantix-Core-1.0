@@ -14,7 +14,24 @@ import { ensureGarmentCodes } from "@/lib/laundry-garment-codes"
 export const runtime = "nodejs"
 const MODES = new Set(["NOT_AVAILABLE", "PER_PIECE", "PER_KG"])
 
-interface ImportCell { service: string; price?: string | number | null; billing?: string }
+interface ImportCell { service: string; price?: string | number | null; billing?: string; subscription?: string | null }
+
+/**
+ * YES / NO for one garment × service pair.
+ *
+ * Deliberately three-valued. An EMPTY cell — or a sheet exported before the
+ * column existed — returns undefined, which leaves whatever that pair already
+ * has. Only an explicit YES/NO changes it, so importing an old file cannot
+ * silently switch every pair off.
+ */
+function parseSubscription(v: string | null | undefined): boolean | undefined | null {
+  if (v == null) return undefined
+  const t = String(v).trim().toUpperCase()
+  if (!t) return undefined
+  if (["YES", "Y", "TRUE", "1", "INCLUDED"].includes(t)) return true
+  if (["NO", "N", "FALSE", "0", "NOT INCLUDED", "EXCLUDED"].includes(t)) return false
+  return null // present but unrecognised → a row error, never a silent default
+}
 interface ImportRow { code?: string; cells?: ImportCell[] }
 
 export async function POST(request: Request) {
@@ -78,12 +95,19 @@ export async function POST(request: Request) {
         const billing = String(c.billing || "NOT_AVAILABLE").trim().toUpperCase().replace(/[\s-]/g, "_")
         const mode = billing === "NA" ? "NOT_AVAILABLE" : billing
         if (!MODES.has(mode)) { errors.push({ row: rn, code, message: `Invalid billing "${c.billing}" for ${svc.name}.` }); continue }
-        if (mode === "NOT_AVAILABLE") { cells.push({ serviceId: svc.id, mode: "NOT_AVAILABLE" }); continue }
+
+        // Subscription is read for EVERY pair, priced or not. It is a separate
+        // statement from the pricing type: "Dry Clean, PER_PIECE, 99, NO" means
+        // priced and excluded, which NA cannot express.
+        const sub = parseSubscription(c.subscription)
+        if (sub === null) { errors.push({ row: rn, code, message: `Invalid subscription "${c.subscription}" for ${svc.name} (use YES or NO).` }); continue }
+
+        if (mode === "NOT_AVAILABLE") { cells.push({ serviceId: svc.id, mode: "NOT_AVAILABLE", subscriptionIncluded: sub }); continue }
         const priceRaw = c.price
         if (priceRaw === "" || priceRaw == null || String(priceRaw).toUpperCase() === "NA") { errors.push({ row: rn, code, message: `Missing price for ${svc.name}.` }); continue }
         const price = Number(priceRaw)
         if (isNaN(price) || price < 0) { errors.push({ row: rn, code, message: `Invalid price for ${svc.name}.` }); continue }
-        cells.push({ serviceId: svc.id, mode: mode as CellMode, price })
+        cells.push({ serviceId: svc.id, mode: mode as CellMode, price, subscriptionIncluded: sub })
       }
       prepared.push({ garmentId: garment.id, garmentName: garment.name, cells })
     })
