@@ -35,8 +35,12 @@ describe('6 + 7 · no retry limit on an Employee ID login', () => {
     expect(before).not.toContain('user.update')
   })
 
-  it('6. and the message names the right identifier', () => {
-    expect(LOGIN).toContain("isEmployeeLogin ? 'Invalid Employee ID or password' : 'Invalid email or password'")
+  it('6. the WRONG-PASSWORD branch names the right identifier', () => {
+    // Pinned to the branch, not to the file: the string appears in more than one
+    // return, and a first-match edit once landed it on the wrong one — the
+    // no-membership early return — leaving a wrong password still saying "email".
+    const fail = LOGIN.slice(LOGIN.indexOf('const isValid = await verifyPassword'), LOGIN.indexOf('// Update last login'))
+    expect(fail).toContain("isEmployeeLogin ? 'Invalid Employee ID or password' : 'Invalid email or password'")
   })
 
   it('email and platform logins keep their protection', () => {

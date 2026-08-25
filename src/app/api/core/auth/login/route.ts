@@ -172,7 +172,7 @@ export async function POST(request: Request) {
         severity:    'CRITICAL',
         req:         request as unknown as import('next/server').NextRequest,
       })
-      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
+      return NextResponse.json({ success: false, error: isEmployeeLogin ? 'Invalid Employee ID or password' : 'Invalid email or password' }, { status: 401 });
     }
 
     // Update last login + clear any failed-attempt lockout state
