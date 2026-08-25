@@ -33,6 +33,9 @@ const nid = () => `r${++ids}`
 const match = (row: Row, where: Row): boolean =>
   Object.entries(where).every(([k, v]) => {
     if (v && typeof v === 'object' && 'not' in (v as Row)) return row[k] !== (v as Row).not
+    if (v && typeof v === 'object' && 'startsWith' in (v as Row)) {
+      return typeof row[k] === 'string' && (row[k] as string).startsWith((v as Row).startsWith as string)
+    }
     if (v && typeof v === 'object' && 'isOwner' in (v as Row)) return true
     return row[k] === v
   })
@@ -44,12 +47,16 @@ vi.mock('@/lib/prisma', () => {
       // compound key support: { businessId_namespace: { … } }
       const compound = w.businessId_namespace as Row | undefined
       const q = compound ?? w
-      return db[name].find((r) => match(r, q)) ?? null
+      const hit = db[name].find((r) => match(r, q))
+      return hit ? { ...hit } : null      // SNAPSHOT, never the live row
     }),
-    findFirst: vi.fn(async ({ where }: never) => db[name].find((r) => match(r, where as Row)) ?? null),
+    findFirst: vi.fn(async ({ where }: never) => {
+      const hit = db[name].find((r) => match(r, where as Row))
+      return hit ? { ...hit } : null
+    }),
     findMany: vi.fn(async (args?: never) => {
       const w = (args as { where?: Row } | undefined)?.where
-      return w ? db[name].filter((r) => match(r, w)) : [...db[name]]
+      return (w ? db[name].filter((r) => match(r, w)) : db[name]).map((r) => ({ ...r }))
     }),
     create: vi.fn(async ({ data }: never) => {
       const d: Row = { id: nid(), ...(data as Row) }
@@ -93,7 +100,7 @@ vi.mock('@/lib/prisma', () => {
 const reset = () => {
   for (const k of Object.keys(db) as (keyof typeof db)[]) db[k].length = 0
   db.business.push({ id: BIZ_A, businessCode: CODE_A, name: 'VASTRASUDHA' })
-  db.business.push({ id: BIZ_B, businessCode: CODE_B, name: 'Tenant B' })
+  db.business.push({ id: BIZ_B, businessCode: CODE_B, name: 'Laundry & Drycleaners' })
 }
 
 describe('the persisted prefix', () => {
@@ -102,7 +109,7 @@ describe('the persisted prefix', () => {
   it('is created once and then returned, never recomputed', async () => {
     const { getTenantIdentityPrefix } = await import('@/lib/tenant-identity-server')
     const first = await getTenantIdentityPrefix(BIZ_A)
-    expect(first).toBe('8T5')
+    expect(first).toBe('V5')
     for (let i = 0; i < 5; i++) expect(await getTenantIdentityPrefix(BIZ_A)).toBe(first)
     expect(db.tenantIdentity.filter((r) => r.businessId === BIZ_A)).toHaveLength(1)
   })
@@ -131,15 +138,15 @@ describe('the persisted prefix', () => {
     const { getTenantIdentityPrefix } = await import('@/lib/tenant-identity-server')
     const p = await getTenantIdentityPrefix('biz_c')
     expect(p).toBeTruthy()
-    expect(p).not.toBe(deriveTenantPrefix(CODE_A))
+    expect(p).not.toBe(deriveTenantPrefix(CODE_A, 'VASTRASUDHA'))
   })
 
   it('resolves a collision deterministically instead of sharing a namespace', async () => {
     const { getTenantIdentityPrefix } = await import('@/lib/tenant-identity-server')
     // Squat tenant A's natural prefix with somebody else.
-    db.tenantIdentity.push({ id: nid(), businessId: 'squatter', businessCode: 'X', prefix: '8T5' })
+    db.tenantIdentity.push({ id: nid(), businessId: 'squatter', businessCode: 'X', prefix: 'V5' })
     const p = await getTenantIdentityPrefix(BIZ_A)
-    expect(p).not.toBe('8T5')
+    expect(p).not.toBe('V5')
     expect(db.tenantIdentity.filter((r) => r.prefix === p)).toHaveLength(1)
   })
 })
@@ -149,24 +156,24 @@ describe('sequences are atomic, tenant-scoped and forward-only', () => {
 
   it('EMP starts at 001 and counts up', async () => {
     const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP001')
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP002')
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP003')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP001')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP002')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP003')
   })
 
   it('DL starts at 001 independently of EMP — §4', async () => {
     const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
     await issueEmployeeId(BIZ_A, 'EMP')
     await issueEmployeeId(BIZ_A, 'EMP')
-    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('8T5DL001')
-    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('8T5DL002')
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP003')
+    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('V5DL001')
+    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('V5DL002')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP003')
   })
 
   it('one tenant cannot move another tenant\'s counter', async () => {
     const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
     for (let i = 0; i < 7; i++) await issueEmployeeId(BIZ_A, 'EMP')
-    expect(await issueEmployeeId(BIZ_B, 'EMP')).toBe('8T12EMP001')
+    expect(await issueEmployeeId(BIZ_B, 'EMP')).toBe('L12EMP001')
   })
 
   it('100 simultaneous issues produce 100 distinct ids — §6', async () => {
@@ -187,17 +194,17 @@ describe('sequences are atomic, tenant-scoped and forward-only', () => {
     const one = await issueEmployeeId(BIZ_A, 'EMP')
     const two = await issueEmployeeId(BIZ_A, 'EMP')
     // "Archive" #2 — the counter is untouched by employee state.
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP003')
-    expect([one, two]).toEqual(['8T5EMP001', '8T5EMP002'])
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP003')
+    expect([one, two]).toEqual(['V5EMP001', 'V5EMP002'])
   })
 
   it('healing only moves a counter forward, never back', async () => {
     const { healEmployeeSequence, issueEmployeeId } = await import('@/lib/tenant-identity-server')
     await issueEmployeeId(BIZ_A, 'EMP')            // next = 2
     await healEmployeeSequence(BIZ_A, 'EMP', 40)   // → 41
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP041')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP041')
     await healEmployeeSequence(BIZ_A, 'EMP', 5)    // must NOT rewind
-    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('8T5EMP042')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP042')
   })
 })
 
@@ -213,8 +220,8 @@ describe('reconciliation of existing tenants', () => {
     const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
     await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
     expect(db.businessUser.find((r) => r.id === 'bu_owner')!.employeeCode).toBeNull()
-    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('8T5EMP001')
-    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('8T5EMP002')
+    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V5EMP001')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V5EMP002')
   })
 
   it('is idempotent — a second run changes nothing', async () => {
@@ -227,17 +234,17 @@ describe('reconciliation of existing tenants', () => {
   })
 
   it('never overwrites an id an employee already has — §10', async () => {
-    db.businessUser.push({ ...staff1, employeeCode: '8T5EMP007' })
+    db.businessUser.push({ ...staff1, employeeCode: 'V5EMP007' })
     const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
     await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
-    expect(db.businessUser[0].employeeCode).toBe('8T5EMP007')
+    expect(db.businessUser[0].employeeCode).toBe('V5EMP007')
   })
 
   it('does not reuse a number already held by an existing employee', async () => {
-    db.businessUser.push({ ...staff1, employeeCode: '8T5EMP009' }, { ...staff2 })
+    db.businessUser.push({ ...staff1, employeeCode: 'V5EMP009' }, { ...staff2 })
     const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
     await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
-    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('8T5EMP010')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V5EMP010')
   })
 
   it('touches nothing but the code — §10', async () => {
@@ -257,7 +264,7 @@ describe('reconciliation of existing tenants', () => {
     db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: 'EXE007', createdAt: new Date(1) })
     const { reconcileDeliveryExecutiveIds } = await import('@/lib/laundry-employee-identity')
     await reconcileDeliveryExecutiveIds(BIZ_A, 'lb_a')
-    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('8T5DL007')
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V5DL007')
   })
 
   it('and the next executive does not collide with it', async () => {
@@ -265,19 +272,19 @@ describe('reconciliation of existing tenants', () => {
     const { reconcileDeliveryExecutiveIds } = await import('@/lib/laundry-employee-identity')
     await reconcileDeliveryExecutiveIds(BIZ_A, 'lb_a')
     const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
-    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('8T5DL008')
+    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('V5DL008')
   })
 
   it('leaves an executive already in the current format alone', async () => {
-    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: '8T5DL003', createdAt: new Date(1) })
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: 'V5DL003', createdAt: new Date(1) })
     const { reconcileDeliveryExecutiveIds } = await import('@/lib/laundry-employee-identity')
     expect(await reconcileDeliveryExecutiveIds(BIZ_A, 'lb_a')).toBe(0)
-    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('8T5DL003')
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V5DL003')
   })
 
   it('a delivery executive does not also consume a staff number', async () => {
     db.businessUser.push({ ...staff1, userId: 'u_exec' })
-    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', userId: 'u_exec', employeeCode: '8T5DL001', createdAt: new Date(1) })
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', userId: 'u_exec', employeeCode: 'V5DL001', createdAt: new Date(1) })
     const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
     await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
     expect(db.businessUser[0].employeeCode).toBeNull()
@@ -291,17 +298,17 @@ describe('tenant isolation at login', () => {
     const { getTenantIdentityPrefix, resolveTenantByEmployeeId } = await import('@/lib/tenant-identity-server')
     await getTenantIdentityPrefix(BIZ_A)
     await getTenantIdentityPrefix(BIZ_B)
-    expect((await resolveTenantByEmployeeId('8T5EMP001'))!.businessId).toBe(BIZ_A)
-    expect((await resolveTenantByEmployeeId('8T12EMP001'))!.businessId).toBe(BIZ_B)
-    expect((await resolveTenantByEmployeeId('8T5DL001'))!.businessId).toBe(BIZ_A)
+    expect((await resolveTenantByEmployeeId('V5EMP001'))!.businessId).toBe(BIZ_A)
+    expect((await resolveTenantByEmployeeId('L12EMP001'))!.businessId).toBe(BIZ_B)
+    expect((await resolveTenantByEmployeeId('V5DL001'))!.businessId).toBe(BIZ_A)
   })
 
   it('number 001 exists in both tenants and still never crosses', async () => {
     const { getTenantIdentityPrefix, resolveTenantByEmployeeId } = await import('@/lib/tenant-identity-server')
     await getTenantIdentityPrefix(BIZ_A)
     await getTenantIdentityPrefix(BIZ_B)
-    const a = await resolveTenantByEmployeeId('8T5EMP001')
-    const b = await resolveTenantByEmployeeId('8T12EMP001')
+    const a = await resolveTenantByEmployeeId('V5EMP001')
+    const b = await resolveTenantByEmployeeId('L12EMP001')
     expect(a!.sequence).toBe(b!.sequence)          // same number
     expect(a!.businessId).not.toBe(b!.businessId)  // different tenant
   })
@@ -385,5 +392,121 @@ describe('one identity, reusable by any product', () => {
     expect(execApi).not.toMatch(/tenantIdentity/)
     // and the executive API no longer honours a typed code
     expect(execApi).not.toMatch(/b\.employeeCode/)
+  })
+})
+
+// ─── The interim prefix, corrected in place ─────────────────────────────────
+
+describe('a tenant on the interim prefix moves to the naming convention', () => {
+  beforeEach(reset)
+
+  it('swaps the prefix and carries every sequence number across', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: '8T5' })
+    db.businessUser.push(
+      { id: 'bu_1', userId: 'u_1', businessId: BIZ_A, employeeCode: '8T5EMP001', role: 'STORE_EXECUTIVE', createdAt: new Date(1) },
+      { id: 'bu_2', userId: 'u_2', businessId: BIZ_A, employeeCode: '8T5EMP007', role: 'STORE_EXECUTIVE', createdAt: new Date(2) },
+    )
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: '8T5DL003', createdAt: new Date(1) })
+
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+
+    expect(db.tenantIdentity[0].prefix).toBe('V5')
+    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V5EMP001')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V5EMP007') // number kept
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V5DL003')                 // number kept
+  })
+
+  it('is a no-op for a tenant already on the convention', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: 'V5' })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe('V5')
+  })
+
+  it('runs at most once — the second call finds nothing to do', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: '8T5' })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)
+  })
+})
+
+// ─── §13, §14: the two namespaces never borrow each other's token ───────────
+
+describe('EMP and DL never cross', () => {
+  beforeEach(reset)
+
+  it('a delivery executive never receives an EMP id', async () => {
+    const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
+    for (let i = 0; i < 5; i++) {
+      const id = await issueEmployeeId(BIZ_A, 'DL')
+      expect(id).toContain('DL')
+      expect(id).not.toContain('EMP')
+    }
+  })
+
+  it('a staff member never receives a DL id', async () => {
+    const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
+    for (let i = 0; i < 5; i++) {
+      const id = await issueEmployeeId(BIZ_A, 'EMP')
+      expect(id).toContain('EMP')
+      expect(parseEmployeeIdNamespace(id)).toBe('EMP')
+    }
+  })
+
+  it('creating staff does not move the DL counter, and vice versa — §SEQUENCE', async () => {
+    const { issueEmployeeId } = await import('@/lib/tenant-identity-server')
+    await issueEmployeeId(BIZ_A, 'EMP')   // V5EMP001
+    await issueEmployeeId(BIZ_A, 'EMP')   // V5EMP002
+    await issueEmployeeId(BIZ_A, 'EMP')   // V5EMP003
+    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('V5DL001')
+    expect(await issueEmployeeId(BIZ_A, 'EMP')).toBe('V5EMP004')
+    expect(await issueEmployeeId(BIZ_A, 'DL')).toBe('V5DL002')
+  })
+})
+
+function parseEmployeeIdNamespace(id: string): string {
+  return /EMP|DL|COM/.exec(id)?.[0] ?? ''
+}
+
+// ─── §11, §15 ───────────────────────────────────────────────────────────────
+
+describe('prefix stability and login resolution', () => {
+  beforeEach(reset)
+
+  it('unrelated tenant settings do not change the prefix — §11', async () => {
+    const { getTenantIdentityPrefix } = await import('@/lib/tenant-identity-server')
+    const before = await getTenantIdentityPrefix(BIZ_A)
+    const biz = db.business.find((b) => b.id === BIZ_A)!
+    Object.assign(biz, { primaryColor: '#000', slug: 'new-slug', city: 'Ludhiana', logo: 'x.png', name: 'Renamed Ltd' })
+    expect(await getTenantIdentityPrefix(BIZ_A)).toBe(before)
+  })
+
+  it('the generated id resolves to the right tenant AND the right user — §15', async () => {
+    const { getTenantIdentityPrefix, issueEmployeeId, resolveTenantByEmployeeId } = await import('@/lib/tenant-identity-server')
+    await getTenantIdentityPrefix(BIZ_A)
+    await getTenantIdentityPrefix(BIZ_B)
+
+    const idA = await issueEmployeeId(BIZ_A, 'EMP')   // V5EMP001
+    const idB = await issueEmployeeId(BIZ_B, 'EMP')   // L12EMP001
+    db.businessUser.push(
+      { id: 'bu_a', userId: 'user_a', businessId: BIZ_A, employeeCode: idA, role: 'STORE_EXECUTIVE' },
+      { id: 'bu_b', userId: 'user_b', businessId: BIZ_B, employeeCode: idB, role: 'STORE_EXECUTIVE' },
+    )
+    expect(idA).toBe('V5EMP001')
+    expect(idB).toBe('L12EMP001')
+
+    // Exactly what the login does: identifier → tenant → membership → user.
+    const lookup = async (identifier: string) => {
+      const t = await resolveTenantByEmployeeId(identifier)
+      if (!t) return null
+      return db.businessUser.find((m) => m.businessId === t.businessId && m.employeeCode === identifier.toUpperCase())?.userId ?? null
+    }
+    expect(await lookup('V5EMP001')).toBe('user_a')
+    expect(await lookup('L12EMP001')).toBe('user_b')
+    // Both are sequence 001 and neither reaches the other's user.
+    expect(await lookup('V5EMP001')).not.toBe(await lookup('L12EMP001'))
+    expect(await lookup('V5EMP999')).toBeNull()
   })
 })

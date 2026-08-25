@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseBusinessCode, isValidBusinessCode, deriveTenantPrefix, tenantPrefixCandidates,
   formatEmployeeId, parseEmployeeId, looksLikeEmployeeId, isValidTenantPrefix,
-  EMPLOYEE_NAMESPACES,
+  businessInitial, businessNumber, EMPLOYEE_NAMESPACES,
 } from '@/lib/tenant-identity'
 
 // ============================================================================
@@ -14,8 +14,10 @@ import {
 // has stopped being a platform primitive.
 // ============================================================================
 
-const A = 'BUS-202606-0005'   // the spec's tenant A
-const B = 'BUS-202606-0012'   // the spec's tenant B
+const A = 'BUS-202606-0005'   // VASTRASUDHA
+const B = 'BUS-202606-0012'   // Laundry & Drycleaners
+const NAME_A = 'VASTRASUDHA'
+const NAME_B = 'Laundry & Drycleaners'
 
 describe('Business Code is the source of truth', () => {
   it('parses the canonical shape', () => {
@@ -35,83 +37,87 @@ describe('Business Code is the source of truth', () => {
   })
 
   it('is case- and whitespace-insensitive', () => {
-    expect(deriveTenantPrefix('  bus-202606-0005 ')).toBe(deriveTenantPrefix(A))
+    expect(deriveTenantPrefix('  bus-202606-0005 ', NAME_A)).toBe(deriveTenantPrefix(A, NAME_A))
+  })
+
+  it('reads the business NUMBER, not the month or the padded string', () => {
+    expect(businessNumber(A)).toBe(5)
+    expect(businessNumber(B)).toBe(12)
+    expect(businessNumber(A)).not.toBe(202606)
+    expect(businessNumber(A)).not.toBe(2026)
+    expect(String(businessNumber(A))).not.toBe('0005')
+  })
+
+  it('takes the first letter of the name, with no abbreviation rules', () => {
+    expect(businessInitial(NAME_A)).toBe('V')
+    expect(businessInitial(NAME_B)).toBe('L')
+    expect(businessInitial('  quick wash ')).toBe('Q')
+    expect(businessInitial('&Co Laundry')).toBe('C')   // skips punctuation
+    expect(businessInitial('')).toBe('Q')              // never empty
   })
 })
 
-describe('the prefix is deterministic and depends on nothing mutable', () => {
-  it('the same code always gives the same prefix', () => {
-    const runs = Array.from({ length: 50 }, () => deriveTenantPrefix(A))
+describe('the prefix is [Business Initial][Business Number]', () => {
+  it('produces the documented prefixes', () => {
+    expect(deriveTenantPrefix(A, NAME_A)).toBe('V5')
+    expect(deriveTenantPrefix(B, NAME_B)).toBe('L12')
+  })
+
+  it('the same inputs always give the same prefix', () => {
+    const runs = Array.from({ length: 50 }, () => deriveTenantPrefix(A, NAME_A))
     expect(new Set(runs).size).toBe(1)
   })
 
-  it('matches the documented derivation', () => {
-    expect(deriveTenantPrefix(A)).toBe('8T5')
-    expect(deriveTenantPrefix(B)).toBe('8T12')
+  it('the number comes from the Business Code — §10', () => {
+    // Same name, different code ⇒ different prefix.
+    expect(deriveTenantPrefix('BUS-202606-0009', NAME_A)).toBe('V9')
+    expect(deriveTenantPrefix(A, NAME_A)).toBe('V5')
   })
 
-  it('takes ONLY the code — name, email, domain, stores cannot be passed in', () => {
-    // The signature is (code) => string. There is nowhere to put a business
-    // name, so a rename provably cannot move a namespace.
-    expect(deriveTenantPrefix.length).toBe(1)
+  it('nothing but the name and the code is an input', () => {
+    // Two arguments, so an email, phone, store or row id cannot reach it — §13.
+    expect(deriveTenantPrefix.length).toBe(2)
   })
 
-  it('same sequence in a different month does not collide', () => {
-    expect(deriveTenantPrefix('BUS-202710-0005')).not.toBe(deriveTenantPrefix(A))
+  it('an unparseable code still yields a usable prefix', () => {
+    expect(deriveTenantPrefix('NOT-A-CODE', NAME_A)).toBe('V0')
   })
 
-  it('is injective across 16 years × 2000 businesses a month', () => {
-    const seen = new Map<string, string>()
-    for (let y = 2020; y <= 2035; y++) {
-      for (let m = 1; m <= 12; m++) {
-        for (let s = 1; s <= 2000; s++) {
-          const code = `BUS-${y}${String(m).padStart(2, '0')}-${String(s).padStart(4, '0')}`
-          const pre = deriveTenantPrefix(code)
-          expect(seen.has(pre)).toBe(false)
-          seen.set(pre, code)
-        }
-      }
-    }
-    expect(seen.size).toBe(16 * 12 * 2000)
+  it('same initial + same code sequence WANTS the same prefix — the clash the registry settles', () => {
+    // Documented, not hidden: this is exactly why TenantIdentity.prefix is
+    // unique and allocated through the candidate list.
+    expect(deriveTenantPrefix('BUS-202707-0005', 'Vikram Laundry')).toBe(deriveTenantPrefix(A, NAME_A))
   })
 
-  it('never returns the one-letter-of-the-name prefix that would collide', () => {
-    // VASTRASUDHA and VXYZ would both be "V5" under the rejected scheme.
-    expect(deriveTenantPrefix(A)).not.toBe('V5')
-    expect(isValidTenantPrefix(deriveTenantPrefix(A))).toBe(true)
+  it('candidates are ordered, distinct, and keep the ends-in-a-digit rule', () => {
+    const c = tenantPrefixCandidates(A, NAME_A)
+    expect(c[0]).toBe('V5')
+    expect(c[1]).toBe('V5A1')
+    expect(new Set(c).size).toBe(c.length)
+    for (const p of c) expect(isValidTenantPrefix(p)).toBe(true)
   })
 
-  it('unparseable codes still get a stable, differentiated prefix', () => {
-    const x = deriveTenantPrefix('WEIRD_CODE_1')
-    const y = deriveTenantPrefix('WEIRD_CODE_2')
-    expect(x).toBe(deriveTenantPrefix('WEIRD_CODE_1'))
-    expect(x).not.toBe(y)
-  })
-
-  it('an empty code is refused, not silently shared', () => {
-    expect(() => deriveTenantPrefix('')).toThrow()
-  })
-
-  it('collision candidates are deterministic and distinct', () => {
-    const c1 = tenantPrefixCandidates('WEIRD_CODE_1')
-    expect(c1).toEqual(tenantPrefixCandidates('WEIRD_CODE_1'))
-    expect(new Set(c1).size).toBe(c1.length)
-    expect(c1[0]).toBe(deriveTenantPrefix('WEIRD_CODE_1'))
+  it('a clash prefix still splits unambiguously', () => {
+    expect(parseEmployeeId('V5A1EMP001')).toEqual({ prefix: 'V5A1', namespace: 'EMP', sequence: 1 })
   })
 })
 
 describe('employee ids', () => {
-  const pa = deriveTenantPrefix(A)
-  const pb = deriveTenantPrefix(B)
+  const pa = deriveTenantPrefix(A, NAME_A)
+  const pb = deriveTenantPrefix(B, NAME_B)
 
   it('formats the two Laundry namespaces', () => {
-    expect(formatEmployeeId(pa, 'EMP', 1)).toBe('8T5EMP001')
-    expect(formatEmployeeId(pa, 'DL', 1)).toBe('8T5DL001')
-    expect(formatEmployeeId(pb, 'EMP', 1)).toBe('8T12EMP001')
+    expect(formatEmployeeId(pa, 'EMP', 1)).toBe('V5EMP001')
+    expect(formatEmployeeId(pa, 'EMP', 2)).toBe('V5EMP002')
+    expect(formatEmployeeId(pa, 'EMP', 3)).toBe('V5EMP003')
+    expect(formatEmployeeId(pa, 'DL', 1)).toBe('V5DL001')
+    expect(formatEmployeeId(pa, 'DL', 2)).toBe('V5DL002')
+    expect(formatEmployeeId(pb, 'EMP', 1)).toBe('L12EMP001')
+    expect(formatEmployeeId(pb, 'DL', 1)).toBe('L12DL001')
   })
 
   it('carries a Commerce namespace on the SAME prefix (§18)', () => {
-    expect(formatEmployeeId(pa, 'COM', 1)).toBe('8T5COM001')
+    expect(formatEmployeeId(pa, 'COM', 1)).toBe('V5COM001')
     expect(EMPLOYEE_NAMESPACES).toContain('COM')
   })
 
@@ -133,7 +139,7 @@ describe('employee ids', () => {
   })
 
   it('is case-insensitive on input (typed on a phone)', () => {
-    expect(parseEmployeeId('8t5dl001')).toEqual({ prefix: '8T5', namespace: 'DL', sequence: 1 })
+    expect(parseEmployeeId('v5dl001')).toEqual({ prefix: 'V5', namespace: 'DL', sequence: 1 })
   })
 
   it('rejects the legacy unprefixed forms that named no tenant', () => {

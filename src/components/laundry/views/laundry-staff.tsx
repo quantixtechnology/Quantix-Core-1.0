@@ -234,7 +234,7 @@ export function LaundryStaff({ businessId: bizProp }: { businessId?: string }) {
               <p className="text-[11px] text-slate-400">
                 {editing?.isOwner
                   ? "The Business Owner does not need an employee ID."
-                  : "Generated from your Business Code. Permanent, and never reused."}
+                  : "Generated from your business initial and Business Code. Permanent, and never reused."}
               </p>
             </div>
             {!editing && <div className="space-y-1"><Label className="text-xs text-slate-600">Password <span className="text-slate-400">(optional — auto-generated if blank)</span></Label><Input value={fPassword} onChange={(e) => setFPassword(e.target.value)} placeholder="Leave blank to auto-generate" /></div>}

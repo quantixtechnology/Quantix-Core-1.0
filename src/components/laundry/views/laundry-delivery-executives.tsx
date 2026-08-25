@@ -232,7 +232,7 @@ export function LaundryDeliveryExecutives() {
                   className="bg-slate-50 font-mono text-sm"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  {editing ? "Permanent — never changes or is reused." : "Generated automatically from your Business Code."}
+                  {editing ? "Permanent — never changes or is reused." : "Generated automatically from your business initial and Business Code."}
                 </p>
               </div>
               <div><Label>Assigned Store</Label>

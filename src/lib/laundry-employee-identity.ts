@@ -14,7 +14,7 @@
  * the Business Code lives.
  */
 import { prisma } from "@/lib/prisma"
-import { formatEmployeeId, parseEmployeeId } from "@/lib/tenant-identity"
+import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode } from "@/lib/tenant-identity"
 import { getTenantIdentityPrefix, healEmployeeSequence, issueEmployeeId } from "@/lib/tenant-identity-server"
 
 export const STAFF_NAMESPACE = "EMP" as const
@@ -22,6 +22,18 @@ export const DELIVERY_NAMESPACE = "DL" as const
 
 /** Legacy delivery codes, from before the namespace existed: EXE001. */
 const LEGACY_EXEC_CODE = /^EXE(\d+)$/i
+
+/**
+ * An interim prefix from the first cut of this feature, which derived the whole
+ * prefix from the Business Code's MONTH and sequence (8T5) instead of the
+ * business initial and number (V5).
+ *
+ * A natural prefix always starts with a LETTER, so a leading digit identifies
+ * one of those and nothing else. This is a one-time correction of a format that
+ * shipped and was replaced the same day: the sequence NUMBER each employee
+ * holds is carried across unchanged, so only the prefix moves.
+ */
+const INTERIM_PREFIX = /^[0-9]/
 
 export const issueStaffEmployeeId = (platformBusinessId: string) => issueEmployeeId(platformBusinessId, STAFF_NAMESPACE)
 export const issueDeliveryEmployeeId = (platformBusinessId: string) => issueEmployeeId(platformBusinessId, DELIVERY_NAMESPACE)
@@ -46,7 +58,58 @@ export function isCurrentFormat(code: string | null | undefined, prefix: string,
  * Nothing else on the record — name, mobile, store, password, active flag — is
  * read or written.
  */
+/**
+ * Move a tenant off an interim prefix, if it is on one. Cheap (one indexed
+ * read) and a no-op for every tenant that never saw the interim format.
+ */
+export async function correctInterimTenantPrefix(platformBusinessId: string, laundryBusinessId: string): Promise<boolean> {
+  const identity = await prisma.tenantIdentity.findUnique({
+    where: { businessId: platformBusinessId },
+    select: { id: true, prefix: true },
+  }).catch(() => null)
+  if (!identity || !INTERIM_PREFIX.test(identity.prefix)) return false
+  // Captured before the swap below, so this never depends on whether the row
+  // handed back is a snapshot or a live reference.
+  const old = identity.prefix
+
+  const business = await prisma.business.findUnique({
+    where: { id: platformBusinessId },
+    select: { businessCode: true, name: true },
+  })
+  const code = normaliseBusinessCode(business?.businessCode)
+
+  let next: string | null = null
+  for (const candidate of tenantPrefixCandidates(code, business?.name)) {
+    const ok = await prisma.tenantIdentity
+      .update({ where: { id: identity.id }, data: { prefix: candidate, businessCode: code } })
+      .then(() => true)
+      .catch(() => false) // taken by another tenant — try the next candidate
+    if (ok) { next = candidate; break }
+  }
+  if (!next) return false
+
+  // Carry each employee's NUMBER across; only the prefix changes.
+  const staff = await prisma.businessUser.findMany({
+    where: { businessId: platformBusinessId, employeeCode: { startsWith: `${old}${STAFF_NAMESPACE}` } },
+    select: { id: true, employeeCode: true },
+  })
+  for (const m of staff) {
+    const code2 = `${next}${(m.employeeCode || "").slice(old.length)}`
+    await prisma.businessUser.update({ where: { id: m.id }, data: { employeeCode: code2 } }).catch(() => null)
+  }
+  const execs = await prisma.laundryDeliveryExecutive.findMany({
+    where: { businessId: laundryBusinessId, employeeCode: { startsWith: `${old}${DELIVERY_NAMESPACE}` } },
+    select: { id: true, employeeCode: true },
+  })
+  for (const e of execs) {
+    const code2 = `${next}${(e.employeeCode || "").slice(old.length)}`
+    await prisma.laundryDeliveryExecutive.update({ where: { id: e.id }, data: { employeeCode: code2 } }).catch(() => null)
+  }
+  return true
+}
+
 export async function reconcileDeliveryExecutiveIds(platformBusinessId: string, laundryBusinessId: string): Promise<number> {
+  await correctInterimTenantPrefix(platformBusinessId, laundryBusinessId).catch(() => false)
   const prefix = await getTenantIdentityPrefix(platformBusinessId)
   const execs = await prisma.laundryDeliveryExecutive.findMany({
     where: { businessId: laundryBusinessId },
@@ -90,6 +153,7 @@ export async function reconcileDeliveryExecutiveIds(platformBusinessId: string, 
  * Customers are not staff.
  */
 export async function reconcileStaffEmployeeIds(platformBusinessId: string, laundryBusinessId: string): Promise<number> {
+  await correctInterimTenantPrefix(platformBusinessId, laundryBusinessId).catch(() => false)
   const prefix = await getTenantIdentityPrefix(platformBusinessId)
 
   const [members, ownerAssignments, execs] = await Promise.all([

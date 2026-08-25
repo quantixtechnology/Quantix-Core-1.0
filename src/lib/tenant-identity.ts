@@ -12,37 +12,30 @@
  * database or a Laundry OS import. The persistence half lives in
  * tenant-identity-server.ts.
  *
- * ─── Why the prefix is not "V5" ─────────────────────────────────────────────
+ * ─── The prefix ────────────────────────────────────────────────────────────
  *
- * The requested example derived V5 from VASTRASUDHA + …0005: a letter from the
- * business NAME and a digit from the code. That cannot be used, for two
- * independent reasons:
+ *      [Business Initial][Business Number]
  *
- *   1. the name is mutable — renaming a business would silently move every
- *      employee into a different namespace, and
- *   2. one letter is not unique — VASTRASUDHA and VXYZ both yield V, which is
- *      exactly the collision the spec forbids.
+ *      VASTRASUDHA          + BUS-202606-0005  ─▶  V5   ─▶ V5EMP001,  V5DL001
+ *      Laundry & Drycleaners + BUS-202606-0012 ─▶  L12  ─▶ L12EMP001, L12DL001
  *
- * The number in those examples IS the business-code sequence, so the shape is
- * kept and the letter is re-derived from the code's MONTH instead of the name:
+ * The initial follows the convention already in the codebase (the generated
+ * app icon / website logo use name.trim().charAt(0).toUpperCase()). The number
+ * is the Business Code's own sequence — 0005 → 5, 0012 → 12 — never the month,
+ * never the padded string, never the full code, never a row id.
  *
- *      BUS-202606-0005  ─▶  8T5      (8T = month 202606, 5 = sequence)
- *      BUS-202606-0012  ─▶  8T12
- *      BUS-202710-0005  ─▶  9F5      ← same sequence, different month, no clash
- *
- * This is injective by construction: the month token is FIXED at two base-36
- * characters, so month and sequence can never blur into each other. Two
- * different Business Codes cannot produce one prefix, and no registry lookup is
- * needed to know that. A business that renames, changes domain, or opens and
- * closes stores keeps the prefix it was born with, because none of those things
- * appear anywhere in this file.
+ * One consequence, stated plainly: this is NOT collision-free on its own. Two
+ * businesses whose names start with the same letter and whose codes carry the
+ * same sequence in different months both want V5. That is why the prefix is
+ * PERSISTED in TenantIdentity behind a unique index and allocated through
+ * tenantPrefixCandidates(): the first tenant to ask keeps V5, a genuine clash
+ * deterministically takes V5A1, and neither is ever recomputed afterwards. So a
+ * rename cannot move an existing namespace either — the name is read once, when
+ * the tenant's prefix is first issued.
  */
 
-/** Base-36 alphabet, uppercase — unambiguous when typed on a phone keypad. */
-const B36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-/** Month tokens are two base-36 chars → 1296 months ≈ 108 years from 2000. */
-const MONTH_TOKEN_LEN = 2
+/** Business Codes are dated from 2000; anything outside that is not one. */
 const MONTH_EPOCH_YEAR = 2000
 
 /**
@@ -66,18 +59,19 @@ export type ParsedBusinessCode = {
   sequence: number
 }
 
-function toBase36(n: number, width: number): string {
-  let out = ""
-  let v = Math.max(0, Math.floor(n))
-  while (v > 0) { out = B36[v % 36] + out; v = Math.floor(v / 36) }
-  return out.padStart(width, "0").slice(-width)
+/**
+ * The business initial, by the convention already used for generated logos and
+ * app icons: the first letter of the name, uppercased. Deliberately not an
+ * abbreviation scheme — "Laundry & Drycleaners" is L, nothing cleverer.
+ */
+export function businessInitial(name: string | null | undefined): string {
+  const c = String(name ?? "").replace(/[^A-Za-z0-9]/g, "").charAt(0).toUpperCase()
+  return c || "Q"
 }
 
-/** Cheap, stable, non-cryptographic hash — only for codes we cannot parse. */
-function stableHash(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
-  return h >>> 0
+/** The Business Code's own sequence: BUS-202606-0005 → 5, …-0012 → 12. */
+export function businessNumber(code: string | null | undefined): number | null {
+  return parseBusinessCode(code)?.sequence ?? null
 }
 
 export function normaliseBusinessCode(code: string | null | undefined): string {
@@ -112,43 +106,41 @@ export function isValidBusinessCode(code: string | null | undefined): boolean {
 }
 
 /**
- * The prefix a Business Code deserves, before any collision check.
+ * [Business Initial][Business Number].
  *
- * Canonical codes get `{month}{sequence}` — injective, so the persisted
- * registry will only ever confirm it. Unparseable codes get a hashed token,
- * which is deterministic but NOT provably unique; those are the only ones the
- * registry may have to disambiguate.
+ * The name supplies one character and the Business Code supplies the number —
+ * so the code remains the source of truth for the part that must not repeat
+ * within a month, and nothing here reads an email, phone, store, or row id.
  */
-export function deriveTenantPrefix(code: string | null | undefined): string {
-  const parsed = parseBusinessCode(code)
-  if (parsed) return `${toBase36(parsed.monthIndex, MONTH_TOKEN_LEN)}${parsed.sequence}`
-  const c = normaliseBusinessCode(code)
-  if (!c) throw new Error("Business Code is required to derive a tenant prefix")
-  // Fixed-width month-shaped token so a fallback prefix can never collide with
-  // a canonical one by accident, then a hashed tail.
-  return `${toBase36(stableHash(c) % (36 * 36), MONTH_TOKEN_LEN)}X${toBase36(stableHash(`${c}#`) % 46656, 3)}`
+export function deriveTenantPrefix(code: string | null | undefined, name: string | null | undefined): string {
+  const n = businessNumber(code)
+  if (n === null) {
+    // No parseable code: still give a stable prefix rather than none, and let
+    // the candidate chain below settle any clash.
+    return `${businessInitial(name)}0`
+  }
+  return `${businessInitial(name)}${n}`
 }
 
 /**
- * Deterministic candidates, in order, for the same Business Code.
+ * Deterministic allocation order for the same tenant.
  *
- * The first is deriveTenantPrefix(). Later ones exist only for the fallback
- * path, where two unparseable codes could hash together: attempt N appends a
- * suffix derived from the code itself, so the resolution is a pure function of
- * the code and the set of prefixes already taken — never of insertion order,
- * clock, or row count.
+ * The first is the natural prefix and is what a tenant gets in practice. The
+ * rest exist only for a real clash — same initial, same code sequence — and
+ * keep the "ends in a digit" property that lets parseEmployeeId() split an id
+ * unambiguously. A natural prefix is [A-Z][0-9]+, so V5A1 can never BE one.
  */
-export function tenantPrefixCandidates(code: string | null | undefined, limit = 24): string[] {
-  const base = deriveTenantPrefix(code)
-  const c = normaliseBusinessCode(code)
+export function tenantPrefixCandidates(code: string | null | undefined, name: string | null | undefined, limit = 24): string[] {
+  const base = deriveTenantPrefix(code, name)
   const out = [base]
-  for (let i = 1; i < limit; i++) out.push(`${base}${toBase36(stableHash(`${c}@${i}`) % 1296, 2)}`)
+  for (let i = 1; i < limit; i++) out.push(`${base}A${i}`)
   return out
 }
 
 /** A prefix is machine-issued; this is what one is allowed to look like. */
 export function isValidTenantPrefix(prefix: string): boolean {
-  return /^[0-9A-Z]{2}[0-9A-Z]*[0-9]+[0-9A-Z]*$/.test(prefix) && prefix.length >= 3 && prefix.length <= 12
+  // A letter, then at least one digit — V5, L12, and the V5A1 clash form.
+  return /^[A-Z][A-Z0-9]*[0-9][A-Z0-9]*$/.test(prefix) && prefix.length >= 2 && prefix.length <= 12
 }
 
 /** `8T5` + `EMP` + 1 → `8T5EMP001`. */

@@ -30,13 +30,16 @@ export async function getTenantIdentityPrefix(businessId: string): Promise<strin
   const existing = await prisma.tenantIdentity.findUnique({ where: { businessId }, select: { prefix: true } })
   if (existing) return existing.prefix
 
-  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { businessCode: true } })
-  // A business with no code yet still needs a stable namespace; the id is
-  // immutable too, so it is a safe derivation source. The code that was
-  // actually used is recorded either way.
-  const sourceCode = normaliseBusinessCode(business?.businessCode) || `ID-${businessId.toUpperCase()}`
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { businessCode: true, name: true },
+  })
+  const sourceCode = normaliseBusinessCode(business?.businessCode)
 
-  for (const candidate of tenantPrefixCandidates(sourceCode)) {
+  // The name is read HERE and only here — once, when the prefix is first
+  // issued. After that the row is returned as-is, so a later rename cannot move
+  // an existing tenant's employees into a different namespace.
+  for (const candidate of tenantPrefixCandidates(sourceCode, business?.name)) {
     try {
       const row = await prisma.tenantIdentity.create({
         data: { businessId, businessCode: sourceCode, prefix: candidate },
@@ -117,7 +120,7 @@ export async function resolveTenantByEmployeeId(employeeId: string | null | unde
   return { businessId: row.businessId, prefix: parsed.prefix, namespace: parsed.namespace, sequence: parsed.sequence }
 }
 
-/** The prefix a code WOULD get, without persisting. Diagnostics/preview only. */
-export function previewTenantPrefix(businessCode: string): string {
-  return deriveTenantPrefix(businessCode)
+/** The prefix a tenant WOULD get, without persisting. Diagnostics/preview only. */
+export function previewTenantPrefix(businessCode: string, businessName: string): string {
+  return deriveTenantPrefix(businessCode, businessName)
 }
