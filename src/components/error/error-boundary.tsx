@@ -79,6 +79,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             view={this.props.view}
             error={this.state.error}
             onRetry={this.handleRetry}
+            componentStack={this.state.errorInfo?.componentStack}
           />
         );
       }
@@ -117,14 +118,15 @@ interface ViewSpecificFallbackProps {
   view: ViewMode;
   error: Error;
   onRetry: () => void;
+  componentStack?: string | null;
 }
 
-function ViewSpecificFallback({ view, error, onRetry }: ViewSpecificFallbackProps) {
+function ViewSpecificFallback({ view, error, onRetry, componentStack }: ViewSpecificFallbackProps) {
   switch (view) {
     case "admin":
       return <AdminErrorFallback error={error} onRetry={onRetry} />;
     case "business":
-      return <BusinessErrorFallback error={error} onRetry={onRetry} />;
+      return <BusinessErrorFallback error={error} onRetry={onRetry} componentStack={componentStack} />;
     case "customer":
       return <CustomerErrorFallback error={error} onRetry={onRetry} />;
     case "delivery":
@@ -184,8 +186,22 @@ function AdminErrorFallback({ error, onRetry }: { error: Error; onRetry: () => v
   );
 }
 
-/** Business owner error fallback — operational focus */
-function BusinessErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }) {
+/** Business owner error fallback — operational focus.
+ *
+ *  It used to show ONLY the reassurance, with the error nowhere on screen and
+ *  no detail even in development. That made every occurrence a blind hunt: the
+ *  message says "loading your business data", which reads like a failed
+ *  request, when what it actually means is that something threw while
+ *  rendering. The cause is now on screen and copyable, so the next one is
+ *  diagnosable in seconds instead of by elimination. */
+function BusinessErrorFallback({ error, onRetry, componentStack }: { error: Error; onRetry: () => void; componentStack?: string | null }) {
+  const details = [
+    `Error: ${error?.message || "Unknown error"}`,
+    error?.stack ? `\nStack:\n${error.stack}` : "",
+    componentStack ? `\nComponent stack:${componentStack}` : "",
+    typeof window !== "undefined" ? `\nURL: ${window.location.href}` : "",
+  ].join("");
+
   return (
     <Card className="border-amber-200 dark:border-amber-900/50 max-w-lg mx-auto mt-8">
       <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
@@ -195,13 +211,37 @@ function BusinessErrorFallback({ error, onRetry }: { error: Error; onRetry: () =
         <div>
           <h3 className="text-lg font-semibold">Something went wrong</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            We encountered an error loading your business data. Your orders and operations are not affected.
+            This screen failed to render. Your orders and operations are not affected.
           </p>
         </div>
-        <Button onClick={onRetry} variant="default" className="gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Try Again
-        </Button>
+
+        {/* The actual cause — shown to the operator, not hidden behind NODE_ENV.
+            This is an internal business application; the person looking at it is
+            the person who needs to report it. */}
+        <div className="w-full text-left rounded-lg border border-amber-200/70 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-3">
+          <p className="text-xs font-medium text-amber-900 dark:text-amber-200 break-words">
+            {error?.message || "Unknown error"}
+          </p>
+          {componentStack && (
+            <pre className="mt-2 max-h-32 overflow-auto text-[10px] leading-relaxed text-amber-900/70 dark:text-amber-200/60">
+              {componentStack.trim().split("\n").slice(0, 6).join("\n")}
+            </pre>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button onClick={onRetry} variant="default" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Try Again
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => { void navigator.clipboard?.writeText(details).catch(() => {}) }}
+          >
+            Copy details
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
