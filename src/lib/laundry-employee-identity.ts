@@ -14,8 +14,9 @@
  * the Business Code lives.
  */
 import { prisma } from "@/lib/prisma"
-import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix } from "@/lib/tenant-identity"
+import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix, parseBusinessCode } from "@/lib/tenant-identity"
 import { isBusinessOwnerRole } from "@/lib/laundry-rbac"
+import { ensureBusinessCode } from "@/lib/business-code"
 import { getTenantIdentityPrefix, healEmployeeSequence, nextEmployeeSequence } from "@/lib/tenant-identity-server"
 
 export const STAFF_NAMESPACE = "EMP" as const
@@ -45,11 +46,34 @@ const LEGACY_EXEC_CODE = /^EXE(\d+)$/i
  * platform resolver asks for. Every laundry caller goes through here so no path
  * can allocate a prefix from a thinner source than another.
  */
+/**
+ * The Business Code and name the prefix is built from.
+ *
+ * Order matters, and it is: an EXISTING code always beats a reconstructed one.
+ *
+ *   1. Business.businessCode      — the platform source of truth (BUS-…)
+ *   2. LaundryBusiness.businessCode — the product's own code (LND-…), for a
+ *      tenant provisioned outside createBusiness()
+ *   3. only if neither carries a business number, repair the platform code
+ *
+ * Step 3 is what stops a prefix like V0, which is not an identity — it is the
+ * absence of one wearing the shape of one. It is reached only when there is
+ * genuinely nothing to read.
+ */
+export async function businessIdentitySource(platformBusinessId: string, laundryBusinessId: string) {
+  const [biz, lb] = await Promise.all([
+    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { businessCode: true, name: true } }).catch(() => null),
+    prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } }).catch(() => null),
+  ])
+  const name = biz?.name || lb?.businessName
+  if (parseBusinessCode(biz?.businessCode)) return { code: biz!.businessCode, name }
+  if (parseBusinessCode(lb?.businessCode)) return { code: lb!.businessCode, name }
+  return { code: await ensureBusinessCode(platformBusinessId).catch(() => null), name }
+}
+
 export async function laundryTenantPrefix(platformBusinessId: string, laundryBusinessId: string): Promise<string> {
-  const lb = await prisma.laundryBusiness
-    .findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } })
-    .catch(() => null)
-  return getTenantIdentityPrefix(platformBusinessId, { code: lb?.businessCode, name: lb?.businessName })
+  const src = await businessIdentitySource(platformBusinessId, laundryBusinessId)
+  return getTenantIdentityPrefix(platformBusinessId, src)
 }
 
 const issueFor = async (platformBusinessId: string, laundryBusinessId: string, ns: "EMP" | "DL") => {
@@ -90,17 +114,17 @@ export async function correctInterimTenantPrefix(platformBusinessId: string, lau
     where: { businessId: platformBusinessId },
     select: { id: true, prefix: true },
   }).catch(() => null)
-  if (!identity || isConventionalPrefix(identity.prefix)) return false
+  // "V0" passes the shape test but means "no business number was found". Once
+  // the code is repaired it must be allowed to move to the real number.
+  const placeholder = /^[A-Z]0$/.test(identity?.prefix ?? "")
+  if (!identity || (isConventionalPrefix(identity.prefix) && !placeholder)) return false
   // Captured before the swap below, so this never depends on whether the row
   // handed back is a snapshot or a live reference.
   const old = identity.prefix
 
-  const [business, laundry] = await Promise.all([
-    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { businessCode: true, name: true } }),
-    prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } }),
-  ])
-  const code = normaliseBusinessCode(business?.businessCode) || normaliseBusinessCode(laundry?.businessCode)
-  const name = business?.name || laundry?.businessName
+  const src = await businessIdentitySource(platformBusinessId, laundryBusinessId)
+  const code = normaliseBusinessCode(src.code)
+  const name = src.name
 
   let next: string | null = null
   for (const candidate of tenantPrefixCandidates(code, name)) {
@@ -110,7 +134,9 @@ export async function correctInterimTenantPrefix(platformBusinessId: string, lau
       .catch(() => false) // taken by another tenant — try the next candidate
     if (ok) { next = candidate; break }
   }
-  if (!next) return false
+  // Still the same value (a code that could not be repaired) — nothing to do,
+  // and returning false keeps this from re-running on every page load.
+  if (!next || next === old) return false
 
   // Carry each employee's NUMBER across; only the prefix changes.
   const staff = await prisma.businessUser.findMany({

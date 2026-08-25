@@ -12,19 +12,27 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission, requireLaundryMember } from "@/lib/laundry-rbac"
 import { resolveImageUrl } from "@/lib/image-url"
+import { businessIdentitySource } from "@/lib/laundry-employee-identity"
 
 export const runtime = "nodejs"
 
 const DEFAULT_COLOR = "#2563eb"
 const DEFAULT_SECONDARY = "#0f172a"
 
-async function readBranding(platformBusinessId: string) {
+async function readBranding(platformBusinessId: string, laundryBusinessId: string) {
+  // Resolved exactly the way the employee-id prefix resolves it, so the code on
+  // screen is provably the code those ids were built from — showing a different
+  // one would be worse than showing none.
+  const businessCode = await businessIdentitySource(platformBusinessId, laundryBusinessId)
+    .then((s) => s.code)
+    .catch(() => null)
   const biz = await prisma.business.findUnique({
     where: { id: platformBusinessId },
     select: { name: true, logo: true, primaryColor: true, secondaryColor: true },
   })
   return {
     businessName: biz?.name ?? "",
+    businessCode: businessCode ?? null,
     logo: biz?.logo ? resolveImageUrl(biz.logo) : null,
     primaryColor: biz?.primaryColor || DEFAULT_COLOR,
     secondaryColor: biz?.secondaryColor || DEFAULT_SECONDARY,
@@ -48,7 +56,7 @@ export async function GET(request: Request) {
   const biz = await resolveLaundryBusiness(businessId)
   if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 
-  return NextResponse.json({ success: true, data: await readBranding(biz.platformBusinessId) })
+  return NextResponse.json({ success: true, data: await readBranding(biz.platformBusinessId, biz.id) })
 }
 
 export async function PUT(request: Request) {
@@ -79,5 +87,5 @@ export async function PUT(request: Request) {
     },
   })
 
-  return NextResponse.json({ success: true, data: await readBranding(biz.platformBusinessId) })
+  return NextResponse.json({ success: true, data: await readBranding(biz.platformBusinessId, biz.id) })
 }

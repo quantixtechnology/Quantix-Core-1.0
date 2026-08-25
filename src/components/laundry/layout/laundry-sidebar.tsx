@@ -162,7 +162,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   }, [])
 
   // Tenant branding, from the same record invoices and the PWAs read.
-  const [branding, setBranding] = useState<{ businessName: string; logo: string | null; primaryColor: string } | null>(null)
+  const [branding, setBranding] = useState<{ businessName: string; businessCode: string | null; logo: string | null; primaryColor: string } | null>(null)
   const [navSections, setNavSections] = useState<NavSectionDto[]>([])
   const [navLoaded, setNavLoaded] = useState(false)
   const [navError, setNavError] = useState(false)
@@ -290,6 +290,14 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       <div className="min-w-0 w-full leading-tight group-data-[collapsible=icon]:hidden">
         <p className="truncate text-[15px] font-semibold text-slate-800">{brand}</p>
         <p className="text-[11px] font-medium text-slate-400">Laundry OS</p>
+        {/* The tenant's Business Code — the source of truth their employee ids
+            are built from, so it is worth being able to read without opening
+            settings. Hidden rather than blank when absent. */}
+        {branding?.businessCode && (
+          <p className="truncate text-[10px] font-medium tracking-wide text-slate-400/90" title={branding.businessCode}>
+            {branding.businessCode}
+          </p>
+        )}
       </div>
     </div>
   )

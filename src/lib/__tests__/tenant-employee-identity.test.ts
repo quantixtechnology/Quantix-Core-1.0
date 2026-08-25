@@ -34,6 +34,7 @@ const nid = () => `r${++ids}`
 const match = (row: Row, where: Row): boolean =>
   Object.entries(where).every(([k, v]) => {
     if (v && typeof v === 'object' && 'not' in (v as Row)) return row[k] !== (v as Row).not
+    if (v && typeof v === 'object' && 'lt' in (v as Row)) return (row[k] as Date) < ((v as Row).lt as Date)
     if (v && typeof v === 'object' && 'startsWith' in (v as Row)) {
       return typeof row[k] === 'string' && (row[k] as string).startsWith((v as Row).startsWith as string)
     }
@@ -75,6 +76,10 @@ vi.mock('@/lib/prisma', () => {
       return r
     }),
     // Atomic in one statement, exactly like the real upsert-increment.
+    count: vi.fn(async (args?: never) => {
+      const w = (args as { where?: Row } | undefined)?.where
+      return (w ? db[name].filter((r) => match(r, w)) : db[name]).length
+    }),
     upsert: vi.fn(async ({ where, create, update }: never) => {
       const w = (where as Row).businessId_namespace as Row
       const found = db[name].find((r) => match(r, w))
@@ -101,9 +106,9 @@ vi.mock('@/lib/prisma', () => {
 
 const reset = () => {
   for (const k of Object.keys(db) as (keyof typeof db)[]) db[k].length = 0
-  db.business.push({ id: BIZ_A, businessCode: CODE_A, name: 'VASTRASUDHA' })
+  db.business.push({ id: BIZ_A, businessCode: CODE_A, name: 'VASTRASUDHA', createdAt: new Date('2026-06-10') })
   db.laundryBusiness.push({ id: 'lb_a', platformBusinessId: BIZ_A, businessCode: 'LND-202606-0003', businessName: 'VASTRASUDHA' })
-  db.business.push({ id: BIZ_B, businessCode: CODE_B, name: 'Laundry & Drycleaners' })
+  db.business.push({ id: BIZ_B, businessCode: CODE_B, name: 'Laundry & Drycleaners', createdAt: new Date('2026-06-20') })
 }
 
 describe('the persisted prefix', () => {
@@ -701,5 +706,91 @@ describe('the Business Owner does not take an EMP number', () => {
     await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
     expect(db.businessUser.find((r) => r.id === 'bu_o')!.employeeCode).toBeNull()
     expect(db.businessUser.find((r) => r.id === 'bu_s')!.employeeCode).toBe('V5EMP001')
+  })
+})
+
+// ─── V0EMP001: a prefix with no business number at all ──────────────────────
+
+describe('a tenant with no usable Business Code anywhere', () => {
+  beforeEach(() => {
+    reset()
+    // Neither side carries a parseable code — the live shape that produced V0.
+    db.business.find((b) => b.id === BIZ_A)!.businessCode = null
+    db.laundryBusiness.find((l) => l.id === 'lb_a')!.businessCode = 'LND-cmt42rrxb001kqk2e6ucvo6xt'
+  })
+
+  it('repairs the Business Code instead of prefixing with 0', async () => {
+    const { ensureBusinessCode } = await import('@/lib/business-code')
+    const code = await ensureBusinessCode(BIZ_A)
+    // Created 2026-06, and the only business created before it is none → 0001.
+    expect(code).toBe('BUS-202606-0001')
+    expect(db.business.find((b) => b.id === BIZ_A)!.businessCode).toBe('BUS-202606-0001')
+  })
+
+  it('the ordinal reflects creation order, as the original generator did', async () => {
+    db.business.push({ id: 'biz_z', businessCode: null, name: 'Zeta', createdAt: new Date('2026-07-01') })
+    const { ensureBusinessCode } = await import('@/lib/business-code')
+    // Two businesses created before it (BIZ_A 06-10, BIZ_B 06-20) → 0003.
+    expect(await ensureBusinessCode('biz_z')).toBe('BUS-202607-0003')
+  })
+
+  it('never rewrites a Business Code that is already valid', async () => {
+    const { ensureBusinessCode } = await import('@/lib/business-code')
+    expect(await ensureBusinessCode(BIZ_B)).toBe(CODE_B)
+    expect(db.business.find((b) => b.id === BIZ_B)!.businessCode).toBe(CODE_B)
+  })
+
+  it('is idempotent — a second call writes nothing', async () => {
+    const { ensureBusinessCode } = await import('@/lib/business-code')
+    const first = await ensureBusinessCode(BIZ_A)
+    expect(await ensureBusinessCode(BIZ_A)).toBe(first)
+  })
+
+  it('the prefix carries a real business number, never 0', async () => {
+    const { laundryTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    const p = await laundryTenantPrefix(BIZ_A, 'lb_a')
+    expect(p).toBe('V1')
+    expect(p).not.toBe('V0')
+  })
+
+  it('an already-issued V0 is moved to the real number, keeping every sequence', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: '', prefix: 'V0' })
+    db.businessUser.push({ id: 'bu_1', userId: 'u_1', businessId: BIZ_A, employeeCode: 'V0EMP002', role: 'STORE_EXECUTIVE', createdAt: new Date(2) })
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: 'V0DL001', createdAt: new Date(1) })
+
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+    expect(db.tenantIdentity[0].prefix).toBe('V1')
+    expect(db.businessUser[0].employeeCode).toBe('V1EMP002')   // number kept
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V1DL001')
+  })
+
+  it('does not loop: once corrected there is nothing left to do', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: '', prefix: 'V0' })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)
+  })
+})
+
+describe('the workspace shows the tenant its Business Code', () => {
+  const read2 = (p: string) => readFileSync(join(ROOT, p), 'utf8')
+
+  it('the branding endpoint returns it, repaired if missing', () => {
+    const src = codeOnly(read2('src/app/api/laundry/branding/route.ts'))
+    expect(src).toMatch(/ensureBusinessCode/)
+    expect(src).toMatch(/businessCode:/)
+  })
+
+  it('the sidebar renders it under the product name', () => {
+    const src = read2('src/components/laundry/layout/laundry-sidebar.tsx')
+    expect(src).toMatch(/Laundry OS/)
+    expect(src).toMatch(/branding\?\.businessCode &&/)   // hidden, not blank
+  })
+
+  it('nothing about it is tenant-specific', () => {
+    const src = read2('src/components/laundry/layout/laundry-sidebar.tsx')
+    expect(src).not.toMatch(/vastrasudha/i)
+    expect(src).not.toMatch(/BUS-2026/)
   })
 })
