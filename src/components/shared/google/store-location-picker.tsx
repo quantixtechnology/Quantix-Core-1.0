@@ -213,20 +213,55 @@ export function StoreLocationPicker({
       setError("Location is not available on this device.")
       return
     }
-    setLocating(true)
+    // Every attempt starts clean. A previous failure must never be the state a
+    // later click is judged by — that is what made a granted permission keep
+    // reading "denied" until the page was reloaded.
     setError("")
+    setLocating(true)
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false)
+        const { latitude, longitude } = pos.coords
         if (googleRef.current) {
-          applyLocation(googleRef.current, pos.coords.latitude, pos.coords.longitude, null, null)
+          // Centres the map, moves the marker, reverse geocodes and fills
+          // address/city/state/pincode.
+          applyLocation(googleRef.current, latitude, longitude, null, null)
+        } else {
+          // No Maps yet (or no API key): keep the coordinates rather than
+          // silently discarding a successful fix. Address parts stay null, the
+          // same as when reverse geocoding fails.
+          onChange({
+            latitude, longitude,
+            googlePlaceId: null, formattedAddress: null,
+            address: null, city: null, state: null, pincode: null,
+          })
         }
       },
-      () => {
+      (err) => {
         setLocating(false)
-        setError("Location access denied. Search for the store or drop a pin instead.")
+        // The error says WHICH failure this was. Reporting every one of them as
+        // "denied" is why Chrome could show "Location access allowed" while
+        // this screen insisted access was denied: a high-accuracy fix that
+        // simply timed out was being announced as a permission refusal.
+        switch (err.code) {
+          case err.PERMISSION_DENIED:
+            setError("Location access denied. Search for the store or drop a pin instead.")
+            break
+          case err.POSITION_UNAVAILABLE:
+            setError("Unable to determine your location. Search for the store or drop a pin instead.")
+            break
+          case err.TIMEOUT:
+            setError("Location request timed out. Try again, or search for the store.")
+            break
+          default:
+            setError("Could not get your location. Search for the store or drop a pin instead.")
+        }
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      // A position fixed in the last minute is good enough for placing a store
+      // and returns instantly; the longer timeout is what a first high-accuracy
+      // fix on a desktop actually needs.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     )
   }
 
@@ -251,7 +286,7 @@ export function StoreLocationPicker({
         className="w-full flex items-center justify-center gap-2 py-2 border border-dashed rounded-xl text-xs font-medium disabled:opacity-60"
       >
         {locating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-        Use My Location
+        {locating ? "Getting your location…" : "Use My Location"}
       </button>
 
       {/* Map */}
