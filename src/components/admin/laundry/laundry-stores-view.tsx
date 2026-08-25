@@ -59,7 +59,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   // information is never lost while the user goes to add a Processing Center.
   // Plan store limit + live count, from the same calculation the create
   // endpoint enforces. Every location type consumes one slot.
-  const [storeUsage, setStoreUsage] = useState<{ used: number; allowed: number | null; remaining: number | null; exceeded: boolean; retail: number; processingCenters: number; both: number } | null>(null)
+  const [storeUsage, setStoreUsage] = useState<{ used: number; allowed: number | null; remaining: number | null; exceeded: boolean; retail: number; processingCenters: number; both: number; source?: "override" | "plan" | "workspace" | null } | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -203,7 +203,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
           )}
         </div>
         <Button size="sm" onClick={openCreate} disabled={!!storeUsage?.exceeded}
-          title={storeUsage?.exceeded ? `Your plan allows ${storeUsage.allowed} store locations and all ${storeUsage.allowed} are currently in use.` : undefined}>
+          title={storeUsage?.exceeded ? `This business is allowed ${storeUsage.allowed} store locations and all ${storeUsage.allowed} are currently in use.` : undefined}>
           <Plus className="mr-1 h-4 w-4" /> Add Store
         </Button>
       </div>
@@ -214,7 +214,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className="text-sm font-semibold text-amber-900">Store limit reached</p>
           <p className="text-xs text-amber-800 leading-snug mt-0.5">
-            Your plan allows {storeUsage.allowed} store location{storeUsage.allowed === 1 ? "" : "s"} and all {storeUsage.allowed} are
+            This business is allowed {storeUsage.allowed} store location{storeUsage.allowed === 1 ? "" : "s"} and all {storeUsage.allowed} are
             currently in use. Contact Quantix to increase capacity. Existing stores are unaffected.
           </p>
         </div>

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   businessFindUnique: vi.fn(),
   planFindUnique: vi.fn(),
   storeFindMany: vi.fn(),
+  laundryBusinessFindUnique: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -30,6 +31,7 @@ vi.mock('@/lib/prisma', () => ({
     business: { findUnique: mocks.businessFindUnique },
     productPlan: { findUnique: mocks.planFindUnique },
     laundryStore: { findMany: mocks.storeFindMany },
+    laundryBusiness: { findUnique: mocks.laundryBusinessFindUnique },
   },
 }))
 
@@ -188,6 +190,10 @@ describe('usage counts real rows — every type is one slot', () => {
   const usageWith = async (types: string[], allowed: number | null) => {
     mocks.storeFindMany.mockResolvedValue(types.map((storeType) => ({ storeType })))
     mocks.scalingFindUnique.mockResolvedValue(allowed == null ? null : { storesAllowed: allowed })
+    // No platform allocation — the workspace's own row is the only number,
+    // which is the legacy path this block has always exercised.
+    mocks.laundryBusinessFindUnique.mockResolvedValue({ platformBusinessId: null })
+    mocks.businessFindUnique.mockResolvedValue(null)
     return computeStoreUsage('lb1')
   }
 
@@ -229,12 +235,12 @@ describe('usage counts real rows — every type is one slot', () => {
 // ── Enforcement ────────────────────────────────────────────────────────────
 describe('the create endpoint enforces it', () => {
   it('it counts rows instead of the drifting storesUsed counter', () => {
-    expect(STORES_ROUTE).toContain('const usage = await computeStoreUsage(laundryBusinessId)')
+    expect(STORES_ROUTE).toContain('const usage = await computeStoreUsage(laundryBusinessId, resolved.platformBusinessId)')
     expect(STORES_ROUTE).toContain('if (usage.allowed != null && usage.used >= usage.allowed)')
     expect(STORES_ROUTE).not.toContain('limits.storesUsed >= limits.storesAllowed')
   })
 
-  it('it refuses with the plan wording and a code', () => {
+  it('it refuses with the entitlement wording and a code', () => {
     expect(STORES_ROUTE).toContain('STORE_LIMIT_REACHED')
     expect(STORES_ROUTE).toContain('are currently in use')
   })
@@ -259,7 +265,7 @@ describe('the Add Store screen', () => {
 
   it('reads the same count the server enforces', () => {
     expect(UI).toContain('stores?withUsage=1')
-    expect(STORES_ROUTE).toContain('computeStoreUsage(resolved.id)')
+    expect(STORES_ROUTE).toContain('computeStoreUsage(resolved.id, resolved.platformBusinessId)')
   })
 
   it('the bare-array contract is unchanged for other consumers', () => {
@@ -279,5 +285,120 @@ describe('no new quota concept', () => {
     const src = read('src/lib/laundry-scaling-limits.ts')
     expect(src).not.toContain('processingCentersAllowed')
     expect(STORES_ROUTE).not.toContain('processingCentersAllowed')
+  })
+})
+
+
+// ── The Resource Allocation override reaches enforcement ───────────────────
+//
+// THE BUG. LaundryScalingLimit.storesAllowed is a SNAPSHOT, seeded once when
+// the workspace is first materialised and deliberately never updated. Reading
+// it at runtime meant a Stores override granted in Business Management →
+// Resource Allocation never arrived: VASTRASUDHA showed "Effective: 5" on the
+// platform screen and "1 / 1 used · limit reached" inside Laundry OS.
+describe('the effective limit is resolved at read time, not from the seeded row', () => {
+  const PB = 'pb1'
+  /** A business on a plan, optionally with an override, and a stale scaling row. */
+  const setup = ({ planDefault, override, staleRow, stores }: {
+    planDefault: number | null; override: number | null; staleRow: number | null; stores: number
+  }) => {
+    mocks.storeFindMany.mockResolvedValue(Array.from({ length: stores }, () => ({ storeType: 'RETAIL_STORE' })))
+    mocks.laundryBusinessFindUnique.mockResolvedValue({ platformBusinessId: PB })
+    mocks.businessFindUnique.mockResolvedValue({
+      productCode: 'LAUNDRY',
+      subscriptionPlanCode: 'STARTER',
+      settings: JSON.stringify(override == null ? {} : { resourceOverrides: { stores: override } }),
+    })
+    mocks.planFindUnique.mockResolvedValue(planDefault == null ? null : { branchLimit: planDefault })
+    mocks.scalingFindUnique.mockResolvedValue(staleRow == null ? null : { storesAllowed: staleRow })
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('1 + 9. plan default 1, no override → limit 1 (existing tenants unchanged)', async () => {
+    setup({ planDefault: 1, override: null, staleRow: 1, stores: 1 })
+    const u = await computeStoreUsage('lb1')
+    expect(u.allowed).toBe(1)
+    expect(u.source).toBe('plan')
+    expect(u.exceeded).toBe(true)
+  })
+
+  it('2 + 3. plan default 1, override 5 → limit 5, even though the seeded row still says 1', async () => {
+    setup({ planDefault: 1, override: 5, staleRow: 1, stores: 1 })
+    const u = await computeStoreUsage('lb1')
+    expect(u.allowed).toBe(5)          // the VASTRASUDHA case
+    expect(u.source).toBe('override')
+    expect(u.used).toBe(1)
+    expect(u.remaining).toBe(4)
+    expect(u.exceeded).toBe(false)     // Add Store enabled
+  })
+
+  it('6. the 2nd through 5th stores are allowed when the effective limit is 5', async () => {
+    for (const stores of [1, 2, 3, 4]) {
+      setup({ planDefault: 1, override: 5, staleRow: 1, stores })
+      const u = await computeStoreUsage('lb1')
+      expect(u.exceeded).toBe(false)
+      expect(u.remaining).toBe(5 - stores)
+    }
+  })
+
+  it('7. the 6th is rejected — used 5 of 5', async () => {
+    setup({ planDefault: 1, override: 5, staleRow: 1, stores: 5 })
+    const u = await computeStoreUsage('lb1')
+    expect(u.allowed).toBe(5)
+    expect(u.remaining).toBe(0)
+    expect(u.exceeded).toBe(true)      // the create endpoint refuses on this
+  })
+
+  it('8. removing the override falls straight back to the plan default', async () => {
+    setup({ planDefault: 1, override: 5, staleRow: 1, stores: 1 })
+    expect((await computeStoreUsage('lb1')).allowed).toBe(5)
+    setup({ planDefault: 1, override: null, staleRow: 1, stores: 1 })   // override cleared
+    const after = await computeStoreUsage('lb1')
+    expect(after.allowed).toBe(1)
+    expect(after.source).toBe('plan')
+  })
+
+  it('a blank or zero override is not an override', async () => {
+    for (const bad of [0, -3]) {
+      setup({ planDefault: 2, override: bad, staleRow: 9, stores: 0 })
+      const u = await computeStoreUsage('lb1')
+      expect(u.allowed).toBe(2)
+      expect(u.source).toBe('plan')
+    }
+  })
+
+  it('the stale seeded row can no longer shadow a real allocation', async () => {
+    setup({ planDefault: 3, override: null, staleRow: 1, stores: 0 })
+    expect((await computeStoreUsage('lb1')).allowed).toBe(3)   // not the row's 1
+  })
+
+  it('a legacy workspace with no platform allocation still uses its own row', async () => {
+    setup({ planDefault: null, override: null, staleRow: 4, stores: 0 })
+    mocks.businessFindUnique.mockResolvedValue(null)
+    const u = await computeStoreUsage('lb1')
+    expect(u.allowed).toBe(4)
+    expect(u.source).toBe('workspace')
+  })
+
+  it('4 + 5. list, button and create API all read this one resolver', () => {
+    // The four enforcement points cannot disagree because there is one funnel.
+    expect(STORES_ROUTE).toContain('computeStoreUsage(resolved.id, resolved.platformBusinessId)')
+    expect(STORES_ROUTE).toContain('const usage = await computeStoreUsage(laundryBusinessId, resolved.platformBusinessId)')
+    expect(UI).toContain('disabled={!!storeUsage?.exceeded}')
+    expect(UI).toContain('{storeUsage.used} / {storeUsage.allowed} used')
+  })
+
+  it('10. resolution stays product-neutral — it reads the platform business, not laundry', () => {
+    const RESOLVER = read('src/lib/laundry-scaling-limits.ts')
+    // The override and the plan default both come from platform-level records,
+    // so Commerce and future products resolve through the same arithmetic.
+    expect(RESOLVER).toContain('resourceOverrides')
+    expect(RESOLVER).toContain('productPlan.findUnique')
+    expect(RESOLVER).toContain('effective: override ?? planDefault')
+    // Storage is resolved the same way and is untouched by this change.
+    const STORAGE = read('src/lib/laundry-storage.ts')
+    expect(STORAGE).toContain('resolveStorageLimit')
+    expect(STORAGE).toContain('overrideBytes ?? planDefaultBytes')
   })
 })

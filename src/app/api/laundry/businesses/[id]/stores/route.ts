@@ -32,7 +32,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // "2 / 5 used" from the SAME count the create endpoint enforces without
     // changing the contract for everyone else.
     if (new URL(request.url).searchParams.get("withUsage") === "1") {
-      const storeUsage = resolved ? await computeStoreUsage(resolved.id) : null
+      const storeUsage = resolved ? await computeStoreUsage(resolved.id, resolved.platformBusinessId) : null
       return NextResponse.json({ stores, storeUsage })
     }
     return NextResponse.json(stores)
@@ -81,10 +81,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // never decremented on delete, so it drifted permanently above reality.
     // Every location type consumes the same slot: Retail, Processing Center and
     // Both alike. There is no separate Processing Center quota.
-    const usage = await computeStoreUsage(laundryBusinessId)
+    const usage = await computeStoreUsage(laundryBusinessId, resolved.platformBusinessId)
     if (usage.allowed != null && usage.used >= usage.allowed) {
       return NextResponse.json({
-        error: `Store limit reached. Your plan allows ${usage.allowed} store location${usage.allowed === 1 ? "" : "s"} and all ${usage.allowed} are currently in use.`,
+        error: `Store limit reached. This business is allowed ${usage.allowed} store location${usage.allowed === 1 ? "" : "s"} and all ${usage.allowed} are currently in use.`,
         code: "STORE_LIMIT_REACHED",
         usage,
       }, { status: 403 })

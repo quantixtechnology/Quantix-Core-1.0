@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma"
 // One reader for the per-business overrides Resource Allocation writes — the
 // same helper the store-limit resolver uses. No second parsing of that field.
-import { parseResourceOverrides } from "@/lib/laundry-scaling-limits"
+import { parseResourceOverrides, resolveEffectiveStoreLimit } from "@/lib/laundry-scaling-limits"
 
 export const STORAGE_CATEGORIES = [
   "customers", "orders", "garments", "audit", "processing", "delivery", "invoice", "documents", "branding", "temp",
@@ -253,20 +253,69 @@ export interface StoreUsage {
   retail: number
   processingCenters: number
   both: number
+  /** Where `allowed` came from, so a surface can explain the number it shows. */
+  source: "override" | "plan" | "workspace" | null
 }
 
-export async function computeStoreUsage(laundryBusinessId: string): Promise<StoreUsage> {
-  const [stores, scaling] = await Promise.all([
+/**
+ * Usage and entitlement for one workspace's store locations.
+ *
+ * THE BUG THIS FIXES: `allowed` was read straight from
+ * LaundryScalingLimit.storesAllowed — a SNAPSHOT written once, when the
+ * workspace was first materialised, and deliberately never updated afterwards
+ * (ensureScalingLimitForNewBusiness returns early if a row exists). So a
+ * business granted a Stores override in Business Management → Resource
+ * Allocation kept enforcing the plan default it was seeded with: VASTRASUDHA
+ * showed "Effective: 5" on the platform screen and "1 / 1 used · limit reached"
+ * inside Laundry OS.
+ *
+ * The limit is now RESOLVED at read time, in the same order and by the same
+ * resolver every other surface uses:
+ *   1. Business.settings.resourceOverrides.stores — the per-business allocation
+ *   2. ProductPlan.branchLimit — the plan DEFAULT, when no override exists
+ *   3. LaundryScalingLimit.storesAllowed — last resort, and ONLY for a legacy
+ *      workspace with no platform allocation at all. It can no longer shadow a
+ *      real one, exactly as resolveStorageLimit() already guarantees for storage.
+ *
+ * Removing an override therefore falls straight back to the plan default, with
+ * nothing to re-seed and no stale copy to correct.
+ *
+ * The platform business id is looked up when not supplied, so a caller cannot
+ * accidentally get the stale number by forgetting to pass it — every one of the
+ * four enforcement points (list, limit message, Add Store, create API) resolves
+ * through here and therefore cannot disagree.
+ */
+export async function computeStoreUsage(
+  laundryBusinessId: string,
+  platformBusinessId?: string | null,
+): Promise<StoreUsage> {
+  const [stores, workspace] = await Promise.all([
     prisma.laundryStore.findMany({ where: { laundryBusinessId }, select: { storeType: true } }),
-    prisma.laundryScalingLimit.findUnique({ where: { businessId: laundryBusinessId }, select: { storesAllowed: true } }),
+    platformBusinessId === undefined
+      ? prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { platformBusinessId: true } }).catch(() => null)
+      : Promise.resolve(null),
   ])
+  const platformId = platformBusinessId === undefined ? workspace?.platformBusinessId ?? null : platformBusinessId
+
+  const resolution = await resolveEffectiveStoreLimit(platformId).catch(() => null)
+  let allowed = resolution?.effective ?? null
+  let source: StoreUsage["source"] = allowed == null ? null : resolution?.override != null ? "override" : "plan"
+
+  // Nothing allocated at platform level — a laundry-only workspace. Its own
+  // scaling row is then the only business-specific number that exists.
+  if (allowed == null) {
+    const scaling = await prisma.laundryScalingLimit
+      .findUnique({ where: { businessId: laundryBusinessId }, select: { storesAllowed: true } })
+      .catch(() => null)
+    if (scaling?.storesAllowed != null) { allowed = scaling.storesAllowed; source = "workspace" }
+  }
+
   // Active and inactive both occupy a slot: the existing create-time check
   // counts every row, and this must not change what a plan slot means.
   const retail = stores.filter((s) => s.storeType === "RETAIL_STORE").length
   const processingCenters = stores.filter((s) => s.storeType === "PROCESSING_CENTER").length
   const both = stores.filter((s) => s.storeType === "BOTH").length
   const used = stores.length
-  const allowed = scaling?.storesAllowed ?? null
   return {
     used,
     allowed,
@@ -275,6 +324,7 @@ export async function computeStoreUsage(laundryBusinessId: string): Promise<Stor
     retail,
     processingCenters,
     both,
+    source,
   }
 }
 
@@ -290,7 +340,7 @@ export async function computeBusinessUsage(laundryBusinessId: string, platformBu
     platformBusinessId
       ? computeStorageUsage(platformBusinessId, limit.effectiveBytes)
       : Promise.resolve(null),
-    computeStoreUsage(laundryBusinessId),
+    computeStoreUsage(laundryBusinessId, platformBusinessId),
   ])
   // `limit` is carried so both surfaces can say WHERE the number came from —
   // a custom allocation or the plan default.
