@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     // Always system-issued. The tenant prefix is derived from the Business Code
     // and must not be typeable, or an admin could put their staff into another
     // tenant's namespace.
-    const employeeCode = await issueDeliveryEmployeeId(platformBusinessId)
+    const employeeCode = await issueDeliveryEmployeeId(platformBusinessId, lbId)
 
     // Provision an auth User (existing auth system). Synthesised unique email; the
     // executive logs in with mobile + password via the PWA (Slice 2).

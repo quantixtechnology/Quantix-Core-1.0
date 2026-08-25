@@ -24,7 +24,18 @@ import {
  * not silently move an employee namespace, and the only way to guarantee that
  * is to stop deriving after the first write.
  */
-export async function getTenantIdentityPrefix(businessId: string): Promise<string> {
+export async function getTenantIdentityPrefix(
+  businessId: string,
+  /**
+   * The product's own Business Code and name, used only when the platform
+   * Business row carries none. A laundry tenant provisioned outside
+   * createBusiness() has a null Business.businessCode while LaundryBusiness
+   * holds a perfectly good LND-YYYYMM-NNNN — that is still "the existing
+   * Business Code", and reading it is what keeps the prefix a real business
+   * number instead of a placeholder.
+   */
+  fallback?: { code?: string | null; name?: string | null },
+): Promise<string> {
   if (!businessId) throw new Error("businessId is required")
 
   const existing = await prisma.tenantIdentity.findUnique({ where: { businessId }, select: { prefix: true } })
@@ -34,12 +45,13 @@ export async function getTenantIdentityPrefix(businessId: string): Promise<strin
     where: { id: businessId },
     select: { businessCode: true, name: true },
   })
-  const sourceCode = normaliseBusinessCode(business?.businessCode)
+  const sourceCode = normaliseBusinessCode(business?.businessCode) || normaliseBusinessCode(fallback?.code)
+  const sourceName = business?.name || fallback?.name
 
   // The name is read HERE and only here — once, when the prefix is first
   // issued. After that the row is returned as-is, so a later rename cannot move
   // an existing tenant's employees into a different namespace.
-  for (const candidate of tenantPrefixCandidates(sourceCode, business?.name)) {
+  for (const candidate of tenantPrefixCandidates(sourceCode, sourceName)) {
     try {
       const row = await prisma.tenantIdentity.create({
         data: { businessId, businessCode: sourceCode, prefix: candidate },

@@ -111,6 +111,7 @@ export async function POST(request: Request) {
   const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff.create")
   if (!guard.ok) return guard.res
   const platformBusinessId = guard.platformBusinessId
+  const laundryBusinessId = guard.ctx.laundryBusinessId
 
   const email = String(b.email || "").trim().toLowerCase()
   const name = String(b.name || "").trim()
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
   // staff surface already treats that row differently — so no EMP number is
   // consumed for them. Everyone else gets one, issued by the shared platform
   // counter and never typed by an administrator.
-  const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId)
+  const employeeCode = role?.isOwner ? null : await issueStaffEmployeeId(platformBusinessId, laundryBusinessId)
   await prisma.businessUser.create({
     data: {
       userId: user.id, businessId: platformBusinessId, employeeCode,

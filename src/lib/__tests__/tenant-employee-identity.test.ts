@@ -25,6 +25,7 @@ const db = {
   tenantIdentity: [] as Row[],
   tenantEmployeeSequence: [] as Row[],
   businessUser: [] as Row[],
+  laundryBusiness: [] as Row[],
   laundryDeliveryExecutive: [] as Row[],
   laundryAccessAssignment: [] as Row[],
 }
@@ -91,6 +92,7 @@ vi.mock('@/lib/prisma', () => {
       tenantIdentity: table('tenantIdentity'),
       tenantEmployeeSequence: table('tenantEmployeeSequence'),
       businessUser: table('businessUser'),
+      laundryBusiness: table('laundryBusiness'),
       laundryDeliveryExecutive: table('laundryDeliveryExecutive'),
       laundryAccessAssignment: table('laundryAccessAssignment'),
     },
@@ -100,6 +102,7 @@ vi.mock('@/lib/prisma', () => {
 const reset = () => {
   for (const k of Object.keys(db) as (keyof typeof db)[]) db[k].length = 0
   db.business.push({ id: BIZ_A, businessCode: CODE_A, name: 'VASTRASUDHA' })
+  db.laundryBusiness.push({ id: 'lb_a', platformBusinessId: BIZ_A, businessCode: 'LND-202606-0003', businessName: 'VASTRASUDHA' })
   db.business.push({ id: BIZ_B, businessCode: CODE_B, name: 'Laundry & Drycleaners' })
 }
 
@@ -612,5 +615,91 @@ describe('acceptance: initial + business number + EMP/DL + 3 digits', () => {
     expect(id).not.toMatch(/BUS/)
     expect(id).not.toMatch(/202606/)
     expect(id).not.toMatch(/0005/)
+  })
+})
+
+// ─── The R1XDJE incident ────────────────────────────────────────────────────
+//
+// VASTRASUDHA's staff were showing R1XDJEEMP001. That prefix came from the hash
+// fallback in the first cut, which ran because the platform Business row had no
+// Business Code — and it ignored the business name entirely.
+
+describe('a tenant whose platform Business carries no Business Code', () => {
+  beforeEach(() => {
+    reset()
+    // Exactly the live shape: no code on the platform row, a real one on the
+    // laundry row.
+    db.business.find((b) => b.id === BIZ_A)!.businessCode = null
+  })
+
+  it('reads the number from the laundry Business Code instead of guessing', async () => {
+    const { laundryTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    // LND-202606-0003 → business number 3, name VASTRASUDHA → V3
+    expect(await laundryTenantPrefix(BIZ_A, 'lb_a')).toBe('V3')
+  })
+
+  it('never produces a hashed prefix again', async () => {
+    const { laundryTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    const p = await laundryTenantPrefix(BIZ_A, 'lb_a')
+    expect(p).toMatch(/^[A-Z][0-9]+$/)
+    expect(p).not.toMatch(/^R1XDJE/)
+  })
+
+  it('corrects an already-persisted hashed prefix, keeping every number', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: '', prefix: 'R1XDJE' })
+    db.businessUser.push(
+      { id: 'bu_1', userId: 'u_1', businessId: BIZ_A, employeeCode: 'R1XDJEEMP001', role: 'CLIENT_OWNER', createdAt: new Date(1) },
+      { id: 'bu_2', userId: 'u_2', businessId: BIZ_A, employeeCode: 'R1XDJEEMP002', role: 'STORE_EXECUTIVE', createdAt: new Date(2) },
+    )
+    db.laundryDeliveryExecutive.push({ id: 'e1', businessId: 'lb_a', employeeCode: 'R1XDJEDL001', createdAt: new Date(1) })
+
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+
+    expect(db.tenantIdentity[0].prefix).toBe('V3')
+    expect(db.businessUser.find((r) => r.id === 'bu_1')!.employeeCode).toBe('V3EMP001')
+    expect(db.businessUser.find((r) => r.id === 'bu_2')!.employeeCode).toBe('V3EMP002')
+    expect(db.laundryDeliveryExecutive[0].employeeCode).toBe('V3DL001')
+  })
+})
+
+describe('the correction only touches prefixes this convention could not have made', () => {
+  beforeEach(reset)
+
+  it.each(['R1XDJE', '8T5', 'QX9Z'])('corrects %s', async (bad) => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: bad })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(true)
+    expect(db.tenantIdentity[0].prefix).toBe('V5')
+  })
+
+  it.each(['V5', 'L8', 'V5A1'])('leaves %s alone', async (good) => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: good })
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe(good)
+  })
+
+  it('a RENAME never moves an established prefix', async () => {
+    db.tenantIdentity.push({ id: 'ti_a', businessId: BIZ_A, businessCode: CODE_A, prefix: 'V5' })
+    db.business.find((b) => b.id === BIZ_A)!.name = 'Wash Co'   // would derive W5
+    const { correctInterimTenantPrefix } = await import('@/lib/laundry-employee-identity')
+    expect(await correctInterimTenantPrefix(BIZ_A, 'lb_a')).toBe(false)
+    expect(db.tenantIdentity[0].prefix).toBe('V5')              // employees keep V5
+  })
+})
+
+describe('the Business Owner does not take an EMP number', () => {
+  beforeEach(reset)
+
+  it.each(['LAUNDRY_OWNER', 'CLIENT_OWNER'])('skips an owner carried as %s', async (role) => {
+    db.businessUser.push(
+      { id: 'bu_o', userId: 'u_o', businessId: BIZ_A, employeeCode: null, role, createdAt: new Date(1) },
+      { id: 'bu_s', userId: 'u_s', businessId: BIZ_A, employeeCode: null, role: 'STORE_EXECUTIVE', createdAt: new Date(2) },
+    )
+    const { reconcileStaffEmployeeIds } = await import('@/lib/laundry-employee-identity')
+    await reconcileStaffEmployeeIds(BIZ_A, 'lb_a')
+    expect(db.businessUser.find((r) => r.id === 'bu_o')!.employeeCode).toBeNull()
+    expect(db.businessUser.find((r) => r.id === 'bu_s')!.employeeCode).toBe('V5EMP001')
   })
 })

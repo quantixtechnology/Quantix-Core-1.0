@@ -137,6 +137,16 @@ export function tenantPrefixCandidates(code: string | null | undefined, name: st
   return out
 }
 
+/**
+ * The shape a prefix issued by THIS convention has: a letter, then the business
+ * number, optionally the clash suffix. Anything else came from a superseded
+ * scheme and is safe to correct — a rename never changes the shape, so a tenant
+ * legitimately on V5 is never mistaken for one that needs moving.
+ */
+export function isConventionalPrefix(prefix: string): boolean {
+  return /^[A-Z][0-9]+(A[0-9]+)?$/.test(prefix)
+}
+
 /** A prefix is machine-issued; this is what one is allowed to look like. */
 export function isValidTenantPrefix(prefix: string): boolean {
   // A letter, then at least one digit — V5, L12, and the V5A1 clash form.

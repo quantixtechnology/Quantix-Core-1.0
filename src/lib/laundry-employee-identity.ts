@@ -14,8 +14,9 @@
  * the Business Code lives.
  */
 import { prisma } from "@/lib/prisma"
-import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode } from "@/lib/tenant-identity"
-import { getTenantIdentityPrefix, healEmployeeSequence, issueEmployeeId } from "@/lib/tenant-identity-server"
+import { formatEmployeeId, parseEmployeeId, tenantPrefixCandidates, normaliseBusinessCode, isConventionalPrefix } from "@/lib/tenant-identity"
+import { isBusinessOwnerRole } from "@/lib/laundry-rbac"
+import { getTenantIdentityPrefix, healEmployeeSequence, nextEmployeeSequence } from "@/lib/tenant-identity-server"
 
 export const STAFF_NAMESPACE = "EMP" as const
 export const DELIVERY_NAMESPACE = "DL" as const
@@ -24,19 +25,41 @@ export const DELIVERY_NAMESPACE = "DL" as const
 const LEGACY_EXEC_CODE = /^EXE(\d+)$/i
 
 /**
- * An interim prefix from the first cut of this feature, which derived the whole
- * prefix from the Business Code's MONTH and sequence (8T5) instead of the
- * business initial and number (V5).
+ * Prefixes from the two superseded cuts of this feature, both shipped and
+ * replaced within a day:
  *
- * A natural prefix always starts with a LETTER, so a leading digit identifies
- * one of those and nothing else. This is a one-time correction of a format that
- * shipped and was replaced the same day: the sequence NUMBER each employee
- * holds is carried across unchanged, so only the prefix moves.
+ *   8T5     — the whole prefix derived from the Business Code's MONTH.
+ *   R1XDJE  — the hash fallback, used when the platform Business row carried no
+ *             Business Code at all. It ignored the business name entirely,
+ *             which is why a VASTRASUDHA employee could read R1XDJEEMP001.
+ *
+ * Detection is by SHAPE (isConventionalPrefix): a conventional prefix is a
+ * letter followed by the business number, optionally the clash suffix. A rename
+ * never changes that shape, so a tenant legitimately on V5 is never dragged
+ * somewhere else — only a prefix this convention could not have produced is
+ * corrected, and the sequence NUMBER each employee holds is carried across.
  */
-const INTERIM_PREFIX = /^[0-9]/
 
-export const issueStaffEmployeeId = (platformBusinessId: string) => issueEmployeeId(platformBusinessId, STAFF_NAMESPACE)
-export const issueDeliveryEmployeeId = (platformBusinessId: string) => issueEmployeeId(platformBusinessId, DELIVERY_NAMESPACE)
+/**
+ * The tenant prefix, offering the LaundryBusiness code/name as the fallback the
+ * platform resolver asks for. Every laundry caller goes through here so no path
+ * can allocate a prefix from a thinner source than another.
+ */
+export async function laundryTenantPrefix(platformBusinessId: string, laundryBusinessId: string): Promise<string> {
+  const lb = await prisma.laundryBusiness
+    .findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } })
+    .catch(() => null)
+  return getTenantIdentityPrefix(platformBusinessId, { code: lb?.businessCode, name: lb?.businessName })
+}
+
+const issueFor = async (platformBusinessId: string, laundryBusinessId: string, ns: "EMP" | "DL") => {
+  const prefix = await laundryTenantPrefix(platformBusinessId, laundryBusinessId)
+  return formatEmployeeId(prefix, ns, await nextEmployeeSequence(platformBusinessId, ns))
+}
+export const issueStaffEmployeeId = (platformBusinessId: string, laundryBusinessId: string) =>
+  issueFor(platformBusinessId, laundryBusinessId, STAFF_NAMESPACE)
+export const issueDeliveryEmployeeId = (platformBusinessId: string, laundryBusinessId: string) =>
+  issueFor(platformBusinessId, laundryBusinessId, DELIVERY_NAMESPACE)
 
 /**
  * Does this code already belong to this tenant's namespace? Used to leave
@@ -67,19 +90,20 @@ export async function correctInterimTenantPrefix(platformBusinessId: string, lau
     where: { businessId: platformBusinessId },
     select: { id: true, prefix: true },
   }).catch(() => null)
-  if (!identity || !INTERIM_PREFIX.test(identity.prefix)) return false
+  if (!identity || isConventionalPrefix(identity.prefix)) return false
   // Captured before the swap below, so this never depends on whether the row
   // handed back is a snapshot or a live reference.
   const old = identity.prefix
 
-  const business = await prisma.business.findUnique({
-    where: { id: platformBusinessId },
-    select: { businessCode: true, name: true },
-  })
-  const code = normaliseBusinessCode(business?.businessCode)
+  const [business, laundry] = await Promise.all([
+    prisma.business.findUnique({ where: { id: platformBusinessId }, select: { businessCode: true, name: true } }),
+    prisma.laundryBusiness.findUnique({ where: { id: laundryBusinessId }, select: { businessCode: true, businessName: true } }),
+  ])
+  const code = normaliseBusinessCode(business?.businessCode) || normaliseBusinessCode(laundry?.businessCode)
+  const name = business?.name || laundry?.businessName
 
   let next: string | null = null
-  for (const candidate of tenantPrefixCandidates(code, business?.name)) {
+  for (const candidate of tenantPrefixCandidates(code, name)) {
     const ok = await prisma.tenantIdentity
       .update({ where: { id: identity.id }, data: { prefix: candidate, businessCode: code } })
       .then(() => true)
@@ -110,7 +134,7 @@ export async function correctInterimTenantPrefix(platformBusinessId: string, lau
 
 export async function reconcileDeliveryExecutiveIds(platformBusinessId: string, laundryBusinessId: string): Promise<number> {
   await correctInterimTenantPrefix(platformBusinessId, laundryBusinessId).catch(() => false)
-  const prefix = await getTenantIdentityPrefix(platformBusinessId)
+  const prefix = await laundryTenantPrefix(platformBusinessId, laundryBusinessId)
   const execs = await prisma.laundryDeliveryExecutive.findMany({
     where: { businessId: laundryBusinessId },
     select: { id: true, employeeCode: true, createdAt: true },
@@ -134,7 +158,7 @@ export async function reconcileDeliveryExecutiveIds(platformBusinessId: string, 
     const legacy = LEGACY_EXEC_CODE.exec((e.employeeCode || "").trim())
     const code = legacy
       ? formatEmployeeId(prefix, DELIVERY_NAMESPACE, parseInt(legacy[1], 10))
-      : await issueDeliveryEmployeeId(platformBusinessId)
+      : await issueDeliveryEmployeeId(platformBusinessId, laundryBusinessId)
     const ok = await prisma.laundryDeliveryExecutive
       .update({ where: { id: e.id }, data: { employeeCode: code } })
       .then(() => true)
@@ -154,7 +178,7 @@ export async function reconcileDeliveryExecutiveIds(platformBusinessId: string, 
  */
 export async function reconcileStaffEmployeeIds(platformBusinessId: string, laundryBusinessId: string): Promise<number> {
   await correctInterimTenantPrefix(platformBusinessId, laundryBusinessId).catch(() => false)
-  const prefix = await getTenantIdentityPrefix(platformBusinessId)
+  const prefix = await laundryTenantPrefix(platformBusinessId, laundryBusinessId)
 
   const [members, ownerAssignments, execs] = await Promise.all([
     prisma.businessUser.findMany({
@@ -185,9 +209,12 @@ export async function reconcileStaffEmployeeIds(platformBusinessId: string, laun
   let changed = 0
   for (const m of members) {
     if (m.employeeCode) continue                               // never re-issue
-    if (owners.has(m.userId) || m.role === "LAUNDRY_OWNER") continue
+    // isBusinessOwnerRole covers every owner role the platform recognises;
+    // matching only "LAUNDRY_OWNER" let an owner carried under another owner
+    // role take an EMP number.
+    if (owners.has(m.userId) || isBusinessOwnerRole(m.role)) continue
     if (delivery.has(m.userId)) continue
-    const code = await issueStaffEmployeeId(platformBusinessId)
+    const code = await issueStaffEmployeeId(platformBusinessId, laundryBusinessId)
     const ok = await prisma.businessUser
       .update({ where: { id: m.id }, data: { employeeCode: code } })
       .then(() => true)
