@@ -157,9 +157,11 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
 
   /**
    * Pay Later is a DECISION, not a payment: it posts no money, leaves
-   * amountPaid alone and the balance outstanding, records a PAY_LATER event and
-   * advances the order out of Payment Collection. All of that already exists on
-   * the payment endpoint; this only offers it.
+   * amountPaid alone and the balance outstanding, and records a PAY_LATER
+   * event. It advances the order ONLY when it is sitting at Payment
+   * Collection — from anywhere else the arrangement is recorded and the order
+   * keeps its stage, which is why this panel can offer it at any point in the
+   * order's life.
    *
    * The workspace payment policy still applies — a business set to
    * ADVANCE_REQUIRED gets a 403 and the reason is shown.
@@ -173,7 +175,18 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       })
       const j = await res.json()
       if (!res.ok || j.success === false) throw new Error(j.error || "Could not approve pay later")
-      toast.success(j.data?.payLater ? "Pay Later approved — order moved to Packing & Dispatch" : "No balance due — order moved to Packing & Dispatch")
+      // Say what actually happened: the order only moves when it was waiting at
+      // Payment Collection.
+      const d = j.data || {}
+      toast.success(
+        !d.payLater
+          ? "No balance due — nothing to defer"
+          : d.alreadyArranged
+            ? "Pay Later is already arranged for this order"
+            : d.advanced
+              ? "Pay Later approved — order moved to Packing & Dispatch"
+              : `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} stays outstanding; the order continues as normal`,
+      )
       setShowPayLater(false)
       load(); onChanged?.()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }

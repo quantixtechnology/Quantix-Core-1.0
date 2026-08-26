@@ -76,27 +76,72 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!guard.ok) return guard.res
 
     // ── Explicit pay-later decision (COD / pay-at-delivery) ──────────────────
-    // Only valid when the business payment policy does not require advance
-    // payment. Advances the workflow WITHOUT posting money.
+    //
+    // Pay Later is an approved payment ARRANGEMENT, not a failed payment. It
+    // posts no money: amountPaid and balanceDue are left exactly as they are,
+    // the order is NEVER marked PAID, and the balance stays collectable in
+    // Payments & Ledger until someone actually collects it.
+    //
+    // This used to demand status === "PAYMENT_PENDING" and answer 409 "Order is
+    // not awaiting payment (current: …)" otherwise — so recording the decision
+    // from Payments & Ledger, where an order can sit at any stage, was refused
+    // outright. That conflated two separate things: the DECISION (recordable
+    // whenever there is a balance) and the PAYMENT_PENDING → READY_FOR_PROCESSING
+    // ADVANCE (valid only at Payment Collection). They are now separate: the
+    // decision is always recorded, and the order advances only when it is
+    // actually parked at Payment Collection. It is never blocked either way.
     if (body.action === "PAY_LATER") {
       const bizPL = await resolveLaundryBusiness(businessId)
       if (!bizPL) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
       const orderPL = await prisma.laundryOrder.findFirst({ where: { id, businessId: bizPL.id }, select: { id: true, status: true, balanceDue: true } })
       if (!orderPL) return NextResponse.json({ error: "Order not found" }, { status: 404 })
-      if (orderPL.status !== "PAYMENT_PENDING") return NextResponse.json({ error: `Order is not awaiting payment (current: ${orderPL.status})` }, { status: 409 })
-      // Nothing due (e.g. subscription-covered) → advance without policy check.
+
+      const atPaymentCollection = orderPL.status === "PAYMENT_PENDING"
+
+      // Nothing due (e.g. subscription-covered) → there is no arrangement to
+      // record. Advance if it is waiting at Payment Collection, else no-op.
       if (orderPL.balanceDue <= 0) {
-        const okZero = await advanceAfterPayment(orderPL.id, bizPL.id, "COLLECT_PAYMENT", createdBy, "No balance due")
-        if (!okZero) return NextResponse.json({ error: "Order already advanced" }, { status: 409 })
-        return NextResponse.json({ success: true, data: { advanced: true, payLater: false } })
+        const okZero = atPaymentCollection
+          ? await advanceAfterPayment(orderPL.id, bizPL.id, "COLLECT_PAYMENT", createdBy, "No balance due")
+          : false
+        return NextResponse.json({ success: true, data: { advanced: okZero, payLater: false, balanceDue: 0, status: orderPL.status } })
       }
+
       const bizRow = await prisma.laundryBusiness.findUnique({ where: { id: bizPL.id }, select: { paymentPolicy: true } })
       if (bizRow?.paymentPolicy === "ADVANCE_REQUIRED") {
         return NextResponse.json({ error: "This workspace requires advance payment — pay-later is not allowed." }, { status: 403 })
       }
-      const ok = await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, `Balance ₹${orderPL.balanceDue.toFixed(2)} to collect at delivery`)
-      if (!ok) return NextResponse.json({ error: "Order already advanced" }, { status: 409 })
-      return NextResponse.json({ success: true, data: { advanced: true, payLater: true } })
+
+      const note = `Balance ₹${orderPL.balanceDue.toFixed(2)} to collect at delivery`
+
+      // Already arranged — say so rather than writing a second decision.
+      const existing = await prisma.laundryOrderEvent.findFirst({
+        where: { orderId: orderPL.id, action: "PAY_LATER" },
+        select: { id: true },
+      })
+      if (existing) {
+        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status } })
+      }
+
+      // Advance ONLY from Payment Collection — that is the one legitimate
+      // transition. advanceAfterPayment writes the PAY_LATER event itself.
+      const advanced = atPaymentCollection
+        ? await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)
+        : false
+
+      if (!advanced) {
+        // Anywhere else (or a concurrent advance): record the decision against
+        // the order without moving it. The stage is not this endpoint's to change.
+        await prisma.laundryOrderEvent.create({
+          data: {
+            orderId: orderPL.id, businessId: bizPL.id,
+            fromStatus: orderPL.status, toStatus: orderPL.status,
+            action: "PAY_LATER", actorName: createdBy || null, note,
+          },
+        }).catch(() => null)
+      }
+
+      return NextResponse.json({ success: true, data: { advanced, payLater: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status } })
     }
     if (!method || !METHODS.has(method)) return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
     const amt = Number(amount)
