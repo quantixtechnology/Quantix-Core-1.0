@@ -418,6 +418,10 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
   const [pickupSlots, setPickupSlots] = useState<string[]>([]); const [deliverySlots, setDeliverySlots] = useState<string[]>([])
+  // An empty slot list used to render as a permanent "Loading…", because the
+  // dropdown could not tell "not fetched yet" from "this date has none".
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const emptySlotLabel = (noun: string) => (slotsLoading ? "Loading…" : `No ${noun} slots available for this date`)
   const [deliveryDate, setDeliveryDate] = useState(""); const [deliverySlot, setDeliverySlot] = useState("")
   const [backupDate, setBackupDate] = useState(""); const [backupSlot, setBackupSlot] = useState("")
   const [backupTouched, setBackupTouched] = useState(false)
@@ -463,6 +467,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     const d = date || deliveryDate || backupDate
     if (!d) return
     const ctl = new AbortController()
+    setSlotsLoading(true)
     fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(businessId)}&date=${encodeURIComponent(d)}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((j) => {
@@ -477,7 +482,10 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
           if (!j.data.pickup.slots?.includes(slot)) setSlot(j.data.pickup.slots?.[0] || "")
         }
       })
-      .catch(() => {})
+      .catch(() => { /* keep whatever is already listed */ })
+      // An aborted request must not clear the flag — the replacement fetch
+      // owns it, otherwise switching dates quickly flashes the empty state.
+      .finally(() => { if (!ctl.signal.aborted) setSlotsLoading(false) })
     return () => ctl.abort()
   }, [businessId, date, deliveryDate, backupDate])
 
@@ -1363,7 +1371,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Pickup Date"><input type="date" value={date} min={todayIst()} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={slot} onChange={(e) => setSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {pickupSlots.length === 0 ? <option>Loading…</option> : pickupSlots.map((s) => {
+                  {pickupSlots.length === 0 ? <option value="">{emptySlotLabel("pickup")}</option> : pickupSlots.map((s) => {
                     // Only a slot that has completely ENDED is unavailable. At
                     // 16:47 the 16:00-17:00 slot is still live and bookable.
                     const over = slotHasEnded(s, date)
@@ -1376,7 +1384,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={minDeliveryDate || undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
+                  {deliverySlots.length === 0 ? <option value="">{emptySlotLabel("delivery")}</option> : deliverySlots.map((s) => {
                     const isFull = (fullSlotsByDate[deliveryDate] || []).includes(s)
                     const tooEarly = slotTooEarly(s, deliveryDate)
                     return <option key={s} value={s} disabled={isFull || tooEarly} className={isFull || tooEarly ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : tooEarly ? " — too early" : ""}</option>
@@ -1392,7 +1400,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate ? addDays(deliveryDate, 1) : undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option>Loading…</option> : deliverySlots.map((s) => {
+                  {deliverySlots.length === 0 ? <option value="">{emptySlotLabel("delivery")}</option> : deliverySlots.map((s) => {
                     const isFull = (fullSlotsByDate[backupDate] || []).includes(s)
                     return <option key={s} value={s} disabled={isFull} className={isFull ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : ""}</option>
                   })}

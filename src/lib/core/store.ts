@@ -661,6 +661,25 @@ export function istWeekday(dateISO: string | Date): number {
 // Business-hours row for a specific date, or null when the date is a weekly-off
 // / holiday. `closedUntil` marks a temporary closure (holiday) — the date is
 // unavailable while the closure window covers the start of that day.
+/**
+ * Does a DECLARED closure (the admin "Temporarily Closed" window) cover this
+ * date? Kept separate from the weekly schedule because the two are different
+ * kinds of "closed": the schedule is when the shop normally works, a closure is
+ * someone deciding not to trade. Callers that relax one must not relax the
+ * other, and they need a single answer to ask.
+ */
+export function closureCoversDate(
+  dateISO: string | Date,
+  closedUntil?: Date | string | null,
+): boolean {
+  if (!closedUntil) return false;
+  const until = new Date(closedUntil);
+  if (isNaN(until.getTime())) return false;
+  const dateStart = new Date(dateISO instanceof Date ? dateISO : `${dateISO}T00:00:00.000Z`);
+  if (isNaN(dateStart.getTime())) return false;
+  return dateStart.getTime() < until.getTime();
+}
+
 export function timingForDate(
   timings: StoreDayTiming[],
   dateISO: string | Date,
@@ -669,12 +688,8 @@ export function timingForDate(
   const day = istWeekday(dateISO);
   if (day < 0) return { available: false, reason: 'Invalid date', isClosed: true };
 
-  const dateStart = new Date(dateISO instanceof Date ? dateISO : `${dateISO}T00:00:00.000Z`);
-  if (closedUntil) {
-    const until = new Date(closedUntil);
-    if (!isNaN(until.getTime()) && dateStart.getTime() < until.getTime()) {
-      return { available: false, reason: 'Closed for a holiday', isClosed: true };
-    }
+  if (closureCoversDate(dateISO, closedUntil)) {
+    return { available: false, reason: 'Closed for a holiday', isClosed: true };
   }
 
   const row = timings.find((t) => t.day === day);

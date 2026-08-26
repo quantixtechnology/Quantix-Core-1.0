@@ -133,6 +133,9 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
   const [pickupSlot, setPickupSlot] = useState("")
   const [pickupSlots, setPickupSlots] = useState<string[]>(PICKUP_SLOTS)
   const [dateUnavailable, setDateUnavailable] = useState("")
+  // Distinguishes "not fetched yet" from "this date genuinely has no slots",
+  // so the dropdown can say which rather than sitting on a placeholder.
+  const [slotsLoading, setSlotsLoading] = useState(false)
   const [pickupInstructions, setPickupInstructions] = useState("")
   const todayIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split("T")[0]
   // Slots are fetched from the public endpoint. The endpoint also validates the
@@ -142,19 +145,20 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
     if (!currentBusinessId) return
     const store = assignedStore?.kind === "laundryStore" ? assignedStore.id : null
     const q = `${pickupDate ? `&date=${encodeURIComponent(pickupDate)}` : ""}${store ? `&storeId=${encodeURIComponent(store)}` : ""}`
+    setSlotsLoading(true)
     fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(currentBusinessId)}${q}`).then((r) => r.json())
       .then((j) => {
-        if (j.success && j.dateAvailable === false) {
-          setDateUnavailable(j.dateReason || "Pickup is not available on this date.")
-          setPickupSlot("")
-          return
-        }
-        setDateUnavailable("")
-        const slots = (j.data?.pickup?.slots as string[]) || PICKUP_SLOTS
+        // The slot list is refreshed on EVERY successful response, including
+        // one that reports the date unavailable. Returning early here left the
+        // previous date's slots on screen, so the dropdown disagreed with the
+        // date beside it.
+        const slots = j.success ? ((j.data?.pickup?.slots as string[]) ?? []) : PICKUP_SLOTS
         setPickupSlots(slots)
+        setDateUnavailable(j.success && j.dateAvailable === false ? (j.dateReason || "Pickup is not available on this date.") : "")
         if (!slots.includes(pickupSlot)) setPickupSlot("")
       })
       .catch(() => { /* keep fallback */ })
+      .finally(() => setSlotsLoading(false))
   }, [currentBusinessId, pickupDate, assignedStore?.kind, assignedStore?.id])
   const [paymentMethod, setPaymentMethod] = useState("COD")
   const [payMethods, setPayMethods] = useState<{ cod: boolean; online: { gateway: string; keyId: string; environment: string } | null }>({ cod: true, online: null })
@@ -1163,10 +1167,15 @@ export function StorefrontLaundryCheckout({ brandColor, nav, onOpenAddressSheet,
                 </div>
                 <div>
                   <label className={labelCls}>Time Slot</label>
-                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls} disabled={!!dateUnavailable}>
-                    <option value="">Select slot</option>
+                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls} disabled={!!dateUnavailable || slotsLoading}>
+                    <option value="">
+                      {slotsLoading ? "Loading…" : pickupSlots.length === 0 ? "No pickup slots available for this date" : "Select slot"}
+                    </option>
                     {pickupSlots.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
+                  {!slotsLoading && !dateUnavailable && pickupSlots.length === 0 && (
+                    <p className="mt-1 text-[11px] text-amber-600">No pickup slots available for this date. Please choose another date.</p>
+                  )}
                 </div>
               </div>
               <div className="mt-3">

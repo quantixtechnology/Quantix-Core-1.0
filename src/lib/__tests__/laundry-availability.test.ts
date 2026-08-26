@@ -388,16 +388,27 @@ describe('assertLaundryBookingOpen', () => {
     expect(r.ok).toBe(true)
   })
 
-  it('still rejects a SLOT on a weekly off-day when 24/7 ordering is enabled', async () => {
+  // REVERSED: 24/7 ordering now relaxes the weekly schedule for SLOTS too.
+  // A tenant that takes orders round the clock offers its configured pickup
+  // window on every calendar day; only a declared closure empties it.
+  it('accepts a SLOT on a weekly off-day when 24/7 ordering is enabled', async () => {
     mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
     mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: null, closedUntil: null, storeTimings: SUNDAY_OFF })
     mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
     mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: null, storeTimings: SUNDAY_OFF })
     mockPrismaBusinessFindUnique.mockResolvedValue({ settings: JSON.stringify({ customerOrderingAvailability: 'ALWAYS_OPEN' }) })
     const r = await assertLaundryBookingOpen('lb1', { pickupDate: '2026-08-30', pickupSlot: '10:00 - 12:00' })
+    expect(r.ok).toBe(true)
+  })
+
+  it('still rejects a SLOT on a weekly off-day under normal ordering', async () => {
+    mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
+    mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: null, closedUntil: null, storeTimings: SUNDAY_OFF })
+    mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
+    mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: null, storeTimings: SUNDAY_OFF })
+    mockPrismaBusinessFindUnique.mockResolvedValue({}) // FOLLOW_STORE_HOURS
+    const r = await assertLaundryBookingOpen('lb1', { pickupDate: '2026-08-30', pickupSlot: '10:00 - 12:00' })
     expect(r.ok).toBe(false)
-    if (r.ok) throw new Error('expected rejection')
-    expect(r.error).toContain('outside business hours on 2026-08-30')
   })
 
   it('still rejects a weekly off pickup date when 24/7 ordering is disabled', async () => {
@@ -500,17 +511,11 @@ describe('customer ordering availability — the store-open gate', () => {
     expect(r.ok).toBe(true)
   })
 
-  it('ALWAYS_OPEN: no error mentions the store being closed/unavailable for an off-day date', async () => {
+  it('ALWAYS_OPEN: an off-day date AND its slot are both accepted', async () => {
     vi.setSystemTime(IST.wed2am)
     setupStore(NINE_TO_NINE_SUNDAY_OFF, ALWAYS_OPEN_SETTINGS)
     const r = await assertLaundryBookingOpen('lb1', { pickupDate: '2026-09-06', pickupSlot: '10:00 - 12:00' })
-    expect(r.ok).toBe(false)
-    if (r.ok) throw new Error('expected rejection')
-    // Rejected as a SLOT problem, never as "Store is currently unavailable"
-    // or "Closed on Sunday".
-    expect(r.error).toContain('outside business hours on 2026-09-06')
-    expect(r.error).not.toMatch(/store/i)
-    expect(r.error).not.toMatch(/closed on/i)
+    expect(r.ok).toBe(true)
   })
 })
 
@@ -614,5 +619,139 @@ describe('24-hour working day (00:00–23:59)', () => {
     const late = ['22:00 - 23:00']
     expect(laundrySlotsForDate(late, wedOnly, '2026-09-02')).toEqual(late) // Wednesday — 24h
     expect(laundrySlotsForDate(late, wedOnly, '2026-09-03')).toEqual([])   // Thursday — 9–9
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 24/7 ORDERING vs A WEEKLY CLOSED DAY — the checkout slot bug.
+//
+// A 24/7 tenant with Friday marked operationally closed could pick Friday
+// (correct) and then got ZERO pickup slots, because laundrySlotsForDate() was
+// mode-blind. The dropdown had nothing in it and Confirm said "Select a pickup
+// slot" with nothing to select.
+//
+// The rule these pin: 24/7 relaxes the WEEKLY SCHEDULE for ordering AND for
+// slots. It does not relax past dates, declared closures, or force-closed.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('24/7 ordering + a weekly closed day', () => {
+  // Friday (day 5) closed; every other day 09:00–21:00.
+  const FRIDAY_OFF: StoreDayTiming[] = Array.from({ length: 7 }, (_, day) => ({
+    day, openTime: '09:00', closeTime: '21:00', isClosed: day === 5,
+  }))
+  // The tenant's configured pickup window — 2 PM to 11 PM, hourly.
+  const PICKUP = generateSlots({ start: '14:00', end: '23:00', durationMin: 60 })
+  const FRIDAY = '2026-09-04' // a Friday
+  const THURSDAY = '2026-09-03'
+  const ON = { ignoreWorkingHours: true }
+
+  // ── A. 24/7 + Friday weekly closed ───────────────────────────────────────
+  it('A · the date is orderable AND the configured slots are offered', () => {
+    const date = isLaundryDateAvailable(FRIDAY_OFF, FRIDAY, null, ON)
+    expect(date.available).toBe(true)
+    expect(date.reason).toBeNull()
+
+    const slots = laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, null, ON)
+    expect(slots).toEqual(PICKUP)          // the whole configured window
+    expect(slots.length).toBeGreaterThan(0) // …so the dropdown has options
+  })
+
+  it('A · the weekly hours do not clip the configured window either', () => {
+    // Store hours are 09:00–21:00, the pickup window runs to 23:00. Under 24/7
+    // the configured window is the offer — nothing is trimmed off the end.
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, THURSDAY, null, ON)).toEqual(PICKUP)
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, THURSDAY, null)).not.toEqual(PICKUP) // normal mode still clips
+  })
+
+  // ── B. Normal ordering + Friday weekly closed ────────────────────────────
+  it('B · normal ordering still closes Friday and offers no slots', () => {
+    const date = isLaundryDateAvailable(FRIDAY_OFF, FRIDAY, null)
+    expect(date.available).toBe(false)
+    expect(date.reason).toBe('Closed on Friday')
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, null)).toEqual([])
+  })
+
+  // ── C. 24/7 + temporary closure ──────────────────────────────────────────
+  it('C · a declared closure still empties the day in BOTH modes', () => {
+    const until = new Date('2026-09-10T00:00:00.000Z')
+    for (const opts of [undefined, ON]) {
+      expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, '2026-09-08', until, opts)).toEqual([])
+      const d = isLaundryDateAvailable(FRIDAY_OFF, '2026-09-08', until, opts)
+      expect(d.available).toBe(false)
+      expect(d.reason).toBe('Closed for a holiday')
+    }
+  })
+
+  it('C · a closure that lands ON a weekly off-day is still a closure', () => {
+    // Both reasons apply at once. The closure must win — the old
+    // "ask again without the closure" trick let this through under 24/7.
+    const until = new Date('2026-09-06T00:00:00.000Z')
+    expect(isLaundryDateAvailable(FRIDAY_OFF, FRIDAY, until, ON).available).toBe(false)
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, until, ON)).toEqual([])
+  })
+
+  it('C · a temporarily-closed store still blocks ordering under 24/7', async () => {
+    mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
+    mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: 'Festival', closedUntil: new Date('2026-09-20T00:00:00.000Z'), storeTimings: FRIDAY_OFF })
+    mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
+    mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: new Date('2026-09-20T00:00:00.000Z'), storeTimings: FRIDAY_OFF })
+    mockPrismaBusinessFindUnique.mockResolvedValue({ settings: JSON.stringify({ customerOrderingAvailability: 'ALWAYS_OPEN' }) })
+    const r = await assertLaundryBookingOpen('lb1', { pickupDate: '2026-09-18' })
+    expect(r.ok).toBe(false)
+  })
+
+  // ── D. 24/7 + a valid normal day ─────────────────────────────────────────
+  it('D · a normal open day returns the configured slots', () => {
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, THURSDAY, null, ON)).toEqual(PICKUP)
+    expect(isLaundryDateAvailable(FRIDAY_OFF, THURSDAY, null, ON).available).toBe(true)
+  })
+
+  // ── E. Changing dates refreshes the list ─────────────────────────────────
+  it('E · each date is resolved independently, with no carry-over', () => {
+    const thu = laundrySlotsForDate(PICKUP, FRIDAY_OFF, THURSDAY, null)      // normal mode
+    const fri = laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, null)
+    expect(thu.length).toBeGreaterThan(0)
+    expect(fri).toEqual([])
+    // Re-resolving Thursday gives Thursday's list again — the helper is pure.
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, THURSDAY, null)).toEqual(thu)
+  })
+
+  it('E · past dates are still rejected in 24/7 mode', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-10T04:30:00.000Z'))
+    const r = isLaundryDateAvailable(FRIDAY_OFF, '2026-09-04', null, ON)
+    expect(r.available).toBe(false)
+    expect(r.reason).toBe('This date is in the past')
+    vi.useRealTimers()
+  })
+
+  // ── G. Server guard agrees with the public API ───────────────────────────
+  it('G · every slot the API offers is accepted by the booking guard', async () => {
+    mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
+    mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: null, closedUntil: null, storeTimings: FRIDAY_OFF })
+    mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
+    mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: null, storeTimings: FRIDAY_OFF })
+    mockPrismaBusinessFindUnique.mockResolvedValue({ settings: JSON.stringify({ customerOrderingAvailability: 'ALWAYS_OPEN' }) })
+
+    // What the public endpoint would hand the checkout for Friday…
+    const offered = laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, null, ON)
+    expect(offered.length).toBeGreaterThan(0)
+
+    // …every one of which the server must then accept.
+    for (const slot of offered) {
+      const r = await assertLaundryBookingOpen('lb1', { pickupDate: FRIDAY, pickupSlot: slot })
+      expect(r.ok, `guard rejected an offered slot: ${slot}`).toBe(true)
+    }
+  })
+
+  it('G · a slot the API would NOT offer is still rejected by the guard', async () => {
+    mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
+    mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: null, closedUntil: null, storeTimings: FRIDAY_OFF })
+    mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
+    mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: null, storeTimings: FRIDAY_OFF })
+    mockPrismaBusinessFindUnique.mockResolvedValue({}) // FOLLOW_STORE_HOURS
+    expect(laundrySlotsForDate(PICKUP, FRIDAY_OFF, FRIDAY, null)).toEqual([])
+    const r = await assertLaundryBookingOpen('lb1', { pickupDate: FRIDAY, pickupSlot: '14:00 - 15:00' })
+    expect(r.ok).toBe(false)
   })
 })

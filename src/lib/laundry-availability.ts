@@ -26,6 +26,7 @@ import {
   formatTimeLabel,
   formatReopenAt,
   resolveStatusOverride,
+  closureCoversDate,
   DAY_NAMES_SHORT,
 } from "@/lib/core/store"
 import type { StoreDayTiming, StoreOpenResult } from "@/lib/core/store"
@@ -262,18 +263,11 @@ export function isLaundryDateAvailable(
 
   const res = timingForDate(timings, dateISO, closedUntil)
   if (!res.available) {
-    // 24/7 Customer Ordering. A weekly off-day says nothing about whether the
-    // customer may ORDER — it decides which SLOTS exist on that date, and
-    // laundrySlotsForDate() already returns none for it. Answering it here is
-    // what surfaced "Closed on Friday" as a reason the customer could not place
-    // an order at all.
-    //
-    // A temporary closure is NOT relaxed: that is someone deciding not to
-    // trade, which is not the same as the weekly schedule. Asking the same
-    // helper again without the closure window separates the two — if the date
-    // is fine on the schedule alone, the closure is the only thing shutting it.
-    const closureIsTheOnlyReason = timingForDate(timings, dateISO, null).available
-    if (opts?.ignoreWorkingHours && !closureIsTheOnlyReason) {
+    // 24/7 Customer Ordering relaxes the WEEKLY SCHEDULE, and only that. A
+    // weekly off-day says nothing about whether the customer may ORDER — it is
+    // the shop's normal working pattern, not a decision to stop trading.
+    // A declared closure IS that decision, and still closes the date.
+    if (opts?.ignoreWorkingHours && !closureCoversDate(dateISO, closedUntil)) {
       return { available: true, reason: null, openTime: null, closeTime: null }
     }
     return { available: false, reason: res.reason || "Unavailable", openTime: null, closeTime: null }
@@ -281,17 +275,31 @@ export function isLaundryDateAvailable(
   return { available: true, reason: null, openTime: res.openTime || null, closeTime: res.closeTime || null }
 }
 
-// Restrict a generated slot list to the working hours of a given date.
-// Pickup and delivery slots always follow the operating schedule — the customer
-// ordering mode (ALWAYS_OPEN) only relaxes "is the store open right now", not
-// which slots are offered.
+// Which of the tenant's configured pickup/delivery slots are offered on a date.
+//
+// Default (FOLLOW_STORE_HOURS): the weekly schedule governs — a closed day
+// offers nothing, and an open day offers only the slots inside its hours.
+//
+// 24/7 Customer Ordering (`ignoreWorkingHours`): the tenant's CONFIGURED slot
+// window is the offer, on every calendar day. The weekly schedule neither
+// closes the day nor clips the window — a shop that takes orders round the
+// clock has already said its working pattern is not what limits the customer.
+// Without this, a 24/7 tenant with Friday marked closed showed the date as
+// bookable and then offered zero slots, so the dropdown had nothing in it.
+//
+// A DECLARED closure still empties the day in BOTH modes: that is a decision
+// not to trade, and 24/7 ordering is not a way around it. Past dates and
+// delivery capacity are enforced by their own callers, unchanged.
 export function laundrySlotsForDate(
   slots: string[],
   timings: StoreDayTiming[],
   dateISO: string | null | undefined,
   closedUntil?: string | Date | null,
+  opts?: { ignoreWorkingHours?: boolean },
 ): string[] {
   if (!dateISO) return slots
+  if (closureCoversDate(dateISO, closedUntil)) return []
+  if (opts?.ignoreWorkingHours) return slots
   const row = timingForDate(timings, dateISO, closedUntil)
   if (!row.available) return []
   return slotsWithinWorkingHours(slots, row.openTime, row.closeTime)
@@ -414,7 +422,11 @@ export async function assertLaundryBookingOpen(
     // (slotsWithinWorkingHours alone could not: on a closed day it has no
     // open/close window to compare against and passes the slot through.)
     if (c.slot) {
-      if (laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil).length === 0) {
+      // Same interpretation as the public slots API — otherwise the website
+      // offers a slot the server then refuses.
+      if (laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil, {
+        ignoreWorkingHours: bypassesStoreHours(ordering),
+      }).length === 0) {
         return { ok: false, error: `${c.label} time ${c.slot} is outside business hours on ${c.date}. Please choose another slot.` }
       }
     }

@@ -30,14 +30,20 @@ export async function GET(request: Request) {
     const [cfg, availability, ordering] = await Promise.all([
       prisma.laundryOperationalConfig.findUnique({ where: { businessId: biz.id } }),
       getLaundryAvailability(biz.id, storeId),
-      // Customer Ordering Availability. It decides only whether a date may
-      // CLOSE ORDERING — never which slots that date offers.
+      // Customer Ordering Availability. It relaxes the WEEKLY SCHEDULE — both
+      // for "can this date be ordered for" and for which slots it offers.
+      // Declared closures, past dates and capacity are untouched by it.
       resolveCustomerOrderingMode(biz.id),
     ])
     const branchTiming = storeId ? await resolveBranchSchedule(storeId, availability.timings) : availability.timings
     const { pickup, delivery } = slotConfigsFrom(cfg)
-    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), branchTiming, date, availability.closedUntil) : generateSlots(pickup)
-    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), branchTiming, date, availability.closedUntil) : generateSlots(delivery)
+    // 24/7 Customer Ordering offers the CONFIGURED slot window on every calendar
+    // day; a declared closure still empties it. laundrySlotsForDate owns that
+    // rule, and the booking guard calls it with the same flag, so the server
+    // can never reject a slot this endpoint just offered.
+    const slotOpts = { ignoreWorkingHours: bypassesStoreHours(ordering) }
+    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), branchTiming, date, availability.closedUntil, slotOpts) : generateSlots(pickup)
+    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), branchTiming, date, availability.closedUntil, slotOpts) : generateSlots(delivery)
     const data: {
       pickup: Record<string, unknown>
       delivery: Record<string, unknown>
