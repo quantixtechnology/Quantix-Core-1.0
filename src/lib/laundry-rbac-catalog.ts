@@ -24,8 +24,15 @@ const keys = () => allScreenKeys()
  * rebinds default printers and clears queues — administration of the terminal
  * itself, not something a read-only role should reach.
  */
-const OWNER_ONLY_SCREENS = new Set(["laundry.hardware"])
+export const OWNER_ONLY_SCREENS = new Set(["laundry.hardware"])
 const keysExceptOwnerOnly = () => keys().filter((k) => !OWNER_ONLY_SCREENS.has(k))
+
+/**
+ * Every screen a FULL-ACCESS (non-owner) role reaches — that is, all of them
+ * except the owner-only reservations above. Used both to seed such a role and,
+ * at runtime, to resolve it. One list, so the matrix and the guard agree.
+ */
+export const fullAccessScreenKeys = (): string[] => keysExceptOwnerOnly()
 const moduleKeysAll = (mod: string) => keys().filter((k) => k.startsWith(`${mod}.`))
 const screenKey = (mod: string, screen: string) => `${mod}.${screen}`
 
@@ -116,24 +123,11 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     { screenKey: "crm.opportunity", level: Level.CREATE },
     { screenKey: "crm.activities", level: Level.CREATE },
   ]},
-  { code: "ACCOUNTANT", name: "Accountant", description: "Payments, invoices, reports.", screens: () => [
-    { screenKey: "laundry.dashboard", level: Level.VIEW },
-    { screenKey: "laundry.orders", level: Level.VIEW },
-    { screenKey: "laundry.new_order", level: Level.VIEW },
-    { screenKey: "laundry.garment_lookup", level: Level.VIEW },
-    { screenKey: "laundry.order_detail", level: Level.VIEW },
-    { screenKey: "laundry.inbox", level: Level.VIEW },
-    { screenKey: "laundry.subscription_plans", level: Level.VIEW },
-    { screenKey: "laundry.charges_rules", level: Level.VIEW },
-    { screenKey: "laundry.pricing_simulator", level: Level.VIEW },
-    { screenKey: "laundry.subscriptions", level: Level.VIEW },
-    { screenKey: "laundry.services", level: Level.VIEW },
-    { screenKey: "laundry.pricing", level: Level.VIEW },
-    { screenKey: "laundry.reports", level: Level.EDIT },
-    { screenKey: "store_ops.payment_collection", level: Level.VIEW },
-    { screenKey: "store_ops.pickup_scheduler", level: Level.VIEW },
-    { screenKey: "store_ops.dispatch_center", level: Level.VIEW },
-    { screenKey: "store_ops.delivery_assignments", level: Level.VIEW },
-  ]},
+  // Accountant is a FULL-ACCESS role: every screen at EDIT. It is granted by
+  // code in resolveUserPermissions (see FULL_ACCESS_ROLE_CODES), so an existing
+  // tenant does not have to be reseeded and a newly-added screen is covered
+  // without a migration. This list keeps the seeded rows and the Roles &
+  // Permissions matrix telling the same story.
+  { code: "ACCOUNTANT", name: "Accountant", description: "Full access across Laundry OS.", screens: () => fullAccessScreenKeys().map((sk) => ({ screenKey: sk, level: Level.EDIT })) },
   { code: "VIEWER", name: "Viewer", description: "Read-only access.", screens: () => keysExceptOwnerOnly().map((sk) => ({ screenKey: sk, level: Level.VIEW })) },
 ]

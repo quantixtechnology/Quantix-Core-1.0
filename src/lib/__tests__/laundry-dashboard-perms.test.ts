@@ -116,13 +116,15 @@ describe("Store Counter widget visibility by role", () => {
     expect(dashboardDeliveryVisible(levels)).toBe(true)
   })
 
-  it("Accountant sees order KPIs, Delivered, Payment Pending, Ready to Dispatch, and field ops", () => {
+  // REVERSED: Accountant is now a FULL-ACCESS role, so the whole dashboard is
+  // visible rather than the money-only subset.
+  it("Accountant sees the whole dashboard", () => {
     const levels = roleLevels("ACCOUNTANT")
     expect(dashboardStatusVisible(levels, "DELIVERED")).toBe(true)
     expect(dashboardStatusVisible(levels, "PAYMENT_PENDING")).toBe(true)
     expect(dashboardStatusVisible(levels, "PACKED")).toBe(true)
-    expect(dashboardStatusVisible(levels, "READY_FOR_DELIVERY")).toBe(false)
-    expect(dashboardStatusVisible(levels, "PROCESSING")).toBe(false)
+    expect(dashboardStatusVisible(levels, "READY_FOR_DELIVERY")).toBe(true)
+    expect(dashboardStatusVisible(levels, "PROCESSING")).toBe(true)
     expect(dashboardOrderStatsVisible(levels)).toBe(true)
     expect(dashboardPickupVisible(levels)).toBe(true)
     expect(dashboardDeliveryVisible(levels)).toBe(true)

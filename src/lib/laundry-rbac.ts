@@ -5,7 +5,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { isPlatformRole } from "@/lib/permissions"
 import { allScreenKeys, isValidScreenKey, permKeyToScreenLevel, actionToLevel, screenLabel, Level } from "@/lib/laundry-rbac-registry"
-import { SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
+import { SYSTEM_ROLES, fullAccessScreenKeys } from "@/lib/laundry-rbac-catalog"
 import { ROLES } from "@/lib/constants"
 
 export { Level }
@@ -48,6 +48,28 @@ export function isOwnerRole(businessRole: string | null | undefined): boolean {
 export function isBusinessOwnerRole(businessRole: string | null | undefined): boolean {
   return !!businessRole && (OWNER_BUSINESS_ROLES as readonly string[]).includes(businessRole)
 }
+
+/**
+ * System roles that hold EVERY screen at the top level.
+ *
+ * A full-access role is granted by its CODE rather than by a stored permission
+ * list, for two reasons. It cannot drift — a tenant seeded before a module
+ * existed would otherwise be missing that module's rows forever, which is what
+ * "Permission denied on a screen I already granted" actually means. And it does
+ * not need a per-screen grant every time a screen is added.
+ *
+ * This is NOT ownership. A full-access holder resolves with isOwner false, so
+ * the Business Owner protections (cannot be deactivated, demoted or deleted)
+ * keep applying to the owner alone and a full-access employee stays an ordinary
+ * manageable member of staff. The owner-only screens stay owner-only, and the
+ * handful of endpoints reserved to the owner or to platform staff by an
+ * explicit role check — Navigation Manager, "apply standard schedule",
+ * licensing, staff deletion — are unaffected: those are not permission checks.
+ */
+export const FULL_ACCESS_ROLE_CODES: ReadonlySet<string> = new Set(["ACCOUNTANT"])
+
+export const isFullAccessRoleCode = (code: string | null | undefined): boolean =>
+  !!code && FULL_ACCESS_ROLE_CODES.has(code.trim().toUpperCase())
 
 export interface ResolvedPermissions { isOwner: boolean; permissions: Set<string>; levels: Map<string, number>; roleCode: string; roleName: string; source: "owner" | "assigned" | "legacy" }
 
@@ -98,6 +120,18 @@ export async function resolveUserPermissions(platformBusinessId: string, userId:
   })
   if (assign && assign.role.isActive) {
     if (assign.role.isOwner) return { isOwner: true, permissions: new Set(allScreenKeys()), levels: allScreensAtLevel(Level.EDIT), roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
+    // A full-access role holds every screen at EDIT — the top level, so every
+    // action (view, create, process, approve, assign, delete, override) passes.
+    // Resolved from the code, so it is immune to a stored permission list that
+    // predates a module. isOwner stays FALSE: this is reach, not ownership.
+    if (isFullAccessRoleCode(assign.role.code)) {
+      // Everything EXCEPT the owner-only reservations (Hardware Manager is
+      // administration of the terminal itself and stays with the owner) — the
+      // same list the seeded role uses, so the matrix and the guard agree.
+      const keys = fullAccessScreenKeys()
+      const levels = new Map<string, number>(keys.map((k) => [k, Level.EDIT as number]))
+      return { isOwner: false, permissions: new Set(keys), levels, roleCode: assign.role.code, roleName: assign.role.name, source: "assigned" }
+    }
     const levels = new Map<string, number>()
     for (const p of assign.role.permissions) {
       if (p.effect === "DENY") continue

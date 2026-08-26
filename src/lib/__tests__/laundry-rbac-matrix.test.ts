@@ -110,7 +110,8 @@ describe('A. every guard names a REGISTERED screen', () => {
       expect(writes.some((g) => g.level >= Level.EDIT)).toBe(true)
     }
     expect(holds('VIEWER', 'laundry.pricing', Level.EDIT)).toBe(false)
-    expect(holds('ACCOUNTANT', 'laundry.pricing', Level.EDIT)).toBe(false)
+    // REVERSED: Accountant is now a FULL-ACCESS role (FULL_ACCESS_ROLE_CODES).
+    expect(holds('ACCOUNTANT', 'laundry.pricing', Level.EDIT)).toBe(true)
     expect(holds('BUSINESS_OWNER', 'laundry.pricing', Level.EDIT)).toBe(true)
   })
 })
@@ -269,11 +270,17 @@ describe('D. every role gets what its definition says', () => {
     }
   })
 
-  it('Accountant reads the money and edits only reports', () => {
+  // REVERSED: Accountant used to read the money and edit only reports. It is
+  // now a FULL-ACCESS role — every screen at EDIT except the owner-only
+  // reservations, so no future screen needs a per-permission grant.
+  it('Accountant holds every non-owner-only screen at EDIT', () => {
     const lv = levelsOf('ACCOUNTANT')
-    expect(lv['store_ops.payment_collection']).toBe(Level.VIEW)
+    expect(lv['store_ops.payment_collection']).toBe(Level.EDIT)
     expect(lv['laundry.reports']).toBe(Level.EDIT)
-    for (const k of allScreenKeys().filter((k) => k.startsWith('processing.'))) expect(lv[k] ?? 0, k).toBe(0)
+    expect(lv['laundry.orders']).toBe(Level.EDIT)          // the reported bug
+    for (const k of allScreenKeys().filter((k) => k.startsWith('processing.'))) expect(lv[k], k).toBe(Level.EDIT)
+    // …but the owner-only reservation still holds.
+    expect(lv['laundry.hardware'] ?? 0).toBe(0)
   })
 
   it('every role that has any screen can land somewhere', () => {
