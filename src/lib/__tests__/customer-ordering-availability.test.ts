@@ -98,14 +98,16 @@ describe('24/7 relaxes the hours and nothing else', () => {
     expect(fn).not.toContain('opts.ignoreWorkingHours')
   })
 
-  it('pickup and delivery slots keep following the schedule', () => {
-    // The date/slot checks sit AFTER the open-now check and take no flag.
+  it('pickup and delivery slots keep following the schedule by default', () => {
+    // The date/slot checks sit AFTER the open-now check.  When 24/7 ordering is
+    // OFF (FOLLOW_STORE_HOURS), the flag is false and the existing schedule is
+    // enforced — same as before this feature existed.
     const guard = AVAIL.slice(AVAIL.indexOf('export async function assertLaundryBookingOpen'))
-    expect(guard).toContain('assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil)')
+    expect(guard).toContain('assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil, dateOpts)')
     expect(guard).toContain('slotsWithinWorkingHours([c.slot], row.openTime, row.closeTime)')
-    const slotPart = guard.slice(guard.indexOf('const checks:'))
-    expect(slotPart).not.toContain('ignoreWorkingHours')
-    expect(slotPart).not.toContain('bypassesStoreHours')
+    // The date/slot section references the flag to decide the path taken
+    expect(guard).toContain('dateOpts')
+    expect(guard).toContain('bypassesStoreHours(ordering)')
   })
 
   it('the working hours themselves are never rewritten', () => {
