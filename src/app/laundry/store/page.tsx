@@ -91,7 +91,7 @@ export default function StoreAdminApp() {
   const login = async () => {
     setError(null); setLoggingIn(true)
     try {
-      const res = await fetch("/api/laundry/store-admin/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
+      const res = await fetch("/api/laundry/store-admin/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: email, password }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Login failed")
       localStorage.setItem(TOKEN_KEY, j.data.token); setPassword("")
@@ -124,7 +124,7 @@ export default function StoreAdminApp() {
             <p className="text-sm text-slate-400">Sign in to run your store</p>
           </div>
           <div className="space-y-3">
-            <input type="email" inputMode="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px] bg-white" />
+            <input type="text" inputMode="text" autoComplete="username" placeholder="Employee ID" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px] bg-white" />
             <input type="password" autoComplete="current-password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} className="w-full h-12 rounded-xl border border-slate-200 px-4 text-[15px] bg-white" />
             {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
             <button onClick={login} disabled={loggingIn || !email || !password} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">{loggingIn ? <Loader2 className="h-5 w-5 animate-spin" /> : "Sign In"}</button>

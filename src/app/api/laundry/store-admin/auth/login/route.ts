@@ -1,4 +1,5 @@
-// POST /api/laundry/store-admin/auth/login — Store Admin login (email + password).
+// POST /api/laundry/store-admin/auth/login — Store Admin login.
+// Accepts Employee ID (e.g. V8EMP008) or email + password.
 // Only a User with an ACTIVE store-operational RBAC role scoped to one Store may
 // sign in. Mints a platform access token (RefreshToken store — same session
 // system as everywhere else). No self-registration; accounts are created by Admin.
@@ -9,28 +10,51 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { STORE_ADMIN_ROLES, isCrossTenantRole } from "@/lib/laundry-store-admin-auth"
 import { resolveImageUrl } from "@/lib/image-url"
 import { sessionMatchesHostTenant, TENANT_MISMATCH_MESSAGE } from "@/lib/pwa-tenant-boundary"
+import { resolveTenantByEmployeeId } from "@/lib/tenant-identity-server"
 
-
-async function mintToken(userId: string) {
-  const token = createAccessToken()
-  const expiresAt = new Date(); expiresAt.setHours(expiresAt.getHours() + 24)
-  await prisma.refreshToken.create({ data: { userId, token, expiresAt } })
-  await prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } }).catch(() => {})
-  return token
-}
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
     const b = await request.json().catch(() => ({}))
-    const email = String(b.email || "").trim().toLowerCase()
+    const identifier = String(b.identifier || b.email || "").trim()
     const password = String(b.password || "")
-    if (!email || !password) return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
+    if (!identifier || !password) return NextResponse.json({ error: "Employee ID and password are required" }, { status: 400 })
 
-    const user = await prisma.user.findFirst({ where: { email }, select: { id: true, name: true, passwordHash: true, isActive: true, platformRole: true } })
-    if (!user?.passwordHash || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
-      return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 })
+    // ── 1. Try Employee ID first (e.g. V8EMP008) ────────────────────────────
+    // Mirrors the core auth route's resolution: parse tenant prefix, resolve
+    // business, find BusinessUser by employeeCode, then load the User.
+    const employeeIdentity = await resolveTenantByEmployeeId(identifier).catch(() => null)
+    const isEmployeeLogin = !!employeeIdentity
+
+    let user = null as { id: string; name: string; passwordHash: string | null; isActive: boolean; platformRole: string | null } | null
+
+    if (employeeIdentity) {
+      const bu = await prisma.businessUser.findFirst({
+        where: { businessId: employeeIdentity.businessId, employeeCode: identifier.toUpperCase() },
+        select: { userId: true },
+      })
+      if (!bu) {
+        return NextResponse.json({ error: "Invalid Employee ID or password" }, { status: 401 })
+      }
+      user = await prisma.user.findUnique({
+        where: { id: bu.userId },
+        select: { id: true, name: true, passwordHash: true, isActive: true, platformRole: true },
+      })
+    }
+
+    // ── 2. Fallback: loginId → email exact → email case-insensitive ──────────
+    if (!user) {
+      const lower = identifier.toLowerCase()
+      user = await prisma.user.findFirst({
+        where: { OR: [{ loginId: identifier }, { email: lower }] },
+        select: { id: true, name: true, passwordHash: true, isActive: true, platformRole: true },
+      })
+    }
+
+    if (!user || !user.passwordHash || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
+      return NextResponse.json({ error: isEmployeeLogin ? "Invalid Employee ID or password" : "Incorrect email or password" }, { status: 401 })
     }
 
     // Platform administrators — unrestricted access to every store, any time
@@ -40,7 +64,10 @@ export async function POST(request: Request) {
     // true for thirteen roles, so a sales or support account signing in here
     // was handed every business in the platform.
     if (isCrossTenantRole(user.platformRole)) {
-      const token = await mintToken(user.id)
+      const token = createAccessToken()
+      const expiresAt = new Date(); expiresAt.setHours(expiresAt.getHours() + 24)
+      await prisma.refreshToken.create({ data: { userId: user.id, token, expiresAt } })
+      await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {})
       return NextResponse.json({ success: true, data: { token, staff: { name: user.name, isSuperAdmin: true, roleName: "Super Admin" } } })
     }
 
