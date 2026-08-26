@@ -77,7 +77,7 @@ describe('Pay Later posts no money and advances the order', () => {
 
   it('reports what actually happened, so the toast cannot claim a move that did not occur', () => {
     expect(PAY_LATER_BRANCH).toContain('advanced, payLater: true')
-    expect(PANEL).toContain('stays outstanding; the order continues as normal')
+    expect(PANEL).toContain('stays outstanding.')
     expect(PANEL).toContain('d.advanced')
   })
 
@@ -150,5 +150,78 @@ describe('the ledger keeps a pay-later order visible', () => {
   // No new status column was introduced for this.
   it('adds no new status field', () => {
     expect(read('prisma/schema.prisma')).not.toContain('payLaterApproved')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAY LATER ADVANCES THE ORDER — where advancing is the payment's to do.
+//
+// Reported as "Pay Later approved but the order is stuck at
+// IN_TRANSIT_TO_STORE". It is not stuck because of the balance: the state
+// machine's only forward edge from IN_TRANSIT_TO_STORE is
+// RECEIVE_PICKUP_AT_STORE, a PHYSICAL chain-of-custody event fired by the
+// store's bag scan. A fully-paid order sits at exactly the same place until
+// someone receives the bag.
+//
+// So: Pay Later advances the order wherever payment is genuinely the gate
+// (PAYMENT_PENDING), and never performs a custody transition it has no
+// business performing.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { TRANSITIONS, getTransitions } from '@/lib/laundry-workflow'
+
+describe('PAY_LATER advances the order at Payment Collection', () => {
+  it('PAYMENT_PENDING advances to READY_FOR_PROCESSING, exactly as collecting does', () => {
+    expect(PAY_LATER_BRANCH).toContain('await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)')
+    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+    // The SAME helper both decisions use — no duplicated transition logic.
+    expect(API).toContain('advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT"')
+  })
+
+  it('advancing is gated on the STAGE, never on the balance being zero', () => {
+    expect(PAY_LATER_BRANCH).toContain('const advanced = atPaymentCollection')
+    expect(PAY_LATER_BRANCH).not.toContain('balanceDue === 0 ?')
+    expect(PAY_LATER_BRANCH).not.toContain('paymentStatus === "PAID"')
+  })
+
+  it('the state machine backs this up: COLLECT_PAYMENT exists only at PAYMENT_PENDING', () => {
+    const withPayment = (Object.keys(TRANSITIONS) as (keyof typeof TRANSITIONS)[])
+      .filter((s) => TRANSITIONS[s].some((t) => t.action === 'COLLECT_PAYMENT'))
+    expect(withPayment).toEqual(['PAYMENT_PENDING'])
+  })
+})
+
+describe('Pay Later never performs a physical custody transition', () => {
+  it('IN_TRANSIT_TO_STORE moves only by the store receiving the bag', () => {
+    const forward = getTransitions('IN_TRANSIT_TO_STORE').filter((t) => t.to !== 'CANCELLED')
+    expect(forward).toHaveLength(1)
+    expect(forward[0].action).toBe('RECEIVE_PICKUP_AT_STORE')
+    expect(forward[0].to).toBe('PENDING_STORE_AUDIT')
+  })
+
+  it('that edge is owned by the bag-scan endpoint, not by payment', () => {
+    const RECEIVE = read('src/app/api/laundry/bags/receive-at-store/route.ts')
+    expect(RECEIVE).toContain('action: exception ? "RECEIVE_EXCEPTION" : "RECEIVE_PICKUP_AT_STORE"')
+    // It records custody facts a payment decision simply does not have.
+    expect(RECEIVE).toContain('receivedBy: receiver')
+    expect(PAY_LATER_BRANCH).not.toContain('RECEIVE_PICKUP_AT_STORE')
+    expect(PAY_LATER_BRANCH).not.toContain('PENDING_STORE_AUDIT')
+  })
+
+  it('the receive path has no payment gate — a balance never blocks it', () => {
+    const RECEIVE = read('src/app/api/laundry/bags/receive-at-store/route.ts')
+    expect(RECEIVE).not.toContain('balanceDue')
+    expect(RECEIVE).not.toContain('paymentStatus')
+  })
+
+  it('tells the operator what the order is actually waiting for', () => {
+    expect(PAY_LATER_BRANCH).toContain('const nextStepOf = (status: string)')
+    expect(PAY_LATER_BRANCH).toContain('getTransitions(status).find((t) => t.primary)')
+    expect(PANEL).toContain('Next step: ${d.nextStep.label}')
+  })
+
+  it('the next step named for a transiting order is the store receive', () => {
+    const primary = getTransitions('IN_TRANSIT_TO_STORE').find((t) => t.primary)
+    expect(primary?.label).toBe('Receive at Store')
   })
 })

@@ -185,7 +185,11 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
             ? "Pay Later is already arranged for this order"
             : d.advanced
               ? "Pay Later approved — order moved to Packing & Dispatch"
-              : `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} stays outstanding; the order continues as normal`,
+              // Name the step that actually moves the order. Pay Later is a
+              // financial decision; it does not perform physical custody
+              // transitions (receiving a bag at the store, dispatching it), and
+              // saying "continues as normal" made an un-received order look stuck.
+              : `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} stays outstanding.${d.nextStep?.label ? ` Next step: ${d.nextStep.label}.` : ""}`,
       )
       setShowPayLater(false)
       load(); onChanged?.()

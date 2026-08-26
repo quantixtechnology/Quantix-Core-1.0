@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { getTransitions } from "@/lib/laundry-workflow"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -98,13 +99,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       const atPaymentCollection = orderPL.status === "PAYMENT_PENDING"
 
+      // What the order is ACTUALLY waiting for, read from the state machine.
+      // Pay Later can be recorded long before Payment Collection, and when the
+      // order is somewhere else the operator needs to know what moves it —
+      // otherwise an approved arrangement looks like a stuck order. Derived,
+      // never hardcoded, so it stays true as the workflow changes.
+      const nextStepOf = (status: string) => {
+        const primary = getTransitions(status).find((t) => t.primary)
+        return primary ? { action: primary.action, label: primary.label } : null
+      }
+
       // Nothing due (e.g. subscription-covered) → there is no arrangement to
       // record. Advance if it is waiting at Payment Collection, else no-op.
       if (orderPL.balanceDue <= 0) {
         const okZero = atPaymentCollection
           ? await advanceAfterPayment(orderPL.id, bizPL.id, "COLLECT_PAYMENT", createdBy, "No balance due")
           : false
-        return NextResponse.json({ success: true, data: { advanced: okZero, payLater: false, balanceDue: 0, status: orderPL.status } })
+        return NextResponse.json({ success: true, data: { advanced: okZero, payLater: false, balanceDue: 0, status: orderPL.status, nextStep: nextStepOf(okZero ? "READY_FOR_PROCESSING" : orderPL.status) } })
       }
 
       const bizRow = await prisma.laundryBusiness.findUnique({ where: { id: bizPL.id }, select: { paymentPolicy: true } })
@@ -120,7 +131,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         select: { id: true },
       })
       if (existing) {
-        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status } })
+        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, nextStep: nextStepOf(orderPL.status) } })
       }
 
       // Advance ONLY from Payment Collection — that is the one legitimate
@@ -141,7 +152,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }).catch(() => null)
       }
 
-      return NextResponse.json({ success: true, data: { advanced, payLater: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status } })
+      return NextResponse.json({ success: true, data: { advanced, payLater: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, nextStep: nextStepOf(advanced ? "READY_FOR_PROCESSING" : orderPL.status) } })
     }
     if (!method || !METHODS.has(method)) return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
     const amt = Number(amount)
