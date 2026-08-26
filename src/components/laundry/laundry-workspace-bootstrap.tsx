@@ -88,6 +88,7 @@ export function LaundryWorkspaceBootstrap({
   const _isHydrated = useAuthStore((s) => s._isHydrated)
   const _isSynced = useAuthStore((s) => s._isSynced)
   const resetWorkspaceState = useAdminStore((s) => s.resetWorkspaceState)
+  const setActiveBusinessId = useAuthStore((s) => s.setActiveBusinessId)
 
   const [status, setStatus] = useState<BootstrapStatus>("loading")
   const [attempt, setAttempt] = useState(0)
@@ -103,30 +104,42 @@ export function LaundryWorkspaceBootstrap({
       // 1. Auth — wait for hydration + server-side validation to settle.
       if (!_isHydrated || !_isSynced || !isAuthenticated) return
 
-      // 2. Tenant/Business — a workspace always needs a business to operate on.
-      if (!businessId) {
-        setStatus("failed")
-        return
-      }
+      // 2. Tenant/Business — the cached id is a HINT. A missing one is not a
+      //    failure: the server resolves the caller's own workspace from their
+      //    membership, which is the authority. Asking the browser to supply the
+      //    identity is what locked the Owner out when the cache went stale.
 
-      // 3. RBAC — confirms the business is real AND this session may use it.
-      //    The token is attached explicitly: this runs OUTSIDE LaundryLayout,
-      //    so the LaundryAuthBridge (fetch patch) is not mounted yet.
-      //    Non-success ⇔ invalid business or unauthorized/expired session.
+      // 3. RBAC — confirms which workspace this session may use, and which one
+      //    it is ACTUALLY on. The token is attached explicitly: this runs
+      //    OUTSIDE LaundryLayout, so the LaundryAuthBridge (fetch patch) is not
+      //    mounted yet.
       try {
-        const res = await fetch(
-          `/api/laundry/rbac/me?businessId=${encodeURIComponent(businessId)}`,
-          { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-        )
+        const qs = businessId ? `?businessId=${encodeURIComponent(businessId)}` : ""
+        const res = await fetch(`/api/laundry/rbac/me${qs}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        })
         if (cancelled) return
         if (res.status === 401) {
-          // Session is no longer valid on this workspace — recovery screen.
+          // Session is no longer valid — recovery screen.
           setStatus("failed")
           return
         }
         const json = await res.json().catch(() => null)
         if (cancelled) return
-        setStatus(json?.success ? "ready" : "failed")
+        if (!json?.success) {
+          setStatus("failed")
+          return
+        }
+        // The server may have resolved a DIFFERENT workspace than the cache
+        // named (stale id, re-provisioned tenant, id from another context).
+        // Adopt the authoritative value and drop the cached permissions read
+        // that was keyed on the old one — never make the operator retype it.
+        const authoritative: string | undefined = json.data?.businessId
+        if (authoritative && authoritative !== businessId) {
+          clearRuntimeAuthCache()
+          setActiveBusinessId(authoritative)
+        }
+        setStatus("ready")
       } catch {
         if (!cancelled) setStatus("failed")
       }
@@ -136,7 +149,7 @@ export function LaundryWorkspaceBootstrap({
     return () => {
       cancelled = true
     }
-  }, [_isHydrated, _isSynced, isAuthenticated, token, businessId, attempt])
+  }, [_isHydrated, _isSynced, isAuthenticated, token, businessId, attempt, setActiveBusinessId])
 
   // Explicit user action (never an automatic path): end the workspace session
   // locally and land on the Login page. Mirrors the header logout cleanup.

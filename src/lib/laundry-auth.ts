@@ -27,7 +27,7 @@ type Identity = { userId: string; role: string; email: string; name: string }
  * NextAuth session cookie. Platform staff in support mode DO use a NextAuth
  * cookie. This resolves both so API guards recognise tenant users too.
  */
-async function resolveIdentity(request?: Request): Promise<Identity | null> {
+export async function resolveIdentity(request?: Request): Promise<Identity | null> {
   // 1. NextAuth session cookie (platform staff / support mode). Never let a
   //    session-read failure (no cookie, malformed cookie, missing context) throw
   //    — that would surface as a 500 for perfectly valid Bearer-token callers
@@ -111,6 +111,112 @@ export async function getLaundryAuthContext(laundryBusinessId: string, request?:
       role,
       isSupportMode: true,
       supportAdminName: userName,
+    }
+  }
+
+  return null
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AUTHORITATIVE WORKSPACE RESOLUTION
+//
+// A workspace request carries a businessId from the browser. That value is a
+// CONVENIENCE, never an identity: it lives in localStorage, it survives a
+// re-provision, and it can name a business the caller no longer belongs to (or
+// one that never existed). Treating it as the identity is what locked the Owner
+// out — a stale id produced a 404 and the workspace refused to open, even
+// though the database knew perfectly well which business that user owns.
+//
+// The authoritative relationship is:
+//     User → BusinessUser(isActive) → Business → LaundryBusiness
+// and it is resolved here, from the authenticated identity, whenever the
+// supplied id does not work out.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Business roles that mark the tenant's owner. Mirrors laundry-rbac's list. */
+const OWNER_ROLES = new Set(["CLIENT_OWNER", "LAUNDRY_OWNER"])
+
+export type WorkspaceResolution = {
+  ctx: LaundryAuthContext
+  laundryBusinessId: string
+  platformBusinessId: string
+  /** Where the answer came from — "requested" honours the caller's id. */
+  source: "requested" | "membership"
+}
+
+/**
+ * Every laundry workspace the authenticated user actually belongs to, most
+ * authoritative first: an owner membership outranks staff, then most recent.
+ * Read-only.
+ */
+export async function callerLaundryWorkspaces(userId: string): Promise<
+  { laundryBusinessId: string; platformBusinessId: string; role: string }[]
+> {
+  const memberships = await prisma.businessUser.findMany({
+    where: { userId, isActive: true },
+    select: { businessId: true, role: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  })
+  if (!memberships.length) return []
+
+  const laundry = await prisma.laundryBusiness.findMany({
+    where: { platformBusinessId: { in: memberships.map((m) => m.businessId) } },
+    select: { id: true, platformBusinessId: true },
+  })
+  const byPlatform = new Map(laundry.map((l) => [l.platformBusinessId as string, l.id]))
+
+  const rows = memberships
+    .filter((m) => byPlatform.has(m.businessId))
+    .map((m) => ({
+      laundryBusinessId: byPlatform.get(m.businessId) as string,
+      platformBusinessId: m.businessId,
+      role: String(m.role),
+    }))
+
+  // Owner memberships first — if this person owns a workspace, that is the one
+  // they mean, whatever a stale cache says.
+  return rows.sort((a, b) => Number(OWNER_ROLES.has(b.role)) - Number(OWNER_ROLES.has(a.role)))
+}
+
+/**
+ * Resolve the workspace for this request.
+ *
+ * Honours `requestedBusinessId` when it names a real laundry business the
+ * caller may use. Otherwise — missing, stale, invalid, or belonging to another
+ * tenant — falls back to the caller's OWN membership, so a bad id can never be
+ * the reason a legitimate user is refused their workspace.
+ *
+ * Returns null only when the caller is genuinely unauthenticated or genuinely
+ * has no laundry workspace.
+ */
+export async function resolveCallerWorkspace(
+  requestedBusinessId: string | null | undefined,
+  request?: Request,
+): Promise<WorkspaceResolution | null> {
+  const identity = await resolveIdentity(request)
+  if (!identity) return null
+
+  // 1. Honour what the caller asked for, when it holds up.
+  if (requestedBusinessId) {
+    const biz = await prisma.laundryBusiness.findFirst({
+      where: { OR: [{ id: requestedBusinessId }, { platformBusinessId: requestedBusinessId }] },
+      select: { id: true, platformBusinessId: true },
+    })
+    if (biz?.platformBusinessId) {
+      const ctx = await getLaundryAuthContext(biz.id, request)
+      if (ctx) {
+        return { ctx, laundryBusinessId: biz.id, platformBusinessId: biz.platformBusinessId, source: "requested" }
+      }
+    }
+  }
+
+  // 2. Fall back to the database relationship. This is the line that keeps the
+  //    Owner out of the lockout: their membership is permanent, the cached id
+  //    is not.
+  for (const ws of await callerLaundryWorkspaces(identity.userId)) {
+    const ctx = await getLaundryAuthContext(ws.laundryBusinessId, request)
+    if (ctx) {
+      return { ctx, laundryBusinessId: ws.laundryBusinessId, platformBusinessId: ws.platformBusinessId, source: "membership" }
     }
   }
 
