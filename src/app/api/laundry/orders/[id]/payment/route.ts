@@ -9,7 +9,8 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { getTransitions } from "@/lib/laundry-workflow"
+import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
+import { checkAuditComplete } from "@/lib/laundry-audit"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -51,8 +52,64 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
+/**
+ * Advance the order ONE step along the state machine's primary forward edge,
+ * as part of a Pay Later decision, and record the arrangement — atomically.
+ *
+ * Pay Later is an approved arrangement, so payment is never what holds the
+ * order. Whatever stage the decision is taken at, the order takes its next
+ * defined step rather than sitting where it was.
+ *
+ * What this does NOT do:
+ *   • invent a stage — the target always comes from TRANSITIONS, never a literal
+ *   • move to CANCELLED, or take a non-primary/corrective edge
+ *   • skip the audit gate: an order may only leave Store Audit once every
+ *     garment is identified and inspected. That is a data-integrity rule, not a
+ *     payment rule, and Packing & QR enforces it again anyway — advancing past
+ *     it would only produce an order that cannot be packed.
+ *   • fabricate custody facts. The physical receive/dispatch endpoints still own
+ *     the receiver, bag condition and exception handling; they record those on
+ *     the real scan, whose own status update simply becomes a no-op.
+ *
+ * Returns the {from,to} actually applied, or null when no step was available.
+ */
+async function advanceOnPayLater(orderId: string, businessId: string, actor?: string | null, note?: string | null) {
+  const order = await prisma.laundryOrder.findUnique({ where: { id: orderId }, select: { status: true } })
+  if (!order) return null
+  const from = String(order.status)
+  const primary = getTransitions(from).find((t) => t.primary && t.to !== "CANCELLED")
+  if (!primary) return null
+
+  if (primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT") {
+    const audit = await checkAuditComplete(orderId)
+    if (!audit.ok) return null
+  }
+
+  // One transaction: the order moves and the arrangement is recorded together,
+  // so a failed transition can never leave "Pay Later approved" behind on its own.
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const advanced = await tx.laundryOrder.updateMany({
+        where: { id: orderId, status: from as never },
+        data: { status: primary.to as never },
+      })
+      if (advanced.count === 0) return null
+      await tx.laundryOrderEvent.create({
+        data: {
+          orderId, businessId, fromStatus: from, toStatus: primary.to,
+          action: "PAY_LATER", actorName: actor || null,
+          note: `${note || "Pay later approved"} · advanced ${statusLabel(from)} → ${statusLabel(primary.to)} on the pay-later decision`,
+        },
+      })
+      return { from, to: primary.to }
+    })
+  } catch {
+    return null
+  }
+}
+
 // Advance PAYMENT_PENDING → READY_FOR_PROCESSING with an audit event. Fires
-// when payment completes (or an explicit policy-allowed pay-later decision).
+// when payment completes. PAY NOW behaviour is deliberately unchanged.
 async function advanceAfterPayment(orderId: string, businessId: string, action: "COLLECT_PAYMENT" | "PAY_LATER", actor?: string | null, note?: string | null) {
   const advanced = await prisma.laundryOrder.updateMany({
     where: { id: orderId, status: "PAYMENT_PENDING" },
@@ -125,24 +182,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       const note = `Balance ₹${orderPL.balanceDue.toFixed(2)} to collect at delivery`
 
-      // Already arranged — say so rather than writing a second decision.
+      // Already arranged AND already moved on — say so rather than writing a
+      // second decision. (An arrangement recorded without a move is retried
+      // below, so a previously-blocked order still gets its step.)
       const existing = await prisma.laundryOrderEvent.findFirst({
-        where: { orderId: orderPL.id, action: "PAY_LATER" },
+        where: { orderId: orderPL.id, action: "PAY_LATER", NOT: { fromStatus: orderPL.status } },
         select: { id: true },
       })
       if (existing) {
-        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, nextStep: nextStepOf(orderPL.status) } })
+        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, from: orderPL.status, to: orderPL.status, nextStep: nextStepOf(orderPL.status) } })
       }
 
-      // Advance ONLY from Payment Collection — that is the one legitimate
-      // transition. advanceAfterPayment writes the PAY_LATER event itself.
-      const advanced = atPaymentCollection
-        ? await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)
-        : false
+      // Pay Later is a completed payment DECISION, so the order takes its next
+      // step whatever stage it was taken at — payment is never the blocker.
+      // At Payment Collection that is the existing COLLECT_PAYMENT edge; from
+      // anywhere else it is that stage's own primary forward edge, read from the
+      // state machine. Both write the PAY_LATER event themselves.
+      const moved = atPaymentCollection
+        ? ((await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note))
+            ? { from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING" }
+            : null)
+        : await advanceOnPayLater(orderPL.id, bizPL.id, createdBy, note)
 
-      if (!advanced) {
-        // Anywhere else (or a concurrent advance): record the decision against
-        // the order without moving it. The stage is not this endpoint's to change.
+      if (!moved) {
+        // No step was available (no primary edge, or the audit gate is not met).
+        // Record the arrangement so the decision is not lost, and report the
+        // stage honestly rather than claiming a move that did not happen.
         await prisma.laundryOrderEvent.create({
           data: {
             orderId: orderPL.id, businessId: bizPL.id,
@@ -152,7 +217,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }).catch(() => null)
       }
 
-      return NextResponse.json({ success: true, data: { advanced, payLater: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, nextStep: nextStepOf(advanced ? "READY_FOR_PROCESSING" : orderPL.status) } })
+      const finalStatus = moved?.to ?? orderPL.status
+      return NextResponse.json({ success: true, data: {
+        advanced: !!moved, payLater: true, balanceDue: r2(orderPL.balanceDue),
+        status: finalStatus, from: moved?.from ?? orderPL.status, to: finalStatus,
+        nextStep: nextStepOf(finalStatus),
+      } })
     }
     if (!method || !METHODS.has(method)) return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
     const amt = Number(amount)

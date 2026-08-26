@@ -55,18 +55,18 @@ describe('Pay Later posts no money and advances the order', () => {
     expect(API).not.toContain('Order is not awaiting payment')
   })
 
-  it('advances ONLY from Payment Collection', () => {
+  it('takes the Payment Collection edge there, and the stage edge elsewhere', () => {
     expect(PAY_LATER_BRANCH).toContain('const atPaymentCollection = orderPL.status === "PAYMENT_PENDING"')
-    expect(PAY_LATER_BRANCH).toContain('const advanced = atPaymentCollection')
+    expect(PAY_LATER_BRANCH).toContain('const moved = atPaymentCollection')
   })
 
-  it('records the arrangement without moving the order from elsewhere', () => {
+  it('records the arrangement when no step was available', () => {
     expect(PAY_LATER_BRANCH).toContain('fromStatus: orderPL.status, toStatus: orderPL.status,')
     expect(PAY_LATER_BRANCH).toContain('action: "PAY_LATER"')
   })
 
   it('does not write a second arrangement for the same order', () => {
-    expect(PAY_LATER_BRANCH).toContain("where: { orderId: orderPL.id, action: \"PAY_LATER\" },")
+    expect(PAY_LATER_BRANCH).toContain('where: { orderId: orderPL.id, action: "PAY_LATER", NOT: { fromStatus: orderPL.status } },')
     expect(PAY_LATER_BRANCH).toContain('alreadyArranged: true')
   })
 
@@ -76,7 +76,7 @@ describe('Pay Later posts no money and advances the order', () => {
   })
 
   it('reports what actually happened, so the toast cannot claim a move that did not occur', () => {
-    expect(PAY_LATER_BRANCH).toContain('advanced, payLater: true')
+    expect(PAY_LATER_BRANCH).toContain('advanced: !!moved')
     expect(PANEL).toContain('stays outstanding.')
     expect(PANEL).toContain('d.advanced')
   })
@@ -178,8 +178,8 @@ describe('PAY_LATER advances the order at Payment Collection', () => {
     expect(API).toContain('advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT"')
   })
 
-  it('advancing is gated on the STAGE, never on the balance being zero', () => {
-    expect(PAY_LATER_BRANCH).toContain('const advanced = atPaymentCollection')
+  it('advancing is never gated on the balance being zero', () => {
+    expect(PAY_LATER_BRANCH).toContain('const moved = atPaymentCollection')
     expect(PAY_LATER_BRANCH).not.toContain('balanceDue === 0 ?')
     expect(PAY_LATER_BRANCH).not.toContain('paymentStatus === "PAID"')
   })
@@ -191,37 +191,113 @@ describe('PAY_LATER advances the order at Payment Collection', () => {
   })
 })
 
-describe('Pay Later never performs a physical custody transition', () => {
-  it('IN_TRANSIT_TO_STORE moves only by the store receiving the bag', () => {
-    const forward = getTransitions('IN_TRANSIT_TO_STORE').filter((t) => t.to !== 'CANCELLED')
-    expect(forward).toHaveLength(1)
-    expect(forward[0].action).toBe('RECEIVE_PICKUP_AT_STORE')
-    expect(forward[0].to).toBe('PENDING_STORE_AUDIT')
+// ═══════════════════════════════════════════════════════════════════════════
+// PAY LATER MOVES THE ORDER — from whatever stage the decision is taken at.
+//
+// Business rule: Pay Later is a completed payment DECISION. Payment is never
+// what holds an order, so confirming it takes the order to its next defined
+// stage rather than leaving it where it was.
+//
+// The target is always read from the state machine — never a literal — so the
+// order takes the step the workflow itself defines and nothing is skipped that
+// is not about payment.
+// ═══════════════════════════════════════════════════════════════════════════
+
+
+describe('PAY_LATER advances the order', () => {
+  it('THE REPORTED CASE · IN_TRANSIT_TO_STORE moves to PENDING_STORE_AUDIT', () => {
+    // The next valid stage is read from the state machine, not chosen.
+    const primary = getTransitions('IN_TRANSIT_TO_STORE').find((t) => t.primary && t.to !== 'CANCELLED')
+    expect(primary?.to).toBe('PENDING_STORE_AUDIT')
+    // …and that is exactly what advanceOnPayLater applies.
+    expect(API).toContain("const primary = getTransitions(from).find((t) => t.primary && t.to !== \"CANCELLED\")")
+    expect(API).toContain('data: { status: primary.to as never },')
   })
 
-  it('that edge is owned by the bag-scan endpoint, not by payment', () => {
+  it('is called for every stage that is not Payment Collection', () => {
+    expect(PAY_LATER_BRANCH).toContain(': await advanceOnPayLater(orderPL.id, bizPL.id, createdBy, note)')
+  })
+
+  it('still uses the existing COLLECT_PAYMENT edge at Payment Collection', () => {
+    expect(PAY_LATER_BRANCH).toContain('await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)')
+    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+  })
+
+  it('records the arrangement and the move ATOMICALLY', () => {
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).toContain('prisma.$transaction(async (tx) =>')
+    expect(fn).toContain('tx.laundryOrder.updateMany')
+    expect(fn).toContain('tx.laundryOrderEvent.create')
+    // Concurrency-safe: the move only applies from the status we read.
+    expect(fn).toContain('where: { id: orderId, status: from as never },')
+  })
+
+  it('never invents a stage, and never advances to CANCELLED', () => {
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).toContain("t.to !== \"CANCELLED\"")
+    expect(fn).not.toContain('"READY_FOR_PROCESSING"')
+    expect(fn).not.toContain('"PENDING_STORE_AUDIT"')
+    expect(fn).not.toContain('"DELIVERED"')
+  })
+
+  it('respects the audit gate — a payment decision cannot skip counting garments', () => {
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).toContain('primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT"')
+    expect(fn).toContain('const audit = await checkAuditComplete(orderId)')
+    expect(fn).toContain('if (!audit.ok) return null')
+  })
+
+  it('advances exactly ONE step — no walking the chain', () => {
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).not.toContain('while')
+    expect(fn).not.toContain('for (')
+  })
+
+  it('still posts no money and never marks the order PAID', () => {
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).not.toContain('amountPaid')
+    expect(fn).not.toContain('balanceDue')
+    expect(fn).not.toContain('"PAID"')
+    expect(fn).not.toContain('laundryPayment')
+  })
+
+  it('reports the real from → to so the toast cannot lie', () => {
+    expect(PAY_LATER_BRANCH).toContain('advanced: !!moved')
+    expect(PAY_LATER_BRANCH).toContain('from: moved?.from ?? orderPL.status, to: finalStatus,')
+    expect(PANEL).toContain('Order moved to ${statusLabel(String(d.to))}')
+  })
+
+  it('a blocked arrangement is retried on the next confirmation', () => {
+    // An order that could not move keeps its arrangement at the SAME status, so
+    // the duplicate check does not treat it as done.
+    expect(PAY_LATER_BRANCH).toContain('NOT: { fromStatus: orderPL.status }')
+  })
+
+  it('PAY NOW is untouched — still PAYMENT_PENDING-only', () => {
+    const fn = API.slice(API.indexOf('// Advance PAYMENT_PENDING'), API.indexOf('export async function POST'))
+    expect(fn).toContain('where: { id: orderId, status: "PAYMENT_PENDING" },')
+    expect(fn).toContain('data: { status: "READY_FOR_PROCESSING" },')
+    expect(API).toContain('advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT"')
+  })
+
+  it('tenant isolation is unchanged — the order is resolved within the business', () => {
+    expect(PAY_LATER_BRANCH).toContain('prisma.laundryOrder.findFirst({ where: { id, businessId: bizPL.id }')
+  })
+
+  it('the physical receive endpoint still owns custody facts', () => {
     const RECEIVE = read('src/app/api/laundry/bags/receive-at-store/route.ts')
-    expect(RECEIVE).toContain('action: exception ? "RECEIVE_EXCEPTION" : "RECEIVE_PICKUP_AT_STORE"')
-    // It records custody facts a payment decision simply does not have.
+    // Its status update is scoped to receivable states, so it becomes a no-op
+    // if Pay Later already moved the order — the custody record still lands.
+    expect(RECEIVE).toContain('status: { in: [...RECEIVABLE] as never[] }')
     expect(RECEIVE).toContain('receivedBy: receiver')
-    expect(PAY_LATER_BRANCH).not.toContain('RECEIVE_PICKUP_AT_STORE')
-    expect(PAY_LATER_BRANCH).not.toContain('PENDING_STORE_AUDIT')
+    const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
+    expect(fn).not.toContain('receivedBy')
+    expect(fn).not.toContain('laundryBag')
   })
 
-  it('the receive path has no payment gate — a balance never blocks it', () => {
-    const RECEIVE = read('src/app/api/laundry/bags/receive-at-store/route.ts')
-    expect(RECEIVE).not.toContain('balanceDue')
-    expect(RECEIVE).not.toContain('paymentStatus')
-  })
-
-  it('tells the operator what the order is actually waiting for', () => {
-    expect(PAY_LATER_BRANCH).toContain('const nextStepOf = (status: string)')
-    expect(PAY_LATER_BRANCH).toContain('getTransitions(status).find((t) => t.primary)')
-    expect(PANEL).toContain('Next step: ${d.nextStep.label}')
-  })
-
-  it('the next step named for a transiting order is the store receive', () => {
-    const primary = getTransitions('IN_TRANSIT_TO_STORE').find((t) => t.primary)
-    expect(primary?.label).toBe('Receive at Store')
+  it('COLLECT_PAYMENT still exists at exactly one status', () => {
+    const withPayment = (Object.keys(TRANSITIONS) as (keyof typeof TRANSITIONS)[])
+      .filter((s) => TRANSITIONS[s].some((t) => t.action === 'COLLECT_PAYMENT'))
+    expect(withPayment).toEqual(['PAYMENT_PENDING'])
   })
 })

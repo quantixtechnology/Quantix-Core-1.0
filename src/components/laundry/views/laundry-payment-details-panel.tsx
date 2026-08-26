@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
+import { statusLabel } from "@/lib/laundry-workflow"
 import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck, Clock } from "lucide-react"
 import {
   ADJUSTMENT_REASONS, REFUND_LABEL, reasonLabel, financialSummary, maxCompensation,
@@ -189,7 +190,9 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
               // financial decision; it does not perform physical custody
               // transitions (receiving a bag at the store, dispatching it), and
               // saying "continues as normal" made an un-received order look stuck.
-              : `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} stays outstanding.${d.nextStep?.label ? ` Next step: ${d.nextStep.label}.` : ""}`,
+              : d.advanced
+                ? `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} outstanding. Order moved to ${statusLabel(String(d.to))}.`
+                : `Pay Later approved — ₹${Number(d.balanceDue || 0).toFixed(2)} stays outstanding.${d.nextStep?.label ? ` Next step: ${d.nextStep.label}.` : ""}`,
       )
       setShowPayLater(false)
       load(); onChanged?.()
