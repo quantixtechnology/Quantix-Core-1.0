@@ -1,13 +1,14 @@
 // Barcode Generation for a received package.
 // GET  — package summary + garments (with barcode/generated flag) for the screen
 // POST — { action: "GENERATE_ALL" | "MOVE_TO_PROCESSING", actorName? }
-//   GENERATE_ALL: marks every garment's barcode label generated.
+//   GENERATE_ALL: ensures every garment has a GAR code, then marks label generated.
 //   MOVE_TO_PROCESSING: gated — requires ALL garments barcoded — then routes each
 //   garment into its first department queue (Wash/Dry Clean/Iron/…).
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, departmentFor, stageLabel } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -49,7 +50,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     if (action === "GENERATE_ALL") {
       const pending = order.items.filter((i) => !i.barcodeGenerated)
+
+      // Ensure every pending garment has a GAR code before marking generated.
+      // Heal first so a drifted counter never re-issues an existing code.
+      await healGarSequenceCounter()
       for (const it of pending) {
+        // Read current GAR state — items created via createLaundryOrder may lack one.
+        const row = await prisma.laundryOrderItem.findUnique({ where: { id: it.id }, select: { garmentScanCode: true } })
+        let garCode = row?.garmentScanCode
+        if (!garCode) {
+          garCode = await nextGarScanCode()
+          await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { garmentScanCode: garCode, barcode: garCode } })
+        }
         await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date() } })
         await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })
       }

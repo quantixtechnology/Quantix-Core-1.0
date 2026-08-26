@@ -18,6 +18,7 @@ import { explodePieces } from "@/lib/laundry-order-items"
 import { initPickupVerification } from "@/lib/laundry-verification"
 import { notifyPickupOtpGenerated } from "@/lib/laundry-notify"
 import { freezePromise } from "@/lib/laundry-delivery-promise"
+import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
 
 export interface OrderEngineLine {
   serviceId: string | null
@@ -142,11 +143,21 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
     )
 
   const rows = (explode ? explodePieces(input.lines as never[]) : input.lines) as OrderEngineLine[]
+
+  // Pre-allocate GAR codes: one globally-unique permanent identifier per
+  // physical garment. Heal first so a drifted counter never re-issues an
+  // existing code (would P2002 and block the whole order creation).
+  await healGarSequenceCounter()
+  const garCodes: string[] = []
+  for (let i = 0; i < rows.length; i++) garCodes.push(await nextGarScanCode())
+
   const itemRows = rows.map((l, i) => {
     const itemNumber = `ITM-${input.orderNumber}-${String(i + 1).padStart(4, "0")}`
+    const gar = garCodes[i]
     return {
       itemNumber,
-      barcode: itemNumber,
+      barcode: gar,
+      garmentScanCode: gar,
       serviceId: l.serviceId,
       serviceName: l.serviceName,
       garmentId: l.garmentId,

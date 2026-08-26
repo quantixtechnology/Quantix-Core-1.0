@@ -1,7 +1,7 @@
 "use client"
 
-// Code128 barcode (jsbarcode → SVG). The value is the garment's permanent
-// Item ID; the human-readable text shows below the bars.
+// Code128 barcode (jsbarcode → SVG). The value is the garment's GAR code
+// (garmentScanCode); the human-readable text shows below the bars.
 import { useEffect, useRef } from "react"
 import JsBarcode from "jsbarcode"
 

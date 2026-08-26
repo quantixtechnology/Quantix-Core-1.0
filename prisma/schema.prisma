@@ -5120,7 +5120,7 @@ model LaundryOrderItem {
   id               String    @id @default(cuid())
   orderId          String
   itemNumber       String? // permanent garment ID: ITM-{orderNumber}-NNNN
-  barcode          String?   @unique // barcode value = itemNumber (per-garment)
+  barcode          String?   @unique // barcode value = GAR (garmentScanCode), the primary operational barcode
   barcodeGenerated Boolean   @default(false) // label generated at Processing Center
   barcodePrintedAt DateTime?
   printCount       Int       @default(0)
