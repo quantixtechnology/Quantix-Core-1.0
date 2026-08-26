@@ -258,30 +258,22 @@ export function isLaundryDateAvailable(
 
   const res = timingForDate(timings, dateISO, closedUntil)
   if (!res.available) {
-    if (opts?.ignoreWorkingHours && res.reason !== 'Closed for a holiday') {
-      // 24/7 ordering: the weekly schedule does not gate date selection.
-      // Temporary closures (holiday / closedUntil) still apply — those are
-      // deliberate, not about the hour of the day.
-      return { available: true, reason: null, openTime: res.openTime || null, closeTime: res.closeTime || null }
-    }
     return { available: false, reason: res.reason || "Unavailable", openTime: null, closeTime: null }
   }
   return { available: true, reason: null, openTime: res.openTime || null, closeTime: res.closeTime || null }
 }
 
 // Restrict a generated slot list to the working hours of a given date.
-// When `ignoreWorkingHours` is true (24/7 ordering), the full operational slot
-// list is returned regardless of the day's StoreTiming — the customer can pick
-// any slot and the order will be fulfilled during the shop's next working window.
+// Pickup and delivery slots always follow the operating schedule — the customer
+// ordering mode (ALWAYS_OPEN) only relaxes "is the store open right now", not
+// which slots are offered.
 export function laundrySlotsForDate(
   slots: string[],
   timings: StoreDayTiming[],
   dateISO: string | null | undefined,
   closedUntil?: string | Date | null,
-  opts?: { ignoreWorkingHours?: boolean },
 ): string[] {
   if (!dateISO) return slots
-  if (opts?.ignoreWorkingHours) return slots
   const row = timingForDate(timings, dateISO, closedUntil)
   if (!row.available) return []
   return slotsWithinWorkingHours(slots, row.openTime, row.closeTime)
@@ -386,12 +378,17 @@ export async function assertLaundryBookingOpen(
     { date: opts.deliveryDate, slot: opts.deliverySlot, label: "Standard delivery" },
     { date: opts.backupDate, slot: opts.backupSlot, label: "Backup delivery" },
   ]
-  const dateOpts = { ignoreWorkingHours: bypassesStoreHours(ordering) }
   for (const c of checks) {
     if (!c.date) continue
-    const a = assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil, dateOpts)
+    // Date availability always follows the working schedule — even when the
+    // customer ordering mode is ALWAYS_OPEN, a weekly off-day is still off.
+    const a = assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil)
     if (!a.ok) return a
-    if (c.slot && !bypassesStoreHours(ordering)) {
+    // Slot must fall within the day's working hours.  The customer ordering
+    // mode only relaxes "is the store open right now", never which slots
+    // are offered — pickup/delivery schedules are their own operational
+    // concern.
+    if (c.slot) {
       const row = timingForDate(store.storeTimings, c.date, store.closedUntil)
       if (slotsWithinWorkingHours([c.slot], row.openTime, row.closeTime).length === 0) {
         return { ok: false, error: `${c.label} time ${c.slot} is outside business hours on ${c.date}. Please choose another slot.` }

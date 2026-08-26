@@ -169,9 +169,9 @@ describe('isLaundryDateAvailable', () => {
   })
 
   describe('ignoreWorkingHours (24/7 ordering)', () => {
-    it('accepts a weekly off-day when ignoreWorkingHours is true', () => {
+    it('still rejects a weekly off-day (pickups/deliveries follow the schedule)', () => {
       const a = isLaundryDateAvailable(SATURDAY_OFF, '2026-08-29', undefined, { ignoreWorkingHours: true })
-      expect(a.available).toBe(true)
+      expect(a.available).toBe(false)
     })
 
     it('still rejects past dates even with ignoreWorkingHours', () => {
@@ -222,15 +222,17 @@ describe('laundrySlotsForDate', () => {
     expect(laundrySlotsForDate(slots, SATURDAY_OFF, null)).toEqual(slots)
   })
 
-  describe('ignoreWorkingHours (24/7 ordering)', () => {
-    it('returns all slots on an off-day when ignoreWorkingHours is true', () => {
+  describe('slots always follow working hours', () => {
+    it('returns [] on an off-day regardless of ordering mode', () => {
       const slots = ['07:00 - 09:00', '10:00 - 12:00', '18:00 - 20:00']
-      expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-29', undefined, { ignoreWorkingHours: true })).toEqual(slots)
+      // Even with ignoreWorkingHours, off-day returns no slots — the
+      // customer ordering mode only relaxes "is the store open right now".
+      expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-29')).toEqual([])
     })
 
-    it('returns all slots on an available day when ignoreWorkingHours is true', () => {
+    it('filters to working hours on an available day', () => {
       const slots = ['07:00 - 09:00', '10:00 - 12:00']
-      expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-31', undefined, { ignoreWorkingHours: true })).toEqual(slots)
+      expect(laundrySlotsForDate(slots, SATURDAY_OFF, '2026-08-31')).toEqual(['10:00 - 12:00'])
     })
   })
 })
@@ -251,9 +253,9 @@ describe('assertLaundryDateAvailable', () => {
   })
 
   describe('ignoreWorkingHours (24/7 ordering)', () => {
-    it('accepts a weekly off-day when ignoreWorkingHours is true', () => {
+    it('still rejects a weekly off-day (slots follow the schedule)', () => {
       const r = assertLaundryDateAvailable(SATURDAY_OFF, '2026-08-29', 'Pickup', undefined, { ignoreWorkingHours: true })
-      expect(r).toEqual({ ok: true })
+      expect(r.ok).toBe(false)
     })
   })
 })
@@ -361,14 +363,16 @@ describe('assertLaundryBookingOpen', () => {
     expect(r.storeId).toBe('s1')
   })
 
-  it('accepts a weekly off pickup date when 24/7 ordering is enabled', async () => {
+  it('rejects a weekly off pickup date even when 24/7 ordering is enabled (slots follow schedule)', async () => {
     mockPrismaStoreFindFirst.mockResolvedValue({ id: 's1' })
     mockDbStoreFindUnique.mockResolvedValue({ id: 's1', status: 'ACTIVE', businessId: 'pb1', closedReason: null, closedUntil: null, storeTimings: SUNDAY_OFF })
     mockDbBusinessFindUnique.mockResolvedValue({ isOnline: true })
     mockPrismaStoreFindUnique.mockResolvedValue({ closedUntil: null, storeTimings: SUNDAY_OFF })
     mockPrismaBusinessFindUnique.mockResolvedValue({ settings: JSON.stringify({ customerOrderingAvailability: 'ALWAYS_OPEN' }) })
     const r = await assertLaundryBookingOpen('lb1', { pickupDate: '2026-08-30' }) // Sunday off
-    expect(r.ok).toBe(true)
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error('expected rejection')
+    expect(r.error).toContain('Pickup is unavailable')
   })
 
   it('still rejects a weekly off pickup date when 24/7 ordering is disabled', async () => {

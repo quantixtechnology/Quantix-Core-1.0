@@ -7,15 +7,12 @@
 // single source of truth). When `date` is supplied, the pickup/delivery slot
 // lists are filtered to that day's working hours and a `dateAvailable` flag +
 // reason are returned so unavailable days are never offered.
-// When 24/7 Customer Ordering is enabled, the date/slot checks bypass the
-// StoreTiming weekly schedule so the customer can always place an order.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { generateSlots, slotConfigsFrom, DEFAULT_PICKUP_SLOT, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { deliveryMaxPerSlot, deliverySlotCapacity } from "@/lib/laundry-slot-capacity"
 import { getLaundryAvailability, isLaundryDateAvailable, laundrySlotsForDate, resolveBranchSchedule } from "@/lib/laundry-availability"
-import { readCustomerOrderingMode, bypassesStoreHours } from "@/lib/customer-ordering"
 
 export const runtime = "nodejs"
 
@@ -33,18 +30,10 @@ export async function GET(request: Request) {
       prisma.laundryOperationalConfig.findUnique({ where: { businessId: biz.id } }),
       getLaundryAvailability(biz.id, storeId),
     ])
-    // Read 24/7 ordering mode from the platform business settings so date/slot
-    // checks bypass the StoreTiming schedule when the tenant takes orders round
-    // the clock.
-    const platformBiz = biz.platformBusinessId
-      ? await prisma.business.findUnique({ where: { id: biz.platformBusinessId }, select: { settings: true } })
-      : null
-    const ignoreWorkingHours = bypassesStoreHours(readCustomerOrderingMode(platformBiz?.settings))
     const branchTiming = storeId ? await resolveBranchSchedule(storeId, availability.timings) : availability.timings
     const { pickup, delivery } = slotConfigsFrom(cfg)
-    const dateOpts = { ignoreWorkingHours }
-    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), branchTiming, date, availability.closedUntil, dateOpts) : generateSlots(pickup)
-    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), branchTiming, date, availability.closedUntil, dateOpts) : generateSlots(delivery)
+    const pickupSlots = date ? laundrySlotsForDate(generateSlots(pickup), branchTiming, date, availability.closedUntil) : generateSlots(pickup)
+    const deliverySlots = date ? laundrySlotsForDate(generateSlots(delivery), branchTiming, date, availability.closedUntil) : generateSlots(delivery)
     const data: {
       pickup: Record<string, unknown>
       delivery: Record<string, unknown>
@@ -57,7 +46,7 @@ export async function GET(request: Request) {
       data.delivery.fullSlots = capacity.full
       data.delivery.usage = capacity.usage
     }
-    const dateAvailability = date ? isLaundryDateAvailable(branchTiming, date, availability.closedUntil, dateOpts) : null
+    const dateAvailability = date ? isLaundryDateAvailable(branchTiming, date, availability.closedUntil) : null
     return NextResponse.json({
       success: true,
       data,
