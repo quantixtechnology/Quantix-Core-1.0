@@ -86,9 +86,9 @@ async function main() {
   const events  = await prisma.laundryBagEvent.count({ where: { bagId: { in: bagIds } } })
   const releases = await prisma.laundryBagRelease.count({ where: { bagId: { in: bagIds } } })
   const asgCount = await prisma.laundryBagAssignment.count({ where: { bagId: { in: bagIds } } })
-  const deliveryRefs = await prisma.laundryOrder.count({ where: { deliveryBagNumber: { in: bagNums } } })
-  const pkgBagCodeRefs = await prisma.laundryProcessingPackage.count({ where: { bagCode: { in: bagNums } } })
-  const pkgQrRefs = await prisma.laundryProcessingPackage.count({ where: { qrValue: { in: bagNums } } })
+  const deliveryRefs = await prisma.laundryOrder.count({ where: { businessId: LAUNDRY_BIZ_ID, deliveryBagNumber: { in: bagNums } } })
+  const pkgBagCodeRefs = await prisma.laundryProcessingPackage.count({ where: { businessId: LAUNDRY_BIZ_ID, bagCode: { in: bagNums } } })
+  const pkgQrRefs = await prisma.laundryProcessingPackage.count({ where: { businessId: LAUNDRY_BIZ_ID, qrValue: { in: bagNums } } })
 
   // Sequence counter
   const seqRow = await prisma.tenantEmployeeSequence.findUnique({
@@ -137,28 +137,39 @@ async function main() {
     const deleted = await tx.laundryBag.deleteMany({ where: { id: { in: bagIds } } })
     console.log(`  deleted ${deleted.count} bag(s)`)
 
-    // 5. Denormalized bag-number in LaundryOrder
+    // 5. Denormalized bag-number in LaundryOrder — VASTRASUDHA orders only
     if (bagNums.length > 0) {
-      const ord = await tx.laundryOrder.updateMany({
-        where: { deliveryBagNumber: { in: bagNums } },
-        data: { deliveryBagNumber: null },
+      // Find VASTRASUDHA orders whose deliveryBagNumber matches a deleted bag.
+      // LaundryOrder.businessId = LaundryBusiness.id = lb_vs
+      const vsOrders = await tx.laundryOrder.findMany({
+        where: { businessId: LAUNDRY_BIZ_ID, deliveryBagNumber: { in: bagNums } },
+        select: { id: true, deliveryBagNumber: true },
       })
-      console.log(`  cleared ${ord.count} deliveryBagNumber ref(s)`)
+      for (const o of vsOrders) {
+        await tx.laundryOrder.update({
+          where: { id: o.id },
+          data: { deliveryBagNumber: null },
+        })
+      }
+      console.log(`  cleared ${vsOrders.length} VASTRASUDHA deliveryBagNumber ref(s)`)
     }
 
-    // 6. Denormalized bag-number in LaundryProcessingPackage
+    // 6. Denormalized bag-number in LaundryProcessingPackage — VASTRASUDHA only
+    //    ProcessingPackage.businessId = LaundryBusiness.id = lb_vs
     if (bagNums.length > 0) {
-      const pkg = await tx.laundryProcessingPackage.updateMany({
-        where: { bagCode: { in: bagNums } },
-        data: { bagCode: null },
+      const vsPkgs = await tx.laundryProcessingPackage.findMany({
+        where: { businessId: LAUNDRY_BIZ_ID, bagCode: { in: bagNums } },
+        select: { id: true, bagCode: true, qrValue: true },
       })
-      console.log(`  cleared ${pkg.count} processingPackage bagCode ref(s)`)
-
-      const qr = await tx.laundryProcessingPackage.updateMany({
-        where: { qrValue: { in: bagNums } },
-        data: { qrValue: "" },
-      })
-      console.log(`  cleared ${qr.count} processingPackage qrValue ref(s)`)
+      for (const p of vsPkgs) {
+        const data: { bagCode?: string | null; qrValue?: string } = {}
+        if (p.bagCode && bagNums.includes(p.bagCode)) data.bagCode = null
+        if (p.qrValue && bagNums.includes(p.qrValue)) data.qrValue = ""
+        if (Object.keys(data).length > 0) {
+          await tx.laundryProcessingPackage.update({ where: { id: p.id }, data })
+        }
+      }
+      console.log(`  cleared ${vsPkgs.length} VASTRASUDHA processingPackage ref(s)`)
     }
 
     // 7. Reset BAG sequence to 1
