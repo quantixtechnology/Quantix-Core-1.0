@@ -1,10 +1,10 @@
-// Reusable Bag inventory — list + bulk-generate permanent BAG-NNNNNN codes.
+// Reusable Bag inventory — list + bulk-generate permanent Bag IDs.
 // The QR is printed once and permanently attached to the physical bag.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { getBagInventory, activeTotal, BAG_STATUS } from "@/lib/laundry-bag-lifecycle"
+import { getBagInventory, activeTotal, BAG_STATUS, bulkGenerateBagCodes } from "@/lib/laundry-bag-lifecycle"
 
 export const runtime = "nodejs"
 
@@ -103,14 +103,10 @@ export async function POST(request: Request) {
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const count = Math.max(1, Math.min(1000, Number(b.count) || 0))
+    const platformBusinessId = biz.platformBusinessId || biz.id
 
-    // Continue the per-business sequence — zero-padded so string sort = numeric.
-    const last = await prisma.laundryBag.findFirst({ where: { businessId: biz.id }, orderBy: { bagNumber: "desc" }, select: { bagNumber: true } })
-    const start = last ? parseInt(last.bagNumber.split("-")[1] || "0", 10) : 0
-    const data = Array.from({ length: count }, (_, i) => {
-      const num = `BAG-${String(start + i + 1).padStart(6, "0")}`
-      return { businessId: biz.id, bagNumber: num, qrValue: num, status: "AVAILABLE" }
-    })
+    const codes = await bulkGenerateBagCodes(platformBusinessId, biz.id, count)
+    const data = codes.map((num) => ({ businessId: biz.id, bagNumber: num, qrValue: num, status: "AVAILABLE" }))
     await prisma.laundryBag.createMany({ data })
     const created = await prisma.laundryBag.findMany({ where: { businessId: biz.id, bagNumber: { in: data.map((d) => d.bagNumber) } }, orderBy: { bagNumber: "asc" } })
     return NextResponse.json({ success: true, data: created }, { status: 201 })

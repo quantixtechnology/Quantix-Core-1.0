@@ -21,6 +21,7 @@ import { getTenantIdentityPrefix, healEmployeeSequence, nextEmployeeSequence } f
 
 export const STAFF_NAMESPACE = "EMP" as const
 export const DELIVERY_NAMESPACE = "DL" as const
+export const BAG_NAMESPACE = "BAG" as const
 
 /** Legacy delivery codes, from before the namespace existed: EXE001. */
 const LEGACY_EXEC_CODE = /^EXE(\d+)$/i
@@ -79,7 +80,7 @@ export async function laundryTenantPrefix(platformBusinessId: string, laundryBus
   return getTenantIdentityPrefix(platformBusinessId, src)
 }
 
-const issueFor = async (platformBusinessId: string, laundryBusinessId: string, ns: "EMP" | "DL") => {
+const issueFor = async (platformBusinessId: string, laundryBusinessId: string, ns: "EMP" | "DL" | "BAG") => {
   const prefix = await laundryTenantPrefix(platformBusinessId, laundryBusinessId)
   return formatEmployeeId(prefix, ns, await nextEmployeeSequence(platformBusinessId, ns))
 }
@@ -87,6 +88,8 @@ export const issueStaffEmployeeId = (platformBusinessId: string, laundryBusiness
   issueFor(platformBusinessId, laundryBusinessId, STAFF_NAMESPACE)
 export const issueDeliveryEmployeeId = (platformBusinessId: string, laundryBusinessId: string) =>
   issueFor(platformBusinessId, laundryBusinessId, DELIVERY_NAMESPACE)
+export const issueBagId = (platformBusinessId: string, laundryBusinessId: string) =>
+  issueFor(platformBusinessId, laundryBusinessId, BAG_NAMESPACE)
 
 /**
  * Does this code already belong to this tenant's namespace? Used to leave

@@ -42,7 +42,7 @@ const MONTH_EPOCH_YEAR = 2000
  * Role namespaces. A product adds its own token here; it does NOT invent a
  * prefix. Laundry OS uses EMP and DL; Commerce can later add COM.
  */
-export const EMPLOYEE_NAMESPACES = ["EMP", "DL", "COM"] as const
+export const EMPLOYEE_NAMESPACES = ["EMP", "DL", "COM", "BAG"] as const
 export type EmployeeNamespace = (typeof EMPLOYEE_NAMESPACES)[number]
 
 /** Sequence digits in an employee id: EMP001, DL001 — widened past 999. */

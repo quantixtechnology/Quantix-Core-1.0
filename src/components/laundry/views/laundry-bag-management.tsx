@@ -557,7 +557,7 @@ export function LaundryBagManagement() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5 text-blue-600" /> Generate Bags</DialogTitle>
-            <DialogDescription>Creates permanent BAG-NNNNNN codes. The QR belongs to the physical bag and is printed once.</DialogDescription>
+            <DialogDescription>Creates permanent Bag IDs (e.g. V8BAG001). The QR belongs to the physical bag and is printed once.</DialogDescription>
           </DialogHeader>
           <Input type="number" min={1} max={1000} value={genCount} onChange={(e) => setGenCount(e.target.value)} />
           <DialogFooter>

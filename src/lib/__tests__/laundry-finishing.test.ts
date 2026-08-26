@@ -40,7 +40,7 @@ describe('finishingScanTarget (workspace scan mode → station label)', () => {
     expect(t.label).toBe('Scan Laundry Bag')
     expect(t.isPackage).toBe(false)
     expect(t.isBag).toBe(true)
-    expect(t.hint).toBe('BAG-… / PB-…')
+    expect(t.hint).toBe('V8BAG001 / PB-…')
   })
 
   it('Both mode accepts either scan target', () => {
@@ -48,7 +48,7 @@ describe('finishingScanTarget (workspace scan mode → station label)', () => {
     expect(t.label).toBe('Scan Laundry Bag / Processing Packet')
     expect(t.isPackage).toBe(true)
     expect(t.isBag).toBe(true)
-    expect(t.hint).toBe('PKG-… / BAG-… / PB-…')
+    expect(t.hint).toBe('PKG-… / V8BAG001 / PB-…')
   })
 
   it('defaults unknown modes to Processing Packet', () => {
@@ -68,6 +68,12 @@ describe('code kind detection', () => {
     expect(isBagCode('PB-202608-000001')).toBe(true)
     expect(isBagCode('bag-000123')).toBe(true)
   })
+
+  it('recognises tenant-prefixed bag codes (V8BAG001)', () => {
+    expect(isBagCode('V8BAG001')).toBe(true)
+    expect(isBagCode('L12BAG042')).toBe(true)
+    expect(isBagCode('V5A1BAG003')).toBe(true)
+  })
 })
 
 describe('scanModeAcceptance (per-workspace gate)', () => {
@@ -79,6 +85,7 @@ describe('scanModeAcceptance (per-workspace gate)', () => {
 
   it('Mode A (REUSE_BAG): accepts the bag QR only', () => {
     expect(scanModeAcceptance('BAG-000123', 'REUSE_BAG')).toBeNull()
+    expect(scanModeAcceptance('V8BAG001', 'REUSE_BAG')).toBeNull()
     expect(scanModeAcceptance('PB-202608-000001', 'REUSE_BAG')).toBeNull()
     expect(scanModeAcceptance('PKG-202608-000001', 'REUSE_BAG')).toMatch(/the bag/)
   })

@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
 import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { parseEmployeeId } from "@/lib/tenant-identity"
 
 // Package lifecycle statuses. Additive — existing CREATED value is preserved.
 export const PACKAGE_STATUS_FINISHING_READY = "READY_FOR_FINISHING"
@@ -41,18 +42,20 @@ export function finishingScanTarget(mode: string | null | undefined): {
   hint: string
 } {
   const m = String(mode || "GENERATE_NEW")
-  if (m === "REUSE_BAG") return { label: "Scan Laundry Bag", isBag: true, isPackage: false, hint: "BAG-… / PB-…" }
-  if (m === "BOTH") return { label: "Scan Laundry Bag / Processing Packet", isBag: true, isPackage: true, hint: "PKG-… / BAG-… / PB-…" }
+  if (m === "REUSE_BAG") return { label: "Scan Laundry Bag", isBag: true, isPackage: false, hint: "V8BAG001 / PB-…" }
+  if (m === "BOTH") return { label: "Scan Laundry Bag / Processing Packet", isBag: true, isPackage: true, hint: "PKG-… / V8BAG001 / PB-…" }
   return { label: "Scan Processing Packet", isBag: false, isPackage: true, hint: "PKG-…" }
 }
 
 // Acceptable code prefixes per scan mode (the system's own code formats):
 //   Processing Package QR  → PKG-YYYYMM-NNNNNN
-//   Reusable bag QR        → BAG-NNNNNN  ·  Pickup bag QR → PB-YYYYMM-NNNNNN
+//   Reusable bag QR        → {prefix}BAGnnn (e.g. V8BAG001) or legacy BAG-NNNNNN  ·  Pickup bag QR → PB-YYYYMM-NNNNNN
 export function isProcessingPackageCode(code: string): boolean { return code.toUpperCase().startsWith("PKG-") }
 export function isBagCode(code: string): boolean {
   const c = code.toUpperCase()
-  return c.startsWith("BAG-") || c.startsWith("PB-")
+  if (c.startsWith("BAG-") || c.startsWith("PB-")) return true
+  const parsed = parseEmployeeId(c)
+  return parsed?.namespace === "BAG"
 }
 
 // Pure scan-mode acceptance check for the finishing stations: does this code

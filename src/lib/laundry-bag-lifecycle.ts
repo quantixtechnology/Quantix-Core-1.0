@@ -23,8 +23,32 @@
 // reused across ORD-001, ORD-005 and ORD-009 has three intact rows.
 // LaundryBagEvent is the movement log: every status/custody change, with actor.
 import { prisma } from "@/lib/prisma"
+import { issueBagId } from "@/lib/laundry-employee-identity"
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+// ── Bag ID generation (single source of truth) ──────────────────────────────
+// All Bag IDs are issued through the same atomic TenantEmployeeSequence counter
+// used by Employee IDs. The format is {prefix}BAG{seq} (e.g. V8BAG001).
+// Concurrent generation is safe: nextEmployeeSequence uses an atomic DB upsert.
+
+/** Issue a single Bag ID through the atomic counter. */
+export async function generateBagCode(platformBusinessId: string, laundryBusinessId: string): Promise<string> {
+  return issueBagId(platformBusinessId, laundryBusinessId)
+}
+
+/** Issue `count` unique Bag IDs atomically — each call increments the counter. */
+export async function bulkGenerateBagCodes(
+  platformBusinessId: string,
+  laundryBusinessId: string,
+  count: number,
+): Promise<string[]> {
+  const codes: string[] = []
+  for (let i = 0; i < count; i++) {
+    codes.push(await issueBagId(platformBusinessId, laundryBusinessId))
+  }
+  return codes
+}
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
 
