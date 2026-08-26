@@ -30,7 +30,7 @@
  */
 
 import { PrismaClient } from "@prisma/client"
-import { parseEmployeeId } from "../src/lib/tenant-identity"
+import { parseEmployeeId, deriveTenantPrefix } from "../src/lib/tenant-identity"
 
 const prisma = new PrismaClient()
 const EXECUTE = process.argv.includes("--execute")
@@ -144,14 +144,39 @@ function emptySummary(): Summary {
 }
 
 // ── Resolve tenant prefix ────────────────────────────────────────────────────
+// Strategy: same as store-code migration — read the Business record directly.
+// The prefix is derived deterministically from (businessCode, businessName),
+// which is the same derivation used when TenantIdentity is first created.
 async function resolvePrefix(): Promise<string | null> {
-  // The prefix is persisted in TenantIdentity.  If missing, we cannot migrate.
+  // 1. Try TenantIdentity first (authoritative if present)
   const ti = await prisma.tenantIdentity.findUnique({ where: { businessId: PLATFORM_BIZ_ID } })
-  if (!ti) {
-    console.error("  ✗ TenantIdentity not found for", PLATFORM_BIZ_ID)
-    return null
+  if (ti) return ti.prefix
+
+  // 2. Derive from Business record — same derivation TenantIdentity uses.
+  //    This is the exact same lookup the working store-code migration uses.
+  const biz = await prisma.business.findUnique({
+    where: { id: PLATFORM_BIZ_ID },
+    select: { businessCode: true, name: true },
+  })
+  if (biz?.businessCode) {
+    const prefix = deriveTenantPrefix(biz.businessCode, biz.name)
+    return prefix
   }
-  return ti.prefix
+
+  // 3. If Business has no code yet, try LaundryBusiness for name
+  const lb = await prisma.laundryBusiness.findUnique({
+    where: { id: LAUNDRY_BIZ_ID },
+    select: { name: true },
+  })
+  if (lb?.name) {
+    // No code available — derive from name only (first letter + 0)
+    // This is a fallback; the Business record should have a code.
+    const prefix = deriveTenantPrefix(null, lb.name)
+    return prefix
+  }
+
+  console.error("  ✗ Cannot resolve prefix: neither TenantIdentity nor Business found for", PLATFORM_BIZ_ID)
+  return null
 }
 
 // ── Phase 2: Migrate ─────────────────────────────────────────────────────────
