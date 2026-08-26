@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { generateStoreCode } from "@/lib/laundry-codes"
+import { generateStoreCode, generateProcessingCenterCode } from "@/lib/laundry-codes"
 import { requireLaundryMember } from "@/lib/laundry-rbac"
+import { ensureBusinessCode } from "@/lib/business-code"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
@@ -26,8 +28,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
     })
 
-    const business = await prisma.laundryBusiness.findUnique({ where: { id }, select: { businessCode: true } })
-    const storeCode = business ? await generateStoreCode(business.businessCode) : "STORE-001"
+    // Read the canonical Business Code from the platform Business row — NOT from
+    // LaundryBusiness, which may still carry a legacy LND-… code.
+    const resolved = await resolveLaundryBusiness(id)
+    const businessCode = resolved?.platformBusinessId
+      ? await ensureBusinessCode(resolved.platformBusinessId)
+      : null
+
+    const storeCode = businessCode ? await generateStoreCode(businessCode) : "STORE-001"
     await prisma.laundryStore.create({
       data: {
         storeCode,
@@ -38,9 +46,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
 
     if (processingCenter?.centerName) {
+      const centerCode = businessCode
+        ? await generateProcessingCenterCode(businessCode)
+        : `PC-${id.slice(0, 8)}`
       await prisma.laundryProcessingCenter.create({
         data: {
-          centerCode: `PC-${business?.businessCode || "001"}`,
+          centerCode,
           businessId: id,
           centerName: processingCenter.centerName,
           address: processingCenter.centerAddress || null,

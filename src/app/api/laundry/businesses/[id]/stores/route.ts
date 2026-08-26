@@ -6,6 +6,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { assertValidStoreLocation } from "@/lib/core/store"
 import { processingAssignmentRefusal, requiresProcessingCenterAssignment } from "@/lib/laundry-store-eligibility"
 import { computeStoreUsage } from "@/lib/laundry-storage"
+import { ensureBusinessCode } from "@/lib/business-code"
 
 export const runtime = "nodejs"
 
@@ -68,12 +69,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     const laundryBusinessId = resolved.id
 
-    const business = await prisma.laundryBusiness.findUnique({
-      where: { id: laundryBusinessId },
-      select: { businessCode: true },
-    })
-    if (!business) {
-      return NextResponse.json({ error: "Laundry workspace not found" }, { status: 404 })
+    // Read the canonical Business Code from the platform Business row — NOT from
+    // LaundryBusiness, which may still carry a legacy LND-… code.  The store code
+    // must embed the canonical BUS-… code so new IDs follow the approved format.
+    const businessCode = resolved.platformBusinessId
+      ? await ensureBusinessCode(resolved.platformBusinessId)
+      : null
+    if (!businessCode) {
+      return NextResponse.json({ error: "No canonical Business Code found. Please set up the business first." }, { status: 400 })
     }
 
     // Store limit — counted from the ACTUAL LaundryStore rows. The old check
@@ -111,7 +114,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
     if (refusal) return NextResponse.json({ error: refusal, code: "PROCESSING_CENTER_REQUIRED" }, { status: 400 })
 
-    const storeCode = await generateStoreCode(business.businessCode)
+    const storeCode = await generateStoreCode(businessCode)
 
     const store = await prisma.laundryStore.create({
       data: {
