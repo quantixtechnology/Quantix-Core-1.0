@@ -63,9 +63,9 @@ async function count(sql: string): Promise<number> {
 
 interface SampleRow {
   field: string
-  table: string
-  before: string
-  after: string
+  tbl: string
+  valBefore: string
+  valAfter: string
 }
 
 async function sampleRows(sql: string, limit = 3): Promise<SampleRow[]> {
@@ -73,9 +73,9 @@ async function sampleRows(sql: string, limit = 3): Promise<SampleRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(sql)
   return rows.slice(0, limit).map((r) => ({
     field: r.field as string,
-    table: r.table as string,
-    before: r.before as string,
-    after: r.after as string,
+    tbl: r.tbl as string,
+    valBefore: r.valBefore as string,
+    valAfter: r.valAfter as string,
   }))
 }
 
@@ -120,39 +120,39 @@ async function audit(): Promise<Summary> {
 async function samples(): Promise<SampleRow[]> {
   const queries = [
     // Stores
-    `SELECT 'storeCode' as field, 'LaundryStore' as table,
-            "storeCode" as before,
-            REPLACE("storeCode", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'storeCode' as field, 'LaundryStore' as tbl,
+            "storeCode" as valBefore,
+            REPLACE("storeCode", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryStore" WHERE "storeCode" LIKE '%${OLD_BIZ}%' LIMIT 3`,
 
     // Processing Centers
-    `SELECT 'centerCode' as field, 'LaundryProcessingCenter' as table,
-            "centerCode" as before,
-            REPLACE("centerCode", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'centerCode' as field, 'LaundryProcessingCenter' as tbl,
+            "centerCode" as valBefore,
+            REPLACE("centerCode", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryProcessingCenter" WHERE "centerCode" LIKE '%${OLD_BIZ}%' LIMIT 3`,
 
     // Orders
-    `SELECT 'orderNumber' as field, 'LaundryOrder' as table,
-            "orderNumber" as before,
-            REPLACE("orderNumber", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'orderNumber' as field, 'LaundryOrder' as tbl,
+            "orderNumber" as valBefore,
+            REPLACE("orderNumber", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryOrder" WHERE "orderNumber" LIKE '%${OLD_BIZ}%' LIMIT 3`,
 
     // Items
-    `SELECT 'itemNumber' as field, 'LaundryOrderItem' as table,
-            "itemNumber" as before,
-            REPLACE("itemNumber", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'itemNumber' as field, 'LaundryOrderItem' as tbl,
+            "itemNumber" as valBefore,
+            REPLACE("itemNumber", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryOrderItem" WHERE "itemNumber" LIKE '%${OLD_BIZ}%' LIMIT 3`,
 
     // Barcodes (confirm they are denormalized copies of itemNumber)
-    `SELECT 'barcode' as field, 'LaundryOrderItem' as table,
-            "barcode" as before,
-            REPLACE("barcode", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'barcode' as field, 'LaundryOrderItem' as tbl,
+            "barcode" as valBefore,
+            REPLACE("barcode", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryOrderItem" WHERE "barcode" LIKE '%${OLD_BIZ}%' LIMIT 3`,
 
     // Packets
-    `SELECT 'packetNumber' as field, 'LaundryPacket' as table,
-            "packetNumber" as before,
-            REPLACE("packetNumber", '${OLD_BIZ}', '${NEW_BIZ}') as after
+    `SELECT 'packetNumber' as field, 'LaundryPacket' as tbl,
+            "packetNumber" as valBefore,
+            REPLACE("packetNumber", '${OLD_BIZ}', '${NEW_BIZ}') as valAfter
      FROM "LaundryPacket" WHERE "packetNumber" LIKE '%${OLD_BIZ}%' LIMIT 3`,
   ]
 
@@ -308,8 +308,8 @@ async function main() {
     console.log(`  ${"field".padEnd(20)} ${"table".padEnd(28)} before → after`)
     console.log("  " + "─".repeat(90))
     for (const r of ex) {
-      console.log(`  ${r.field.padEnd(20)} ${r.table.padEnd(28)} ${r.before}`)
-      console.log(`  ${"".padEnd(20)} ${"".padEnd(28)} ${"→ ".padEnd(4)} ${r.after}`)
+      console.log(`  ${r.field.padEnd(20)} ${r.tbl.padEnd(28)} ${r.valBefore}`)
+      console.log(`  ${"".padEnd(20)} ${"".padEnd(28)} ${"→ ".padEnd(4)} ${r.valAfter}`)
     }
     console.log("  " + "─".repeat(90))
   }
