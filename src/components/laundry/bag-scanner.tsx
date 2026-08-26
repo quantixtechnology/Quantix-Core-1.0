@@ -39,7 +39,9 @@ const getBarcodeDetector = (): DetectorCtor | null =>
 
 // ── The Scan Bag button ──────────────────────────────────────────────────────
 export function BagScanButton({ onScan, label = "Scan Bag", disabled, size = "default", className, closeOnScan = false }: {
-  onScan: (code: string) => void | Promise<void>
+  // Returning false (or throwing) means the operation FAILED — the dialog stays
+  // open so the operator can rescan. Anything else counts as success.
+  onScan: (code: string) => void | boolean | Promise<void | boolean>
   label?: string; disabled?: boolean; size?: "default" | "sm"; className?: string
   // Auto-close the scanner after a single successful scan (single-item flows).
   // Default keeps the scanner open for rapid repeat scanning (bulk flows).
@@ -56,7 +58,7 @@ export function BagScanButton({ onScan, label = "Scan Bag", disabled, size = "de
   )
 }
 
-function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () => void; onScan: (code: string) => void | Promise<void>; closeOnScan?: boolean }) {
+function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () => void; onScan: (code: string) => void | boolean | Promise<void | boolean>; closeOnScan?: boolean }) {
   const [mode, setMode] = useState<ScannerMode>(getScannerMode())
   const [showSettings, setShowSettings] = useState(false)
   const useCamera = mode === "auto" ? isMobileDevice() && !!getBarcodeDetector() : mode === "camera"
@@ -68,22 +70,32 @@ function ScannerModal({ onClose, onScan, closeOnScan = false }: { onClose: () =>
   // every other station: the field is a scan sink, so Enter, Tab and a scanner
   // with no suffix all arrive, deduplicated and recorded once.
   //
-  // Opening this dialog takes the scanner from the screen underneath — the
-  // engine gives it to the most recent attachment — and closing hands it back.
+  // Opening this dialog CLAIMS the scanner outright (useScanSink exclusive), so
+  // the workstation underneath receives nothing at all while it is open — not
+  // "usually nothing, depending on focus". Closing releases it and the screen
+  // below becomes live again.
   const run = useCallback(async (code: string) => {
     const c = code.trim()
     if (!c || handlingRef.current) return
     handlingRef.current = true
     setHandling(true)
-    try { await onScan(c) } finally {
+    let succeeded = false
+    try {
+      // A handler that reports false — or throws — has NOT completed the
+      // operation. Detecting a barcode is not the same as acting on it, so the
+      // dialog must not close on detection alone.
+      succeeded = (await onScan(c)) !== false
+    } catch {
+      succeeded = false
+    } finally {
       handlingRef.current = false
-      if (closeOnScan) { onClose(); return }
-      // Allow immediate rescanning — clear + refocus rather than closing.
+      if (succeeded && closeOnScan) { onClose(); return }
+      // Stay open: allow an immediate rescan — clear + refocus.
       setHandling(false)
       setTimeout(() => scanProps.ref.current?.focus(), 30)
     }
   }, [onScan, closeOnScan, onClose])
-  const scanProps = useScanSink(run)
+  const scanProps = useScanSink(run, { exclusive: true })
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>

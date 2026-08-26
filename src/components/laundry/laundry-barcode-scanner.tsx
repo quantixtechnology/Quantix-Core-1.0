@@ -53,27 +53,42 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
 
   // Permanent auto-focus: re-focus after any focus loss, unless user is in
   // another input/textarea/select or camera is open.
+  // While another surface holds the scanner (a Scan Bag dialog), this input must
+  // keep its hands off the focus. The permanent auto-focus below re-focused this
+  // field 10ms after ANY focus loss — including the loss caused by a dialog's
+  // own autoFocus — which both stole the caret from the dialog and, because a
+  // sink re-attaches on focus, put this handler back at the front of the queue.
+  // That is how a bag QR ended up at the garment handler.
+  const scannerBusyElsewhere = () =>
+    ScanEngine.hasOwner() || (typeof document !== "undefined" && !!document.querySelector("[role='dialog']"))
+
   useEffect(() => {
     let focusTimer: ReturnType<typeof setTimeout>
-    const onFocusOut = () => { focusTimer = setTimeout(() => inputRef.current?.focus(), 10) }
+    const onFocusOut = () => {
+      if (scannerBusyElsewhere()) return
+      focusTimer = setTimeout(() => {
+        // Re-checked on the timer: the dialog may have opened in between.
+        if (!scannerBusyElsewhere()) inputRef.current?.focus()
+      }, 10)
+    }
     const onKeyDoc = (e: KeyboardEvent) => {
       if (e.key === "Escape") { setCameraOpen(false); return }
-      if (cameraOpen) return
+      if (cameraOpen || scannerBusyElsewhere()) return
       if (e.target === inputRef.current) return
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
       inputRef.current?.focus()
     }
     const onClickDoc = (e: MouseEvent) => {
-      if (cameraOpen) return
+      if (cameraOpen || scannerBusyElsewhere()) return
       const target = e.target as HTMLElement
       if (target.closest("button, a, input, textarea, select, [role='dialog'], [role='button']")) return
-      setTimeout(() => inputRef.current?.focus(), 20)
+      setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus() }, 20)
     }
     document.addEventListener("focusout", onFocusOut)
     document.addEventListener("keydown", onKeyDoc)
     document.addEventListener("mousedown", onClickDoc)
-    const initFocus = setTimeout(() => inputRef.current?.focus(), 100)
+    const initFocus = setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus() }, 100)
     return () => {
       clearTimeout(focusTimer); clearTimeout(initFocus)
       document.removeEventListener("focusout", onFocusOut)

@@ -154,15 +154,18 @@ export function LaundrySortingWorkstation() {
         }),
       })
       const j = await res.json()
-      if (!res.ok || !j.success) { playScanError(soundEnabled); setScanErr(j.error || "Could not assign the bag."); return }
+      // Reported to the scanner dialog: false keeps it open for a retry.
+      if (!res.ok || !j.success) { playScanError(soundEnabled); setScanErr(j.error || "Could not assign the bag."); return false }
       playScanOk(soundEnabled)
       const label = bagTarget?.label?.replace(/^Scan /, "") || "container"
       toast({ title: "Sorting complete — bag bound", description: `Order ${order.orderNumber} → ${label} ${code}; ${j.data?.retired || 0} garment barcodes retired.`, duration: 3500 })
       const next = { ...scannedRef.current }; delete next[order.orderId]
       scannedRef.current = next; setScanned(next)
       load(true)
+      return true
     } catch {
       setOffline(true); setScanErr("Unable to reach the server. Try again.")
+      return false
     } finally { setBusy(false) }
   }, [currentBusinessId, user, bagTarget, soundEnabled, toast, load])
 
@@ -260,7 +263,9 @@ export function LaundrySortingWorkstation() {
                     <BagScanButton
                       onScan={(code) => handleAssignBag(code, o)}
                       label={bagTarget?.label || "Scan bag"}
-                      closeOnScan={false}
+                      // Closes only when the assignment SUCCEEDS; a rejected bag
+                      // keeps the dialog open so the operator can rescan.
+                      closeOnScan
                       disabled={busy}
                     />
                   </div>

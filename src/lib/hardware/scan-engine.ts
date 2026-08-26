@@ -73,6 +73,9 @@ interface Attachment { id: number; handler: Handler }
 
 class ScanEngineImpl {
   private attachments: Attachment[] = []
+  // Exclusive owners (a stack). While one exists it receives EVERY scan and the
+  // attachments below it receive none. See claim().
+  private claims: Attachment[] = []
   private nextId = 1
   private statusListeners = new Set<(s: ScanStatus) => void>()
 
@@ -297,9 +300,15 @@ class ScanEngineImpl {
   // ── dispatch ──────────────────────────────────────────────────────────────
 
   /**
-   * Register interest in scans. The most recently attached handler wins, so a
-   * dialog opened over a workstation takes the scanner and hands it back on
-   * close. Returns the detach function.
+   * Register interest in scans. Among attachments the most recent one wins.
+   *
+   * This is ORDERING, not ownership, and ordering is not a guarantee: a screen
+   * that re-attaches (a sink re-focusing itself, a re-render changing a dep)
+   * silently becomes the winner again. That is exactly how a bag scanned into
+   * an open dialog ended up at the Sorting garment handler. A surface that must
+   * not be talked over uses claim() instead.
+   *
+   * Returns the detach function.
    */
   attach(handler: Handler): () => void {
     const a = { id: this.nextId++, handler }
@@ -307,6 +316,33 @@ class ScanEngineImpl {
     this.start()
     return () => { this.attachments = this.attachments.filter((x) => x.id !== a.id) }
   }
+
+  /**
+   * Take EXCLUSIVE ownership of the scanner.
+   *
+   * While a claim is live, every scan — wedge, camera and manual submit alike —
+   * goes to the claimant and to nothing else. Attachments underneath receive
+   * nothing, however recently they attached and whatever has focus.
+   *
+   * Claims nest: the most recent one owns the scanner, and releasing it hands
+   * ownership back to the one below (a dialog over a dialog). Release is
+   * idempotent and safe to call from a cleanup after the engine has been reset,
+   * so an unmount can never resurrect or strand an owner.
+   */
+  claim(handler: Handler): () => void {
+    const c = { id: this.nextId++, handler }
+    this.claims.push(c)
+    this.start()
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.claims = this.claims.filter((x) => x.id !== c.id)
+    }
+  }
+
+  /** Is some surface holding the scanner exclusively right now? */
+  hasOwner(): boolean { return this.claims.length > 0 }
 
   /**
    * Deliver a code. Every barcode surface routes through here — the wedge
@@ -328,7 +364,11 @@ class ScanEngineImpl {
 
     const event: ScanEvent = { code, source: resolved, at: now, durationMs }
     diagnostics.recordScan(code, resolved, durationMs)
-    this.attachments[this.attachments.length - 1]?.handler(event)
+    // An exclusive owner takes the scan outright — no fall-through, so two
+    // handlers can never see the same barcode.
+    const owner = this.claims[this.claims.length - 1]
+    if (owner) owner.handler(event)
+    else this.attachments[this.attachments.length - 1]?.handler(event)
     return true
   }
 
@@ -365,6 +405,7 @@ class ScanEngineImpl {
   resetForTests() {
     this.cancelIdleFlush()
     this.attachments = []
+    this.claims = []
     this.wedgeLastSeenAt = null
     this.knownScannerConnection = null
     this.cameraAvailable = false

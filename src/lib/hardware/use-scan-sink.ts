@@ -37,6 +37,15 @@ export interface UseScanSinkOptions {
   upperCase?: boolean
   /** Supply a ref when the screen needs the element before this hook runs. */
   inputRef?: React.RefObject<HTMLInputElement | null>
+  /**
+   * Take the scanner EXCLUSIVELY for as long as this sink is mounted.
+   *
+   * For a dialog that must not be talked over by the screen underneath. Plain
+   * attachment only wins by ordering, and ordering flips whenever another sink
+   * re-attaches — which is how a bag scanned into an open dialog reached the
+   * workstation's garment handler instead.
+   */
+  exclusive?: boolean
 }
 
 /**
@@ -47,7 +56,7 @@ export function useScanSink(
   onScan: (code: string) => void | Promise<void>,
   opts: UseScanSinkOptions = {},
 ): ScanSinkProps {
-  const { enabled = true, upperCase = true } = opts
+  const { enabled = true, upperCase = true, exclusive = false } = opts
   const ownRef = useRef<HTMLInputElement | null>(null)
   const ref = opts.inputRef ?? ownRef
   // The latest callback, without re-attaching on every render.
@@ -63,18 +72,30 @@ export function useScanSink(
   const [focusSeq, setFocusSeq] = useState(0)
   const takeScanner = useCallback(() => setFocusSeq((n) => n + 1), [])
 
+  const receive = useCallback((e: { code: string }) => {
+    const code = upperCase ? e.code.trim().toUpperCase() : e.code.trim()
+    if (!code) return
+    // The sink has served its purpose; empty it so the next garment can be
+    // scanned without touching the keyboard.
+    if (ref.current) ref.current.value = ""
+    void onScanRef.current(code)
+  }, [upperCase])
+
+  // An exclusive sink claims ONCE for its lifetime and deliberately does NOT
+  // re-claim on focus: re-claiming is the churn that made ownership depend on
+  // whatever last touched focus. A plain sink keeps the existing
+  // focus-re-attaches-me behaviour the workstations were built on.
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !exclusive) return
     ScanEngine.start()
-    return ScanEngine.attach((e) => {
-      const code = upperCase ? e.code.trim().toUpperCase() : e.code.trim()
-      if (!code) return
-      // The sink has served its purpose; empty it so the next garment can be
-      // scanned without touching the keyboard.
-      if (ref.current) ref.current.value = ""
-      void onScanRef.current(code)
-    })
-  }, [enabled, upperCase, focusSeq])
+    return ScanEngine.claim(receive)
+  }, [enabled, exclusive, receive])
+
+  useEffect(() => {
+    if (!enabled || exclusive) return
+    ScanEngine.start()
+    return ScanEngine.attach(receive)
+  }, [enabled, exclusive, receive, focusSeq])
 
   /**
    * A code TYPED into the sink.
