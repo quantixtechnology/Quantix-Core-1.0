@@ -189,14 +189,15 @@ export async function awaitingFinishingBagAssignment(
 }
 
 export type AssignBagResult =
-  | { ok: true; packageId: string; code: string; bagCode: string; retired: number }
+  | { ok: true; packageId: string; code: string; bagCode: string; retired: number; alreadyAssigned?: boolean }
   | { ok: false; error: string; code: "INVALID" | "ORDER_NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_ASSIGNED" | "WRONG_ORDER" }
 
 // Bind the order-based finishing bag at Sorting. Scanning the configured
 // container when the operator has scanned every garment of the order (scanned set
 // equals the order) associates EVERY garment with the binder container and retires
-// all garment barcodes. Pure + idempotent: re-scanning after success is a no-op
-// guard (ALREADY_ASSIGNED), never a second bag. The caller (Sorting workstation)
+// all garment barcodes. Idempotent: re-scanning the SAME bag returns the
+// standing assignment (alreadyAssigned), a DIFFERENT bag is refused
+// (ALREADY_ASSIGNED) — never a second bag. The caller (Sorting workstation)
 // advances the garments past Sorting after a successful assignment.
 export async function assignFinishingBag(opts: {
   orderId: string; businessId: string; code: string; mode: string; actorName?: string | null
@@ -215,24 +216,49 @@ export async function assignFinishingBag(opts: {
   if (!items.every((i) => hasPassedQc(i.processingStage)))
     return { ok: false, error: "Assign the bag only after every garment in the order has passed Quality Check and reached Sorting.", code: "NOT_ELIGIBLE" }
 
-  // Single active finishing bag per order — never a second.
-  const already = await prisma.laundryProcessingPackage.findFirst({ where: { orderId, bagAssigned: true }, select: { code: true } })
-  if (already) return { ok: false, error: `This order already has finishing bag ${already.code}.`, code: "ALREADY_ASSIGNED" }
+  // Single active finishing bag per order — never a second. Re-scanning the
+  // SAME bag after a successful assignment is the operator confirming, not an
+  // error: return the standing assignment instead of refusing it.
+  const already = await prisma.laundryProcessingPackage.findFirst({
+    where: { orderId, bagAssigned: true },
+    select: { id: true, code: true, bagCode: true },
+  })
+  if (already) {
+    const sameBag = (already.bagCode || already.code || "").toUpperCase() === c.toUpperCase()
+    if (sameBag) {
+      const retired = await prisma.laundryOrderItem.count({ where: { orderId, barcodeRetired: true } })
+      return { ok: true, packageId: already.id, code: already.code, bagCode: already.bagCode || already.code, retired, alreadyAssigned: true }
+    }
+    return { ok: false, error: `This order already has finishing bag ${already.bagCode || already.code}.`, code: "ALREADY_ASSIGNED" }
+  }
 
   // Scan-mode gate (Bag / Processing Package / Both — Workspace setting, never hardcoded).
   const modeError = scanModeAcceptance(c, opts.mode)
   if (modeError) return { ok: false, error: modeError, code: "INVALID" }
   const target = finishingScanTarget(opts.mode)
 
-  // The scanned code must belong to THIS order. An unassigned package is a
-  // candidate; a bag QR must resolve to this order's bag (one bag → one order).
+  // Resolve the SCANNED CODE first, before asking whether a container row
+  // exists.
+  //
+  // This used to require an unassigned LaundryProcessingPackage up front and
+  // bail with "No finishing container is available for this order" when there
+  // was none. But the package is an INTERNAL lifecycle row that is created
+  // lazily by syncPackageLifecycle(), and the workstation endpoint
+  // (/api/laundry/processing) never calls it — so an order processed entirely
+  // through the workstations reached Sorting with zero package rows and could
+  // never have its bag assigned. In REUSE_BAG the scanned bag IS the finishing
+  // container; the package row is bookkeeping and is created below, AFTER the
+  // bag has been validated, so a bad scan never leaves a row behind.
   const packages = await prisma.laundryProcessingPackage.findMany({
     where: { orderId, bagAssigned: false },
     select: { id: true, code: true, qrValue: true, serviceId: true },
   })
-  if (!packages.length) return { ok: false, error: "No finishing container is available for this order.", code: "INVALID" }
 
   let targetPkg = packages.find((p) => p.code === c || p.qrValue === c) || null
+  // Did the scan resolve to a real container (a bag / pickup bag), even though
+  // no package row matched it? Tracked separately so an unrecognised code is
+  // still rejected rather than silently binding the first package.
+  let resolvedContainer = targetPkg !== null
 
   if (!targetPkg) {
     const bag = await prisma.laundryBag.findFirst({
@@ -272,7 +298,8 @@ export async function assignFinishingBag(opts: {
         const assigned = await assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId })
         if (!assigned.ok) return { ok: false, error: assigned.error, code: "WRONG_ORDER" }
       }
-      targetPkg = packages[0]
+      resolvedContainer = true
+      targetPkg = packages[0] ?? null
     } else {
       const pickupBag = await prisma.laundryPickupBag.findFirst({
         where: { businessId, OR: [{ code: c }, { qrValue: c }] },
@@ -281,16 +308,29 @@ export async function assignFinishingBag(opts: {
       if (pickupBag) {
         if (pickupBag.orderId !== orderId)
           return { ok: false, error: "This pickup bag belongs to a different order.", code: "WRONG_ORDER" }
-        targetPkg = packages[0]
+        resolvedContainer = true
+        targetPkg = packages[0] ?? null
       }
     }
   }
 
-  if (!targetPkg)
+  if (!resolvedContainer)
     return {
       ok: false, code: "INVALID",
       error: `"${c}" is not this order's container — scan the ${target.isPackage ? "Processing Packet" : "laundry bag"} for ${order.orderNumber}.`,
     }
+
+  // The scan is valid. Make sure the internal lifecycle row exists — operators
+  // never create or print one (Architectural Decision 4) — and bind to it.
+  if (!targetPkg) {
+    await ensureProcessingPackagesForOrder(orderId, businessId)
+    targetPkg = await prisma.laundryProcessingPackage.findFirst({
+      where: { orderId, bagAssigned: false },
+      select: { id: true, code: true, qrValue: true, serviceId: true },
+    })
+    if (!targetPkg)
+      return { ok: false, error: "Could not open a finishing container for this order. Please try again.", code: "INVALID" }
+  }
 
   await prisma.laundryProcessingPackage.update({
     where: { id: targetPkg.id },

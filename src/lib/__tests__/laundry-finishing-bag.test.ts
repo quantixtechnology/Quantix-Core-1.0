@@ -16,13 +16,15 @@ const mocks = vi.hoisted(() => ({
   orderEventCreate: vi.fn().mockResolvedValue({ id: 'evt-1' }),
   bagFindFirst: vi.fn().mockResolvedValue(null),
   pickupBagFindFirst: vi.fn().mockResolvedValue(null),
+  itemCount: vi.fn().mockResolvedValue(0),
+  pkgCreate: vi.fn().mockResolvedValue({ id: 'pkg-new' }),
 }))
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     laundryOrder: { findUnique: mocks.orderFindUnique },
-    laundryOrderItem: { findMany: mocks.itemFindMany, updateMany: mocks.itemUpdateMany },
-    laundryProcessingPackage: { findFirst: mocks.pkgFindFirst, findMany: mocks.pkgFindMany, update: mocks.pkgUpdate },
+    laundryOrderItem: { findMany: mocks.itemFindMany, updateMany: mocks.itemUpdateMany, count: mocks.itemCount },
+    laundryProcessingPackage: { findFirst: mocks.pkgFindFirst, findMany: mocks.pkgFindMany, update: mocks.pkgUpdate, create: mocks.pkgCreate },
     laundryOrderEvent: { create: mocks.orderEventCreate },
     laundryBag: { findFirst: mocks.bagFindFirst },
     laundryPickupBag: { findFirst: mocks.pickupBagFindFirst },
@@ -39,6 +41,8 @@ beforeEach(() => {
   mocks.pkgFindFirst.mockResolvedValue(null)
   mocks.bagFindFirst.mockResolvedValue(null)
   mocks.pickupBagFindFirst.mockResolvedValue(null)
+  mocks.itemCount.mockResolvedValue(0)
+  mocks.pkgCreate.mockResolvedValue({ id: 'pkg-new' })
 })
 
 describe('finishingBagTarget', () => {
@@ -84,11 +88,26 @@ describe('assignFinishingBag', () => {
     expect(mocks.orderEventCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'FINISHING_BAG_ASSIGNED' }) }))
   })
 
-  it('rejects a second assignment for the same order', async () => {
-    mocks.pkgFindFirst.mockResolvedValue({ id: 'pkg-1', code: 'PKG-202607-000001' })
-    const r = await assignFinishingBag(opts)
+  it('rejects a DIFFERENT container once one is already assigned', async () => {
+    mocks.pkgFindFirst.mockResolvedValue({ id: 'pkg-1', code: 'PKG-202607-000001', bagCode: 'PKG-202607-000001' })
+    const r = await assignFinishingBag({ ...opts, code: 'PKG-202607-000999' })
     expect(r.ok).toBe(false)
     expect(r.code).toBe('ALREADY_ASSIGNED')
+  })
+
+  // REVERSED: re-scanning the SAME container is the operator confirming, not a
+  // second bag. It used to answer ALREADY_ASSIGNED, which read as a failure on
+  // a double-tap / network retry.
+  it('re-scanning the SAME container returns the standing assignment', async () => {
+    mocks.pkgFindFirst.mockResolvedValue({ id: 'pkg-1', code: 'PKG-202607-000001', bagCode: 'PKG-202607-000001' })
+    mocks.itemCount.mockResolvedValue(8)
+    const r = await assignFinishingBag(opts)
+    if (!r.ok) throw new Error('expected idempotent success')
+    expect(r.alreadyAssigned).toBe(true)
+    expect(r.bagCode).toBe('PKG-202607-000001')
+    expect(r.retired).toBe(8)
+    // No second binding write.
+    expect(mocks.pkgUpdate).not.toHaveBeenCalled()
   })
 
   it('rejects when not every garment has passed QC', async () => {

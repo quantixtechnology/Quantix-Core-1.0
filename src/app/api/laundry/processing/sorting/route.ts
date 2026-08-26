@@ -89,6 +89,23 @@ export async function POST(request: Request) {
       if (order.status === "CANCELLED" || order.status === "DELIVERED")
         return NextResponse.json({ error: "This order is no longer in processing." }, { status: 409 })
 
+      // Idempotent re-scan. A double-submit (operator taps twice, network
+      // retry) must not fail the stage checks below — the first call has
+      // already advanced the garments PAST Sorting, so those checks would
+      // report "not every garment has reached Sorting" for an order that in
+      // fact completed. Answer with the standing assignment instead.
+      const standing = await prisma.laundryProcessingPackage.findFirst({
+        where: { orderId: order.id, bagAssigned: true },
+        select: { id: true, code: true, bagCode: true },
+      })
+      if (standing && (standing.bagCode || standing.code || "").toUpperCase() === code) {
+        const retired = await prisma.laundryOrderItem.count({ where: { orderId: order.id, barcodeRetired: true } })
+        return NextResponse.json({
+          success: true,
+          data: { packageId: standing.id, code: standing.code, bagCode: standing.bagCode || standing.code, retired, advanced: 0, alreadyAssigned: true },
+        })
+      }
+
       // Every garment must be AT Sorting (i.e. has passed Dry & Quality Check)
       // before the bag can be bound — no premature bag assignment.
       const atSorting = await prisma.laundryOrderItem.findMany({
