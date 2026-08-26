@@ -216,27 +216,168 @@ export async function healGarSequenceCounter(): Promise<void> {
   }
 }
 
-// Backfill GAR codes for every LaundryOrderItem that doesn't have one.
-// Idempotent — safe to re-run. Must be called after db push.
-export async function backfillGarScanCodes(chunkSize = 50): Promise<number> {
+// ─── GAR shape ──────────────────────────────────────────────────────────────
+// A GAR is `GAR` + at least 12 digits (the counter auto-extends past 12, see
+// nextGarScanCode). Anything else in garmentScanCode is NOT a GAR and is never
+// treated as one — in particular it is never silently overwritten, because a
+// value we don't recognise is a value we don't understand.
+export const GAR_PATTERN = /^GAR\d{12,}$/
+export const isGarScanCode = (v: string | null | undefined): v is string =>
+  typeof v === "string" && GAR_PATTERN.test(v)
+
+// The legacy per-order item number that used to be written into `barcode`
+// before GAR existed: ITM-{orderNumber}-NNNN. It stays in `itemNumber` forever
+// (old labels must keep scanning) — it just must not be the BARCODE any more.
+export const isLegacyItmBarcode = (v: string | null | undefined): v is string =>
+  typeof v === "string" && v.startsWith(`${CODES.ITEM_PREFIX}-`)
+
+// ─── Scope ──────────────────────────────────────────────────────────────────
+// Every audit / backfill below is scoped, and an EMPTY scope means "every
+// tenant". Callers touching production data are expected to name a business,
+// an order, or an explicit set of items — one tenant's repair must never
+// silently rewrite another's rows.
+export interface GarScope {
+  /** LaundryOrder.businessId (the LaundryBusiness id). */
+  businessId?: string | null
+  orderId?: string | null
+  itemIds?: string[] | null
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scopeWhere(scope: GarScope): any {
+  const where: Record<string, unknown> = {}
+  if (scope.itemIds && scope.itemIds.length) where.id = { in: scope.itemIds }
+  if (scope.orderId) where.orderId = scope.orderId
+  if (scope.businessId) where.order = { businessId: scope.businessId }
+  return where
+}
+
+export interface GarAuditReport {
+  /** Items in scope. */
+  total: number
+  /** garmentScanCode IS NULL — needs a GAR minted. */
+  nullGar: number
+  /** garmentScanCode set but not GAR-shaped — reported, never rewritten. */
+  invalidGar: number
+  /** garmentScanCode is a valid GAR (whatever the barcode says). */
+  existingGar: number
+  /** barcode still holds the legacy ITM-… value. */
+  itmBarcode: number
+  /** Valid GAR AND barcode === that GAR. Nothing to do. */
+  alreadyCorrect: number
+  /** Rows a backfill would write to (nullGar + ITM/empty barcode with a GAR). */
+  needsWork: number
+}
+
+/**
+ * READ-ONLY. Counts the GAR state of a scoped population so a migration can be
+ * baselined before it runs and proved after it runs. Writes nothing.
+ */
+export async function auditGarScanCodes(scope: GarScope = {}): Promise<GarAuditReport> {
   const { prisma } = await import("@/lib/prisma")
+  const rows = await prisma.laundryOrderItem.findMany({
+    where: scopeWhere(scope),
+    select: { garmentScanCode: true, barcode: true },
+  })
+  const report: GarAuditReport = {
+    total: rows.length, nullGar: 0, invalidGar: 0, existingGar: 0,
+    itmBarcode: 0, alreadyCorrect: 0, needsWork: 0,
+  }
+  for (const r of rows) {
+    const validGar = isGarScanCode(r.garmentScanCode)
+    if (!r.garmentScanCode) report.nullGar++
+    else if (!validGar) report.invalidGar++
+    else report.existingGar++
+    if (isLegacyItmBarcode(r.barcode)) report.itmBarcode++
+    if (validGar && r.barcode === r.garmentScanCode) report.alreadyCorrect++
+    // What a backfill would actually write: mint a missing GAR, or point a
+    // legacy/empty barcode at the GAR the row already has.
+    if (!r.garmentScanCode) report.needsWork++
+    else if (validGar && r.barcode !== r.garmentScanCode && (!r.barcode || isLegacyItmBarcode(r.barcode))) report.needsWork++
+  }
+  return report
+}
+
+export interface GarBackfillResult {
+  /** GAR codes minted for rows that had none. */
+  filled: number
+  /** Legacy/empty barcodes repointed at the row's GAR. */
+  barcodesRewritten: number
+  /** Rows whose garmentScanCode is set but not GAR-shaped — left untouched. */
+  invalidGarSkipped: number
+  /** Rows whose barcode is neither empty nor ITM-shaped — left untouched. */
+  foreignBarcodeSkipped: number
+  /** Rows examined. */
+  scanned: number
+}
+
+/**
+ * Bring a scoped population up to the GAR invariant: every garment carries a
+ * globally-unique GAR, and `barcode` holds that GAR.
+ *
+ *   NULL garmentScanCode        → mint a GAR, point barcode at it
+ *   valid GAR + ITM/empty barcode → point barcode at the EXISTING GAR
+ *   valid GAR + matching barcode  → nothing
+ *   garmentScanCode set but not GAR-shaped → SKIPPED and reported
+ *   barcode that is neither empty nor ITM-  → SKIPPED and reported
+ *
+ * An existing GAR is never renumbered, never re-minted, never overwritten.
+ * Idempotent — a second run reports zero work. `itemNumber` is never touched,
+ * so old ITM labels keep resolving through the scan route.
+ */
+export async function backfillGarScanCodes(
+  opts: { chunkSize?: number; scope?: GarScope } = {},
+): Promise<GarBackfillResult> {
+  const { prisma } = await import("@/lib/prisma")
+  const chunkSize = opts.chunkSize ?? 50
+  const scope = opts.scope ?? {}
   await healGarSequenceCounter() // never re-issue an existing code
-  let filled = 0
+
+  const out: GarBackfillResult = {
+    filled: 0, barcodesRewritten: 0, invalidGarSkipped: 0, foreignBarcodeSkipped: 0, scanned: 0,
+  }
+
+  // Cursor pagination, not "re-query the unfixed set": rows we deliberately
+  // SKIP stay in the filter, so a re-query loop would never terminate.
+  let cursor: string | undefined
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const items = await prisma.laundryOrderItem.findMany({
-      where: { garmentScanCode: null },
+    const rows = await prisma.laundryOrderItem.findMany({
+      where: scopeWhere(scope),
+      select: { id: true, garmentScanCode: true, barcode: true },
+      orderBy: { id: "asc" },
       take: chunkSize,
-      select: { id: true },
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     })
-    if (!items.length) break
-    for (const item of items) {
-      const code = await nextGarScanCode()
-      await prisma.laundryOrderItem.update({ where: { id: item.id }, data: { garmentScanCode: code } })
-      filled++
+    if (!rows.length) break
+    cursor = rows[rows.length - 1].id
+
+    for (const row of rows) {
+      out.scanned++
+      let gar = row.garmentScanCode
+
+      if (!isGarScanCode(gar)) {
+        if (gar) { out.invalidGarSkipped++; continue } // unrecognised — leave for a human
+        gar = await nextGarScanCode()
+        await prisma.laundryOrderItem.update({
+          where: { id: row.id },
+          data: { garmentScanCode: gar, barcode: gar },
+        })
+        out.filled++
+        continue // barcode was set in the same write
+      }
+
+      // Valid GAR already present — preserve it, and only correct the barcode.
+      if (row.barcode === gar) continue
+      if (!row.barcode || isLegacyItmBarcode(row.barcode)) {
+        await prisma.laundryOrderItem.update({ where: { id: row.id }, data: { barcode: gar } })
+        out.barcodesRewritten++
+      } else {
+        out.foreignBarcodeSkipped++
+      }
     }
   }
-  return filled
+  return out
 }
 
 // ─── Examples ───────────────────────────────────────────────────────────────

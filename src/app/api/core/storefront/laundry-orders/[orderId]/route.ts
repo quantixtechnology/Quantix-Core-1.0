@@ -42,7 +42,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
       where: { id: orderId, businessId: biz.id, customerId: { in: customerIds } },
       include: {
         store: { select: { storeName: true } },
-        items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, serviceName: true, garmentName: true, quantity: true, processingStage: true } },
+        items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, garmentScanCode: true, serviceName: true, garmentName: true, quantity: true, processingStage: true } },
         payments: { orderBy: { createdAt: "asc" }, select: { id: true, method: true, amount: true, reference: true, note: true, createdAt: true } },
         feedback: { select: { rating: true, comment: true, submittedAt: true } },
       },
@@ -92,7 +92,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
         canRate: order.status === "DELIVERED" && !order.feedback,
         store: order.store ? { name: order.store.storeName } : null,
         totals: { subtotal: order.subtotal, gstTotal: order.gstTotal, discount: order.discount, grandTotal: order.grandTotal, amountPaid: order.amountPaid, balanceDue: order.balanceDue },
-        items: order.items.map((it) => ({ id: it.id, itemNumber: it.itemNumber, barcode: it.barcode, serviceName: it.serviceName, garmentName: it.garmentName, quantity: it.quantity, stage: it.processingStage, stageLabel: it.processingStage ? statusLabel(it.processingStage) : null })),
+        items: order.items.map((it) => ({ id: it.id, itemNumber: it.itemNumber, barcode: it.barcode, garmentScanCode: it.garmentScanCode, serviceName: it.serviceName, garmentName: it.garmentName, quantity: it.quantity, stage: it.processingStage, stageLabel: it.processingStage ? statusLabel(it.processingStage) : null })),
         payments: order.payments.map((p) => ({ id: p.id, method: p.method, amount: p.amount, reference: p.reference, note: p.note, at: p.createdAt })),
         timeline,
       },

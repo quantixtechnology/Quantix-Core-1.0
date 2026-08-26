@@ -18,7 +18,7 @@ const inr2 = (n: number | null | undefined) => `₹${Number(n || 0).toLocaleStri
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
 
 interface ListItem { id: string; orderNumber: string; status: string; statusLabel: string; paymentStatus: string; grandTotal: number; amountPaid: number; balanceDue: number; pickupDate: string | null; createdAt: string; storeName: string | null; totalGarments: number }
-interface DetailItem { id: string; itemNumber: string | null; barcode: string | null; serviceName: string; garmentName: string; quantity: number; stage: string | null; stageLabel: string | null }
+interface DetailItem { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; serviceName: string; garmentName: string; quantity: number; stage: string | null; stageLabel: string | null }
 interface Detail {
   order: { id: string; orderNumber: string; status: string; statusLabel: string; cancelled: boolean; paymentStatus: string; pickupDate: string | null; pickupTimeSlot: string | null; pickupAddress: string | null; expectedDeliveryDate: string | null; createdAt: string; recipientName: string | null }
   verification?: {
@@ -168,7 +168,7 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
                   <div key={it.id} className="flex items-center justify-between py-2">
                     <div>
                       <p className="text-sm font-medium text-gray-800">{it.garmentName} <span className="text-xs font-normal text-gray-400">· {it.serviceName}</span></p>
-                      <p className="text-[11px] font-mono text-gray-400">{it.barcode || it.itemNumber || "—"}</p>
+                      <p className="text-[11px] font-mono text-gray-400">{it.garmentScanCode || it.barcode || it.itemNumber || "—"}</p>
                     </div>
                     <span className="text-xs text-gray-500">{it.stageLabel || "Booked"}</span>
                   </div>

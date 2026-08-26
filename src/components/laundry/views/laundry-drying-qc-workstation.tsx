@@ -17,14 +17,14 @@ import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scan
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 
 interface Item {
-  id: string; itemNumber: string | null; barcode: string | null
+  id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null
   garmentName: string; serviceName: string | null; quantity: number
   orderNumber: string | null; customer: string | null
   processingStage: string | null; processingStatus: string | null; processFlow?: string | null
 }
 
 interface Completed {
-  id: string; itemNumber: string | null; barcode: string | null
+  id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null
   garmentName: string; serviceName: string | null; orderNumber: string | null
   action: string; actorName: string | null; completedAt: string; toStageLabel: string | null
 }
@@ -260,7 +260,7 @@ export function LaundryDryingQcWorkstation() {
               <StageChip stage={it.processingStage} />
             </div>
             <p className="text-[11px] text-slate-400">{it.customer || "—"} · <span className="font-mono">{it.orderNumber}</span></p>
-            <p className="text-[10px] font-mono text-slate-400 truncate">{it.barcode}</p>
+            <p className="text-[10px] font-mono text-slate-400 truncate">{it.garmentScanCode || it.barcode || it.itemNumber || "—"}</p>
           </div>
           {it.processingStatus === "PAUSED" && <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 text-[10px]">Paused</Badge>}
         </div>
@@ -367,7 +367,7 @@ export function LaundryDryingQcWorkstation() {
                       <p className="text-sm font-semibold text-slate-800">{c.garmentName}{c.serviceName ? <span className="text-slate-400 font-normal"> · {c.serviceName}</span> : ""}</p>
                       <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] shrink-0">{c.action}</Badge>
                     </div>
-                    <p className="text-[11px] text-slate-500 font-mono mt-1">{c.barcode || c.itemNumber || "—"}</p>
+                    <p className="text-[11px] text-slate-500 font-mono mt-1">{c.garmentScanCode || c.barcode || c.itemNumber || "—"}</p>
                     <p className="text-[11px] text-slate-400 font-mono">{c.orderNumber}</p>
                     {c.toStageLabel && <p className="text-[11px] text-blue-600 mt-0.5 font-medium">→ Moved to {c.toStageLabel}</p>}
                     <p className="text-[10px] text-slate-400 mt-0.5">{new Date(c.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{c.actorName ? ` · ${c.actorName}` : ""}</p>

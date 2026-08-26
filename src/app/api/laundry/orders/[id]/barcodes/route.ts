@@ -1,14 +1,15 @@
 // Barcode Generation for a received package.
 // GET  — package summary + garments (with barcode/generated flag) for the screen
 // POST — { action: "GENERATE_ALL" | "MOVE_TO_PROCESSING", actorName? }
-//   GENERATE_ALL: ensures every garment has a GAR code, then marks label generated.
+//   GENERATE_ALL: ensures EVERY garment has a GAR code (healing legacy items
+//   that were already printed with an ITM barcode), then marks labels generated.
 //   MOVE_TO_PROCESSING: gated — requires ALL garments barcoded — then routes each
 //   garment into its first department queue (Wash/Dry Clean/Iron/…).
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, departmentFor, stageLabel } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
+import { nextGarScanCode, healGarSequenceCounter, isGarScanCode, isLegacyItmBarcode } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -49,23 +50,48 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!guard.ok) return guard.res
 
     if (action === "GENERATE_ALL") {
-      const pending = order.items.filter((i) => !i.barcodeGenerated)
-
-      // Ensure every pending garment has a GAR code before marking generated.
+      // Heal the GAR of EVERY garment on the order, not only the ones still
+      // waiting for a label. Gating the heal on `!barcodeGenerated` meant a
+      // legacy garment that had already been printed with an ITM barcode could
+      // never acquire a GAR through the UI — and since REPRINT deliberately
+      // never mints, the order was left permanently split between GAR and ITM.
       // Heal first so a drifted counter never re-issues an existing code.
       await healGarSequenceCounter()
-      for (const it of pending) {
-        // Read current GAR state — items created via createLaundryOrder may lack one.
-        const row = await prisma.laundryOrderItem.findUnique({ where: { id: it.id }, select: { garmentScanCode: true } })
-        let garCode = row?.garmentScanCode
-        if (!garCode) {
-          garCode = await nextGarScanCode()
-          await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { garmentScanCode: garCode, barcode: garCode } })
+      const rows = await prisma.laundryOrderItem.findMany({
+        where: { orderId: order.id },
+        select: { id: true, garmentScanCode: true, barcode: true, barcodeGenerated: true },
+      })
+
+      let generated = 0 // newly labelled (drives the operator's toast)
+      let healed = 0    // GAR minted or barcode repointed on an existing garment
+      for (const row of rows) {
+        let garCode = row.garmentScanCode
+
+        if (!isGarScanCode(garCode)) {
+          // A garmentScanCode we don't recognise is left exactly as it is —
+          // never overwritten, never counted as healed.
+          if (!garCode) {
+            garCode = await nextGarScanCode()
+            await prisma.laundryOrderItem.update({
+              where: { id: row.id },
+              data: { garmentScanCode: garCode, barcode: garCode },
+            })
+            healed++
+          }
+        } else if (row.barcode !== garCode && (!row.barcode || isLegacyItmBarcode(row.barcode))) {
+          // Valid GAR already present — PRESERVE it (never mint a second one)
+          // and just point the legacy barcode at it.
+          await prisma.laundryOrderItem.update({ where: { id: row.id }, data: { barcode: garCode } })
+          healed++
         }
-        await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date() } })
-        await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })
+
+        if (!row.barcodeGenerated) {
+          await prisma.laundryOrderItem.update({ where: { id: row.id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date() } })
+          await prisma.laundryItemEvent.create({ data: { itemId: row.id, orderId: order.id, businessId: order.businessId, action: "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })
+          generated++
+        }
       }
-      return NextResponse.json({ success: true, data: { generated: pending.length } })
+      return NextResponse.json({ success: true, data: { generated, healed } })
     }
 
     if (action === "MOVE_TO_PROCESSING") {
