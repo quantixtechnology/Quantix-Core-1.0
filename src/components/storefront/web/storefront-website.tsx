@@ -151,7 +151,9 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
       const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
       const todayRow  = store.storeTimings.find((t: { day: number }) => t.day === todayDay)
       if (todayRow && !todayRow.isClosed) {
-        businessHours = `${fmt12h(todayRow.openTime)} – ${fmt12h(todayRow.closeTime)}`
+        businessHours = todayRow.openTime === "00:00" && todayRow.closeTime === "23:59"
+          ? "Open 24 hours"
+          : `${fmt12h(todayRow.openTime)} – ${fmt12h(todayRow.closeTime)}`
       }
 
       if (todayRow?.isClosed) {

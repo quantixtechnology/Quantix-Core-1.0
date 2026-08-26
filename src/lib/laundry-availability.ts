@@ -110,8 +110,12 @@ export async function getLaundryAvailability(
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000)
   const istDay = ist.getUTCDay()
   const todayRow = timings.find((t) => t.day === istDay)
+  // A day configured as 00:00–23:59 reads as "Open 24 hours" rather than
+  // "12:00 AM – 11:59 PM", which is the same fact stated unhelpfully.
   const businessHours = todayRow && !todayRow.isClosed
-    ? `${formatTimeLabel(todayRow.openTime)} – ${formatTimeLabel(todayRow.closeTime)}`
+    ? (todayRow.openTime === "00:00" && todayRow.closeTime === "23:59"
+      ? "Open 24 hours"
+      : `${formatTimeLabel(todayRow.openTime)} – ${formatTimeLabel(todayRow.closeTime)}`)
     : null
 
   const isOnline = biz?.isOnline ?? false
@@ -258,6 +262,20 @@ export function isLaundryDateAvailable(
 
   const res = timingForDate(timings, dateISO, closedUntil)
   if (!res.available) {
+    // 24/7 Customer Ordering. A weekly off-day says nothing about whether the
+    // customer may ORDER — it decides which SLOTS exist on that date, and
+    // laundrySlotsForDate() already returns none for it. Answering it here is
+    // what surfaced "Closed on Friday" as a reason the customer could not place
+    // an order at all.
+    //
+    // A temporary closure is NOT relaxed: that is someone deciding not to
+    // trade, which is not the same as the weekly schedule. Asking the same
+    // helper again without the closure window separates the two — if the date
+    // is fine on the schedule alone, the closure is the only thing shutting it.
+    const closureIsTheOnlyReason = timingForDate(timings, dateISO, null).available
+    if (opts?.ignoreWorkingHours && !closureIsTheOnlyReason) {
+      return { available: true, reason: null, openTime: null, closeTime: null }
+    }
     return { available: false, reason: res.reason || "Unavailable", openTime: null, closeTime: null }
   }
   return { available: true, reason: null, openTime: res.openTime || null, closeTime: res.closeTime || null }
@@ -380,17 +398,23 @@ export async function assertLaundryBookingOpen(
   ]
   for (const c of checks) {
     if (!c.date) continue
-    // Date availability always follows the working schedule — even when the
-    // customer ordering mode is ALWAYS_OPEN, a weekly off-day is still off.
-    const a = assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil)
+    // Past dates and declared closures are always rejected. Under 24/7 Customer
+    // Ordering a weekly OFF-DAY is not: it says nothing about whether the
+    // customer may order, and answering it here is what produced a
+    // store-flavoured "Closed on Friday" the moment a date was picked. The
+    // schedule is enforced a few lines below, on the SLOT, where it belongs.
+    const a = assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil, {
+      ignoreWorkingHours: bypassesStoreHours(ordering),
+    })
     if (!a.ok) return a
-    // Slot must fall within the day's working hours.  The customer ordering
-    // mode only relaxes "is the store open right now", never which slots
-    // are offered — pickup/delivery schedules are their own operational
-    // concern.
+    // The slot is where the operational schedule is enforced, in EVERY mode.
+    // laundrySlotsForDate() returns nothing at all for a closed day, so a slot
+    // on a weekly off-day or a holiday is rejected here even when ordering is
+    // 24/7 — this is the check that keeps pickup/delivery on the shop's hours.
+    // (slotsWithinWorkingHours alone could not: on a closed day it has no
+    // open/close window to compare against and passes the slot through.)
     if (c.slot) {
-      const row = timingForDate(store.storeTimings, c.date, store.closedUntil)
-      if (slotsWithinWorkingHours([c.slot], row.openTime, row.closeTime).length === 0) {
+      if (laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil).length === 0) {
         return { ok: false, error: `${c.label} time ${c.slot} is outside business hours on ${c.date}. Please choose another slot.` }
       }
     }

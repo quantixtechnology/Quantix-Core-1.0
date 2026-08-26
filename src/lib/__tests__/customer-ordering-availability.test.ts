@@ -99,16 +99,35 @@ describe('24/7 relaxes the hours and nothing else', () => {
   })
 
   it('pickup and delivery slots keep following the schedule regardless of ordering mode', () => {
-    // The date/slot checks sit AFTER the open-now check.  The customer ordering
-    // mode (ALWAYS_OPEN) only relaxes "is the store open right now".  Pickup
-    // and delivery slots always follow the operating schedule — this was always
-    // the contract (customer-ordering.ts:15-18) and is now enforced in code.
+    // The slot check is the one place the operational schedule is enforced, and
+    // it runs in EVERY mode. It goes through laundrySlotsForDate(), which
+    // returns nothing at all for a closed day — so a slot can never be booked
+    // outside the schedule, whatever the ordering mode says.
     const guard = AVAIL.slice(AVAIL.indexOf('export async function assertLaundryBookingOpen'))
-    expect(guard).toContain('assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil)')
-    expect(guard).toContain('slotsWithinWorkingHours([c.slot], row.openTime, row.closeTime)')
-    // The date/slot section does NOT reference bypassesStoreHours — the
-    // schedule is always enforced for slots.
-    expect(guard).not.toContain('dateOpts')
+    expect(guard).toContain('laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil)')
+  })
+
+  it('the slot helper cannot see the ordering mode at all', () => {
+    // Structural guarantee that 24/7 ordering can never widen a slot window:
+    // laundrySlotsForDate() takes no mode, reads no settings, and the ordering
+    // module is not reachable from it.
+    const fn = AVAIL.slice(AVAIL.indexOf('export function laundrySlotsForDate'), AVAIL.indexOf('// Server-side guard used by customer order-creation paths'))
+    expect(fn).not.toContain('ignoreWorkingHours')
+    expect(fn).not.toContain('bypassesStoreHours')
+    expect(fn).not.toContain('CustomerOrderingMode')
+    // It is the plain schedule: closed day → nothing, open day → the window.
+    expect(fn).toContain('if (!row.available) return []')
+    expect(fn).toContain('slotsWithinWorkingHours(slots, row.openTime, row.closeTime)')
+  })
+
+  it('a date never closes ordering under 24/7 — only past dates and real closures do', () => {
+    // The bug: a weekly off-day was answered as though the customer could not
+    // order at all, which is how "Closed on Friday" reached the storefront the
+    // moment a pickup date was selected.
+    const fn = AVAIL.slice(AVAIL.indexOf('export function isLaundryDateAvailable'), AVAIL.indexOf('// Restrict a generated slot list'))
+    expect(fn).toContain('if (opts?.ignoreWorkingHours && !closureIsTheOnlyReason)')
+    // Past dates are rejected before the bypass is ever consulted.
+    expect(fn.indexOf('This date is in the past')).toBeLessThan(fn.indexOf('ignoreWorkingHours && !closureIsTheOnlyReason'))
   })
 
   it('the working hours themselves are never rewritten', () => {

@@ -34,6 +34,14 @@ const DAY_ROWS: { day: number; name: string }[] = [
 const defaultTimings = (): TimingRow[] =>
   DAY_ROWS.map(({ day }) => ({ day, open: "09:00", close: "21:00", isClosed: false }))
 
+// A day that runs round the clock. 00:00–23:59 is the same shape the rest of
+// the stack already treats as "open all day", so nothing downstream needs to
+// learn a new value — slot filtering, date availability and the storefront read
+// it as an ordinary working window that happens to span the day.
+const FULL_DAY_OPEN = "00:00"
+const FULL_DAY_CLOSE = "23:59"
+const isFullDay = (t: TimingRow) => t.open === FULL_DAY_OPEN && t.close === FULL_DAY_CLOSE
+
 function isOwnerRole(role: string | null | undefined): boolean {
   if (!role) return false
   return ["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "CLIENT_OWNER", "LAUNDRY_OWNER"].includes(role)
@@ -324,16 +332,31 @@ export function LaundryAvailabilitySettingsForm({ businessId }: { businessId: st
                 <Clock className="h-4 w-4 text-slate-400" />
                 <p className="text-sm font-semibold text-slate-700">Working Hours — {stores.find((s) => s.id === storeId)?.storeName || "Weekly Schedule"}</p>
               </div>
-              <p className="text-xs text-slate-400">Pickup and delivery dates/slots outside these hours are not offered to customers. Saving here sets this branch's custom schedule.</p>
+              <p className="text-xs text-slate-400">Pickup and delivery dates/slots outside these hours are not offered to customers. Saving here sets this branch&apos;s custom schedule.</p>
+              <p className="text-[11px] text-slate-400">Set any day manually, or tap <b>24h</b> to run that day round the clock (00:00–23:59). Each day is independent.</p>
               <div className="space-y-1.5">
                 {DAY_ROWS.map(({ day, name }) => {
                   const t = timings.find((x) => x.day === day)!
                   const update = (patch: Partial<TimingRow>) => setTimings((prev) => prev.map((x) => (x.day === day ? { ...x, ...patch } : x)))
                   return (
-                    <div key={day} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2">
+                    <div key={day} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-100 px-3 py-2">
                       <span className="w-24 text-sm font-medium text-slate-700">{name}</span>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.isClosed ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>{t.isClosed ? "Closed" : "Open"}</span>
-                      <Input type="time" value={t.open} disabled={t.isClosed} onChange={(e) => update({ open: e.target.value })} className="ml-auto h-8 w-28" />
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.isClosed ? "bg-rose-100 text-rose-700" : isFullDay(t) ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        {t.isClosed ? "Closed" : isFullDay(t) ? "24 Hours" : "Open"}
+                      </span>
+                      {/* Sets the row to 00:00–23:59. The time inputs stay
+                          editable either way — this is a shortcut, not a mode. */}
+                      <button
+                        type="button"
+                        disabled={t.isClosed}
+                        aria-pressed={isFullDay(t)}
+                        onClick={() => update(isFullDay(t) ? { open: "09:00", close: "21:00" } : { open: FULL_DAY_OPEN, close: FULL_DAY_CLOSE })}
+                        className={`ml-auto h-8 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${t.isClosed ? "border-slate-200 text-slate-300 cursor-not-allowed" : isFullDay(t) ? "border-blue-500 bg-blue-50 text-blue-700 cursor-pointer" : "border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"}`}
+                        title={isFullDay(t) ? `Back to 9:00 AM – 9:00 PM on ${name}` : `Open 24 hours on ${name}`}
+                      >
+                        24h
+                      </button>
+                      <Input type="time" value={t.open} disabled={t.isClosed} onChange={(e) => update({ open: e.target.value })} className="h-8 w-28" />
                       <span className="text-xs text-slate-400">to</span>
                       <Input type="time" value={t.close} disabled={t.isClosed} onChange={(e) => update({ close: e.target.value })} className="h-8 w-28" />
                       <Switch checked={!t.isClosed} onCheckedChange={(v) => update({ isClosed: !v })} aria-label={`Toggle ${name}`} />
