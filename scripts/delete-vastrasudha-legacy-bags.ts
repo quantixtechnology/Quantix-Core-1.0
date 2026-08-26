@@ -1,15 +1,29 @@
 /**
- * Delete VASTRASUDHA's legacy bags so they can be recreated
- * with the new V8BAGxxx format via the Bag Management UI.
+ * Delete VASTRASUDHA's test bags (BAG-000001, BAG-000002) and reset the
+ * BAG sequence so next generated bags start at V8BAG001.
  *
  * Scope: VASTRASUDHA only (LaundryBusiness.id = lb_vs).
- * Deletes bags matching legacy BAG-NNNNNN pattern.
+ *
+ * What is deleted:
+ *   - LaundryBag records matching BAG-NNNNNN
+ *   - LaundryBagEvent rows (movement log) for those bags
+ *   - LaundryBagRelease rows (audit) for those bags
+ *   - LaundryBagAssignment rows (should be 0 — verified in dry-run)
+ *   - Denormalized bag-number references in LaundryOrder.deliveryBagNumber
+ *   - Denormalized bag-number references in LaundryProcessingPackage.bagCode/qrValue
+ *
+ * What is NOT touched:
+ *   - Employee IDs (EMP), Delivery IDs (DL), Customer, Order, Item, Store, Processing Center IDs
+ *   - Any other namespace in TenantEmployeeSequence
+ *   - Any other tenant/business
+ *   - Bag primary keys (FKs — all removed via cascade)
+ *
+ * After deletion:
+ *   TenantEmployeeSequence BAG counter is reset to next=1,
+ *   so the first new bag created via UI will be V8BAG001.
  *
  * Properties:
  *   - Defaults to dry-run.  Pass --execute to delete.
- *   - Only deletes bags with no active order and no active assignment.
- *   - Also cleans up orphaned events + releases for deleted bags.
- *   - Leaves TenantEmployeeSequence untouched (UI healing handles it).
  *
  * Usage:
  *   npx tsx scripts/delete-vastrasudha-legacy-bags.ts            # dry-run
@@ -68,14 +82,41 @@ async function main() {
 
   // Count orphaned rows that will be cleaned up
   const bagIds = legacy.map((b) => b.id)
+  const bagNums = legacy.map((b) => b.bagNumber)
   const events  = await prisma.laundryBagEvent.count({ where: { bagId: { in: bagIds } } })
   const releases = await prisma.laundryBagRelease.count({ where: { bagId: { in: bagIds } } })
   const asgCount = await prisma.laundryBagAssignment.count({ where: { bagId: { in: bagIds } } })
+  const deliveryRefs = await prisma.laundryOrder.count({ where: { deliveryBagNumber: { in: bagNums } } })
+  const pkgBagCodeRefs = await prisma.laundryProcessingPackage.count({ where: { bagCode: { in: bagNums } } })
+  const pkgQrRefs = await prisma.laundryProcessingPackage.count({ where: { qrValue: { in: bagNums } } })
+
+  // Sequence counter
+  const seqRow = await prisma.tenantEmployeeSequence.findUnique({
+    where: { businessId_namespace: { businessId: "biz_vastrasudha", namespace: "BAG" } },
+    select: { id: true, next: true },
+  })
 
   console.log("  ── cascade cleanup ──")
-  console.log(`  LaundryBagEvent:     ${events}`)
-  console.log(`  LaundryBagRelease:   ${releases}`)
-  console.log(`  BagAssignment:       ${asgCount}`)
+  console.log(`  LaundryBagEvent:              ${events}`)
+  console.log(`  LaundryBagRelease:            ${releases}`)
+  console.log(`  LaundryBagAssignment:         ${asgCount}`)
+  console.log(`  deliveryBagNumber refs:       ${deliveryRefs}`)
+  console.log(`  processingPackage bagCode:    ${pkgBagCodeRefs}`)
+  console.log(`  processingPackage qrValue:    ${pkgQrRefs}`)
+  console.log()
+  console.log("  ── sequence reset ──")
+  console.log(`  BAG namespace counter:        next=${seqRow?.next ?? "(none)"} → 1`)
+  console.log()
+  console.log("  NOT affected:")
+  console.log("    Employee IDs (V8EMP*)           0 changes")
+  console.log("    Delivery IDs (V8DL*)            0 changes")
+  console.log("    Customer IDs                    0 changes")
+  console.log("    Order IDs                       0 changes")
+  console.log("    Item IDs                        0 changes")
+  console.log("    Store IDs                       0 changes")
+  console.log("    Processing Center IDs           0 changes")
+  console.log("    EMP / DL / COM namespaces       0 changes")
+  console.log("    Other tenants                   0 changes")
   console.log()
 
   if (DRY_RUN) {
@@ -84,7 +125,7 @@ async function main() {
     return
   }
 
-  // Delete in transaction: audit rows first, then bags
+  // Delete in transaction: audit rows first, then bags, then denormalized refs, then reset sequence
   await prisma.$transaction(async (tx) => {
     // 1. Events (child)
     await tx.laundryBagEvent.deleteMany({ where: { bagId: { in: bagIds } } })
@@ -95,17 +136,60 @@ async function main() {
     // 4. Bags themselves
     const deleted = await tx.laundryBag.deleteMany({ where: { id: { in: bagIds } } })
     console.log(`  deleted ${deleted.count} bag(s)`)
+
+    // 5. Denormalized bag-number in LaundryOrder
+    if (bagNums.length > 0) {
+      const ord = await tx.laundryOrder.updateMany({
+        where: { deliveryBagNumber: { in: bagNums } },
+        data: { deliveryBagNumber: null },
+      })
+      console.log(`  cleared ${ord.count} deliveryBagNumber ref(s)`)
+    }
+
+    // 6. Denormalized bag-number in LaundryProcessingPackage
+    if (bagNums.length > 0) {
+      const pkg = await tx.laundryProcessingPackage.updateMany({
+        where: { bagCode: { in: bagNums } },
+        data: { bagCode: null },
+      })
+      console.log(`  cleared ${pkg.count} processingPackage bagCode ref(s)`)
+
+      const qr = await tx.laundryProcessingPackage.updateMany({
+        where: { qrValue: { in: bagNums } },
+        data: { qrValue: "" },
+      })
+      console.log(`  cleared ${qr.count} processingPackage qrValue ref(s)`)
+    }
+
+    // 7. Reset BAG sequence to 1
+    if (seqRow) {
+      await tx.tenantEmployeeSequence.update({
+        where: { id: seqRow.id },
+        data: { next: 1 },
+      })
+      console.log(`  reset BAG sequence: next=${seqRow.next} → 1`)
+    } else {
+      await tx.tenantEmployeeSequence.create({
+        data: { businessId: "biz_vastrasudha", namespace: "BAG", next: 1 },
+      })
+      console.log("  created BAG sequence: next=1")
+    }
   })
 
   // Verify
   const after = await prisma.laundryBag.findMany({
     where: { businessId: LAUNDRY_BIZ_ID },
   })
+  const seqAfter = await prisma.tenantEmployeeSequence.findUnique({
+    where: { businessId_namespace: { businessId: "biz_vastrasudha", namespace: "BAG" } },
+    select: { next: true },
+  })
   console.log()
   console.log(`  remaining bags: ${after.length}`)
   for (const b of after) console.log(`    ${b.bagNumber}`)
+  console.log(`  BAG sequence next: ${seqAfter?.next}`)
   console.log()
-  console.log("  ✓ Done. Recreate via Bag Management UI to get V8BAGxxx format.")
+  console.log("  ✓ Done. Next bag created via UI will be V8BAG001.")
 }
 
 main()
