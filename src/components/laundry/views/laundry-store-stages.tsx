@@ -40,11 +40,15 @@ import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 import { TransportStageHistory, DeliveryStageHistory, HistoryToggle } from "@/components/laundry/stage-history"
 
-// Only fully-audited orders belong in Packing & QR. auditComplete is computed by
-// the orders API (has garments AND none left un-inspected). undefined (older
-// response) is NOT treated as incomplete — the pack endpoint + UI block are the
-// hard enforcement; this filter just keeps the known-incomplete out of view.
-const auditReadyForPacking = (o: OrderRow) => o.auditComplete !== false
+// An order at READY_FOR_PROCESSING belongs in the Packing & QR queue, full stop.
+//
+// This used to filter out orders whose Store Audit was incomplete, which meant
+// an order that had genuinely reached this stage vanished — the queue said "No
+// orders in this stage" and the operator had no way to find out where it went
+// or why. Hiding a real order is worse than showing one that cannot be packed
+// yet: the card below already explains that case and links to Store Audit, and
+// the pack endpoint enforces the gate server-side regardless. So the list shows
+// what the backend actually holds, and the reason is shown on the order.
 
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -366,8 +370,8 @@ export function LaundryPacking() {
   const { setLaundryPage } = useAdminStore()
   // Bag/packet QR arrives through the shared engine — Enter, Tab or no suffix.
   const [tab, setTab] = useState<"pending" | "history">("pending")
-  // Incomplete-audit orders never appear in the Packing queue.
-  const queue = useQueue("READY_FOR_PROCESSING", auditReadyForPacking)
+  // Everything the backend holds at this stage — no client-side hiding.
+  const queue = useQueue("READY_FOR_PROCESSING")
   const [selected, setSelected] = useState<OrderRow | null>(null)
   const [result, setResult] = useState<PackResult | null>(null)
   const [busy, setBusy] = useState(false)

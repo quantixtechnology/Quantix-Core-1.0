@@ -182,44 +182,46 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       const note = `Balance ₹${orderPL.balanceDue.toFixed(2)} to collect at delivery`
 
-      // Already arranged AND already moved on — say so rather than writing a
-      // second decision. (An arrangement recorded without a move is retried
-      // below, so a previously-blocked order still gets its step.)
-      const existing = await prisma.laundryOrderEvent.findFirst({
-        where: { orderId: orderPL.id, action: "PAY_LATER", NOT: { fromStatus: orderPL.status } },
-        select: { id: true },
-      })
-      if (existing) {
-        return NextResponse.json({ success: true, data: { advanced: false, payLater: true, alreadyArranged: true, balanceDue: r2(orderPL.balanceDue), status: orderPL.status, from: orderPL.status, to: orderPL.status, nextStep: nextStepOf(orderPL.status) } })
-      }
-
-      // Pay Later is a completed payment DECISION, so the order takes its next
-      // step whatever stage it was taken at — payment is never the blocker.
-      // At Payment Collection that is the existing COLLECT_PAYMENT edge; from
-      // anywhere else it is that stage's own primary forward edge, read from the
-      // state machine. Both write the PAY_LATER event themselves.
+      // MOVE FIRST. An arrangement recorded on an earlier attempt must NEVER be
+      // the reason the order stays put — that is what left this order sitting at
+      // Payment Collection: a PAY_LATER event from a previous stage matched the
+      // duplicate guard, which returned before the order was ever advanced.
+      // The duplicate check now governs only whether the EVENT is re-written.
+      //
+      // At Payment Collection this takes the existing COLLECT_PAYMENT edge
+      // (PAYMENT_PENDING → READY_FOR_PROCESSING, the Packing & QR queue); from
+      // anywhere else it takes that stage's own primary forward edge, read from
+      // the state machine. Both write the PAY_LATER event themselves.
       const moved = atPaymentCollection
         ? ((await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note))
             ? { from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING" }
             : null)
         : await advanceOnPayLater(orderPL.id, bizPL.id, createdBy, note)
 
+      let alreadyArranged = false
       if (!moved) {
         // No step was available (no primary edge, or the audit gate is not met).
-        // Record the arrangement so the decision is not lost, and report the
-        // stage honestly rather than claiming a move that did not happen.
-        await prisma.laundryOrderEvent.create({
-          data: {
-            orderId: orderPL.id, businessId: bizPL.id,
-            fromStatus: orderPL.status, toStatus: orderPL.status,
-            action: "PAY_LATER", actorName: createdBy || null, note,
-          },
-        }).catch(() => null)
+        // Record the arrangement once per stage so the decision is not lost, and
+        // report honestly rather than claiming a move that did not happen.
+        const existing = await prisma.laundryOrderEvent.findFirst({
+          where: { orderId: orderPL.id, action: "PAY_LATER", fromStatus: orderPL.status },
+          select: { id: true },
+        })
+        alreadyArranged = !!existing
+        if (!existing) {
+          await prisma.laundryOrderEvent.create({
+            data: {
+              orderId: orderPL.id, businessId: bizPL.id,
+              fromStatus: orderPL.status, toStatus: orderPL.status,
+              action: "PAY_LATER", actorName: createdBy || null, note,
+            },
+          }).catch(() => null)
+        }
       }
 
       const finalStatus = moved?.to ?? orderPL.status
       return NextResponse.json({ success: true, data: {
-        advanced: !!moved, payLater: true, balanceDue: r2(orderPL.balanceDue),
+        advanced: !!moved, payLater: true, alreadyArranged, balanceDue: r2(orderPL.balanceDue),
         status: finalStatus, from: moved?.from ?? orderPL.status, to: finalStatus,
         nextStep: nextStepOf(finalStatus),
       } })

@@ -66,8 +66,9 @@ describe('Pay Later posts no money and advances the order', () => {
   })
 
   it('does not write a second arrangement for the same order', () => {
-    expect(PAY_LATER_BRANCH).toContain('where: { orderId: orderPL.id, action: "PAY_LATER", NOT: { fromStatus: orderPL.status } },')
-    expect(PAY_LATER_BRANCH).toContain('alreadyArranged: true')
+    expect(PAY_LATER_BRANCH).toContain('where: { orderId: orderPL.id, action: "PAY_LATER", fromStatus: orderPL.status },')
+    expect(PAY_LATER_BRANCH).toContain('alreadyArranged = !!existing')
+    expect(PAY_LATER_BRANCH).toContain('if (!existing) {')
   })
 
   it('never answers 409 for the stage — only the policy can refuse it', () => {
@@ -268,9 +269,9 @@ describe('PAY_LATER advances the order', () => {
   })
 
   it('a blocked arrangement is retried on the next confirmation', () => {
-    // An order that could not move keeps its arrangement at the SAME status, so
-    // the duplicate check does not treat it as done.
-    expect(PAY_LATER_BRANCH).toContain('NOT: { fromStatus: orderPL.status }')
+    // The move is attempted every time; the duplicate check only decides whether
+    // the EVENT is re-written, and it runs after the move has been tried.
+    expect(PAY_LATER_BRANCH.indexOf('const moved =')).toBeLessThan(PAY_LATER_BRANCH.indexOf('laundryOrderEvent.findFirst'))
   })
 
   it('PAY NOW is untouched — still PAYMENT_PENDING-only', () => {
@@ -299,5 +300,98 @@ describe('PAY_LATER advances the order', () => {
     const withPayment = (Object.keys(TRANSITIONS) as (keyof typeof TRANSITIONS)[])
       .filter((s) => TRANSITIONS[s].some((t) => t.action === 'COLLECT_PAYMENT'))
     expect(withPayment).toEqual(['PAYMENT_PENDING'])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAY LATER → PACKING & QR, and RETURN TO AUDIT → STORE AUDIT.
+//
+// Reported: after confirming Pay Later the order left Payment Collection but
+// never appeared in Packing & QR ("No orders in this stage"). TWO causes:
+//
+//  1. the duplicate-arrangement guard returned BEFORE the advance. An order
+//     carrying a PAY_LATER event from an earlier stage matched it, so the
+//     decision was reported as "already arranged" and the order never moved.
+//  2. the Packing & QR queue filtered out orders whose Store Audit was
+//     incomplete, so an order that HAD reached READY_FOR_PROCESSING was hidden
+//     with no explanation.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PAY LATER lands the order in the Packing & QR queue', () => {
+  const PACKING = read('src/components/laundry/views/laundry-store-stages.tsx')
+
+  it('Packing & QR pending reads exactly READY_FOR_PROCESSING', () => {
+    expect(PACKING).toContain('const queue = useQueue("READY_FOR_PROCESSING")')
+    expect(PACKING).toContain('<QueueShell status="READY_FOR_PROCESSING" title="Packing & QR"')
+  })
+
+  it('…which is the state the Payment Collection edge advances to', () => {
+    const edge = TRANSITIONS.PAYMENT_PENDING.find((t) => t.action === 'COLLECT_PAYMENT')
+    expect(edge?.to).toBe('READY_FOR_PROCESSING')
+    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+  })
+
+  it('the queue no longer hides orders it actually holds', () => {
+    // The silent "No orders in this stage" came from a client-side filter.
+    expect(PACKING).not.toContain('auditReadyForPacking')
+    expect(PACKING).not.toContain('o.auditComplete !== false')
+    // The reason is shown ON the order instead, with a way out.
+    expect(PACKING).toContain('selected.auditComplete === false')
+    expect(PACKING).toContain('Cannot Pack Order')
+    expect(PACKING).toContain('setLaundryPage("audit-queue")')
+  })
+
+  it('the server-side pack gate is untouched — visibility is not permission', () => {
+    const PACK = read('src/app/api/laundry/orders/[id]/pack/route.ts')
+    expect(PACK).toContain('const audit = await checkAuditComplete(order.id)')
+    expect(PACK).toContain('if (!audit.ok)')
+  })
+
+  it('an earlier arrangement can NEVER block the move', () => {
+    // The duplicate check now governs only whether the EVENT is re-written…
+    expect(PAY_LATER_BRANCH).toContain('const moved = atPaymentCollection')
+    const beforeMove = PAY_LATER_BRANCH.slice(0, PAY_LATER_BRANCH.indexOf('const moved ='))
+    expect(beforeMove).not.toContain('laundryOrderEvent.findFirst')
+    // …and it runs only when no step was available.
+    expect(PAY_LATER_BRANCH).toContain('if (!moved) {')
+    expect(PAY_LATER_BRANCH).toContain("where: { orderId: orderPL.id, action: \"PAY_LATER\", fromStatus: orderPL.status },")
+  })
+
+  it('there is no early return between reading the order and moving it', () => {
+    const beforeMove = PAY_LATER_BRANCH.slice(0, PAY_LATER_BRANCH.indexOf('const moved ='))
+    // Only genuine refusals: business not found, order not found, zero balance,
+    // and the ADVANCE_REQUIRED policy. Nothing about a prior arrangement.
+    const returns = beforeMove.match(/return NextResponse\.json/g) || []
+    expect(returns).toHaveLength(4)
+    expect(beforeMove).toContain('if (orderPL.balanceDue <= 0)')
+    expect(beforeMove).toContain('requires advance payment')
+    expect(beforeMove).not.toContain('alreadyArranged')
+  })
+})
+
+describe('RETURN TO AUDIT sends the order back to Store Audit', () => {
+  it('the REOPEN_AUDIT edge exists from Payment Collection', () => {
+    const edge = TRANSITIONS.PAYMENT_PENDING.find((t) => t.action === 'REOPEN_AUDIT')
+    expect(edge?.to).toBe('PENDING_STORE_AUDIT')
+    // Not internal ⇒ the generic transition endpoint may perform it.
+    expect(edge?.internal).toBeFalsy()
+  })
+
+  it('the button drives that exact transition', () => {
+    expect(PANEL).toContain('Return to Audit')
+    expect(PANEL).toContain("toStatus: \"PENDING_STORE_AUDIT\"")
+    expect(PANEL).toContain('/transition')
+  })
+
+  it('it records no payment and changes no balance', () => {
+    const fn = PANEL.slice(PANEL.indexOf('const returnToAudit'), PANEL.indexOf('const returnToAudit') + 900)
+    expect(fn).not.toContain('/payment')
+    expect(fn).not.toContain('amountPaid')
+    expect(fn).not.toContain('balanceDue')
+  })
+
+  it('Store Audit reads the state that edge targets', () => {
+    const AUDIT = read('src/components/laundry/views/laundry-store-audit.tsx')
+    expect(AUDIT).toContain('PENDING_STORE_AUDIT')
   })
 })
