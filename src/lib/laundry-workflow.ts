@@ -47,6 +47,17 @@ export const STATUS_META: Record<LaundryOrderStatus, StatusMeta> = {
   CANCELLED:                { label: "Cancelled",             department: "DONE", terminal: true },
 }
 
+/**
+ * Every order status, in workflow order — THE list any status filter offers.
+ *
+ * Derived from STATUS_META rather than written out again, because the Orders
+ * page kept its own hand-maintained copy and it drifted: Awaiting Pickup
+ * Assignment, Draft, In Transit to Store, Under Audit, QC Pending and Cancelled
+ * were all missing from the filter while the table happily displayed them.
+ * Anything added to STATUS_META now appears in the filter automatically.
+ */
+export const ALL_ORDER_STATUSES = Object.keys(STATUS_META) as LaundryOrderStatus[]
+
 export interface TransitionDef {
   to: LaundryOrderStatus
   action: string   // machine code, stored on the event

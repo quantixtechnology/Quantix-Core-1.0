@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star } from "lucide-react"
-import { statusLabel } from "@/lib/laundry-workflow"
+import { statusLabel, ALL_ORDER_STATUSES } from "@/lib/laundry-workflow"
 import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
@@ -46,7 +46,11 @@ const PAY_STYLE: Record<string, string> = {
   PARTIAL: "border-amber-300 text-amber-700 bg-amber-50",
   UNPAID: "border-rose-300 text-rose-700 bg-rose-50",
 }
-const FILTERS = ["ALL", "PENDING_STORE_AUDIT", "PAYMENT_PENDING", "READY_FOR_PROCESSING", "PACKED", "IN_TRANSIT_TO_PROCESSING", "PROCESSING", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY", "DELIVERED"]
+// Derived from the central workflow definition, never hand-listed. The previous
+// literal omitted six real statuses — Awaiting Pickup Assignment among them — so
+// orders the table displayed could not be filtered for. STATUS_META is declared
+// in workflow order, so the dropdown reads in that order too.
+const FILTERS = ["ALL", ...ALL_ORDER_STATUSES]
 const PAGE = 10
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
