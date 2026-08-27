@@ -23,7 +23,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
 const PROXY    = read('src/proxy.ts')
 const LAYOUT   = read('src/app/layout.tsx')
-const PAGE     = read('src/app/page.tsx')
+const PAGE     = read('src/app/home-shell.tsx')
 const RESOLVER = read('src/lib/tenant-resolver.ts')
 const AUTH     = read('src/components/auth/auth-provider.tsx')
 

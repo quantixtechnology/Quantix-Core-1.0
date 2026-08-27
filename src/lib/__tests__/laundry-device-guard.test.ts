@@ -142,7 +142,7 @@ describe('the guard is Laundry OS only', () => {
       'src/components/laundry/executive/executive-app.tsx',
       'src/app/laundry/store/page.tsx',
       'src/app/store/page.tsx',
-      'src/app/page.tsx',
+      'src/app/home-shell.tsx',
     ]) {
       expect(read(f), f).not.toContain('LaundryDeviceGuard')
       expect(read(f), f).not.toContain('device-class')

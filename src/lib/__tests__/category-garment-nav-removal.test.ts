@@ -34,7 +34,7 @@ describe('§6 + §10 · the standalone entry points are gone', () => {
     const router = read('src/components/laundry/laundry-page-router.tsx')
     expect(router).not.toContain('case "categories"')
     expect(router).not.toContain('case "garments"')
-    for (const f of ['src/components/laundry/laundry-page-router.tsx', 'src/app/page.tsx']) {
+    for (const f of ['src/components/laundry/laundry-page-router.tsx', 'src/app/home-shell.tsx']) {
       const src = read(f)
       expect(src).not.toContain('LaundryCategoriesMaster')
       expect(src).not.toContain('LaundryGarmentsMaster')
@@ -42,10 +42,10 @@ describe('§6 + §10 · the standalone entry points are gone', () => {
   })
 
   it('the COMMERCE categories module is a different thing and is untouched', () => {
-    // src/app/page.tsx has its own `case "categories"` rendering the business
+    // src/app/home-shell.tsx has its own `case "categories"` rendering the business
     // CategoriesView. That is platform config for Commerce, not the laundry
     // pricing master, and §6 says only the redundant laundry entries go.
-    const page = read('src/app/page.tsx')
+    const page = read('src/app/home-shell.tsx')
     expect(page).toContain('case "categories": return <CategoriesView />')
     expect(page).toContain('components/business/categories/categories-view')
   })

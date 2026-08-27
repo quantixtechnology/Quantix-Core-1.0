@@ -100,7 +100,7 @@ describe('a URL never selects a business the session cannot enter', () => {
   })
 
   it('the workspace uses it instead of the raw URL segment', () => {
-    const page = read('src/app/page.tsx')
+    const page = read('src/app/home-shell.tsx')
     expect(page).toContain('resolveWorkspaceTenant({')
     expect(page).toContain('memberBusinessIds: businesses.map((b) => b.businessId)')
     // The two old expressions that trusted the URL are gone.

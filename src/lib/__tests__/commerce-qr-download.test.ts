@@ -241,7 +241,7 @@ describe('the Commerce Mobile Apps card downloads without opening anything', () 
   const CARD = read('src/components/laundry/apps/app-share-card.tsx')
 
   it('the page in the screenshot is the one that got the change', () => {
-    expect(read('src/app/page.tsx')).toContain('case "customer-app": return <AppsView />')
+    expect(read('src/app/home-shell.tsx')).toContain('case "customer-app": return <AppsView />')
     expect(read('src/components/business/layout/business-sidebar.tsx'))
       .toContain('{ key: "customer-app",        label: "Mobile Apps",    icon: Smartphone }')
     expect(APPS).toContain('downloadFileBase=')

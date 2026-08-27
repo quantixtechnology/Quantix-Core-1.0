@@ -25,7 +25,7 @@ import { commerceCategoryLabel } from '@/lib/commerce/commerce-categories'
 const ROOT = join(__dirname, '../../..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
-const PAGE   = read('src/app/page.tsx')
+const PAGE   = read('src/app/home-shell.tsx')
 const WIZARD = read('src/components/admin/businesses/business-management-wizard.tsx')
 const FIELD  = read('src/components/admin/businesses/commerce-category-field.tsx')
 
