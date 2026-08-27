@@ -5,7 +5,7 @@
 // (thermal 20mm default, configurable), then Move to Processing (gated on all
 // garments barcoded AND payment collected). Garments then auto-route by service.
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -31,29 +31,87 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [cfg, setCfg] = useState<LabelConfig>(loadLabelConfig())
+  // Second line of defence against a double-click: `disabled={busy}` only takes
+  // effect on the next render, which a fast double-tap can beat.
+  const runningRef = useRef(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try { const j = await fetch(`/api/laundry/orders/${orderId}/barcodes`).then((r) => r.json()); if (j.success) setData(j.data) } catch { /* noop */ } finally { setLoading(false) }
+  /**
+   * @param silent refresh the data WITHOUT flipping `loading`.
+   *
+   * The scroll jump came from here. `loading` swaps the whole screen for a
+   * spinner, so every refresh after a Generate/Reprint unmounted the garment
+   * table and remounted it — and a fresh table starts at the top. On a 20-item
+   * order that threw the operator back to garment 1 after every click.
+   *
+   * A silent refresh re-renders the same mounted table with new rows, so the
+   * browser keeps the scroll position on its own. No saved offsets, no timeout,
+   * no scrollIntoView — the DOM simply never goes away.
+   */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    try { const j = await fetch(`/api/laundry/orders/${orderId}/barcodes`).then((r) => r.json()); if (j.success) setData(j.data) } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [orderId])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, garScanCode: it.garmentScanCode, orderNumber: data?.order.orderNumber, storeName: data?.store?.storeName })
 
   // ── API call: generate or reprint barcode (separate from print) ──────────────
   const genOne = async (it: Item, reprint = false) => {
+    if (runningRef.current) return
+    runningRef.current = true
     setBusy(true)
     try {
-      await fetch(`/api/laundry/items/${it.id}/barcode`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: reprint ? "REPRINT" : "GENERATE", actorName: user?.name }) })
-      await load()
-    } finally { setBusy(false) }
+      const res = await fetch(`/api/laundry/items/${it.id}/barcode`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: reprint ? "REPRINT" : "GENERATE", actorName: user?.name }) })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || j?.success === false) {
+        toast({ title: reprint ? "Could not reprint" : "Could not generate", description: j?.error || "Please try again.", variant: "destructive" })
+      }
+      // Silent: keeps the operator exactly where they were in the list.
+      await load(true)
+    } catch {
+      toast({ title: "Network error", description: "The barcode could not be updated. Please try again.", variant: "destructive" })
+    } finally { runningRef.current = false; setBusy(false) }
   }
   // ── Print: read-only — no API, no state mutation, no workflow trigger ────────
   const printOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, true) }
   const previewOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, false) }
+  /**
+   * Bulk generate. Calls the EXISTING approved handler
+   * (POST …/barcodes { action: "GENERATE_ALL" }) — the one place that mints and
+   * heals GAR codes. No allocator, no format and no numbering lives here: this
+   * only asks, reports and refreshes.
+   *
+   * Idempotent by the handler's own design: a garment that already holds a valid
+   * GAR keeps it and the allocator is never called for it, so a second click
+   * reports 0 / 0.
+   */
   const genAll = async () => {
+    if (runningRef.current) return
+    runningRef.current = true
     setBusy(true)
-    try { const j = await (await fetch(`/api/laundry/orders/${orderId}/barcodes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "GENERATE_ALL", actorName: user?.name }) })).json(); toast({ title: "Barcodes generated", description: `${j.data?.generated ?? 0} label(s).` }); await load() } finally { setBusy(false) }
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/barcodes`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "GENERATE_ALL", actorName: user?.name }),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || !j?.success) {
+        // Whatever succeeded server-side stays — refresh shows the real state.
+        toast({ title: "Could not generate", description: j?.error || "Please try again.", variant: "destructive" })
+      } else {
+        const generated = j.data?.generated ?? 0
+        const healed = j.data?.healed ?? 0
+        toast(
+          generated + healed === 0
+            ? { title: "Nothing to do", description: "All garments already have GAR codes." }
+            : { title: "Barcode generation complete", description: `Generated: ${generated} · Healed: ${healed}` },
+        )
+      }
+      await load(true)
+    } catch {
+      toast({ title: "Network error", description: "The barcodes could not be generated. Please try again.", variant: "destructive" })
+      await load(true)
+    } finally { runningRef.current = false; setBusy(false) }
   }
   const printAll = async () => { if (data) await printLabels(data.items.map(toLabel), cfg, true) }
   const move = async () => {
@@ -95,7 +153,15 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
           <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Garments</CardTitle>
-          {!readOnly && <Button size="sm" variant="outline" onClick={genAll} disabled={busy || data.allBarcoded} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><BarcodeIcon className="h-3.5 w-3.5" /> Generate All Pending</Button>}
+          {/* Enabled whenever idle: a garment can hold a valid GAR and still need
+              its legacy barcode healed, which `allBarcoded` cannot see. The
+              handler is idempotent, so a click with nothing to do reports 0 / 0. */}
+          {!readOnly && (
+            <Button size="sm" variant="outline" onClick={genAll} disabled={busy} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50">
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
+              {busy ? "Generating…" : "Generate All Pending"}
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           <Table>

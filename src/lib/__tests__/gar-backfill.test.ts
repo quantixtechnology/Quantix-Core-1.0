@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 // ============================================================================
 // GAR repair — behavioural regression tests.
@@ -376,5 +378,133 @@ describe('GENERATE_ALL heals legacy garments', () => {
     const j = await res.json()
     expect(j.data.healed).toBe(0)
     expect(rows()[0].garmentScanCode).toBe('LEGACY-XYZ')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BARCODE GENERATION UX — bulk generate, and the scroll that used to jump.
+//
+// The screen refreshed by flipping `loading`, which swapped the whole table for
+// a spinner. Unmounting the list and remounting it puts the browser back at the
+// top, so on a 20-garment order every Generate threw the operator back to
+// garment 1. The fix is a SILENT refresh — the same mounted table, new rows —
+// so the scroll position is never lost in the first place.
+//
+// The bulk button calls the EXISTING approved handler. No allocator, no format
+// and no numbering lives in the UI.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Barcode Generation screen', () => {
+  const SCREEN = readFileSync(join(process.cwd(), 'src/components/laundry/views/laundry-audit-barcode.tsx'), 'utf8')
+
+  // 8, 9, 10 — scroll preservation
+  it('8,9,10 · refreshes silently after Generate, Reprint and Generate All', () => {
+    expect(SCREEN).toContain('const load = useCallback(async (silent = false) => {')
+    expect(SCREEN).toContain('if (!silent) setLoading(true)')
+    expect(SCREEN).toContain('if (!silent) setLoading(false)')
+    // Every post-action refresh is the silent one. genOne serves both Generate
+    // and Reprint, so all three paths are covered.
+    const handlers = SCREEN.slice(SCREEN.indexOf('const genOne'), SCREEN.indexOf('const printAll'))
+    expect(handlers).not.toMatch(/await load\(\)/)
+    expect((handlers.match(/await load\(true\)/g) || []).length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('keeps the DOM rather than saving and restoring an offset', () => {
+    // Code only — the comments above the fix naturally name what it avoids.
+    const code = SCREEN.split('\n').filter((l) => !l.trim().startsWith('*') && !l.trim().startsWith('//')).join('\n')
+    for (const banned of ['scrollTo', 'scrollIntoView', 'scrollTop', 'setTimeout', 'location.reload']) {
+      expect(code, banned).not.toContain(banned)
+    }
+  })
+
+  it('the spinner still covers the FIRST load, so nothing renders half-built', () => {
+    expect(SCREEN).toContain('if (loading || !data) return')
+    expect(SCREEN).toContain('useEffect(() => { void load() }, [load])') // no silent flag ⇒ spinner
+  })
+
+  // 6 — reuses the approved handler
+  it('6 · bulk generate calls the existing GENERATE_ALL handler', () => {
+    expect(SCREEN).toContain('action: "GENERATE_ALL"')
+    expect(SCREEN).toContain('`/api/laundry/orders/${orderId}/barcodes`')
+    // The UI mints nothing and knows no format.
+    expect(SCREEN).not.toContain('nextGarScanCode')
+    expect(SCREEN).not.toContain('GAR${')
+    expect(SCREEN).not.toMatch(/padStart\(12/)
+  })
+
+  it('preserves the { generated, healed } response contract', () => {
+    expect(SCREEN).toContain('j.data?.generated ?? 0')
+    expect(SCREEN).toContain('j.data?.healed ?? 0')
+    expect(SCREEN).toContain('Generated: ${generated} · Healed: ${healed}')
+    expect(SCREEN).toContain('All garments already have GAR codes.')
+  })
+
+  // 7 — double-click
+  it('7 · a double-click cannot trigger a second run', () => {
+    expect(SCREEN).toContain('const runningRef = useRef(false)')
+    expect(SCREEN).toContain('if (runningRef.current) return')
+    expect(SCREEN).toContain('runningRef.current = true')
+    expect(SCREEN).toContain('runningRef.current = false')
+    expect(SCREEN).toContain('disabled={busy}')
+  })
+
+  it('shows Generating… while it runs', () => {
+    expect(SCREEN).toContain('busy ? "Generating…" : "Generate All Pending"')
+  })
+
+  // 7 (error handling)
+  it('an error does not reload the page or lose position', () => {
+    expect(SCREEN).toContain('variant: "destructive"')
+    // Even the failure path refreshes silently, so partial success is visible.
+    const genAll = SCREEN.slice(SCREEN.indexOf('const genAll'), SCREEN.indexOf('const printAll'))
+    expect(genAll).toContain('Could not generate')
+    expect((genAll.match(/await load\(true\)/g) || []).length).toBe(2) // success + catch
+  })
+
+  // 11, 12 — nothing else moved
+  it('11,12 · single Generate/Reprint and printing are untouched', () => {
+    expect(SCREEN).toContain('action: reprint ? "REPRINT" : "GENERATE"')
+    expect(SCREEN).toContain('`/api/laundry/items/${it.id}/barcode`')
+    expect(SCREEN).toContain('printLabels([toLabel(it)], cfg, true)')   // print
+    expect(SCREEN).toContain('printLabels([toLabel(it)], cfg, false)')  // preview
+    expect(SCREEN).toContain('printLabels(data.items.map(toLabel), cfg, true)') // print all
+    // Label config and scanner quality are read, never redefined here.
+    expect(SCREEN).toContain('scannerQuality(cfg)')
+  })
+
+  it('the displayed value is still the approved GAR-first chain', () => {
+    expect(SCREEN).toContain('it.garmentScanCode || it.barcode || it.itemNumber || ""')
+  })
+})
+
+// ── 12 · ACCEPTANCE — 8 garments, 3 already coded ──────────────────────────
+describe('12 · acceptance — Generate All on a part-coded order', () => {
+  it('codes 4-8, leaves 1-3 exactly as they were, and is idempotent', async () => {
+    const kept = ['GAR000000000011', 'GAR000000000012', 'GAR000000000013']
+    seed([
+      ...kept.map((g, i) => item({ id: `i${i + 1}`, orderId: 'o1', garmentScanCode: g, barcode: g, barcodeGenerated: true })),
+      ...Array.from({ length: 5 }, (_, i) => item({ id: `i${i + 4}`, orderId: 'o1', itemNumber: ITM, barcode: ITM })),
+    ])
+
+    const first = await (await post('o1', { action: 'GENERATE_ALL' })).json()
+    expect(first.success).toBe(true)
+    expect(first.data.healed).toBe(5)     // only the five without a GAR
+    expect(first.data.generated).toBe(5)  // …which were also the five unlabelled
+
+    const gars = rows().map((r) => r.garmentScanCode)
+    expect(gars.every(isGarScanCode)).toBe(true)
+    expect(new Set(gars).size).toBe(8)                       // 8 distinct
+    expect(gars.slice(0, 3)).toEqual(kept)                   // 1-3 untouched
+    expect(rows().every((r) => r.barcode === r.garmentScanCode)).toBe(true)
+    expect(rows().every((r) => r.barcodeGenerated)).toBe(true)
+
+    // Second click — nothing new, nothing changed.
+    vi.clearAllMocks()
+    const second = await (await post('o1', { action: 'GENERATE_ALL' })).json()
+    expect(second.data.generated).toBe(0)
+    expect(second.data.healed).toBe(0)
+    expect(rows().map((r) => r.garmentScanCode)).toEqual(gars)
+    // The allocator was never asked for a code.
+    expect(prismaMock.laundryGarSequenceCounter.upsert).not.toHaveBeenCalled()
   })
 })
