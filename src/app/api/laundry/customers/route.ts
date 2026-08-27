@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server"
-import { defaultCustomerSourceId } from "@/lib/laundry-customer-source"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode } from "@/lib/india"
-import { generateCustomerCode } from "@/lib/customer-code"
-import { mergeMeta, type CommPrefs } from "@/lib/laundry-customer"
+import { createLaundryCustomer, findCustomerByMobile } from "@/lib/laundry-customer-create"
 
 export const runtime = "nodejs"
 
@@ -94,69 +92,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Platform business not linked to this workspace" }, { status: 404 })
     }
 
-    const existing = await prisma.customer.findFirst({
-      where: { businessId: laundryBusiness.platformBusinessId, phone: mobile },
-    })
+    const existing = await findCustomerByMobile(laundryBusiness.platformBusinessId, mobile)
     if (existing) {
       return NextResponse.json({ error: "Customer with this mobile number already exists", data: existing }, { status: 409 })
     }
 
-    // Enterprise ID via the shared generator: CUS-{businessCode}-NNNNNN
-    const customerCode = await generateCustomerCode(laundryBusiness.platformBusinessId!)
-
-    // Full profile extras live in metadata (JSON); tags in the tags JSON.
-    const metadata = mergeMeta("{}", {
-      alternateMobile: alternateMobile || undefined,
-      anniversary: body.anniversary || undefined,
-      company: body.company || undefined,
-      reference: body.reference || undefined,
-      comm: (body.comm && typeof body.comm === "object" ? body.comm : undefined) as CommPrefs | undefined,
+    // The shared creator — the same one the bulk importer uses, so a customer
+    // created here and one created from a file are identical records.
+    const customer = await createLaundryCustomer(laundryBusiness.platformBusinessId, laundryBusiness.id, {
+      name, mobile, alternateMobile, email,
+      addressLine1, addressLine2, area, landmark, city, state, pincode, country,
+      gender: body.gender, dateOfBirth: body.dateOfBirth, avatar: body.avatar,
+      gstNumber: body.gstNumber, accountType: body.accountType,
+      customerSourceId: body.customerSourceId,
+      salesTeamOwnerId: body.salesTeamOwnerId, salesTeamOwnerName: body.salesTeamOwnerName,
+      anniversary: body.anniversary, company: body.company, reference: body.reference,
+      comm: body.comm, tags: body.tags, notes: body.notes,
     })
-    const customer = await prisma.customer.create({
-      data: {
-        businessId: laundryBusiness.platformBusinessId,
-        name,
-        phone: mobile,
-        email: email || null,
-        gender: body.gender || null,
-        dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
-        avatar: body.avatar || null,
-        gstNumber: body.gstNumber || null,
-        ...(body.accountType && { accountType: body.accountType }),
-        customerCode,
-        // Channel — the long-standing field, unchanged.
-        source: "LAUNDRY_OS",
-        // Acquisition — how the business won them, chosen by a person. Falls
-        // back to the business's default (Direct) when the caller says nothing,
-        // so a customer created from an older screen is still classified.
-        customerSourceId: body.customerSourceId
-          ? String(body.customerSourceId)
-          : await defaultCustomerSourceId(laundryBusiness.id),
-        salesTeamOwnerId: body.salesTeamOwnerId ? String(body.salesTeamOwnerId) : null,
-        salesTeamOwnerName: body.salesTeamOwnerName ? String(body.salesTeamOwnerName) : null,
-        isGuest: false,
-        tags: JSON.stringify(Array.isArray(body.tags) ? [...new Set(body.tags.map(String))] : []),
-        metadata,
-        notes: body.notes || "",
-      },
-    })
-
-    if (addressLine1 || area || landmark || city || state || pincode) {
-      await prisma.address.create({
-        data: {
-          customerId: customer.id,
-          addressLine1: addressLine1 || "",
-          addressLine2: addressLine2 || null,
-          area: area || null,
-          landmark: landmark || null,
-          city: city || "",
-          state: state || "",
-          pincode: pincode || "",
-          country,
-          isDefault: true,
-        },
-      })
-    }
 
     console.log(tag, "CREATED customer", customer.id, customer.customerCode, "under platformBusinessId=", laundryBusiness.platformBusinessId)
     return NextResponse.json({ success: true, data: customer }, { status: 201 })

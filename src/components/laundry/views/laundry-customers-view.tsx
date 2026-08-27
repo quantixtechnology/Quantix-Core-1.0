@@ -22,13 +22,14 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetClose } from "@
 import {
   Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail,
   MapPin, Save, Trash2, AlertTriangle, RotateCcw, Truck, Calendar, CheckCircle2, Star, MessageSquare,
-  CreditCard, Shirt, History, FileText, LayoutDashboard, ShoppingBag, ArrowUpDown, PhoneCall, MessageCircle, X, ExternalLink,
+  CreditCard, Shirt, History, FileText, LayoutDashboard, ShoppingBag, ArrowUpDown, PhoneCall, MessageCircle, X, ExternalLink, Upload,
 } from "lucide-react"
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { AcquisitionFields, useAcquisitionOptions, defaultSourceId } from "@/components/laundry/customers/acquisition-fields"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { LaundryCustomerImportDialog } from "./laundry-customer-import-dialog"
 
 interface Row {
   id: string; name: string; phone: string | null; email: string | null; customerCode: string | null
@@ -103,6 +104,7 @@ export function LaundryCustomersView() {
   const { currentBusinessId, user } = useAuthStore()
   const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
   const { can } = useLaundryPermissions()
+  const [bulkOpen, setBulkOpen] = useState(false)
   const canArchive = can("laundry.customers.delete") || isSuperAdmin
   const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
   const { toast } = useToast()
@@ -472,8 +474,24 @@ export function LaundryCustomersView() {
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Users className="h-5 w-5 text-blue-600" /> Customers</h1>
           <p className="text-sm text-slate-500">Manage all your customers in one place</p>
         </div>
-        <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-3.5 w-3.5" /> New Order</Button>
+        <div className="flex items-center gap-2">
+          {/* Additive: the bulk importer lives in its own dialog and creates
+              through the same endpoint path as the single-customer form. */}
+          {can("laundry.customers.create") && (
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => setBulkOpen(true)}>
+              <Upload className="h-3.5 w-3.5" /> Bulk Customer Creation
+            </Button>
+          )}
+          <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-3.5 w-3.5" /> New Order</Button>
+        </div>
       </div>
+
+      <LaundryCustomerImportDialog
+        businessId={currentBusinessId || ""}
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onImported={() => { void load() }}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {KPIS.map((k) => (

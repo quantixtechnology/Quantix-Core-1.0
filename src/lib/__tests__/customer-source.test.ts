@@ -148,6 +148,9 @@ describe('the feature is reachable, not just implemented', () => {
   const CUSTOMERS = read('src/components/laundry/views/laundry-customers-view.tsx')
   const NEW_ORDER = read('src/components/laundry/views/laundry-new-order.tsx')
   const CREATE = read('src/app/api/laundry/customers/route.ts')
+  // The record is written by the shared creator, which the single-customer route
+  // and the bulk importer both call — so the default lives there now.
+  const CREATOR = read('src/lib/laundry-customer-create.ts')
   const UPDATE = read('src/app/api/laundry/customers/[id]/route.ts')
 
   it('Workspace Settings renders the Customer Sources section', () => {
@@ -169,8 +172,11 @@ describe('the feature is reachable, not just implemented', () => {
   it('a new customer starts on Direct', () => {
     expect(FIELDS).toContain('s.name.toLowerCase() === "direct"')
     expect(NEW_ORDER).toContain('setNewCustSourceId(defaultSourceId(custSources))')
-    // And the server defaults too, for callers that send nothing.
-    expect(CREATE).toContain('await defaultCustomerSourceId(laundryBusiness.id)')
+    // And the server defaults too, for callers that send nothing — including
+    // the bulk importer, which sends none.
+    expect(CREATOR).toContain('await defaultCustomerSourceId(laundryBusinessId)')
+    // The route still passes the caller's choice through when there is one.
+    expect(CREATE).toContain('customerSourceId: body.customerSourceId')
   })
 
   it('an inactive source is not offered, but is kept where already used', () => {
