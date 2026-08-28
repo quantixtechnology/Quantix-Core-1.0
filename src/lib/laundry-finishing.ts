@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
 import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { addBagToOrder } from "@/lib/laundry-order-bags"
 import { parseEmployeeId } from "@/lib/tenant-identity"
 
 // Package lifecycle statuses. Additive — existing CREATED value is preserved.
@@ -189,7 +190,9 @@ export async function awaitingFinishingBagAssignment(
 }
 
 export type AssignBagResult =
-  | { ok: true; packageId: string; code: string; bagCode: string; retired: number; alreadyAssigned?: boolean }
+  | { ok: true; packageId: string; code: string; bagCode: string; retired: number; alreadyAssigned?: boolean
+      /** Set when this scan ATTACHED an additional bag to an order that already had one. */
+      addedBag?: string; totalBags?: number }
   | { ok: false; error: string; code: "INVALID" | "ORDER_NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_ASSIGNED" | "WRONG_ORDER" }
 
 // Bind the order-based finishing bag at Sorting. Scanning the configured
@@ -201,6 +204,8 @@ export type AssignBagResult =
 // advances the garments past Sorting after a successful assignment.
 export async function assignFinishingBag(opts: {
   orderId: string; businessId: string; code: string; mode: string; actorName?: string | null
+  /** Sorting only: one order may carry more than one physical bag (§1). */
+  allowMultiple?: boolean
 }): Promise<AssignBagResult> {
   const { orderId, businessId, actorName } = opts
   const c = String(opts.code || "").trim()
@@ -216,9 +221,20 @@ export async function assignFinishingBag(opts: {
   if (!items.every((i) => hasPassedQc(i.processingStage)))
     return { ok: false, error: "Assign the bag only after every garment in the order has passed Quality Check and reached Sorting.", code: "NOT_ELIGIBLE" }
 
-  // Single active finishing bag per order — never a second. Re-scanning the
-  // SAME bag after a successful assignment is the operator confirming, not an
-  // error: return the standing assignment instead of refusing it.
+  // An order already carrying a finishing bag. Re-scanning the SAME bag is the
+  // operator confirming, not an error: return the standing assignment.
+  //
+  // A DIFFERENT bag depends on the caller. One order may genuinely need more
+  // than one physical bag, so Sorting passes allowMultiple and the extra bag is
+  // ATTACHED (§1); the finishing workstation does not, and still refuses a
+  // second — its screen binds the one container it is holding.
+  //
+  // Attaching goes through addBagToOrder → assignBagToOrder, the single writer,
+  // so tenant, ownership, availability, damaged/lost/cleaning and duplicate
+  // checks are the existing ones and are not restated here (§12). The package's
+  // own bagCode is left on the FIRST bag: that is the transport identity Transit
+  // and Console resolve, and changing it would rewrite an order's identity every
+  // time a bag was added.
   const already = await prisma.laundryProcessingPackage.findFirst({
     where: { orderId, bagAssigned: true },
     select: { id: true, code: true, bagCode: true },
@@ -229,7 +245,29 @@ export async function assignFinishingBag(opts: {
       const retired = await prisma.laundryOrderItem.count({ where: { orderId, barcodeRetired: true } })
       return { ok: true, packageId: already.id, code: already.code, bagCode: already.bagCode || already.code, retired, alreadyAssigned: true }
     }
-    return { ok: false, error: `This order already has finishing bag ${already.bagCode || already.code}.`, code: "ALREADY_ASSIGNED" }
+    if (!opts.allowMultiple) {
+      return { ok: false, error: `This order already has finishing bag ${already.bagCode || already.code}.`, code: "ALREADY_ASSIGNED" }
+    }
+    const modeErr = scanModeAcceptance(c, opts.mode)
+    if (modeErr) return { ok: false, error: modeErr, code: "INVALID" }
+    const added = await addBagToOrder({ lbId: businessId, orderId, code: c })
+    if (!added.ok) {
+      return { ok: false, error: added.error, code: added.status === 409 ? "WRONG_ORDER" : "INVALID" }
+    }
+    // Garment barcodes were retired when the first bag was bound; an additional
+    // bag adds capacity, it does not re-run the transition.
+    const retired = await prisma.laundryOrderItem.count({ where: { orderId, barcodeRetired: true } })
+    await prisma.laundryOrderEvent.create({
+      data: {
+        orderId, businessId, fromStatus: order.status, toStatus: order.status,
+        action: "FINISHING_BAG_ADDED", actorName: actorName || null,
+        note: `Additional finishing bag ${added.bag.bagNumber} attached — order now has ${added.total} bag(s)`,
+      },
+    }).catch(() => null)
+    return {
+      ok: true, packageId: already.id, code: already.code,
+      bagCode: already.bagCode || already.code, retired, addedBag: added.bag.bagNumber, totalBags: added.total,
+    }
   }
 
   // Scan-mode gate (Bag / Processing Package / Both — Workspace setting, never hardcoded).

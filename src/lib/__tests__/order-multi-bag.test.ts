@@ -259,3 +259,95 @@ describe('3,10,19 · Packing & QR is wired to the same list', () => {
     for (const w of ['garmentScanCode', 'GAR', 'barcode']) expect(LIB, w).not.toContain(w)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SORTING MULTI-BAG.
+//
+// assignFinishingBag() refused a second bag outright ("Single active finishing
+// bag per order — never a second"). Sorting now passes allowMultiple, so a
+// DIFFERENT bag is ATTACHED through addBagToOrder → assignBagToOrder — the one
+// writer, whose tenant / ownership / availability / duplicate checks are reused
+// rather than restated. The finishing workstation does NOT pass it and still
+// refuses a second bag.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Sorting · the one-bag restriction is lifted for Sorting only', () => {
+  const FINISHING = readFileSync(join(process.cwd(), 'src/lib/laundry-finishing.ts'), 'utf8')
+  const SORTING_API = readFileSync(join(process.cwd(), 'src/app/api/laundry/processing/sorting/route.ts'), 'utf8')
+  const FINISHING_API = readFileSync(join(process.cwd(), 'src/app/api/laundry/processing/finishing-bag/route.ts'), 'utf8')
+  const SORTING_UI = readFileSync(join(process.cwd(), 'src/components/laundry/views/laundry-sorting-workstation.tsx'), 'utf8')
+
+  it('1,2,3 · Sorting opts in; the finishing workstation does not', () => {
+    expect(SORTING_API).toContain('allowMultiple: true')
+    expect(FINISHING_API).not.toContain('allowMultiple')
+    // Default is off, so every other caller keeps the old single-bag rule.
+    expect(FINISHING).toContain('if (!opts.allowMultiple) {')
+    expect(FINISHING).toContain('code: "ALREADY_ASSIGNED"')
+  })
+
+  it('4,11,12 · an extra bag is ATTACHED through the single writer', () => {
+    const branch = FINISHING.slice(FINISHING.indexOf('if (!opts.allowMultiple) {'), FINISHING.indexOf('// Scan-mode gate'))
+    expect(branch).toContain('await addBagToOrder({ lbId: businessId, orderId, code: c })')
+    // It re-implements none of the validation, and writes no bag row itself.
+    for (const w of ['laundryBag.update', 'laundryBagAssignment.create', 'businessId: opts.lbId']) {
+      expect(branch, w).not.toContain(w)
+    }
+  })
+
+  it('5,11 · the first bag is never rewritten when a second is added', () => {
+    const branch = FINISHING.slice(FINISHING.indexOf('if (!opts.allowMultiple) {'), FINISHING.indexOf('// Scan-mode gate'))
+    // The package keeps its original bagCode — the transport identity.
+    expect(branch).toContain('bagCode: already.bagCode || already.code')
+    expect(branch).not.toContain('bagAssigned: true,')
+    expect(branch).not.toContain('.delete(')
+  })
+
+  it('6 · re-scanning the same bag stays idempotent, before the multi-bag branch', () => {
+    expect(FINISHING.indexOf('if (sameBag) {')).toBeLessThan(FINISHING.indexOf('if (!opts.allowMultiple) {'))
+    expect(FINISHING).toContain('alreadyAssigned: true')
+  })
+
+  it('7,8,9 · an added bag still passes the scan-mode gate and every bag rule', () => {
+    const branch = FINISHING.slice(FINISHING.indexOf('if (!opts.allowMultiple) {'), FINISHING.indexOf('// Scan-mode gate'))
+    expect(branch).toContain('scanModeAcceptance(c, opts.mode)')
+    expect(branch).toContain('added.status === 409 ? "WRONG_ORDER" : "INVALID"')
+  })
+
+  it('7 · adding a bag does NOT re-run the garment transition', () => {
+    expect(SORTING_API).toContain('if (result.addedBag) {')
+    const branch = SORTING_API.slice(SORTING_API.indexOf('if (result.addedBag) {'), SORTING_API.indexOf('// Advance every garment past Sorting'))
+    expect(branch).toContain('advanced: 0')
+    for (const w of ['barcodeRetired', 'processingStage', 'updateMany']) expect(branch, w).not.toContain(w)
+  })
+
+  it('the garment gate is untouched — every garment still required first', () => {
+    expect(SORTING_API).toContain('every garment must be scanned before the bag is assigned')
+    expect(SORTING_API).toContain('atSorting.length !== order._count.items')
+  })
+
+  it('3,17 · Sorting shows the SAME shared list Packing reads', () => {
+    expect(SORTING_UI).toContain('<OrderBagList')
+    expect(SORTING_UI).toContain('useOrderBags(orderId, businessId)')
+    expect(SORTING_UI).toContain('import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"')
+  })
+
+  it('15,16 · no sorting-specific bag counter was introduced', () => {
+    for (const src of [FINISHING, SORTING_API, SORTING_UI]) {
+      for (const w of ['sortingBagCount', 'numberOfSortingBags', 'bagCount']) expect(src, w).not.toContain(w)
+    }
+  })
+
+  it('8,16 · Sorting gained no payment or OTP gate', () => {
+    for (const w of ['balanceDue', 'paymentStatus', 'PAY_LATER', 'pickupOtp', 'deliveryOtp', 'verifyPickup']) {
+      expect(SORTING_API, w).not.toContain(w)
+    }
+  })
+
+  it('14 · Delivery was not touched', () => {
+    for (const src of [FINISHING, SORTING_API, SORTING_UI]) {
+      for (const w of ['deliveryBagNumber', 'deliveryBagAssignedAt', 'deliveryBagReturnedAt']) {
+        expect(src, w).not.toContain(w)
+      }
+    }
+  })
+})

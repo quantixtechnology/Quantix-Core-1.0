@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, ScanLine, PackageCheck, RefreshCw, Check, Layers } from "lucide-react"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 
 interface Item {
@@ -30,6 +31,12 @@ interface Item {
 }
 
 interface OrderGroup { orderId: string; orderNumber: string; expected: number; customer: string | null; garments: Item[] }
+
+/** One order card's bag list — its own hook instance, its own refresh. */
+function SortingOrderBags({ orderId, businessId, busy }: { orderId: string; businessId: string; busy: boolean }) {
+  const { bags, loadBags } = useOrderBags(orderId, businessId)
+  return <OrderBagList orderId={orderId} businessId={businessId} bags={bags} onChanged={loadBags} disabled={busy} />
+}
 
 export function LaundrySortingWorkstation() {
   const { currentBusinessId, user } = useAuthStore()
@@ -256,7 +263,7 @@ export function LaundrySortingWorkstation() {
                 <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-white p-3">
                   <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">All {o.expected} garments scanned. Scan ONE {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind the whole order{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null}.</p>
-                  <div className="mt-2">
+                  <div className="mt-2 space-y-2">
                     {/* Enabled by the same `readyOrders` membership that renders
                         this card — one source of truth, so a card can never
                         appear with a dead button. */}
@@ -268,6 +275,9 @@ export function LaundrySortingWorkstation() {
                       closeOnScan
                       disabled={busy}
                     />
+                    {/* ONE ORDER → ONE OR MORE BAGS. The same shared list Packing
+                        reads, so both stages see one bag set (§13). */}
+                    <SortingOrderBags orderId={o.orderId} businessId={currentBusinessId || ""} busy={busy} />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-2">Assigning retires every garment barcode and advances the order to Ironing / Folding / Transit.</p>
                 </div>

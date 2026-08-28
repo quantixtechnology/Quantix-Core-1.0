@@ -122,11 +122,20 @@ export async function POST(request: Request) {
       if (missing.length > 0)
         return NextResponse.json({ error: `${missing.length} garment(s) have not been scanned at Sorting yet — every garment must be scanned before the bag is assigned.` }, { status: 409 })
 
-      // Bind the ONE finishing bag (validates scan mode, bag ownership, single-bag).
-      const result = await assignFinishingBag({ orderId: order.id, businessId: biz.id, code, mode, actorName: b.actorName || null })
+      // Bind a finishing bag (validates scan mode, bag ownership, availability).
+      // allowMultiple: one order may need more than one physical bag, so a
+      // second scan ATTACHES rather than being refused. Every other guard is
+      // unchanged and still comes from assignBagToOrder.
+      const result = await assignFinishingBag({ orderId: order.id, businessId: biz.id, code, mode, actorName: b.actorName || null, allowMultiple: true })
       if (!result.ok) {
         const status = result.code === "WRONG_ORDER" || result.code === "ALREADY_ASSIGNED" ? 409 : 400
         return NextResponse.json({ success: false, error: result.error }, { status })
+      }
+
+      // An ADDITIONAL bag adds capacity to an order whose garments already moved
+      // on. Nothing to advance, nothing to retire — report the new bag list.
+      if (result.addedBag) {
+        return NextResponse.json({ success: true, data: { ...result, advanced: 0, addedBag: result.addedBag, totalBags: result.totalBags } })
       }
 
       // Advance every garment past Sorting to its next stage in its own
