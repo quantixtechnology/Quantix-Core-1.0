@@ -29,6 +29,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { useScanSink } from "@/lib/hardware"
 import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
@@ -386,6 +387,9 @@ export function LaundryPacking() {
 
   const openOrder = (o: OrderRow | null) => { setSelected(o); setResult(null) }
 
+  // The order's authoritative bag list, re-read whenever it changes.
+  const { bags, loadBags } = useOrderBags(selected?.id ?? null, currentBusinessId)
+
   const runPack = async (bagCode?: string) => {
     if (!selected || !currentBusinessId) return
     setBusy(true)
@@ -522,6 +526,18 @@ export function LaundryPacking() {
               )}
               {usesBag(mode) && (
                 <div className="space-y-2 mt-2">
+                  {/* ONE ORDER → ONE OR MORE BAGS. The list comes from the
+                      order's own bag assignments — the plan Sorting made — and
+                      Packing may add to it when the physical load needs another
+                      bag. Adding never replaces: existing bags keep their ids
+                      and history. */}
+                  <OrderBagList
+                    orderId={selected.id}
+                    businessId={currentBusinessId || ""}
+                    bags={bags}
+                    onChanged={loadBags}
+                    disabled={busy}
+                  />
                   <p className="text-sm text-slate-500">Scan the reusable bag holding this order{mode === "BOTH" ? " — the bag QR is an equally valid package identifier." : "."}</p>
                   <div className="flex gap-2">
                     <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" {...packScan} /></div>
