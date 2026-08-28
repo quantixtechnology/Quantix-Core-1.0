@@ -22,6 +22,7 @@ const perfect = (status: string, over: Partial<OrderStateEvidence> = {}): OrderS
   hasProcessingEvent: true, hasStoreReceiptEvent: true,
   pickupRequired: true, pickupCompletedAt: new Date(),
   deliveryRequired: true, deliveredAt: null, deliveryCompletedAt: null,
+  amountPaid: 100, balanceDue: 0, paymentStatus: 'PAID',
   ...over,
 })
 

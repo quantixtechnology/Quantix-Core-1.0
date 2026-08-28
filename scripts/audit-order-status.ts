@@ -26,7 +26,7 @@
 //  STATUS_RECONCILED event, so the original trail survives in full.
 // ============================================================================
 import { prisma } from "@/lib/prisma"
-import { loadOrderEvidence, reconcileStatus, checkStateInvariants } from "@/lib/laundry-order-state"
+import { loadOrderEvidence, reconcileStatus, checkStateInvariants, WORKFLOW_ORDER } from "@/lib/laundry-order-state"
 import { statusLabel } from "@/lib/laundry-workflow"
 
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString().replace("T", " ").slice(0, 19) : "—")
@@ -101,11 +101,35 @@ async function trace(orderNumber: string) {
   return ev
 }
 
-async function applyFix(orderId: string) {
+/**
+ * Apply a repair. With no `approvedTarget` the destination comes from
+ * reconcileStatus; with one, that EXACT stage is used instead — the operator has
+ * reviewed the forensic trace and decided. An approved target is still checked:
+ * it must be a real stage, strictly BACKWARDS from where the order sits, and
+ * supported by the order's own evidence. A human may choose a safer stage than
+ * the reconciler proposes; nobody may choose a further-forward one.
+ */
+async function applyFix(orderId: string, approvedTarget?: string) {
   const ev = await loadOrderEvidence(orderId)
   if (!ev) return null
-  const fix = reconcileStatus(ev)
+  let fix = reconcileStatus(ev)
   if (!fix) return null
+  if (approvedTarget) {
+    if (!WORKFLOW_ORDER.includes(approvedTarget as never)) {
+      console.error(`  REFUSED: "${approvedTarget}" is not a workflow stage.`)
+      return null
+    }
+    if (WORKFLOW_ORDER.indexOf(approvedTarget as never) >= WORKFLOW_ORDER.indexOf(fix.from as never)) {
+      console.error(`  REFUSED: ${approvedTarget} is not backwards from ${fix.from}. A repair only ever moves an order back.`)
+      return null
+    }
+    const verdict = checkStateInvariants(approvedTarget, ev)
+    if (!verdict.ok) {
+      console.error(`  REFUSED: ${approvedTarget} is not supported by this order's evidence — ${verdict.error}`)
+      return null
+    }
+    fix = { ...fix, to: approvedTarget, reason: `${fix.reason} · operator-approved target ${approvedTarget} after forensic review` }
+  }
   const moved = await prisma.laundryOrder.updateMany({
     where: { id: ev.id, status: fix.from as never },
     data: { status: fix.to as never },
@@ -154,16 +178,25 @@ async function main() {
   const doScan = args.includes("--scan")
   const bizIdx = args.indexOf("--business")
   const businessId = bizIdx >= 0 ? args[bizIdx + 1] : undefined
-  const orderNumbers = args.filter((a) => !a.startsWith("--") && a !== businessId)
+  const toIdx = args.indexOf("--to")
+  const approvedTarget = toIdx >= 0 ? args[toIdx + 1] : undefined
+  const orderNumbers = args.filter((a) => !a.startsWith("--") && a !== businessId && a !== approvedTarget)
 
   if (!doScan && orderNumbers.length === 0) {
-    console.log("Usage: npx tsx scripts/audit-order-status.ts <ORDER_NUMBER…> | --scan [--business <lbId>] [--apply]")
+    console.log("Usage: npx tsx scripts/audit-order-status.ts <ORDER_NUMBER…> [--apply] [--to <STATUS>]")
+    console.log("       npx tsx scripts/audit-order-status.ts --scan [--business <lbId>] [--apply]")
+    console.log("  --to <STATUS>  apply an operator-APPROVED target instead of the computed one.")
+    console.log("                 Still refused unless it is strictly backwards and evidence-supported.")
     return
   }
 
   if (doScan) {
     const bad = await scan(businessId)
     if (!bad.length) return
+    if (approvedTarget) {
+      console.log("\n--to applies to named orders only, never to a whole scan — each target must be reviewed per order.")
+      return
+    }
     if (!apply) {
       console.log(`\nDry run — re-run with --apply to reconcile these ${bad.length} order(s).`)
       return
@@ -180,8 +213,8 @@ async function main() {
   for (const n of orderNumbers) {
     const ev = await trace(n)
     if (apply && ev) {
-      const r = await applyFix(ev.id)
-      console.log(r ? `\n  APPLIED: ${r.from} → ${r.to}` : `\n  Nothing to apply.`)
+      const r = await applyFix(ev.id, approvedTarget)
+      console.log(r ? `\n  APPLIED: ${r.from} → ${r.to}` : `\n  Nothing applied.`)
     }
   }
 }

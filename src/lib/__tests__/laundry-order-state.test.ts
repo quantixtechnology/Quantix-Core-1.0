@@ -27,6 +27,11 @@ const base = (over: Partial<OrderStateEvidence> = {}): OrderStateEvidence => ({
   deliveryRequired: true,
   deliveredAt: null,
   deliveryCompletedAt: null,
+  // Default: the money is settled, so existing cases exercise the workflow
+  // rules alone. The payment-aware reconciliation is tested explicitly below.
+  amountPaid: 100,
+  balanceDue: 0,
+  paymentStatus: 'PAID',
   ...over,
 })
 
@@ -206,6 +211,46 @@ describe('reconciliation of already-corrupted rows', () => {
       const fix = reconcileStatus(base({ status: s }))
       if (fix) expect(inFlight, `${s} → ${fix.to}`).not.toContain(fix.to)
     }
+  })
+
+  // The two production orders this was written for: audit approved, then seven
+  // PAY_LATER clicks fabricating the whole physical chain. No money was ever
+  // taken, so the repair must not ratify the first of those clicks.
+  it('an unpaid corrupted order goes back to Payment Collection, not Packing', () => {
+    const fix = reconcileStatus(base({
+      status: 'DELIVERED', itemCount: 16, inspectedCount: 16, processedCount: 0,
+      hasProcessingEvent: false, hasStoreReceiptEvent: false,
+      pickupRequired: false, pickupCompletedAt: null,
+      amountPaid: 0, balanceDue: 210, paymentStatus: 'UNPAID',
+    }))
+    expect(fix?.from).toBe('DELIVERED')
+    expect(fix?.to).toBe('PAYMENT_PENDING')
+  })
+
+  it('a corrupted order whose money WAS collected returns to Packing & QR', () => {
+    const fix = reconcileStatus(base({
+      status: 'DELIVERED', itemCount: 4, inspectedCount: 4, processedCount: 0,
+      hasProcessingEvent: false, hasStoreReceiptEvent: false,
+      pickupRequired: false, amountPaid: 500, balanceDue: 0, paymentStatus: 'PAID',
+    }))
+    expect(fix?.to).toBe('READY_FOR_PROCESSING')
+  })
+
+  it('a subscription-covered corrupted order is treated as settled', () => {
+    const fix = reconcileStatus(base({
+      status: 'DELIVERED', itemCount: 4, inspectedCount: 4, processedCount: 0,
+      hasProcessingEvent: false, pickupRequired: false,
+      amountPaid: 0, balanceDue: 0, paymentStatus: 'SUBSCRIPTION',
+    }))
+    expect(fix?.to).toBe('READY_FOR_PROCESSING')
+  })
+
+  // The payment rule must never reach into a VALID row.
+  it('a legitimately pay-later\'d order that really was packed is untouched', () => {
+    expect(reconcileStatus(base({
+      status: 'PACKED', itemCount: 4, inspectedCount: 4,
+      amountPaid: 0, balanceDue: 200, paymentStatus: 'UNPAID',
+    }))).toBeNull()
   })
 
   it('leaves a genuinely delivered order alone', () => {

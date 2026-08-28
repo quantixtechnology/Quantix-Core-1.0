@@ -105,6 +105,10 @@ export interface OrderStateEvidence {
   deliveryRequired: boolean
   deliveredAt: Date | null
   deliveryCompletedAt: Date | null
+  /** Money actually taken. Pay Later posts none, by design. */
+  amountPaid: number
+  balanceDue: number
+  paymentStatus: string
 }
 
 export type StateVerdict = { ok: true } | { ok: false; code: string; error: string }
@@ -123,6 +127,19 @@ export function garmentsIdentified(ev: OrderStateEvidence): boolean {
 export function processingComplete(ev: OrderStateEvidence): boolean {
   if (ev.itemCount > 0 && ev.processedCount >= ev.itemCount) return true
   return ev.hasProcessingEvent
+}
+
+/**
+ * Money has actually been settled for this order.
+ *
+ * Pay Later deliberately posts NO money — it is an arrangement, not a payment —
+ * so an order that only ever had a Pay Later reads as unsettled here. That is
+ * the point: see reconcileStatus, which will not ratify a Pay Later that came
+ * out of a corrupted burst of clicks.
+ */
+export function paymentSettled(ev: OrderStateEvidence): boolean {
+  if (ev.paymentStatus === "PAID" || ev.paymentStatus === "SUBSCRIPTION") return true
+  return ev.amountPaid > 0 || ev.balanceDue <= 0
 }
 
 /** A delivery actually happened — a completion stamp, not an assignment. */
@@ -244,6 +261,9 @@ export async function loadOrderEvidence(
       deliveryRequired: true,
       deliveredAt: true,
       deliveryCompletedAt: true,
+      amountPaid: true,
+      balanceDue: true,
+      paymentStatus: true,
       items: { select: { inspectedAt: true, processingStage: true, processingStatus: true } },
     },
   })
@@ -275,6 +295,9 @@ export async function loadOrderEvidence(
     deliveryRequired: order.deliveryRequired,
     deliveredAt: order.deliveredAt,
     deliveryCompletedAt: order.deliveryCompletedAt,
+    amountPaid: order.amountPaid,
+    balanceDue: order.balanceDue,
+    paymentStatus: order.paymentStatus,
   }
 }
 
@@ -388,6 +411,25 @@ export function reconcileStatus(ev: OrderStateEvidence): Reconciliation | null {
     if (ev.pickupRequired && !ev.hasStoreReceiptEvent) {
       target = ev.pickupCompletedAt ? "IN_TRANSIT_TO_STORE" : "AWAITING_PICKUP_ASSIGNMENT"
     }
+  }
+
+  // PAYMENT IS NOT RATIFIED BY A CORRUPTED BURST.
+  //
+  // An order can only sit at Packing & QR or beyond because it LEFT Payment
+  // Collection. When the row is already corrupt and no money was ever taken, the
+  // only thing that moved it past Payment was a Pay Later click — and on the
+  // orders this was written for, that click is indistinguishable from the six
+  // identical clicks after it that fabricated the physical chain. Ratifying one
+  // of seven would silently make a business decision on the operator's behalf,
+  // so the repair hands Payment Collection back to staff instead. The balance,
+  // the invoice and the PAY_LATER history are all left exactly as they are; a
+  // deliberate Pay Later can simply be taken again.
+  //
+  // This applies ONLY to rows that are already invalid — a legitimately
+  // pay-later'd order with real packing evidence is valid, so it never reaches
+  // here and is never touched.
+  if (WORKFLOW_ORDER.indexOf(target) >= WORKFLOW_ORDER.indexOf("READY_FOR_PROCESSING") && !paymentSettled(ev)) {
+    target = "PAYMENT_PENDING"
   }
 
   if (target === ev.status) return null
