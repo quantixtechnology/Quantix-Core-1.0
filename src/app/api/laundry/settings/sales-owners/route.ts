@@ -24,7 +24,7 @@ export const runtime = "nodejs"
 
 /** The CRM field that holds the configured owners. */
 // The canonical key, from the CRM defaults — one definition, not two.
-import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
+import { LEAD_OWNER_FIELD_KEY, type SalesOwner } from "@/lib/crm-field-keys"
 
 interface FieldOption { value: string; label?: string; order?: number; active?: boolean }
 
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: [] })
     }
 
-    const owners = parsed
+    const owners: SalesOwner[] = parsed
       // `active !== false` matches how CRM itself reads these: an option
       // written before the flag existed counts as active.
       .filter((o) => o && typeof o.value === "string" && o.value.trim() && o.active !== false)

@@ -36,7 +36,8 @@ describe('the canonical field is the one already in use', () => {
 
   it('the Customer form and the defaults share ONE definition', () => {
     // Two copies of a key is how they drift apart.
-    expect(OWNERS).toContain('import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"')
+    expect(OWNERS).toContain('LEAD_OWNER_FIELD_KEY')
+    expect(OWNERS).toContain('from "@/lib/crm-field-keys"')
     expect(OWNERS).not.toContain('const LEAD_OWNER_FIELD_KEY =')
   })
 

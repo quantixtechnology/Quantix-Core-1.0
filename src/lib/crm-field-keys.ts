@@ -14,3 +14,21 @@
  * people who may own a lead — which is configuration, not per-lead data.
  */
 export const LEAD_OWNER_FIELD_KEY = "lead_owner"
+
+/**
+ * One entry of the sales roster, exactly as GET /api/laundry/settings/sales-owners
+ * returns it.
+ *
+ * Shared because every consumer had been declaring its own shape and one of them
+ * got it wrong: the lead form typed the roster as { value, label } while the
+ * endpoint returns { id, name }, so every option rendered with an undefined
+ * value and the dropdown showed only the lead's current owner. The contract now
+ * lives beside the field key it comes from, so a mismatch fails to compile.
+ *
+ * `id` is the configured option's value; `name` is what the operator sees and
+ * what a lead stores in assignedToName.
+ */
+export interface SalesOwner {
+  id: string
+  name: string
+}

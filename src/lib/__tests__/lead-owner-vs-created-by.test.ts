@@ -73,7 +73,10 @@ describe('one control labelled Lead Owner, not two', () => {
 
   it('an owner no longer on the roster stays selectable', () => {
     // History is not a validation error — an old lead keeps its owner.
-    expect(FORM).toContain('{assignedToName && !owners.some((o) => o.value === assignedToName) && (')
+    // Compares the owner's NAME: the roster is { id, name } (SalesOwner), and
+    // comparing against a non-existent `.value` was what made this fallback fire
+    // every time and reduce the dropdown to the lead's current owner.
+    expect(FORM).toContain('{assignedToName && !owners.some((o) => o.name === assignedToName) && (')
   })
 
   it('no roster yet still leaves a working field', () => {

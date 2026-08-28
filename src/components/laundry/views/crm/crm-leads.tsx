@@ -25,7 +25,7 @@ import {
 import { toast } from "sonner"
 import { CrmLeadImportDialog } from "@/components/laundry/views/crm/crm-lead-import-dialog"
 import { getAuthHeaders } from "@/lib/admin-fetch"
-import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"
+import { LEAD_OWNER_FIELD_KEY, type SalesOwner } from "@/lib/crm-field-keys"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   type CrmLead, type CrmField, useCrmMeta, useCrmActor, parseValues, parseOptions, displayValue, fmtDate,
@@ -465,7 +465,15 @@ export function LeadFormDialog({ businessId, fields, sources, priorities, lead, 
     .sort((a, b) => a.displayOrder - b.displayOrder)
 
   // The roster, from that same field's options.
-  const [owners, setOwners] = useState<{ value: string; label: string }[]>([])
+  //
+  // Typed with the SAME shape the endpoint and the Customer form use. It was
+  // declared here as { value, label } while /settings/sales-owners returns
+  // { id, name }: every option rendered with an undefined value, and the
+  // "keep an off-roster owner selectable" fallback below always fired because
+  // `o.value === assignedToName` could never match. The result was a dropdown
+  // showing only the lead's current owner. Sharing the type means a future
+  // change to that contract fails to compile instead of emptying the list.
+  const [owners, setOwners] = useState<SalesOwner[]>([])
   useEffect(() => {
     if (!businessId) return
     fetch(`/api/laundry/settings/sales-owners?businessId=${encodeURIComponent(businessId)}`, { headers: getAuthHeaders() })
@@ -544,8 +552,8 @@ export function LeadFormDialog({ businessId, fields, sources, priorities, lead, 
               <Select value={assignedToName || undefined} onValueChange={setAssignedToName}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select owner…" /></SelectTrigger>
                 <SelectContent>
-                  {owners.map((o) => <SelectItem key={o.value} value={o.value}>{o.label || o.value}</SelectItem>)}
-                  {assignedToName && !owners.some((o) => o.value === assignedToName) && (
+                  {owners.map((o) => <SelectItem key={o.id} value={o.name}>{o.name}</SelectItem>)}
+                  {assignedToName && !owners.some((o) => o.name === assignedToName) && (
                     <SelectItem value={assignedToName}>{assignedToName}</SelectItem>
                   )}
                 </SelectContent>

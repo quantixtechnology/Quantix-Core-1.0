@@ -90,7 +90,8 @@ describe('the owner list is the CRM Lead Owner field, not the staff list', () =>
     // The key now comes from the CRM defaults, where the field is a protected
     // system field — one definition shared, rather than a copy here that could
     // drift from the one the seed uses.
-    expect(OWNERS).toContain('import { LEAD_OWNER_FIELD_KEY } from "@/lib/crm-field-keys"')
+    expect(OWNERS).toContain('LEAD_OWNER_FIELD_KEY')
+    expect(OWNERS).toContain('from "@/lib/crm-field-keys"')
     expect(OWNERS).toContain('prisma.laundryCrmLeadField.findFirst')
     expect(OWNERS).toContain('fieldKey: LEAD_OWNER_FIELD_KEY')
   })
