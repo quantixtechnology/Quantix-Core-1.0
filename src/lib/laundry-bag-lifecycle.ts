@@ -274,7 +274,7 @@ export interface DispositionInput {
  * the customer kept are all successful deliveries — the bag outcome is recorded
  * beside the delivery, never in front of it (Rule 3, §5).
  */
-export async function applyDeliveryDisposition(input: DispositionInput): Promise<LifecycleResult<{ bagNumber: string | null; disposition: Disposition }>> {
+export async function applyDeliveryDisposition(input: DispositionInput): Promise<LifecycleResult<{ bagNumber: string | null; disposition: Disposition; bagNumbers?: string[] }>> {
   const disposition = input.disposition && isDisposition(input.disposition) ? input.disposition : DEFAULT_DISPOSITION
 
   const order = await prisma.laundryOrder.findFirst({
@@ -283,23 +283,46 @@ export async function applyDeliveryDisposition(input: DispositionInput): Promise
   })
   if (!order) return { ok: false, status: 404, error: "Order not found" }
 
-  // No bag on this delivery is a legitimate outcome, not an error.
-  if (!order.deliveryBagNumber || disposition === DISPOSITION.NO_BAG_DELIVERED) {
-    return { ok: true, bagNumber: order.deliveryBagNumber ?? null, disposition: DISPOSITION.NO_BAG_DELIVERED }
+  if (disposition === DISPOSITION.NO_BAG_DELIVERED) {
+    return { ok: true, bagNumber: order.deliveryBagNumber ?? null, disposition: DISPOSITION.NO_BAG_DELIVERED, bagNumbers: [] }
   }
 
-  const bag = await prisma.laundryBag.findFirst({
-    where: { businessId: input.lbId, OR: [{ bagNumber: order.deliveryBagNumber }, { qrValue: order.deliveryBagNumber }] },
+  // THE ORDER'S BAG SET. One order may have been packed into several bags, and
+  // the customer receives ALL of them — so every one is dispositioned, not just
+  // the single code the executive happened to scan before setting off.
+  //
+  // LaundryBagAssignment is the authority. `deliveryBagNumber` is the LEGACY
+  // fallback and is still read for orders that pre-date the assignment rows, so
+  // an old one-bag delivery behaves exactly as it always did (§20). It is never
+  // comma-packed and never written with more than one code.
+  const assigned = await prisma.laundryBagAssignment.findMany({
+    where: { businessId: input.lbId, orderId: order.id },
+    select: { bagId: true },
   })
-  // A free-text delivery bag code that is not a registered reusable bag — the
-  // delivery still stands; there is simply no asset to move.
-  if (!bag) return { ok: true, bagNumber: order.deliveryBagNumber, disposition }
+  const bags = assigned.length
+    ? await prisma.laundryBag.findMany({ where: { businessId: input.lbId, id: { in: assigned.map((a) => a.bagId) } } })
+    : order.deliveryBagNumber
+      ? await prisma.laundryBag.findMany({
+          where: { businessId: input.lbId, OR: [{ bagNumber: order.deliveryBagNumber }, { qrValue: order.deliveryBagNumber }] },
+        })
+      : []
+
+  // No bag on this delivery is a legitimate outcome, not an error. So is a
+  // free-text code that is not a registered reusable bag — the delivery stands,
+  // there is simply no asset to move.
+  if (!bags.length) {
+    return { ok: true, bagNumber: order.deliveryBagNumber ?? null, disposition: order.deliveryBagNumber ? disposition : DISPOSITION.NO_BAG_DELIVERED, bagNumbers: [] }
+  }
 
   const customer = order.customerId
     ? await prisma.customer.findUnique({ where: { id: order.customerId }, select: { name: true } })
     : null
 
   const now = new Date()
+
+  // Every bag of the order gets the SAME disposition — the customer either
+  // received the delivery or did not. Per-bag so each keeps its own history.
+  for (const bag of bags) {
   const prevStatus = bag.status
   const prevCustodian = bag.currentCustodianType
 
@@ -307,7 +330,7 @@ export async function applyDeliveryDisposition(input: DispositionInput): Promise
   // customer; the rest bring it back toward the laundry.
   let status: BagStatus
   let custodianType: Custodian
-  let condition = bag.condition
+  let condition: string = bag.condition
   let returnStatus: string
   switch (disposition) {
     case DISPOSITION.HANDED_TO_CUSTOMER:
@@ -367,8 +390,9 @@ export async function applyDeliveryDisposition(input: DispositionInput): Promise
       reason: input.reason ?? null, actor: input.actor,
     })
   })
+  }
 
-  return { ok: true, bagNumber: bag.bagNumber, disposition }
+  return { ok: true, bagNumber: bags[0].bagNumber, disposition, bagNumbers: bags.map((b) => b.bagNumber) }
 }
 
 // ── Identifying a bag a customer brings back (§6, §9, §11) ───────────────────
