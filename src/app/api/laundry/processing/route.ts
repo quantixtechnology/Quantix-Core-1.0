@@ -121,6 +121,10 @@ export async function GET(request: Request) {
         serviceName: r.serviceName, quantity: r.quantity, orderId: r.orderId, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
         processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
+        // The garment's OWN recorded weight, in kg, exactly as stored — read
+        // only, never derived or defaulted. Feeds the workstation workload
+        // summary; nothing writes it here.
+        weightKg: r.weightKg,
         stageLabel: stageLabel(r.processingStage), department: departmentFor(r.processingStage),
       }))
 
@@ -133,7 +137,7 @@ export async function GET(request: Request) {
       })
       const evIds = [...new Set(events.map((e) => e.itemId))]
       const evItems = evIds.length
-        ? await prisma.laundryOrderItem.findMany({ where: { id: { in: evIds } }, select: { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceName: true, order: { select: { orderNumber: true } } } })
+        ? await prisma.laundryOrderItem.findMany({ where: { id: { in: evIds } }, select: { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceName: true, weightKg: true, order: { select: { orderNumber: true } } } })
         : []
       const em = new Map(evItems.map((i) => [i.id, i]))
       const q = search.toLowerCase()
@@ -144,6 +148,7 @@ export async function GET(request: Request) {
             id: e.id, itemId: e.itemId,
             itemNumber: it?.itemNumber || null, barcode: it?.barcode || null, garmentScanCode: it?.garmentScanCode || null,
             garmentName: it?.garmentName || "Garment", serviceName: it?.serviceName || null,
+            weightKg: it?.weightKg ?? null,
             orderNumber: it?.order.orderNumber || null,
             action: e.action, actorName: e.actorName || null, completedAt: e.createdAt,
             // Where the garment moved to after finishing this stage — so staff can

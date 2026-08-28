@@ -16,12 +16,15 @@ import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { LaundryWorkloadSummary } from "@/components/laundry/workload-summary"
+import { summariseWorkload } from "@/lib/laundry-workload"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
   garmentName: string; serviceName: string; quantity: number
   orderNumber: string; customer: string | null
   processingStatus: string | null; processFlow?: string | null
+  weightKg?: number | null
 }
 
 interface ScanResult {
@@ -69,13 +72,18 @@ async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; a
   return { ok: true, action, garmentName, orderNumber: d.order?.orderNumber || "", nextStage: rj.data?.processingStage ?? null }
 }
 
+// Stages that show the workload summary. Washing and Dry Cleaning are the
+// garment-weight departments where an operator plans by load; add a stage here
+// to surface it elsewhere — nothing else needs to change.
+const SHOW_WORKLOAD_SUMMARY = new Set(["WASH", "DRYCLEAN"])
+
 export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
   const { currentBusinessId, user } = useAuthStore()
   const { toast } = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [completed, setCompleted] = useState<{ id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null }[]>([])
+  const [completed, setCompleted] = useState<{ id: string; itemId?: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null; weightKg?: number | null }[]>([])
   const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
@@ -276,6 +284,10 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
 
   const waiting = items.filter((i) => i.processingStatus === "WAITING")
   const active = items.filter((i) => i.processingStatus === "IN_PROGRESS" || i.processingStatus === "PAUSED")
+  // Workload summary — computed from `items` / `completed` on every render, so
+  // it is the same server data the three columns below are showing. No stored
+  // counter, nothing to go stale after a scan, Start, Complete or refresh.
+  const workload = summariseWorkload(items, completed.map((c) => ({ itemId: c.itemId ?? c.id, weightKg: c.weightKg })))
   const inProgress = active.filter((i) => i.processingStatus === "IN_PROGRESS")
 
   // Keep the selection in sync with what's actually still in progress (a garment
@@ -393,6 +405,10 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
         </h1>
         <p className="text-sm text-slate-500">{departmentFor(stage) || stageLabel(stage)} workstation · scan a garment barcode to start or complete.</p>
       </div>
+
+      {/* Workload at a glance — the primary indicator for the operator. The
+          Waiting / In Progress / Completed columns below are unchanged. */}
+      {SHOW_WORKLOAD_SUMMARY.has(stage) && <LaundryWorkloadSummary summary={workload} loading={loading} />}
 
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4">
