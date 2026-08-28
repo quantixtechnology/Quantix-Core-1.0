@@ -44,7 +44,7 @@ export async function markOrderDelivered(opts: {
   const gate = await guardStatusWrite({
     orderId: order.id, businessId: opts.lbId,
     from: "READY_FOR_DELIVERY", to: "DELIVERED",
-    allowInternal: true, deliveryCompletion: true,
+    allowInternal: true, custodyAction: true, deliveryCompletion: true,
   })
   if (!gate.ok) return { ok: false, status: 409, error: gate.error, code: gate.code }
 

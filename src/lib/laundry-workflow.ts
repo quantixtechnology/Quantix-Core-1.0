@@ -66,6 +66,23 @@ export interface TransitionDef {
   // Side-effect transitions: only their dedicated endpoint may perform them
   // (payment record, packet creation, transit legs, delivery capture).
   internal?: boolean
+  // PHYSICAL CUSTODY edges — the garments actually move or change hands.
+  //
+  // `internal` says "not the generic API's to drive"; `custody` says something
+  // stronger: this edge asserts a physical fact about where the garments ARE.
+  // Only the endpoint that observes that fact (a scan, a handover, a confirmed
+  // delivery) may take it, and the state guard refuses it to anyone who does not
+  // declare they performed it (see assertTransition's `custodyAction`).
+  //
+  // This is the structural rule that stops a NON-PHYSICAL endpoint — a payment,
+  // a bulk tool, a future admin shortcut — from impersonating an operation. It
+  // is what the Pay Later defect exploited: a money decision took the pickup,
+  // packing, dispatch, receive and delivery edges one at a time.
+  //
+  // Note what is NOT custody: COLLECT_PAYMENT is `internal` (only the payment
+  // endpoint records money) but moves no garments, so the payment endpoint may
+  // still take it. Custody is always a strict subset of internal.
+  custody?: boolean
 }
 
 // Allowed forward (and corrective) transitions per status.
@@ -78,7 +95,7 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     // Chain of custody: the EXECUTIVE completing the pickup moves the order into
     // transit (fired by the executive status endpoint — internal, so no admin/store
     // button can skip the executive's confirmation)…
-    { to: "IN_TRANSIT_TO_STORE", action: "PICKUP_COMPLETED", label: "Pickup Completed (Executive)", primary: true, internal: true },
+    { to: "IN_TRANSIT_TO_STORE", action: "PICKUP_COMPLETED", label: "Pickup Completed (Executive)", primary: true, internal: true, custody: true },
     // …while a STORE-side manual receive remains as the recovery path for orders
     // that never went through an executive flow (legacy/walk-in drop).
     { to: "PENDING_STORE_AUDIT", action: "RECEIVE_PICKUP_AT_STORE", label: "Pickup Received at Store" },
@@ -113,16 +130,16 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   READY_FOR_PROCESSING: [
-    { to: "PACKED", action: "PACK_ORDER", label: "Pack & Generate QR", primary: true, internal: true },
+    { to: "PACKED", action: "PACK_ORDER", label: "Pack & Generate QR", primary: true, internal: true, custody: true },
   ],
   PACKED: [
-    { to: "IN_TRANSIT_TO_PROCESSING", action: "DISPATCH_TO_PROCESSING", label: "Dispatch to Processing", primary: true, internal: true },
+    { to: "IN_TRANSIT_TO_PROCESSING", action: "DISPATCH_TO_PROCESSING", label: "Dispatch to Processing", primary: true, internal: true, custody: true },
   ],
   IN_TRANSIT_TO_PROCESSING: [
-    { to: "PROCESSING", action: "RECEIVE_AT_PROCESSING", label: "Receive at Processing Center", primary: true, internal: true },
+    { to: "PROCESSING", action: "RECEIVE_AT_PROCESSING", label: "Receive at Processing Center", primary: true, internal: true, custody: true },
   ],
   PROCESSING: [
-    { to: "RETURN_IN_TRANSIT", action: "DISPATCH_TO_STORE", label: "Dispatch to Store", primary: true, internal: true },
+    { to: "RETURN_IN_TRANSIT", action: "DISPATCH_TO_STORE", label: "Dispatch to Store", primary: true, internal: true, custody: true },
   ],
   // Legacy status kept for orders created before the transit stages existed.
   QC_PENDING: [
@@ -130,10 +147,10 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     { to: "PROCESSING", action: "QC_REWORK", label: "Send for Rework" },
   ],
   RETURN_IN_TRANSIT: [
-    { to: "READY_FOR_DELIVERY", action: "RECEIVE_AT_STORE", label: "Receive at Store", primary: true, internal: true },
+    { to: "READY_FOR_DELIVERY", action: "RECEIVE_AT_STORE", label: "Receive at Store", primary: true, internal: true, custody: true },
   ],
   READY_FOR_DELIVERY: [
-    { to: "DELIVERED", action: "MARK_DELIVERED", label: "Mark Delivered", primary: true, internal: true },
+    { to: "DELIVERED", action: "MARK_DELIVERED", label: "Mark Delivered", primary: true, internal: true, custody: true },
   ],
   DELIVERED: [],
   CANCELLED: [],
@@ -146,6 +163,12 @@ export function getTransitions(status: string): TransitionDef[] {
 export function isTransitionAllowed(from: string, to: string): boolean {
   return getTransitions(from).some((t) => t.to === to)
 }
+
+/** The physical-custody edges, in one place — used by the state guard and tests. */
+export const CUSTODY_ACTIONS: string[] = Object.values(TRANSITIONS)
+  .flat()
+  .filter((t) => t.custody)
+  .map((t) => t.action)
 
 export function getTransition(from: string, to: string): TransitionDef | undefined {
   return getTransitions(from).find((t) => t.to === to)

@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { checkAuditComplete } from "@/lib/laundry-audit"
-import { guardStatusWrite } from "@/lib/laundry-order-state"
+import { guardFinancialAdvance } from "@/lib/laundry-order-state"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -88,9 +88,11 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
   const from = String(order.status)
   const primary = getTransitions(from).find((t) => t.primary && t.to !== "CANCELLED")
   if (!primary) return null
-  // The physical edges are not a payment's to take. Skipping them here is what
-  // keeps Pay Later a financial record instead of a workflow shortcut.
-  if (primary.internal) return null
+  // A PAYMENT PERFORMS NO PHYSICAL WORK — refused here, at the payment route
+  // itself, independently of the state guard below. Two protections, either one
+  // sufficient: this endpoint will not ASK for a physical edge, and
+  // guardFinancialAdvance is structurally incapable of GRANTING one.
+  if (primary.internal || primary.custody) return null
 
   if (primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT") {
     const audit = await checkAuditComplete(orderId)
@@ -99,7 +101,7 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
 
   // Server-side state guard — the destination must be supported by the order's
   // own evidence, not merely reachable on the graph.
-  const verdict = await guardStatusWrite({ orderId, businessId, from, to: primary.to })
+  const verdict = await guardFinancialAdvance({ orderId, businessId, from, to: primary.to })
   if (!verdict.ok) return null
 
   // One transaction: the order moves and the arrangement is recorded together,
@@ -130,9 +132,10 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
 async function advanceAfterPayment(orderId: string, businessId: string, action: "COLLECT_PAYMENT" | "PAY_LATER", actor?: string | null, note?: string | null) {
   // The payment edge still answers to the state invariants: an order whose
   // garments were never identified cannot be pushed into the Packing queue.
-  // allowInternal: THIS endpoint is the one that owns the COLLECT_PAYMENT edge —
-  // it records the money. The invariants below it still apply.
-  const verdict = await guardStatusWrite({ orderId, businessId, from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING", allowInternal: true })
+  // COLLECT_PAYMENT is `internal` (only this endpoint records money) but is NOT
+  // a custody edge — no garment moves — so the financial entry point grants it.
+  // The evidence invariants still apply on top.
+  const verdict = await guardFinancialAdvance({ orderId, businessId, from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING" })
   if (!verdict.ok) return false
   const advanced = await prisma.laundryOrder.updateMany({
     where: { id: orderId, status: "PAYMENT_PENDING" },

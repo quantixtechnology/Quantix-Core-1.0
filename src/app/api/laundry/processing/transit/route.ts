@@ -120,7 +120,7 @@ export async function POST(request: Request) {
     // The operational checks above own the physical action; this owns the
     // workflow claim, so no endpoint can advance an order past work that
     // never happened.
-    const stateGate = await guardStatusWrite({ orderId: order.id, businessId: biz.id, from: "PROCESSING", to: "RETURN_IN_TRANSIT", allowInternal: true })
+    const stateGate = await guardStatusWrite({ orderId: order.id, businessId: biz.id, from: "PROCESSING", to: "RETURN_IN_TRANSIT", allowInternal: true, custodyAction: true })
     if (!stateGate.ok) return NextResponse.json({ error: stateGate.error, code: stateGate.code }, { status: 409 })
 
     const advanced = await prisma.laundryOrder.updateMany({

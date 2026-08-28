@@ -188,7 +188,7 @@ export function assertTransition(
   from: string,
   to: string,
   ev: OrderStateEvidence,
-  opts: { allowInternal?: boolean; deliveryCompletion?: boolean } = {},
+  opts: { allowInternal?: boolean; custodyAction?: boolean; deliveryCompletion?: boolean } = {},
 ): StateVerdict {
   if (from === to) return { ok: false, code: "NO_CHANGE", error: `Order is already ${statusLabel(to)}` }
 
@@ -205,6 +205,18 @@ export function assertTransition(
       ok: false,
       code: "INTERNAL_TRANSITION",
       error: `"${edge.label}" records operational data — it must be performed from its own workflow screen, not as a side effect.`,
+    }
+  }
+  // PHYSICAL CUSTODY — the second, independent protection. `allowInternal` says
+  // "this endpoint owns the edge"; this says "and it actually observed the
+  // physical event". Only the endpoint that takes the scan / handover /
+  // confirmed delivery passes `custodyAction`, so no financial, administrative
+  // or bulk path can assert that garments moved.
+  if (edge.custody && !opts.custodyAction) {
+    return {
+      ok: false,
+      code: "CUSTODY_TRANSITION",
+      error: `"${edge.label}" is a physical operation — it can only be recorded by the person who performs it, never as a side effect of another action.`,
     }
   }
   return checkStateInvariants(to, ev, opts)
@@ -278,14 +290,39 @@ export async function guardStatusWrite(opts: {
   from: string
   to: string
   allowInternal?: boolean
+  /** Declared ONLY by the endpoint that physically performed the custody event. */
+  custodyAction?: boolean
   deliveryCompletion?: boolean
 }): Promise<StateVerdict> {
   const ev = await loadOrderEvidence(opts.orderId, opts.businessId)
   if (!ev) return { ok: false, code: "NOT_FOUND", error: "Order not found" }
   return assertTransition(opts.from, opts.to, ev, {
     allowInternal: opts.allowInternal,
+    custodyAction: opts.custodyAction,
     deliveryCompletion: opts.deliveryCompletion,
   })
+}
+
+/**
+ * THE ONLY sanctioned way a MONEY endpoint may move an order.
+ *
+ * A payment decision may take a financial edge (COLLECT_PAYMENT records money,
+ * which is exactly what the payment endpoint does) but never a physical one.
+ * This helper hard-codes that: `allowInternal` is granted, `custodyAction` is
+ * not — and cannot be, because the parameter is not in its signature.
+ *
+ * Structural, not merely conventional: a future payment/billing/ledger endpoint
+ * written against this helper is incapable of advancing an order through a
+ * custody edge, whatever its author intends. That is the second protection,
+ * independent of the evidence invariants.
+ */
+export async function guardFinancialAdvance(opts: {
+  orderId: string
+  businessId?: string
+  from: string
+  to: string
+}): Promise<StateVerdict> {
+  return guardStatusWrite({ ...opts, allowInternal: true, custodyAction: false })
 }
 
 // ── Reconciliation of already-corrupted rows ────────────────────────────────
