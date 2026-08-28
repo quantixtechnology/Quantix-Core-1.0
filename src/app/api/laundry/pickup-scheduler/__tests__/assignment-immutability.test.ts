@@ -93,9 +93,16 @@ describe('pickup-scheduler POST — assignment immutability after completion', (
     const j = await r.json()
     expect(r.status).toBe(200)
     expect(j).toMatchObject({ success: true, assigned: 1, skipped: 1 })
-    // the update may only target a2 (eligible)
-    expect(mockUpdateMany).toHaveBeenCalledTimes(1)
-    const where = mockUpdateMany.mock.calls[0][0].where
-    expect(where.id.in).toEqual(['a2'])
+    // Two statements now: the leg's own columns, then the SHARED fieldStatus
+    // stamp — scoped so assigning one leg cannot reset the other's live
+    // progress. Both may only target a2 (eligible).
+    expect(mockUpdateMany).toHaveBeenCalledTimes(2)
+    const [fields, stamp] = mockUpdateMany.mock.calls.map((c) => c[0])
+    expect(fields.where.id.in).toEqual(['a2'])
+    expect(fields.data).not.toHaveProperty('fieldStatus')
+    expect(stamp.where.id.in).toEqual(['a2'])
+    expect(stamp.data).toHaveProperty('fieldStatus')
+    // …and the stamp is guarded by the OTHER leg being idle.
+    expect(stamp.where).toMatchObject({ deliveryStartedAt: null, deliveryCompletedAt: null })
   })
 })

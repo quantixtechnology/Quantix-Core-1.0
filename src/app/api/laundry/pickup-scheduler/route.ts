@@ -17,6 +17,22 @@ import { dispatchBucketOf, buildDispatchQueueWhere, dispatchDateRangeForPreset }
 
 export const runtime = "nodejs"
 
+// ONE `fieldStatus` COLUMN, TWO LEGS.
+//
+// fieldStatus is the LIVE field state of whichever leg is being worked, and
+// assignment stamps it back to ASSIGNED. That is correct for the leg being
+// assigned and destructive for the other one: on ORD-…-002-000029 the executive
+// had reached the customer (fieldStatus REACHED, pickupStartedAt set) when the
+// desk assigned the DELIVERY executive — which reset fieldStatus to ASSIGNED and
+// threw the pickup back to step one, so it could never be completed.
+//
+// So a leg only stamps fieldStatus when the OTHER leg has no progress to lose.
+// Assignment itself is never blocked; only the shared column is left alone.
+// Offline/counter orders have no pickup leg at all, so nothing here applies to
+// them.
+const PICKUP_IDLE = { pickupStartedAt: null, pickupCompletedAt: null } as const
+const DELIVERY_IDLE = { deliveryStartedAt: null, deliveryCompletedAt: null } as const
+
 // ── Active-scope date range ───────────────────────────────────────────────
 // The live Dispatch board defaults to TODAY (legacy behavior preserved exactly)
 // but supports Yesterday / Last 7 Days / Upcoming / Custom via the shared
@@ -382,7 +398,7 @@ export async function POST(request: Request) {
     if (orderIds && Array.isArray(orderIds) && orderIds.length > 0) {
       const found = await prisma.laundryOrder.findMany({
         where: { id: { in: orderIds }, businessId: biz.id },
-        select: { id: true, storeId: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
+        select: { id: true, storeId: true, pickupStartedAt: true, pickupCompletedAt: true, deliveryStartedAt: true, deliveryCompletedAt: true, status: true },
       })
       if (found.length !== orderIds.length) return NextResponse.json({ error: "Some orders not found" }, { status: 404 })
       // Immutability: a completed pickup/delivery leg is permanent history —
@@ -398,20 +414,24 @@ export async function POST(request: Request) {
       }
       if (!execId) {
         if (type === "delivery") {
-          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: null, deliveryAssignedAt: null, deliveryAcceptance: null, deliveryAcceptedAt: null, fieldStatus: null } })
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: null, deliveryAssignedAt: null, deliveryAcceptance: null, deliveryAcceptedAt: null } })
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds }, ...PICKUP_IDLE }, data: { fieldStatus: null } })
           for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
         } else {
-          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: null, pickupAssignedAt: null, pickupAcceptance: null, pickupAcceptedAt: null, fieldStatus: null } })
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: null, pickupAssignedAt: null, pickupAcceptance: null, pickupAcceptedAt: null } })
+          await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds }, ...DELIVERY_IDLE }, data: { fieldStatus: null } })
           for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_UNASSIGNED", note: "Bulk unassign", actor }).catch(() => {}) }
         }
         return NextResponse.json({ success: true, unassigned: actionIds.length, skipped: found.length - actionIds.length })
       }
       const now2 = new Date()
       if (type === "delivery") {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now2, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now2, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds }, ...PICKUP_IDLE }, data: { fieldStatus: FIELD_STATUS.ASSIGNED } })
         for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
       } else {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now2, pickupAcceptance: "PENDING", pickupAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now2, pickupAcceptance: "PENDING", pickupAcceptedAt: null } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: actionIds }, ...DELIVERY_IDLE }, data: { fieldStatus: FIELD_STATUS.ASSIGNED } })
         for (const oid of actionIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
         for (const oid of actionIds) { await notifyCustomerForOrder(oid, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." }).catch(() => {}) }
       }
@@ -422,7 +442,7 @@ export async function POST(request: Request) {
     if (!b.orderId) return NextResponse.json({ error: "orderId required" }, { status: 400 })
     const order = await prisma.laundryOrder.findFirst({
       where: { id: b.orderId, businessId: biz.id },
-      select: { id: true, storeId: true, pickupCompletedAt: true, deliveryCompletedAt: true, status: true },
+      select: { id: true, storeId: true, pickupStartedAt: true, pickupCompletedAt: true, deliveryStartedAt: true, deliveryCompletedAt: true, status: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     // Immutability guard: once a leg is completed its executive is permanent
@@ -436,10 +456,12 @@ export async function POST(request: Request) {
     if (execId && execStoreId && order.storeId !== execStoreId) return NextResponse.json({ error: "Executive is restricted to a specific store and cannot be assigned to this order" }, { status: 403 })
 
     if (type === "delivery") {
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: execId ? new Date() : null, deliveryAcceptance: execId ? "PENDING" : null, deliveryAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
+      const pickupIdle = !order.pickupStartedAt && !order.pickupCompletedAt
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: execId ? new Date() : null, deliveryAcceptance: execId ? "PENDING" : null, deliveryAcceptedAt: null, ...(pickupIdle ? { fieldStatus: execId ? FIELD_STATUS.ASSIGNED : null } : {}) } })
       await logFieldEvent({ orderId: order.id, businessId: biz.id, action: execId ? "DELIVERY_ASSIGNED" : "DELIVERY_UNASSIGNED", note: execId ? `→ ${execName}` : "Cleared", actor })
     } else {
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { pickupExecutiveId: execId, pickupAssignedAt: execId ? new Date() : null, pickupAcceptance: execId ? "PENDING" : null, pickupAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
+      const deliveryIdle = !order.deliveryStartedAt && !order.deliveryCompletedAt
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { pickupExecutiveId: execId, pickupAssignedAt: execId ? new Date() : null, pickupAcceptance: execId ? "PENDING" : null, pickupAcceptedAt: null, ...(deliveryIdle ? { fieldStatus: execId ? FIELD_STATUS.ASSIGNED : null } : {}) } })
       await logFieldEvent({ orderId: order.id, businessId: biz.id, action: execId ? "PICKUP_ASSIGNED" : "PICKUP_UNASSIGNED", note: execId ? `→ ${execName}` : "Cleared", actor })
       if (execId) await notifyCustomerForOrder(order.id, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." })
     }
