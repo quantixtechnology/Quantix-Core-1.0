@@ -83,6 +83,9 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  // TRUE per-status counts from the server. The rendered lists are paged; these
+  // are not, so a column's number is the database's number.
+  const [queueCounts, setQueueCounts] = useState<Record<string, number> | null>(null)
   const [completed, setCompleted] = useState<{ id: string; itemId?: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null; weightKg?: number | null }[]>([])
   const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
@@ -119,6 +122,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       const j = await fetch(`/api/laundry/processing?${p}`).then((r) => r.json())
       setItems(j.items || [])
       setCompleted(j.completed || [])
+      setQueueCounts(j.queueCounts || null)
     } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId, stage, search])
   // Debounced so typing in the item-code search doesn't fire a request per keystroke.
@@ -288,6 +292,18 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // it is the same server data the three columns below are showing. No stored
   // counter, nothing to go stale after a scan, Start, Complete or refresh.
   const workload = summariseWorkload(items, completed.map((c) => ({ itemId: c.itemId ?? c.id, weightKg: c.weightKg })))
+  // Counts come from the server's unpaged totals when available; the rendered
+  // lists can be a page of a long queue, so their length is not the count.
+  const waitingCount = queueCounts?.WAITING ?? waiting.length
+  const activeCount = queueCounts?.active ?? active.length
+  // The summary tiles show the same true counts as the column badges. Weight
+  // still comes from the loaded rows, so it is flagged as partial when the
+  // queue is longer than one page rather than quietly understating the load.
+  const workloadView = {
+    ...workload,
+    pending: { ...workload.pending, garments: waitingCount, missingWeight: workload.pending.missingWeight + Math.max(0, waitingCount - waiting.length) },
+    processing: { ...workload.processing, garments: activeCount, missingWeight: workload.processing.missingWeight + Math.max(0, activeCount - active.length) },
+  }
   const inProgress = active.filter((i) => i.processingStatus === "IN_PROGRESS")
 
   // Keep the selection in sync with what's actually still in progress (a garment
@@ -408,7 +424,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
 
       {/* Workload at a glance — the primary indicator for the operator. The
           Waiting / In Progress / Completed columns below are unchanged. */}
-      {SHOW_WORKLOAD_SUMMARY.has(stage) && <LaundryWorkloadSummary summary={workload} loading={loading} />}
+      {SHOW_WORKLOAD_SUMMARY.has(stage) && <LaundryWorkloadSummary summary={workloadView} loading={loading} />}
 
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4">
@@ -443,13 +459,13 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <Card className="rounded-xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Clock className="h-[18px] w-[18px] text-amber-500" /> Waiting <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{waiting.length}</Badge></CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Clock className="h-[18px] w-[18px] text-amber-500" /> Waiting <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{waitingCount}</Badge></CardTitle></CardHeader>
             <CardContent className="space-y-2 max-h-[65vh] overflow-y-auto">
               {waiting.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">Nothing waiting.</p> : waiting.map((it) => <ItemCard key={it.id} it={it} />)}
             </CardContent>
           </Card>
           <Card className="rounded-xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Play className="h-[18px] w-[18px] text-blue-600" /> In Progress <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{active.length}</Badge></CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><Play className="h-[18px] w-[18px] text-blue-600" /> In Progress <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{activeCount}</Badge></CardTitle></CardHeader>
             {/* Bulk-advance bar: when a whole load finishes, tick the garments and
                 move them all to the next stage in one action (no per-card clicks). */}
             {inProgress.length > 0 && (

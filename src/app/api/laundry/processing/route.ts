@@ -107,12 +107,48 @@ export async function GET(request: Request) {
     // Garments in the requested workstation queue + this stage's COMPLETED history.
     let items: unknown[] = []
     let completed: unknown[] = []
+    let queueCounts: Record<string, number> = {}
     if (stage) {
-      const rows = await prisma.laundryOrderItem.findMany({
-        where: { order: { businessId: biz.id }, processingStage: stage, ...codeOr },
-        include: { order: { select: { orderNumber: true, customerId: true } } },
-        orderBy: { receivedAt: "asc" }, take: 100,
+      // ONE CAPPED QUERY CANNOT FEED THREE COLUMNS.
+      //
+      // This was a single findMany({ take: 100 }) ordered by receivedAt across
+      // every status at the stage. With 467 garments waiting at Washing and 2 in
+      // progress, the cap was filled entirely by WAITING rows and the two
+      // IN_PROGRESS garments never reached the client: the screen showed
+      // "Waiting 100 / In Progress 0" while the scanner — which looks a garment
+      // up directly — correctly said "already In Progress".
+      //
+      // Each bucket is now fetched on its own, so a backlog in one can never
+      // starve another out of the payload.
+      const baseWhere = { order: { businessId: biz.id }, processingStage: stage, ...codeOr }
+      const ACTIVE_STATUSES = ["IN_PROGRESS", "PAUSED"]
+      const QUEUE_STATUSES = ["WAITING", ...ACTIVE_STATUSES]
+      const rowInclude = { order: { select: { orderNumber: true, customerId: true } } }
+      const [waitingRows, activeRows, otherRows] = await Promise.all([
+        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: "WAITING" }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200 }),
+        // Everything an operator has open. In practice a handful; capped only so
+        // a pathological queue cannot return unbounded rows.
+        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: { in: ACTIVE_STATUSES } }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200 }),
+        // Any other status at this stage (or none yet). Sorting renders every
+        // item regardless of status, so dropping these would empty that screen.
+        prisma.laundryOrderItem.findMany({
+          where: { ...baseWhere, OR: [{ processingStatus: { notIn: QUEUE_STATUSES } }, { processingStatus: null }] },
+          include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200,
+        }),
+      ])
+      const rows = [...activeRows, ...waitingRows, ...otherRows]
+
+      // TRUE counts, straight from the database and independent of the caps
+      // above — so a column's number is the real number even when its list is
+      // showing only the first page of a long queue.
+      const queueGrouped = await prisma.laundryOrderItem.groupBy({
+        by: ["processingStatus"],
+        where: baseWhere,
+        _count: true,
       })
+      queueCounts = { WAITING: 0, IN_PROGRESS: 0, PAUSED: 0 }
+      for (const q of queueGrouped) queueCounts[q.processingStatus ?? "UNSET"] = q._count
+      queueCounts.active = (queueCounts.IN_PROGRESS || 0) + (queueCounts.PAUSED || 0)
       const cid = [...new Set(rows.map((r) => r.order.customerId).filter(Boolean) as string[])]
       const cs = cid.length ? await prisma.customer.findMany({ where: { id: { in: cid } }, select: { id: true, name: true } }) : []
       const cm = new Map(cs.map((c) => [c.id, c.name]))
@@ -162,7 +198,7 @@ export async function GET(request: Request) {
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
