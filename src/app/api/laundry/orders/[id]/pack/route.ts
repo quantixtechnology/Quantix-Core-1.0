@@ -13,6 +13,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { guardStatusWrite } from "@/lib/laundry-order-state"
 import { generatePacketNumber } from "@/lib/laundry-codes"
 import { checkAuditComplete } from "@/lib/laundry-audit"
 import { getTransportMode, transportRefForOrder } from "@/lib/laundry-transport-server"
@@ -107,6 +108,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     // Advance status atomically from the expected state only.
     const ref = await transportRefForOrder(biz.id, order.id, mode)
+    // STATE INVARIANTS — shared server guard (src/lib/laundry-order-state.ts).
+    // The operational checks above own the physical action; this owns the
+    // workflow claim, so no endpoint can advance an order past work that
+    // never happened.
+    const stateGate = await guardStatusWrite({ orderId: order.id, businessId: biz.id, from: "READY_FOR_PROCESSING", to: "PACKED", allowInternal: true })
+    if (!stateGate.ok) return NextResponse.json({ error: stateGate.error, code: stateGate.code }, { status: 409 })
+
     const advanced = await prisma.laundryOrder.updateMany({
       where: { id: order.id, status: "READY_FOR_PROCESSING" },
       data: { status: "PACKED" },

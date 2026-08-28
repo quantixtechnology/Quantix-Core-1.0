@@ -12,7 +12,9 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     laundryOrder: { findFirst: vi.fn(), updateMany: vi.fn() },
     laundryOrderItem: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-    laundryOrderEvent: { create: vi.fn().mockResolvedValue({}) },
+    // loadOrderEvidence (the shared state guard) reads the timeline for the
+    // historical processing proof.
+    laundryOrderEvent: { create: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
   },
 }))
 
@@ -35,10 +37,17 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+// Four garments, all inspected at Store Audit and all through processing — the
+// evidence the state guard requires before an order may become DELIVERED.
+const processedItems = () =>
+  Array.from({ length: 4 }, () => ({ inspectedAt: new Date(), processingStage: 'DISPATCHED', processingStatus: 'DONE' }))
+
 function setupOrder(overrides: Partial<Record<string, unknown>> = {}) {
   mockFindFirst.mockResolvedValue({
-    id: 'o1', orderNumber: 'ORD-1', status: 'READY_FOR_DELIVERY', orderType: 'HOME_PICKUP',
+    id: 'o1', orderNumber: 'ORD-1', businessId: 'b1', status: 'READY_FOR_DELIVERY', orderType: 'HOME_PICKUP',
     balanceDue: 0, paymentStatus: 'PAID', deliveryRequired: true,
+    pickupRequired: true, pickupCompletedAt: new Date(), deliveredAt: null, deliveryCompletedAt: null,
+    items: processedItems(),
     ...overrides,
   })
 }
@@ -89,5 +98,30 @@ describe('markOrderDelivered — delivery completion consistency', () => {
     const r = await markOrderDelivered({ lbId: 'b1', orderId: 'o1' })
     expect(r).toMatchObject({ ok: false, status: 402, code: 'BALANCE_DUE' })
     expect(mockUpdateMany).not.toHaveBeenCalled()
+  })
+
+  // ── The workflow gate: status alone is not permission to deliver ──────────
+  it('refuses to deliver an order whose garments never entered processing', async () => {
+    setupOrder({ items: Array.from({ length: 3 }, () => ({ inspectedAt: new Date(), processingStage: null, processingStatus: null })) })
+    mockUpdateMany.mockResolvedValue({ count: 1 })
+    const r = await markOrderDelivered({ lbId: 'b1', orderId: 'o1' })
+    expect(r).toMatchObject({ ok: false, code: 'PROCESSING_NOT_COMPLETE' })
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('refuses to deliver an order with no garments at all', async () => {
+    setupOrder({ items: [] })
+    mockUpdateMany.mockResolvedValue({ count: 1 })
+    const r = await markOrderDelivered({ lbId: 'b1', orderId: 'o1' })
+    expect(r).toMatchObject({ ok: false, code: 'GARMENTS_NOT_IDENTIFIED' })
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('accepts an order processed before per-garment tracking (timeline proof)', async () => {
+    setupOrder({ items: Array.from({ length: 2 }, () => ({ inspectedAt: new Date(), processingStage: null, processingStatus: null })) })
+    ;(prisma.laundryOrderEvent.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([{ action: 'RECEIVE_AT_STORE' }])
+    mockUpdateMany.mockResolvedValue({ count: 1 })
+    const r = await markOrderDelivered({ lbId: 'b1', orderId: 'o1' })
+    expect(r).toMatchObject({ ok: true })
   })
 })

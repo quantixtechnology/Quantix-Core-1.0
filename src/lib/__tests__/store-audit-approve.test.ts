@@ -139,8 +139,21 @@ describe('CASE D · invalid workflow jumps are still refused', () => {
   })
 
   it('an unknown edge is still a 409 naming both stages', () => {
-    expect(ROUTE).toContain('`Invalid transition: ${statusLabel(fromStatus)} → ${statusLabel(toStatus)}`')
+    // The refusal names where the order actually IS and where it cannot go —
+    // a bare "Invalid transition" told the operator nothing when an order had
+    // moved underneath the screen they were looking at.
+    expect(ROUTE).toContain('This order is at ${statusLabel(fromStatus)} — it cannot move to ${statusLabel(toStatus)} from there.')
     expect(statusLabel('PENDING_STORE_AUDIT')).toBe('Pending Store Audit')
+  })
+
+  it('every 409 carries the order\'s real current stage', () => {
+    // Three refusal shapes — unknown edge, audit gate, state invariants — and
+    // all three report currentStatus so the screen can correct itself.
+    expect(ROUTE.match(/currentStatus: fromStatus/g)?.length).toBe(3)
+  })
+
+  it('the state-invariant guard runs before the status is written', () => {
+    expect(ROUTE.indexOf('guardStatusWrite')).toBeLessThan(ROUTE.indexOf('const updated = await prisma.laundryOrder.update'))
   })
 
   it('internal transitions still cannot be driven from this endpoint', () => {

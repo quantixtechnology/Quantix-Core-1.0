@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getTransition, statusLabel } from "@/lib/laundry-workflow"
+import { guardStatusWrite } from "@/lib/laundry-order-state"
 import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { checkAuditComplete } from "@/lib/laundry-audit"
@@ -57,8 +58,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const transition = getTransition(fromStatus, toStatus)
     if (!transition) {
+      // Name the stage the order is ACTUALLY in. A refusal here almost always
+      // means the order moved underneath the screen the operator is looking at,
+      // and "Invalid transition" alone gave them nothing to act on.
       return NextResponse.json(
-        { error: `Invalid transition: ${statusLabel(fromStatus)} → ${statusLabel(toStatus)}` },
+        {
+          success: false,
+          error: `This order is at ${statusLabel(fromStatus)} — it cannot move to ${statusLabel(toStatus)} from there.`,
+          message: `This order is at ${statusLabel(fromStatus)} — it cannot move to ${statusLabel(toStatus)} from there.`,
+          code: "INVALID_TRANSITION",
+          currentStatus: fromStatus,
+        },
         { status: 409 },
       )
     }
@@ -73,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // shapes, so a client reading json.error got `undefined` here and showed
         // a bare "Transition failed" — hiding the one thing the operator needed
         // to know. Both keys now carry the reason.
-        return NextResponse.json({ success: false, error: audit.message, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited }, { status: 409 })
+        return NextResponse.json({ success: false, error: audit.message, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited, currentStatus: fromStatus }, { status: 409 })
       }
     }
 
@@ -85,6 +95,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { error: `"${transition.label}" must be performed from its workflow screen — it records operational data, not just a status.` },
         { status: 403 },
       )
+    }
+
+    // STATE INVARIANTS — the edge says the workflow allows the move; this says
+    // the order's own evidence supports the destination. Garments identified
+    // before Payment/Packing/Processing, processing genuinely complete before
+    // Ready for Delivery, and DELIVERED only from a real delivery completion.
+    // Cancellation is a decision, not a workflow claim, so it is exempt.
+    if (toStatus !== "CANCELLED") {
+      const gate = await guardStatusWrite({ orderId: id, businessId: order.businessId, from: fromStatus, to: toStatus })
+      if (!gate.ok) {
+        console.warn(`[laundry-order-transition] blocked ${order.orderNumber} ${fromStatus} → ${toStatus}: ${gate.code}`)
+        return NextResponse.json({ success: false, error: gate.error, message: gate.error, code: gate.code, currentStatus: fromStatus }, { status: 409 })
+      }
     }
 
     // Advance the status (must succeed) ...

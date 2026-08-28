@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { LaundryWorkflowTimeline } from "./laundry-workflow-timeline"
+import { statusLabel } from "@/lib/laundry-workflow"
 import { LaundryGarmentSelect, useGarmentMaster } from "@/components/laundry/garment-select"
 
 const DEFECTS = [
@@ -339,7 +340,14 @@ export function LaundryStoreAudit() {
         const counts = typeof json.expected === "number" && typeof json.audited === "number"
           ? ` (${json.audited} of ${json.expected} garments inspected)`
           : ""
-        toast({ title: "Cannot approve this order", description: `${reason}${counts}`, variant: "destructive" })
+        // The order can move underneath this screen (another station, another
+        // device). Naming where it actually is turns a bare 409 into something
+        // the operator can act on, and reloading shows them the truth.
+        const where = typeof json.currentStatus === "string" && json.currentStatus !== detail.status
+          ? ` The order is now at ${statusLabel(json.currentStatus)}.`
+          : ""
+        toast({ title: "Cannot approve this order", description: `${reason}${counts}${where}`, variant: "destructive" })
+        if (where) { backToQueue(); loadQueue() }
         return
       }
       // Reusable bags carry the SAME permanent QR through processing → delivery,
@@ -382,7 +390,9 @@ export function LaundryStoreAudit() {
                     <div className="flex items-center gap-1.5"><StoreIcon className="h-4 w-4 text-muted-foreground" /><div><p className="text-[11px] text-muted-foreground">Store</p><p className="text-sm font-medium">{detail.store?.storeName || "—"}</p></div></div>
                     <div className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-muted-foreground" /><div><p className="text-[11px] text-muted-foreground">Created</p><p className="text-sm font-medium">{fmt(detail.createdAt)}</p></div></div>
                   </div>
-                  <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">Pending Store Audit</Badge>
+                  {/* The real stage, never a hardcoded label — an order that has
+                      moved on must not still read "Pending Store Audit" here. */}
+                  <Badge variant="outline" className={detail.status === "PENDING_STORE_AUDIT" || detail.status === "UNDER_AUDIT" ? "border-orange-300 text-orange-700 bg-orange-50" : "border-slate-300 text-slate-600 bg-slate-50"}>{statusLabel(detail.status)}</Badge>
                 </div>
                 <div className="border-t pt-3"><LaundryWorkflowTimeline status={detail.status} /></div>
               </CardContent>

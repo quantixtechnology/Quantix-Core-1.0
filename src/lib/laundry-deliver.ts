@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/prisma"
 
 import { notifyDeliveryCompleted } from "@/lib/laundry-notify"
+import { guardStatusWrite } from "@/lib/laundry-order-state"
 
 export type DeliverResult =
   | { ok: true; orderNumber: string; deliveredAt: Date; deliveryType: string }
@@ -32,6 +33,20 @@ export async function markOrderDelivered(opts: {
   if (!covered && order.balanceDue > 0) {
     return { ok: false, status: 402, code: "BALANCE_DUE", balanceDue: order.balanceDue, error: `Outstanding balance ₹${order.balanceDue.toFixed(2)} must be collected before delivery.` }
   }
+
+  // WORKFLOW GATE — "Ready for Delivery" is a status; this asks whether the work
+  // behind it actually happened. An order whose garments were never identified,
+  // or never completed processing, cannot be delivered no matter what its status
+  // column says. `deliveryCompletion` is this engine declaring that it stamps the
+  // completion in the very same write below — no other caller can pass it, which
+  // is what makes DELIVERED unreachable from a merely assigned/accepted/started
+  // delivery.
+  const gate = await guardStatusWrite({
+    orderId: order.id, businessId: opts.lbId,
+    from: "READY_FOR_DELIVERY", to: "DELIVERED",
+    allowInternal: true, deliveryCompletion: true,
+  })
+  if (!gate.ok) return { ok: false, status: 409, error: gate.error, code: gate.code }
 
   const now = new Date()
   const advanced = await prisma.laundryOrder.updateMany({

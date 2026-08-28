@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { guardStatusWrite } from "@/lib/laundry-order-state"
 import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { ensureDeliveryVerification } from "@/lib/laundry-verification"
@@ -40,6 +41,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const ref = await transportRefForOrder(biz.id, order.id, mode)
 
     const now = new Date()
+    // STATE INVARIANTS — shared server guard (src/lib/laundry-order-state.ts).
+    // The operational checks above own the physical action; this owns the
+    // workflow claim, so no endpoint can advance an order past work that
+    // never happened.
+    const stateGate = await guardStatusWrite({ orderId: order.id, businessId: biz.id, from: "RETURN_IN_TRANSIT", to: "READY_FOR_DELIVERY", allowInternal: true })
+    if (!stateGate.ok) return NextResponse.json({ error: stateGate.error, code: stateGate.code }, { status: 409 })
+
     const advanced = await prisma.laundryOrder.updateMany({
       where: { id: order.id, status: "RETURN_IN_TRANSIT" },
       data: { status: "READY_FOR_DELIVERY" },

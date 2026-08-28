@@ -174,6 +174,7 @@ export const ACTION_LABELS: Record<string, string> = {
   DISPATCH_TO_STORE: "Dispatched back to Store",
   RECEIVE_AT_STORE: "Received at Store",
   MARK_DELIVERED: "Delivered",
+  STATUS_RECONCILED: "Status Corrected to Match the Workflow",
   CANCEL: "Cancelled",
   QC_PASS: "QC Passed",
   QC_REWORK: "Sent for Rework",

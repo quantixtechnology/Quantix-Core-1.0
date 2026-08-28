@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { checkAuditComplete } from "@/lib/laundry-audit"
+import { guardStatusWrite } from "@/lib/laundry-order-state"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -60,16 +61,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
  * order. Whatever stage the decision is taken at, the order takes its next
  * defined step rather than sitting where it was.
  *
+ * A FINANCIAL DECISION PERFORMS NO PHYSICAL WORK. That line used to be a comment
+ * only: the edge was read from TRANSITIONS and applied whatever it was, so a
+ * repeated Pay Later walked an order through `internal` edges — pickup
+ * completed, packed, dispatched, received at the Processing Centre, dispatched
+ * back, received at the store, and finally MARK_DELIVERED — leaving orders
+ * marked Delivered with no garments, no processing and no delivery. `internal`
+ * edges are now skipped outright, and the destination is additionally checked
+ * against the order's own evidence by the shared state guard.
+ *
  * What this does NOT do:
  *   • invent a stage — the target always comes from TRANSITIONS, never a literal
  *   • move to CANCELLED, or take a non-primary/corrective edge
- *   • skip the audit gate: an order may only leave Store Audit once every
- *     garment is identified and inspected. That is a data-integrity rule, not a
- *     payment rule, and Packing & QR enforces it again anyway — advancing past
- *     it would only produce an order that cannot be packed.
+ *   • take an `internal` edge: those stand for physical custody events and
+ *     belong to the endpoint that actually performs them
+ *   • skip the audit gate, or any other state invariant (garments identified,
+ *     processing complete, delivery actually completed)
  *   • fabricate custody facts. The physical receive/dispatch endpoints still own
- *     the receiver, bag condition and exception handling; they record those on
- *     the real scan, whose own status update simply becomes a no-op.
+ *     the receiver, bag condition and exception handling.
  *
  * Returns the {from,to} actually applied, or null when no step was available.
  */
@@ -79,11 +88,19 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
   const from = String(order.status)
   const primary = getTransitions(from).find((t) => t.primary && t.to !== "CANCELLED")
   if (!primary) return null
+  // The physical edges are not a payment's to take. Skipping them here is what
+  // keeps Pay Later a financial record instead of a workflow shortcut.
+  if (primary.internal) return null
 
   if (primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT") {
     const audit = await checkAuditComplete(orderId)
     if (!audit.ok) return null
   }
+
+  // Server-side state guard — the destination must be supported by the order's
+  // own evidence, not merely reachable on the graph.
+  const verdict = await guardStatusWrite({ orderId, businessId, from, to: primary.to })
+  if (!verdict.ok) return null
 
   // One transaction: the order moves and the arrangement is recorded together,
   // so a failed transition can never leave "Pay Later approved" behind on its own.
@@ -111,6 +128,12 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
 // Advance PAYMENT_PENDING → READY_FOR_PROCESSING with an audit event. Fires
 // when payment completes. PAY NOW behaviour is deliberately unchanged.
 async function advanceAfterPayment(orderId: string, businessId: string, action: "COLLECT_PAYMENT" | "PAY_LATER", actor?: string | null, note?: string | null) {
+  // The payment edge still answers to the state invariants: an order whose
+  // garments were never identified cannot be pushed into the Packing queue.
+  // allowInternal: THIS endpoint is the one that owns the COLLECT_PAYMENT edge —
+  // it records the money. The invariants below it still apply.
+  const verdict = await guardStatusWrite({ orderId, businessId, from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING", allowInternal: true })
+  if (!verdict.ok) return false
   const advanced = await prisma.laundryOrder.updateMany({
     where: { id: orderId, status: "PAYMENT_PENDING" },
     data: { status: "READY_FOR_PROCESSING" },
