@@ -1,7 +1,12 @@
 // Returning the bags a customer is holding, at their next pickup.
 //
-// BUSINESS RULE: a customer returns ALL the bags they hold. There is no partial
-// return — the pickup cannot complete while any bag is still out.
+// BUSINESS RULE: returning bags is OPTIONAL and PARTIAL. A customer may hand
+// back all, some, one or none of the bags they hold, and the pickup completes
+// either way — PICKUP COMPLETION IS NOT BAG-RETURN COMPLETION. Nothing here
+// gates the pickup workflow; there is deliberately no gate function to call.
+//
+// A bag is returned ONLY by being scanned. A bag that is not scanned stays with
+// the customer, keeps its custody, and appears again on their next pickup.
 //
 // NO SCHEMA CHANGE. Everything is derived from state that already exists:
 //   • getBagsWithCustomer() — bags whose status is HANDED_TO_CUSTOMER and whose
@@ -37,7 +42,11 @@ export interface CustomerReturnView {
   bags: ReturnBagRow[]
   total: number
   returned: number
-  complete: boolean
+  /** Still with the customer after this pickup — carried to the next one. */
+  outstanding: number
+  /** Every held bag came back. INFORMATIONAL — it gates nothing. */
+  allReturned: boolean
+  /** Progress for the operator to read. Never a blocking message. */
   message: string | null
 }
 
@@ -82,18 +91,25 @@ export async function customerReturnBags(
 
   const total = rows.length
   const returned = rows.filter((r) => r.returned).length
-  const complete = returned === total // vacuously true when the customer holds none
+  const outstanding = total - returned
+  const allReturned = outstanding === 0
   return {
     bags: rows,
     total,
     returned,
-    complete,
-    message: complete ? null : `${returned} of ${total} customer bags returned. Scan all bags before completing pickup.`,
+    outstanding,
+    allReturned,
+    // States the position; never tells the operator they cannot continue.
+    message: total === 0
+      ? null
+      : allReturned
+        ? `${returned} of ${total} bags returned.`
+        : `${returned} of ${total} bags returned. ${outstanding} bag${outstanding === 1 ? "" : "s"} remain${outstanding === 1 ? "s" : ""} with customer.`,
   }
 }
 
 export type ReturnScanResult =
-  | { ok: true; bagNumber: string; returned: number; total: number; complete: boolean; alreadyReturned: boolean }
+  | { ok: true; bagNumber: string; returned: number; total: number; outstanding: number; allReturned: boolean; alreadyReturned: boolean }
   | { ok: false; status: number; error: string }
 
 /**
@@ -121,7 +137,7 @@ export async function confirmReturnedBag(opts: {
   const row = view.bags.find((b) => b.bagNumber.toUpperCase() === wanted)
 
   if (row?.returned) {
-    return { ok: true, bagNumber: row.bagNumber, returned: view.returned, total: view.total, complete: view.complete, alreadyReturned: true }
+    return { ok: true, bagNumber: row.bagNumber, returned: view.returned, total: view.total, outstanding: view.outstanding, allReturned: view.allReturned, alreadyReturned: true }
   }
   if (!row) {
     return { ok: false, status: 409, error: `Bag ${code} is not currently assigned to this customer.` }
@@ -142,21 +158,14 @@ export async function confirmReturnedBag(opts: {
   if (!res.ok) return { ok: false, status: res.status, error: res.error }
 
   const after = await customerReturnBags(opts.lbId, opts.customerId, { orderId: opts.orderId })
-  return { ok: true, bagNumber: row.bagNumber, returned: after.returned, total: after.total, complete: after.complete, alreadyReturned: false }
+  return { ok: true, bagNumber: row.bagNumber, returned: after.returned, total: after.total, outstanding: after.outstanding, allReturned: after.allReturned, alreadyReturned: false }
 }
 
-/**
- * The bag half of the pickup completion gate — server-authoritative.
- *
- * Returns null when the pickup may complete, or the operator-facing reason when
- * bags are still out. A customer holding nothing is never blocked.
- */
-export async function pickupReturnGate(
-  lbId: string,
-  customerId: string | null | undefined,
-  opts: { orderId?: string | null } = {},
-): Promise<string | null> {
-  if (!customerId) return null
-  const view = await customerReturnBags(lbId, customerId, opts)
-  return view.complete ? null : view.message
-}
+// DELIBERATELY NO GATE FUNCTION.
+//
+// An earlier revision exported pickupReturnGate(), which blocked a pickup until
+// every customer-held bag came back. That rule was reversed: a customer may
+// return some bags, one, or none, and the pickup completes regardless. The
+// function is removed rather than left unused, because a gate that exists is a
+// gate someone wires up. Pickup completion is governed only by the existing
+// pickup workflow requirements.

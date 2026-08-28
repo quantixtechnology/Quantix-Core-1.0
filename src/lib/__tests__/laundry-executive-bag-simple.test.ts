@@ -9,7 +9,17 @@ import { join } from 'path'
 // history, ownership, inspection — stays in the backend, and the app asks them
 // exactly one question: did the customer give you a bag, or not?
 //
-// The rule these tests exist to protect: A DELIVERY IS NEVER BLOCKED BY A BAG.
+// The rule these tests protected was: A DELIVERY IS NEVER BLOCKED BY A BAG.
+//
+// THAT RULE HAS BEEN REVERSED, deliberately and on instruction. An order may now
+// be packed into several bags and the customer must receive ALL of them, so
+// delivery is gated on every bag being confirmed — server-side in
+// deliveryBagGate(), and reflected in the button here.
+//
+// What is unchanged: the bag DISPOSITION still never gates the delivery. Once
+// the bags are confirmed and the customer verified, what happens to each bag
+// (kept, returned, damaged, lost) is recorded beside the delivery, never in
+// front of it. The gate is about accounting for the bags, not their outcome.
 // ============================================================================
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
@@ -32,9 +42,12 @@ describe('delivery is never blocked by a bag', () => {
     expect(PWA).not.toContain('deliveryReady')
   })
 
-  it('Confirm Delivery is disabled only while a request is in flight', () => {
-    expect(PWA).toContain('disabled={busy} onClick={() => setDeliverOpen(true)}')
+  // REVERSED: Confirm Delivery is now also gated on every bag being confirmed.
+  it('Confirm Delivery waits for the request AND for all bags', () => {
+    expect(PWA).toContain('disabled={busy || !bagsComplete} onClick={() => setDeliverOpen(true)}')
     expect(PWA).toContain('Confirm Delivery')
+    // The server remains authoritative — the button is a courtesy, not the rule.
+    expect(DELIVER).toContain('deliveryBagGate(')
   })
 
   it('Navigate no longer requires a scanned bag', () => {

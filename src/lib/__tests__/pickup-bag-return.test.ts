@@ -5,7 +5,14 @@ import { join } from 'path'
 // ============================================================================
 // CUSTOMER BAG RETURN AT THE NEXT PICKUP.
 //
-// A customer returns ALL the bags they hold — no partial return. Everything is
+// RETURNING BAGS IS OPTIONAL AND PARTIAL. A customer may hand back all, some,
+// one or none of the bags they hold, and THE PICKUP COMPLETES EITHER WAY —
+// pickup completion is not bag-return completion. An earlier revision gated the
+// pickup on all bags coming back; that rule was reversed and the gate function
+// was removed rather than left unused.
+//
+// A bag is returned ONLY by being scanned; an unscanned bag stays with the
+// customer and reappears at their next pickup. Everything is
 // derived from state that already exists: getBagsWithCustomer() (status
 // HANDED_TO_CUSTOMER, so a returned bag drops out and history never reappears
 // as work), receiveReturnedBag() (the lifecycle writer that keeps the bag id),
@@ -53,7 +60,7 @@ vi.mock('@/lib/laundry-bag-lifecycle', async (orig) => {
   return { ...actual, getBagsWithCustomer: H.getBagsWithCustomer, receiveReturnedBag: H.receiveReturnedBag }
 })
 
-import { customerReturnBags, confirmReturnedBag, pickupReturnGate } from '@/lib/laundry-pickup-return'
+import { customerReturnBags, confirmReturnedBag } from '@/lib/laundry-pickup-return'
 
 const { state } = H
 const LB = 'lb_vs'
@@ -111,38 +118,65 @@ describe('19,20,21,22,36 · the customer\'s held bags are listed', () => {
   })
 })
 
-// ── 23-26 · the gate ───────────────────────────────────────────────────────
-describe('23,24,25,26 · no partial return', () => {
-  it('23 · 0/3 blocks', async () => {
-    hold(3)
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER }))
-      .toBe('0 of 3 customer bags returned. Scan all bags before completing pickup.')
+// ── 1-4 · PARTIAL RETURN — the pickup is never blocked ────────────────────
+describe('1,2,3,4 · returning fewer bags never blocks the pickup', () => {
+  it('THE RULE · there is no pickup return gate to call', async () => {
+    const mod = await import('@/lib/laundry-pickup-return')
+    expect('pickupReturnGate' in mod).toBe(false)
+    const SRC = readFileSync(join(process.cwd(), 'src/lib/laundry-pickup-return.ts'), 'utf8')
+    expect(SRC).toContain('DELIBERATELY NO GATE FUNCTION')
+    // And nothing in the pickup path calls one.
+    const RET_API = readFileSync(join(process.cwd(), 'src/app/api/laundry/executive/jobs/[id]/return-bags/route.ts'), 'utf8')
+    expect(RET_API).not.toContain('Gate')
   })
 
-  it('24 · 1/3 blocks', async () => {
-    hold(3); await scan('V8BAG002')
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toContain('1 of 3')
-  })
-
-  it('25 · 2/3 blocks', async () => {
-    hold(3); await scan('V8BAG002'); await scan('V8BAG003')
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toContain('2 of 3')
-  })
-
-  it('26 · 3/3 allows completion', async () => {
+  it('1 · 3 of 3 returned', async () => {
     hold(3)
     for (const c of ['V8BAG002', 'V8BAG003', 'V8BAG004']) await scan(c)
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toBeNull()
+    const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(v.returned).toBe(3); expect(v.outstanding).toBe(0); expect(v.allReturned).toBe(true)
+    expect(v.message).toBe('3 of 3 bags returned.')
   })
 
-  it('a customer holding nothing is never blocked', async () => {
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toBeNull()
-    expect(await pickupReturnGate(LB, null)).toBeNull()
+  it('2 · 2 of 3 — the third stays with the customer', async () => {
+    hold(3)
+    await scan('V8BAG002'); await scan('V8BAG003')
+    const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(v.returned).toBe(2); expect(v.outstanding).toBe(1); expect(v.allReturned).toBe(false)
+    expect(v.message).toBe('2 of 3 bags returned. 1 bag remains with customer.')
+    // Informational — it never tells the operator they cannot continue.
+    expect(v.message).not.toMatch(/cannot|before completing|scan all/i)
   })
 
-  it('one held bag completes on one scan (existing flow)', async () => {
-    hold(1); await scan('V8BAG002')
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toBeNull()
+  it('3 · 1 of 3', async () => {
+    hold(3)
+    await scan('V8BAG002')
+    const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(v.returned).toBe(1); expect(v.outstanding).toBe(2)
+    expect(v.message).toBe('1 of 3 bags returned. 2 bags remain with customer.')
+  })
+
+  it('4 · 0 of 3 — nothing returned is a normal pickup', async () => {
+    hold(3)
+    const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(v.returned).toBe(0); expect(v.outstanding).toBe(3); expect(v.allReturned).toBe(false)
+    expect(v.message).not.toMatch(/cannot|before completing/i)
+  })
+
+  it('5,6 · only SCANNED bags leave the customer', async () => {
+    hold(3)
+    await scan('V8BAG002')
+    // The scanned one left; the other two are still held.
+    expect(state.held.map((b) => b.bagNumber)).toEqual(['V8BAG003', 'V8BAG004'])
+    expect(state.receiveCalls).toHaveLength(1)
+  })
+
+  it('no bag is returned merely because the pickup ended', async () => {
+    hold(3)
+    // No scans at all — the lifecycle writer is never called.
+    await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(state.receiveCalls).toHaveLength(0)
+    expect(state.held).toHaveLength(3)
   })
 })
 
@@ -211,7 +245,7 @@ describe('11,12,31,32,33,35 · the bag keeps its identity and lifecycle', () => 
     const r = await scan('V8BAG002')
     expect(r.ok).toBe(false)
     expect((await customerReturnBags(LB, CUST, { orderId: ORDER })).returned).toBe(0)
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toContain('0 of 2')
+    expect(state.held).toHaveLength(2) // still with the customer
   })
 })
 
@@ -226,16 +260,16 @@ describe('37,38 · delivery → custody → next pickup', () => {
     }
     const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
     expect(v.returned).toBe(3)
-    expect(v.complete).toBe(true)
+    expect(v.allReturned).toBe(true)
     expect(state.held).toHaveLength(0)
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toBeNull()
   })
 
-  it('38 · the one-bag flow still works end to end', async () => {
+  it('13 · the one-bag flow still works end to end', async () => {
     hold(1)
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toContain('0 of 1')
+    expect((await customerReturnBags(LB, CUST, { orderId: ORDER })).outstanding).toBe(1)
     await scan('V8BAG002')
-    expect(await pickupReturnGate(LB, CUST, { orderId: ORDER })).toBeNull()
+    const v = await customerReturnBags(LB, CUST, { orderId: ORDER })
+    expect(v.allReturned).toBe(true)
     expect(state.receiveCalls).toHaveLength(1)
   })
 })

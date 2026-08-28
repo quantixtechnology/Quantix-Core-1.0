@@ -6,6 +6,7 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
+import { ExecutiveBagChecklist } from "@/components/laundry/executive/executive-bag-checklist"
 import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
@@ -291,6 +292,9 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
   const isDelivery = kind === "delivery"
   const [job, setJob] = useState<Job>(initial)
   const [busy, setBusy] = useState(false)
+  // Reported by the delivery checklist. The SERVER gate is authoritative; this
+  // only stops the executive reaching the door and being refused.
+  const [bagsComplete, setBagsComplete] = useState(true)
   const [verifyOpen, setVerifyOpen] = useState(false)
   const [deliverOpen, setDeliverOpen] = useState(false)
   const st = rank(job.fieldStatus)
@@ -504,6 +508,10 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
               <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Delivery Bag <span className="text-[10px] font-medium text-slate-400">optional</span></p>
               <p className="text-xs text-slate-500">Give this bag to the customer. Scanning is optional — you can deliver without it.</p>
             </div>
+            {/* THE ORDER'S FINAL BAG SET — every bag must be confirmed before the
+                delivery can complete. The server enforces it too; this is so the
+                executive is not sent to the door only to be refused. */}
+            <ExecutiveBagChecklist jobId={job.id} kind="delivery" token={token} onProgress={setBagsComplete} />
             {job.deliveryBagNumber ? (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
@@ -558,6 +566,14 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
           </div>
         )}
 
+        {/* Bags the customer is holding from a previous delivery — ALL of them
+            come back at this pickup. Shown at the same point as bag assignment:
+            the executive is with the customer. Only CURRENTLY-held bags appear,
+            so a bag returned on an earlier visit never reappears. */}
+        {!isDelivery && job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && !pickupDone && job.status !== "CANCELLED" && (
+          <ExecutiveBagChecklist jobId={job.id} kind="return" token={token} />
+        )}
+
         {/* Bag assignment — revealed only once the executive is actually at the
             customer and the pickup has been accepted (Start → Reached → Verify
             moves fieldStatus to PICKUP_STARTED), and stays editable until the
@@ -607,8 +623,11 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
       )}
       {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
         <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
-          <button disabled={busy} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Delivery
+          {/* Blocked until every bag is confirmed. The server gate refuses an
+              incomplete delivery regardless — this only saves the executive a
+              wasted attempt at the customer's door. */}
+          <button disabled={busy || !bagsComplete} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Delivery{bagsComplete ? "" : " · scan all bags"}
           </button>
         </div>
       )}
