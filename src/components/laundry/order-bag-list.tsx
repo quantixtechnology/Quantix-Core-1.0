@@ -10,6 +10,7 @@
 // "+ Add Another Bag" scans a bag onto the SAME order through the existing
 // assignment path — it never generates a bag number here, never creates a second
 // bag record, and never replaces the bags already on the order.
+import type { ServiceBagAccounting } from "@/lib/laundry-service-bags"
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, Package, Check, Printer } from "lucide-react"
@@ -31,6 +32,9 @@ export interface OrderBagRow {
 
 export function useOrderBags(orderId: string | null, businessId: string | null) {
   const [bags, setBags] = useState<OrderBagRow[]>([])
+  // Service-level accounting comes from the SAME response as the bag list, so a
+  // stage can never show a total that disagrees with the per-service breakdown.
+  const [accounting, setAccounting] = useState<ServiceBagAccounting | null>(null)
   const loadBags = useCallback(async () => {
     if (!orderId || !businessId) { setBags([]); return }
     try {
@@ -38,11 +42,11 @@ export function useOrderBags(orderId: string | null, businessId: string | null) 
         `/api/laundry/orders/${orderId}/bags?businessId=${encodeURIComponent(businessId)}`,
         { headers: getAuthHeaders() },
       ).then((r) => r.json())
-      if (j?.success) setBags(j.data.bags as OrderBagRow[])
+      if (j?.success) { setBags(j.data.bags as OrderBagRow[]); setAccounting((j.data.accounting as ServiceBagAccounting) ?? null) }
     } catch { /* the stage still works — it just cannot list the bags */ }
   }, [orderId, businessId])
   useEffect(() => { void loadBags() }, [loadBags])
-  return { bags, loadBags }
+  return { bags, accounting, loadBags }
 }
 
 export function OrderBagList({

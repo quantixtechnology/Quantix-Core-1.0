@@ -26,6 +26,7 @@
 // with more than one code.
 import { prisma } from "@/lib/prisma"
 import { orderBags, type OrderBag } from "@/lib/laundry-order-bags"
+import { accountBagsByService, type ServiceBagAccounting, type ServiceRequirement } from "@/lib/laundry-service-bags"
 
 /** The event action that records "this bag was scanned onto the delivery". */
 export const DELIVERY_BAG_CONFIRMED = "DELIVERY_BAG_CONFIRMED"
@@ -99,8 +100,10 @@ export interface DeliveryBagsView {
   confirmed: number
   exceptions: number
   accounted: number
-  /** Every bag accounted for — the bag half of the completion gate. */
+  /** Every bag accounted for AND every service's own requirement met. */
   complete: boolean
+  /** Per-service required-vs-received, so the panel can group by service order. */
+  accounting: ServiceBagAccounting
   /** Always present: "2 of 3 bags scanned · 1 exception". */
   summary: string
   /** Operator-facing gate reason while incomplete, else null. */
@@ -154,7 +157,26 @@ export async function deliveryBags(lbId: string, orderId: string): Promise<Deliv
   const exceptions = rows.filter((r) => !!r.exception).length
   const accounted = confirmed + exceptions
   const total = rows.length
-  const complete = accounted === total // vacuously true when the order has no bags
+  const allBagsAccounted = accounted === total // vacuously true when the order has no bags
+
+  // SERVICE-LEVEL REQUIREMENT — a total that adds up proves nothing. Two Wash &
+  // Fold bags must never make Dry Clean look accounted for, so each service is
+  // checked against its OWN requiredBags using only the bags accounted for at
+  // this delivery.
+  const services = await prisma.laundryOrderService.findMany({
+    where: { orderId },
+    select: { serviceId: true, serviceName: true, requiredBags: true },
+    orderBy: { createdAt: "asc" },
+  })
+  const accounting = accountBagsByService(services as ServiceRequirement[], rows.filter((r) => r.accounted))
+
+  // An order that never had a bag stays deliverable — a bagless delivery is
+  // legitimate and the rule must not invent a blocker where there is no bag.
+  // Nor may an order with bags but no booked service rows become undeliverable:
+  // no requirement is not a failed requirement, so the existing every-bag rule
+  // stands on its own there. Only a real requirement can add to the gate.
+  const requirementMet = accounting.applicable ? accounting.complete : true
+  const complete = total === 0 ? true : allBagsAccounted && requirementMet
 
   return {
     bags: rows,
@@ -163,10 +185,13 @@ export async function deliveryBags(lbId: string, orderId: string): Promise<Deliv
     exceptions,
     accounted,
     complete,
+    accounting,
     summary: `${confirmed} of ${total} bags scanned${exceptions ? ` · ${plural(exceptions, "exception")}` : ""}`,
     message: complete
       ? null
-      : `${confirmed} of ${total} bags scanned. Scan the remaining ${plural(total - accounted, "bag")}, or record a scan exception, before completing delivery.`,
+      : !allBagsAccounted
+        ? `${confirmed} of ${total} bags scanned. Scan the remaining ${plural(total - accounted, "bag")}, or record a scan exception, before completing delivery.`
+        : `${accounting.summary} accounted for — ${accounting.message}`,
   }
 }
 

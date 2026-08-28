@@ -41,6 +41,7 @@ import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 import { TransportStageHistory, DeliveryStageHistory, HistoryToggle } from "@/components/laundry/stage-history"
 import { BagChecklist } from "@/components/laundry/bag-checklist"
+import { ServiceBagAccountingPanel } from "@/components/laundry/service-bag-accounting"
 
 // An order at READY_FOR_PROCESSING belongs in the Packing & QR queue, full stop.
 //
@@ -389,21 +390,28 @@ export function LaundryPacking() {
   const openOrder = (o: OrderRow | null) => { setSelected(o); setResult(null) }
 
   // The order's authoritative bag list, re-read whenever it changes.
-  const { bags, loadBags } = useOrderBags(selected?.id ?? null, currentBusinessId)
+  const { bags, accounting, loadBags } = useOrderBags(selected?.id ?? null, currentBusinessId)
+  // Services booked on the order being packed. More than one → the operator
+  // picks which service the scanned bag belongs to before it can be assigned.
+  const packServices = ((selected as { services?: { serviceId: string | null; serviceName: string }[] } | null)?.services) ?? []
+  const [bagServiceId, setBagServiceId] = useState<string>("")
+  useEffect(() => { setBagServiceId(packServices.length === 1 ? (packServices[0]?.serviceId ?? "") : "") }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const needsServicePick = packServices.length > 1 && !bagServiceId
 
   const runPack = async (bagCode?: string) => {
     if (!selected || !currentBusinessId) return
     setBusy(true)
     try {
       if (bagCode) {
-        const svc = selected as { services?: { serviceId: string; serviceName: string }[] }
-        await fetch("/api/laundry/bags/assign", {
+        // WHICH SERVICE this bag holds — asked of the operator, never guessed.
+        // This used to send services[0], so on a two-service order every bag
+        // filed under the first service and the second looked fully bagged
+        // while holding nothing. A one-service order still needs no choice.
+        await fetch(`/api/laundry/orders/${selected.id}/bags`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            businessId: currentBusinessId, code: bagCode, orderId: selected.id,
-            serviceId: svc.services?.[0]?.serviceId ?? null, serviceName: svc.services?.[0]?.serviceName ?? "Transport",
-          }),
+          body: JSON.stringify({ businessId: currentBusinessId, code: bagCode, serviceId: bagServiceId || null }),
         }).then((r) => r.json()).then((j) => { if (!j.success) throw new Error(j.error || "Bag assignment failed") })
+        loadBags()
       }
       const res = await fetch(`/api/laundry/orders/${selected.id}/pack`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -539,10 +547,32 @@ export function LaundryPacking() {
                     onChanged={loadBags}
                     disabled={busy}
                   />
+                  {accounting && <ServiceBagAccountingPanel accounting={accounting} />}
                   <p className="text-sm text-slate-500">Scan the reusable bag holding this order{mode === "BOTH" ? " — the bag QR is an equally valid package identifier." : "."}</p>
+                  {/* Multi-service orders: the operator says which service the
+                      bag holds. One-service orders skip this entirely — the
+                      answer is already known, so the flow is unchanged. */}
+                  {packServices.length > 1 && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2.5 space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Which service is this bag for?</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {packServices.map((sv) => (
+                          <button
+                            key={sv.serviceId ?? sv.serviceName}
+                            type="button"
+                            onClick={() => setBagServiceId(sv.serviceId ?? "")}
+                            className={`h-8 px-3 rounded-lg text-xs font-medium border transition-colors ${bagServiceId === (sv.serviceId ?? "") ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:border-blue-300"}`}
+                          >
+                            {sv.serviceName}
+                          </button>
+                        ))}
+                      </div>
+                      {needsServicePick && <p className="text-[11px] text-amber-700">Choose the service before scanning the bag.</p>}
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" {...packScan} /></div>
-                    <BagScanButton label="Scan" size="sm" onScan={(c) => runPack(c)} disabled={busy} closeOnScan className="h-10" />
+                    <div className="relative flex-1"><QrCode className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input id="bag-scan" placeholder="Scan bag QR code…" className="pl-8 h-10 font-mono text-sm" disabled={needsServicePick} {...packScan} /></div>
+                    <BagScanButton label="Scan" size="sm" onScan={(c) => runPack(c)} disabled={busy || needsServicePick} closeOnScan className="h-10" />
                   </div>
                 </div>
               )}

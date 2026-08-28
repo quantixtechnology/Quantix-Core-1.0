@@ -14,6 +14,7 @@ import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { orderBags, addBagToOrder } from "@/lib/laundry-order-bags"
+import { accountBagsByService, pickServiceForBag, type ServiceRequirement } from "@/lib/laundry-service-bags"
 import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
@@ -26,7 +27,12 @@ async function resolveOrder(businessId: string | null, id: string) {
   // it is read or written.
   const order = await prisma.laundryOrder.findFirst({
     where: { id, businessId: biz.id },
-    select: { id: true, orderNumber: true, services: { select: { serviceId: true, serviceName: true }, take: 1 } },
+    // EVERY booked service with its own bag requirement. This used to be
+    // `take: 1`, which is what made every caller collapse to services[0].
+    select: {
+      id: true, orderNumber: true,
+      services: { select: { serviceId: true, serviceName: true, requiredBags: true }, orderBy: { createdAt: "asc" } },
+    },
   })
   if (!order) return { error: NextResponse.json({ error: "Order not found" }, { status: 404 }) }
   return { biz, order }
@@ -42,9 +48,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if ("error" in r) return r.error
 
     const bags = await orderBags(r.biz.id, r.order.id)
+    // Service-level accounting travels with the list, so Audit / Packing /
+    // Delivery all read one answer instead of counting bags themselves.
+    const accounting = accountBagsByService(r.order.services as ServiceRequirement[], bags)
     return NextResponse.json({
       success: true,
-      data: { orderId: r.order.id, orderNumber: r.order.orderNumber, total: bags.length, bags },
+      data: { orderId: r.order.id, orderNumber: r.order.orderNumber, total: bags.length, bags, accounting },
     })
   } catch (e) {
     console.error("[order-bags] GET", e)
@@ -65,20 +74,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const r = await resolveOrder(b.businessId, id)
     if ("error" in r) return r.error
 
-    const svc = r.order.services[0]
+    // WHICH SERVICE — the operator's choice, never services[0]. A one-service
+    // order still needs no choice, so that flow is unchanged; a multi-service
+    // order refuses to guess, because a wrong guess silently mis-files a
+    // physical bag and makes another service look accounted for.
+    const services = r.order.services as ServiceRequirement[]
+    const pick = pickServiceForBag(services, b.serviceId)
+    if (!pick.ok) return NextResponse.json({ error: pick.error, code: "SERVICE_REQUIRED", services }, { status: 400 })
+
     const res = await addBagToOrder({
       lbId: r.biz.id,
       orderId: r.order.id,
       code,
-      serviceId: svc?.serviceId ?? null,
-      serviceName: svc?.serviceName || "Laundry",
+      serviceId: pick.service.serviceId,
+      serviceName: pick.service.serviceName,
     })
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
 
     const bags = await orderBags(r.biz.id, r.order.id)
+    const accounting = accountBagsByService(services, bags)
     return NextResponse.json({
       success: true,
-      data: { bag: res.bag, total: res.total, alreadyOnOrder: res.alreadyOnOrder, bags },
+      data: { bag: res.bag, total: res.total, alreadyOnOrder: res.alreadyOnOrder, bags, accounting },
     })
   } catch (e) {
     console.error("[order-bags] POST", e)

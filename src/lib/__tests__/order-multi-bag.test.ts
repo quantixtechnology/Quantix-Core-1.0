@@ -26,6 +26,10 @@ const H = vi.hoisted(() => {
   return {
     state,
     prisma: {
+      // The delivery engine now reads each service's own bag requirement.
+      // Default [] = no booked services, which must fall back to the
+      // every-bag rule rather than blocking (see `applicable`).
+      laundryOrderService: { findMany: vi.fn().mockResolvedValue([]) },
       laundryBagAssignment: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         findMany: vi.fn(async (a: any) => state.assignments
@@ -226,7 +230,7 @@ describe('3,10,19 · Packing & QR is wired to the same list', () => {
   const API = readFileSync(join(process.cwd(), 'src/app/api/laundry/orders/[id]/bags/route.ts'), 'utf8')
 
   it('Packing reads the order\'s bags and renders them all', () => {
-    expect(PACKING).toContain('const { bags, loadBags } = useOrderBags(selected?.id ?? null, currentBusinessId)')
+    expect(PACKING).toContain('const { bags, accounting, loadBags } = useOrderBags(selected?.id ?? null, currentBusinessId)')
     expect(PACKING).toContain('<OrderBagList')
     expect(LIST).toContain('Bag {b.index} of {bags.length}')
   })

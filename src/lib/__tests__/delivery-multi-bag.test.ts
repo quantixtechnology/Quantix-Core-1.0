@@ -26,6 +26,10 @@ const H = vi.hoisted(() => {
   return {
     state,
     prisma: {
+      // The delivery engine now reads each service's own bag requirement.
+      // Default [] = no booked services, which must fall back to the
+      // every-bag rule rather than blocking (see `applicable`).
+      laundryOrderService: { findMany: vi.fn().mockResolvedValue([]) },
       laundryBagAssignment: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         findMany: vi.fn(async (a: any) => state.assignments

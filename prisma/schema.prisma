@@ -5105,6 +5105,13 @@ model LaundryOrderService {
   serviceId       String?
   serviceName     String
   turnaroundHours Int      @default(24)
+  // How many physical bags THIS service on THIS order needs. The requirement
+  // originates with the service order and is what Audit verifies reality
+  // against — it is never inferred from the number of services, the number of
+  // bags already assigned, the garment count, or services[0].
+  // Defaults to 1, so every existing order keeps its current single-bag
+  // behaviour with no migration and no new operator step.
+  requiredBags    Int      @default(1)
   createdAt       DateTime @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)

@@ -25,6 +25,8 @@ import {
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { LaundryWorkflowTimeline } from "./laundry-workflow-timeline"
 import { statusLabel } from "@/lib/laundry-workflow"
+import { useOrderBags } from "@/components/laundry/order-bag-list"
+import { ServiceBagAccountingPanel } from "@/components/laundry/service-bag-accounting"
 import { LaundryGarmentSelect, useGarmentMaster } from "@/components/laundry/garment-select"
 
 const DEFECTS = [
@@ -106,6 +108,10 @@ export function LaundryStoreAudit() {
   const [totalWeight, setTotalWeight] = useState("") // the SINGLE total order weight (KG) — captured here, never at booking
   const [auditNotes, setAuditNotes] = useState("")
   const [photos, setPhotos] = useState<string[]>([])
+  // Bag accounting for the order under audit — read from the SAME endpoint the
+  // other stages use, so Audit verifies reality against each service's booked
+  // requirement instead of counting bags itself.
+  const { accounting: bagAccounting } = useOrderBags(selectedId, currentBusinessId)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [acting, setActing] = useState(false)
@@ -397,6 +403,11 @@ export function LaundryStoreAudit() {
                 <div className="border-t pt-3"><LaundryWorkflowTimeline status={detail.status} /></div>
               </CardContent>
             </Card>
+
+            {/* Service-level bag accounting — required vs received, per service
+                order. Never a bare "4 bags": two Wash & Fold bags must never
+                make Dry Clean look accounted for. */}
+            {bagAccounting && <ServiceBagAccountingPanel accounting={bagAccounting} />}
 
             {/* KG billing. Per-garment weights (from intake) are the single source
                 of truth → total is auto-calculated + read-only. Bag-weight orders

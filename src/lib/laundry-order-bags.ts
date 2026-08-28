@@ -34,6 +34,15 @@ export interface OrderBag {
   assignedAt: Date
   /** 1-based position, so a label can read "Bag 2 of 3". */
   index: number
+  /**
+   * WHICH SERVICE this physical bag belongs to, straight off the assignment row
+   * that has always stored it. Without this every consumer had to guess, and
+   * the ones that guessed took services[0] — so on a two-service order every
+   * bag read as the first service and Dry Clean looked fully bagged when it
+   * had none.
+   */
+  serviceId: string | null
+  serviceName: string | null
 }
 
 /**
@@ -63,6 +72,8 @@ export async function orderBags(lbId: string, orderId: string): Promise<OrderBag
       open: r.status === OPEN_ASSIGNMENT,
       assignedAt: r.assignedAt,
       index: i + 1,
+      serviceId: r.serviceId ?? null,
+      serviceName: r.serviceName ?? null,
     }))
 }
 
