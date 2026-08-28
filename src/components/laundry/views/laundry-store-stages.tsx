@@ -40,6 +40,7 @@ import { DeliveryPromiseBadge, DeliveryPromiseCard } from "@/components/laundry/
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 import { transportNoun, transportScanPlaceholder, usesBag, usesPacket, type TransportRef } from "@/lib/laundry-transport"
 import { TransportStageHistory, DeliveryStageHistory, HistoryToggle } from "@/components/laundry/stage-history"
+import { BagChecklist } from "@/components/laundry/bag-checklist"
 
 // An order at READY_FOR_PROCESSING belongs in the Packing & QR queue, full stop.
 //
@@ -769,6 +770,9 @@ export function LaundryReadyForDelivery() {
   // Customer verification (Workflow Settings): the configured method for this
   // order + the OTP the customer provides. Delivery cannot complete without it.
   const [verifyMethod, setVerifyMethod] = useState<"OTP" | "NAME">("OTP")
+  // Bag accounting for the counter hand-over. The SERVER gate in /deliver is
+  // authoritative; this only stops the counter from trying and being refused.
+  const [bagsComplete, setBagsComplete] = useState(true)
   const [otp, setOtp] = useState("")
   const [regenBusy, setRegenBusy] = useState(false)
 
@@ -1002,6 +1006,17 @@ export function LaundryReadyForDelivery() {
             </div>
           )}
 
+          {/* Every bag of the order must be accounted for before the hand-over —
+              scanned, or explicitly recorded as a scan exception. A torn label
+              must never strand a delivery, so the exception lives right here
+              beside the scan. */}
+          <BagChecklist
+            kind="delivery"
+            endpoint={`/api/laundry/orders/${selected.id}/delivery-bags?businessId=${currentBusinessId}`}
+            body={{ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name }}
+            onProgress={setBagsComplete}
+          />
+
           {/* Customer verification — mandatory before handover/delivery. The
               method comes from Workflow Settings (snapshot on the order). */}
           <div className={`rounded-lg border p-3 space-y-3 ${verifyMethod === "OTP" ? "border-amber-200 bg-amber-50/60" : "border-blue-200 bg-blue-50/60"}`}>
@@ -1035,8 +1050,8 @@ export function LaundryReadyForDelivery() {
             <div className="space-y-1.5"><Label className="text-xs">Received By (recipient)</Label><Input className="h-9" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Delivery Note (optional)</Label><Input className="h-9" value={note} onChange={(e) => setNote(e.target.value)} /></div>
           </div>
-          <Button onClick={deliver} disabled={busy || !covered || (verifyMethod === "OTP" && !otp.trim())} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:bg-slate-300">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {pickupType ? "Hand Over to Customer" : "Complete Delivery"}
+          <Button onClick={deliver} disabled={busy || !covered || !bagsComplete || (verifyMethod === "OTP" && !otp.trim())} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:bg-slate-300">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {pickupType ? "Hand Over to Customer" : "Complete Delivery"}{bagsComplete ? "" : " · account for all bags"}
           </Button>
         </CardContent></Card>
       )}

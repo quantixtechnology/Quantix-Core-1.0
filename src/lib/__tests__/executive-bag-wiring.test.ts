@@ -16,7 +16,7 @@ import { join } from 'path'
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const DEL_API = read('src/app/api/laundry/executive/jobs/[id]/delivery-bags/route.ts')
 const RET_API = read('src/app/api/laundry/executive/jobs/[id]/return-bags/route.ts')
-const LIST = read('src/components/laundry/executive/executive-bag-checklist.tsx')
+const LIST = read('src/components/laundry/bag-checklist.tsx')
 const PWA = read('src/components/laundry/executive/executive-app.tsx')
 
 describe('1-5 · the delivery route is transport over the tested domain', () => {
@@ -72,7 +72,7 @@ describe('13-18 · the return route is transport over the tested domain', () => 
     // A pickup completes whether the customer returns all, some or no bags.
     expect(RET_API).not.toContain('pickupReturnGate')
     expect(RET_API).not.toContain('before completing pickup')
-    const LIST_SRC = read('src/components/laundry/executive/executive-bag-checklist.tsx')
+    const LIST_SRC = read('src/components/laundry/bag-checklist.tsx')
     // Only delivery shows a blocking warning; a return states the position.
     expect(LIST_SRC).toContain('const isGated = (kind: ChecklistKind) => kind === "delivery"')
     expect(LIST_SRC).toContain('Still with customer')
@@ -81,7 +81,7 @@ describe('13-18 · the return route is transport over the tested domain', () => 
   it('the pickup Confirm button is not gated on returns', () => {
     // It still depends only on the EXISTING pickup bag-assignment rule.
     expect(PWA).toContain('disabled={busy || !allBagsDone} onClick={() => setStatus("PICKUP_COMPLETED")}')
-    expect(PWA).toContain('<ExecutiveBagChecklist jobId={job.id} kind="return" token={token} />')
+    expect(PWA).toContain('<BagChecklist kind="return" endpoint={`/api/laundry/executive/jobs/${job.id}/return-bags`} token={token} />')
   })
 
   it('the customer comes from the ORDER, never from the request body', () => {
@@ -98,15 +98,15 @@ describe('I · progress is never manufactured on the client', () => {
   })
 
   it('a failed scan leaves the view untouched', () => {
-    const fn = LIST.slice(LIST.indexOf('const scan ='), LIST.indexOf('if (!view'))
+    const fn = LIST.slice(LIST.indexOf('const post ='), LIST.indexOf('if (!view'))
     // The early return on failure happens BEFORE setView.
     expect(fn.indexOf('toast.error(j.error')).toBeLessThan(fn.indexOf('setView(j.data)'))
     expect(fn).toContain('return')
   })
 
   it('both routes answer with the freshly-read server view', () => {
-    expect(DEL_API).toContain('data: { ...await deliveryBags(')
-    expect(RET_API).toContain('data: { ...await customerReturnBags(')
+    expect(DEL_API).toContain('...await deliveryBags(')
+    expect(RET_API).toContain('...await customerReturnBags(')
   })
 })
 
@@ -128,7 +128,7 @@ describe('A1-A5, B1-B5 · the checklist renders and gates', () => {
   })
 
   it('progress reads N / M', () => {
-    expect(LIST).toContain('{done} / {view.total} {copy.verb}')
+    expect(LIST).toContain('{view.summary ?? `${done} / ${view.total} ${copy.verb}`}')
   })
 
   it('scanning stops once every listed bag is done', () => {
@@ -143,13 +143,13 @@ describe('A1-A5, B1-B5 · the checklist renders and gates', () => {
 
 describe('A5, A7, B5 · the PWA', () => {
   it('shows the delivery bag set and gates Confirm Delivery on it', () => {
-    expect(PWA).toContain('<ExecutiveBagChecklist jobId={job.id} kind="delivery" token={token} onProgress={setBagsComplete} />')
+    expect(PWA).toContain('<BagChecklist kind="delivery" endpoint={`/api/laundry/executive/jobs/${job.id}/delivery-bags`} token={token} onProgress={setBagsComplete} />')
     expect(PWA).toContain('disabled={busy || !bagsComplete}')
-    expect(PWA).toContain('scan all bags')
+    expect(PWA).toContain('account for all bags')
   })
 
   it('shows the customer return list at the pickup', () => {
-    expect(PWA).toContain('<ExecutiveBagChecklist jobId={job.id} kind="return" token={token} />')
+    expect(PWA).toContain('<BagChecklist kind="return" endpoint={`/api/laundry/executive/jobs/${job.id}/return-bags`} token={token} />')
   })
 
   it('A7 · the legacy single-bag display is retained for old orders', () => {

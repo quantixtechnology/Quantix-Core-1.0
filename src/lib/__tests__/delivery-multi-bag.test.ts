@@ -35,9 +35,12 @@ const H = vi.hoisted(() => {
         count: vi.fn(async () => state.assignments.length),
       },
       laundryBagEvent: {
+        // The reader asks for BOTH delivery actions at once (scan + exception),
+        // so the fake honours `action: { in: [...] }` as well as a bare string.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         findMany: vi.fn(async (a: any) => state.events
-          .filter((e) => e.businessId === a.where.businessId && e.orderId === a.where.orderId && e.action === a.where.action)
+          .filter((e) => e.businessId === a.where.businessId && e.orderId === a.where.orderId
+            && (typeof a.where.action === 'string' ? e.action === a.where.action : (a.where.action?.in ?? []).includes(e.action)))
           .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         create: vi.fn(async (a: any) => {
@@ -123,7 +126,9 @@ describe('A,B,C,D,E · the bag list comes from the assignments', () => {
 describe('F,G,H,I · every bag must be confirmed', () => {
   it('F · 0/3 blocks with the operator message', async () => {
     seed(3)
-    expect(await deliveryBagGate(LB, ORDER)).toBe('0 of 3 bags confirmed. Scan all bags before completing delivery.')
+    // Says where it stands AND both ways out — scan the rest, or record why one
+    // cannot be scanned. It never leaves the operator with no move.
+    expect(await deliveryBagGate(LB, ORDER)).toBe('0 of 3 bags scanned. Scan the remaining 3 bags, or record a scan exception, before completing delivery.')
   })
 
   it('G · 1/3 blocks', async () => {
@@ -262,7 +267,7 @@ describe('1,2 · the delivery gate is wired into both routes', () => {
       expect(src).toContain('code: "BAGS_PENDING"')
       expect(src).toContain('{ status: 409 }')
       // No local re-implementation of the count.
-      expect(src).not.toContain('bags confirmed. Scan all bags')
+      expect(src).not.toContain('bags scanned. Scan the remaining')
     }
   })
 

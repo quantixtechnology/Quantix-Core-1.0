@@ -1,6 +1,14 @@
 // GET  /api/laundry/executive/jobs/[id]/delivery-bags — the order's final bag
-//      set with per-bag confirmation state.
-// POST /api/laundry/executive/jobs/[id]/delivery-bags { code } — confirm one.
+//      set with per-bag scan / exception state.
+// POST /api/laundry/executive/jobs/[id]/delivery-bags { code } — scan one.
+// POST … { action: "exception", code, reason, note? } — record that one bag
+//      could not physically be scanned.
+//
+// The exception is NOT a bypass flag. The client cannot say "confirmed", cannot
+// say "skip the gate", and cannot name a bag that is not on this order: it can
+// only ask for a REASON to be recorded, and the gate afterwards re-reads the
+// stored event. `action` selects which record is written, never whether the
+// rule applies.
 //
 // Thin transport over the already-tested domain layer. Every rule —
 // tenant, order membership, lifecycle, duplicate handling, the N-of-M gate —
@@ -12,7 +20,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive } from "@/lib/laundry-executive-auth"
-import { deliveryBags, confirmDeliveryBag } from "@/lib/laundry-delivery-bags"
+import { deliveryBags, confirmDeliveryBag, recordDeliveryBagException } from "@/lib/laundry-delivery-bags"
 
 export const runtime = "nodejs"
 
@@ -51,16 +59,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (g.order.deliveryCompletedAt) return NextResponse.json({ error: "Delivery already completed" }, { status: 409 })
 
     const b = await request.json().catch(() => ({}))
-    const res = await confirmDeliveryBag({
-      lbId: g.session.businessId,
-      orderId: g.order.id,
-      code: String(b.code || b.bagNumber || b.qrValue || ""),
-      actor: { id: g.session.executiveId, name: b.executiveName ?? "Executive", role: "DELIVERY_EXECUTIVE" },
-    })
+    const code = String(b.code || b.bagNumber || b.qrValue || "")
+    const actor = { id: g.session.executiveId, name: b.executiveName ?? "Executive", role: "DELIVERY_EXECUTIVE" }
+
+    const res = String(b.action || "") === "exception"
+      ? await recordDeliveryBagException({ lbId: g.session.businessId, orderId: g.order.id, code, reason: b.reason, note: b.note, actor })
+      : await confirmDeliveryBag({ lbId: g.session.businessId, orderId: g.order.id, code, actor })
+
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
 
     // Always answer with the server's own view — the client never computes progress.
-    return NextResponse.json({ success: true, data: { ...await deliveryBags(g.session.businessId, g.order.id), scanned: res.bagNumber, alreadyConfirmed: res.alreadyConfirmed } })
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...await deliveryBags(g.session.businessId, g.order.id),
+        scanned: res.bagNumber,
+        alreadyConfirmed: "alreadyConfirmed" in res ? res.alreadyConfirmed : false,
+        alreadyExcepted: "alreadyExcepted" in res ? res.alreadyExcepted : false,
+      },
+    })
   } catch (e) {
     console.error("[executive-delivery-bags] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

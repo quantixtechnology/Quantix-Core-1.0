@@ -6,7 +6,7 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { ExecutiveBagChecklist } from "@/components/laundry/executive/executive-bag-checklist"
+import { BagChecklist } from "@/components/laundry/bag-checklist"
 import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
@@ -511,7 +511,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
             {/* THE ORDER'S FINAL BAG SET — every bag must be confirmed before the
                 delivery can complete. The server enforces it too; this is so the
                 executive is not sent to the door only to be refused. */}
-            <ExecutiveBagChecklist jobId={job.id} kind="delivery" token={token} onProgress={setBagsComplete} />
+            <BagChecklist kind="delivery" endpoint={`/api/laundry/executive/jobs/${job.id}/delivery-bags`} token={token} onProgress={setBagsComplete} />
             {job.deliveryBagNumber ? (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
@@ -571,7 +571,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
             the executive is with the customer. Only CURRENTLY-held bags appear,
             so a bag returned on an earlier visit never reappears. */}
         {!isDelivery && job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && !pickupDone && job.status !== "CANCELLED" && (
-          <ExecutiveBagChecklist jobId={job.id} kind="return" token={token} />
+          <BagChecklist kind="return" endpoint={`/api/laundry/executive/jobs/${job.id}/return-bags`} token={token} />
         )}
 
         {/* Bag assignment — revealed only once the executive is actually at the
@@ -627,7 +627,7 @@ function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }
               incomplete delivery regardless — this only saves the executive a
               wasted attempt at the customer's door. */}
           <button disabled={busy || !bagsComplete} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Delivery{bagsComplete ? "" : " · scan all bags"}
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Delivery{bagsComplete ? "" : " · account for all bags"}
           </button>
         </div>
       )}
