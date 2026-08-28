@@ -18,6 +18,7 @@ import { applyDeliveryDisposition, isDisposition, isCondition, DEFAULT_DISPOSITI
 import { syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 import { verifyDelivery } from "@/lib/laundry-verification"
+import { deliveryBagGate } from "@/lib/laundry-delivery-bags"
 
 export const runtime = "nodejs"
 
@@ -36,6 +37,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       select: { id: true, status: true, deliveryOtp: true, deliveryVerificationMethod: true },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+
+    // BAG GATE — every bag of the order must be confirmed before ANY state
+    // changes. It runs ahead of verifyDelivery deliberately: successful
+    // verification CLEARS the OTP, so gating after it would burn the customer's
+    // code on a delivery that then could not complete. Server-authoritative —
+    // calling this endpoint directly cannot skip it.
+    const bagBlock = await deliveryBagGate(biz.id, id)
+    if (bagBlock) return NextResponse.json({ error: bagBlock, code: "BAGS_PENDING" }, { status: 409 })
+
     const method = String(b.method || "").toUpperCase()
     const otp = String(b.otp || "").trim() || null
     const v = await verifyDelivery(biz.id, order, method, otp)

@@ -12,6 +12,7 @@ import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { markOrderDelivered } from "@/lib/laundry-deliver"
 import { applyDeliveryDisposition, isDisposition, isCondition, DEFAULT_DISPOSITION } from "@/lib/laundry-bag-lifecycle"
+import { deliveryBagGate } from "@/lib/laundry-delivery-bags"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 import { verifyDelivery } from "@/lib/laundry-verification"
 
@@ -41,6 +42,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (b.action === "delivered") {
       // Business rule: a delivery can never complete without successful customer
       // verification (per the configured method — OTP or Name).
+      // BAG GATE — before anything changes, and before verification, because a
+      // successful verifyDelivery CLEARS the OTP: gating after it would burn the
+      // customer's code on a delivery that then could not complete.
+      const bagBlock = await deliveryBagGate(session.businessId, order.id)
+      if (bagBlock) return NextResponse.json({ error: bagBlock, code: "BAGS_PENDING" }, { status: 409 })
+
       const method = String(b.method || "").toUpperCase()
       const otp = String(b.otp || "").trim() || null
       const v = await verifyDelivery(session.businessId, order, method, otp)

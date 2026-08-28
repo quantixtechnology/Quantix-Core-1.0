@@ -247,3 +247,58 @@ describe('Z · payment and OTP untouched', () => {
     expect(PACK).toContain('useOrderBags(selected?.id ?? null, currentBusinessId)') // 5dab449 intact
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE GATE IS SERVER-AUTHORITATIVE, and it runs BEFORE anything changes.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('1,2 · the delivery gate is wired into both routes', () => {
+  const ADMIN = readFileSync(join(process.cwd(), 'src/app/api/laundry/orders/[id]/deliver/route.ts'), 'utf8')
+  const EXEC = readFileSync(join(process.cwd(), 'src/app/api/laundry/executive/jobs/[id]/deliver/route.ts'), 'utf8')
+
+  it('both routes call the shared gate — the logic is not duplicated', () => {
+    for (const src of [ADMIN, EXEC]) {
+      expect(src).toContain('deliveryBagGate(')
+      expect(src).toContain('code: "BAGS_PENDING"')
+      expect(src).toContain('{ status: 409 }')
+      // No local re-implementation of the count.
+      expect(src).not.toContain('bags confirmed. Scan all bags')
+    }
+  })
+
+  // Handler bodies only — the import block names everything first.
+  const bodyOf = (src: string) => src.slice(src.indexOf('export async function POST'))
+
+  it('2 · the gate runs BEFORE the delivery transition', () => {
+    for (const src of [ADMIN, EXEC]) {
+      const body = bodyOf(src)
+      expect(body.indexOf('deliveryBagGate(')).toBeLessThan(body.indexOf('markOrderDelivered('))
+      expect(body.indexOf('deliveryBagGate(')).toBeLessThan(body.indexOf('applyDeliveryDisposition('))
+    }
+  })
+
+  it('2,5 · and BEFORE verification, so a rejection cannot burn the OTP', () => {
+    // verifyDelivery CLEARS the OTP on success. Gating after it would leave the
+    // customer without a usable code on a delivery that then could not complete.
+    for (const src of [ADMIN, EXEC]) {
+      const body = bodyOf(src)
+      expect(body.indexOf('deliveryBagGate(')).toBeLessThan(body.indexOf('verifyDelivery('))
+    }
+  })
+
+  it('a client cannot bypass it — the gate is on the server, not the UI', () => {
+    for (const src of [ADMIN, EXEC]) {
+      expect(src).toContain('const bagBlock = await deliveryBagGate')
+      expect(src).toContain('if (bagBlock) return NextResponse.json')
+    }
+  })
+
+  it('5,17,18 · the OTP engine is untouched by this wiring', () => {
+    for (const src of [ADMIN, EXEC]) {
+      expect(src).toContain('verifyDelivery(')     // still the only verifier
+      expect(src).not.toContain('regenerateOtp')
+      expect(src).toContain('deliveryOtp: true')          // read in the select
+      expect(src).not.toContain('data: { deliveryOtp')    // never written here
+    }
+  })
+})
