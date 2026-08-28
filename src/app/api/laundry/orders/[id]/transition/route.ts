@@ -41,6 +41,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!guard.ok) return guard.res
 
     const fromStatus = order.status as string
+
+    // Already there. A double-click (or a retry after a dropped response) sent
+    // the SAME transition twice: the first moved the order, the second found no
+    // edge from the new status and answered 409 "Invalid transition", which
+    // reads like a workflow error on an order that is in fact fine. Answering
+    // with the current state is both honest and idempotent. This is not a
+    // workflow jump — nothing moves — so the guards below still own every real
+    // transition.
+    if (fromStatus === toStatus) {
+      return NextResponse.json({
+        success: true, data: { id, status: fromStatus, orderNumber: order.orderNumber }, alreadyInStatus: true,
+      })
+    }
+
     const transition = getTransition(fromStatus, toStatus)
     if (!transition) {
       return NextResponse.json(
@@ -55,7 +69,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const audit = await checkAuditComplete(id)
       if (!audit.ok) {
         console.warn(`[laundry-order-transition] blocked ${order.orderNumber} audit approval: incomplete (expected ${audit.expected}, audited ${audit.audited})`)
-        return NextResponse.json({ success: false, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited }, { status: 409 })
+        // `error` as well as `message`: the two 409s on this route had different
+        // shapes, so a client reading json.error got `undefined` here and showed
+        // a bare "Transition failed" — hiding the one thing the operator needed
+        // to know. Both keys now carry the reason.
+        return NextResponse.json({ success: false, error: audit.message, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited }, { status: 409 })
       }
     }
 

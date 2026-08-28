@@ -319,10 +319,29 @@ export function LaundryStoreAudit() {
     }
     setActing(true)
     try {
-      await saveInspection()
+      // Saving the inspection is what stamps every garment as inspected AND
+      // writes the invoice figures for KG orders. If it fails, the transition
+      // that follows is guaranteed to be refused by the audit gate — so stop
+      // here rather than leaving "invoice attempted, order stuck" behind.
+      const saved = await saveInspection()
+      if (!saved) {
+        toast({ title: "Could not save the inspection", description: "The audit was not saved, so the order was not approved. Please try again.", variant: "destructive" })
+        return
+      }
       const res = await fetch(`/api/laundry/orders/${detail.id}/transition`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStatus, actorName: user?.name || "auditor", note: auditNotes || null }) })
       const json = await res.json()
-      if (!res.ok || json.success === false) { toast({ title: "Error", description: json.error || "Transition failed", variant: "destructive" }); return }
+      if (!res.ok || json.success === false) {
+        // The audit gate answers with `message`/`expected`/`audited`; an invalid
+        // transition answers with `error`. Reading only `error` turned a precise
+        // refusal into a bare "Transition failed" and left the operator with a
+        // 409 and no idea which garment was missing.
+        const reason = json.error || json.message || "Transition failed"
+        const counts = typeof json.expected === "number" && typeof json.audited === "number"
+          ? ` (${json.audited} of ${json.expected} garments inspected)`
+          : ""
+        toast({ title: "Cannot approve this order", description: `${reason}${counts}`, variant: "destructive" })
+        return
+      }
       // Reusable bags carry the SAME permanent QR through processing → delivery,
       // so no Processing Package QR is generated. Advance this order's bags to
       // PROCESSING (best-effort, non-blocking).
