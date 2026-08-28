@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { OrderOtpBlock, useOrderOtp } from "@/components/laundry/order-otp-block"
 import { useScanSink } from "@/lib/hardware"
 import { useAdminStore } from "@/stores/admin-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -100,6 +102,9 @@ const PICKUP_STATUS_LABEL: Record<string, string> = {
 export function LaundryOrderDetail() {
   const { selectedOrderId, setLaundryPage } = useAdminStore()
   const { currentBusinessId, user } = useAuthStore()
+  const { can } = useLaundryPermissions()
+  // The verification OTP for both legs, read from the existing endpoint.
+  const { otp, reloadOtp } = useOrderOtp(selectedOrderId, currentBusinessId)
   const [order, setOrder] = useState<Detail | null>(null)
   const [dispatchStatus, setDispatchStatus] = useState<DispatchInfo | null>(null)
   const [execs, setExecs] = useState<Exec[]>([])
@@ -345,6 +350,12 @@ export function LaundryOrderDetail() {
                   )}
                 </div>
               )}
+              {/* Verification OTP — the existing engine's value, nothing new. */}
+              <OrderOtpBlock
+                orderId={order.id} businessId={currentBusinessId || ""} kind="pickup"
+                leg={otp?.pickup} confirmed={pickupCompleted}
+                canRefresh={can("laundry.orders.edit")} onRefreshed={reloadOtp}
+              />
             </div>
           ) : (
             <p className="text-xs text-slate-400">Pickup not required for this order.</p>
@@ -424,6 +435,11 @@ export function LaundryOrderDetail() {
                   )}
                 </div>
               )}
+              <OrderOtpBlock
+                orderId={order.id} businessId={currentBusinessId || ""} kind="delivery"
+                leg={otp?.delivery} confirmed={deliveryCompleted}
+                canRefresh={can("laundry.orders.edit")} onRefreshed={reloadOtp}
+              />
             </div>
           ) : (
             <p className="text-xs text-slate-400">Delivery not required for this order.</p>
