@@ -3,16 +3,13 @@
 //
 // The laundry layer's single entry point for the shared Address Serviceability
 // engine. It is deliberately thin: it resolves the LaundryStore for a pickup
-// address (nearest serviceable store when coordinates exist, first active store
-// for legacy flows without coordinates) and returns the snapshot the order
-// persists. All radius/min-order/zone rules live in the platform engine
-// (`core/address-serviceability.ts`) — nothing workspace-specific is encoded
-// here beyond "laundry pickup coordinates → LaundryStore".
+// address (nearest serviceable store when coordinates exist) and returns the
+// snapshot the order persists. All radius/min-order/zone rules live in the
+// platform engine (`core/address-serviceability.ts`) — nothing workspace-
+// specific is encoded here beyond "laundry pickup coordinates → LaundryStore".
 // ============================================================================
 
-import { prisma } from "@/lib/prisma"
 import { checkAddressServiceability } from "@/lib/core/address-serviceability"
-import { customerFacingStoreWhere } from "@/lib/laundry-store-eligibility"
 
 export interface LaundryStoreResolution {
   ok: boolean
@@ -35,10 +32,10 @@ export interface LaundryStoreResolution {
 /**
  * Resolve the LaundryStore an order should be assigned to, keyed on the pickup
  * address coordinates. Returns OUT_OF_SERVICE_AREA (via `ok:false` +
- * `reason`) when the address has coordinates but is outside every store's
- * service radius — the caller surfaces the "nearest store + distance + Change
- * Address" card. Without coordinates we keep the legacy "first active store"
- * behaviour so older clients never break.
+ * `reason`) when the address is outside every store's current service radius —
+ * the caller surfaces the "nearest store + distance + Change Address" card.
+ * An address whose position cannot be established is refused too: serviceability
+ * is never granted by default for an address that cannot be measured.
  */
 export async function resolveLaundryStoreForPickup(input: {
   laundryBusinessId: string
@@ -48,21 +45,28 @@ export async function resolveLaundryStoreForPickup(input: {
   pickupAddressId?: string | null
   orderAmount?: number
 }): Promise<LaundryStoreResolution> {
-  const legacy = async (): Promise<LaundryStoreResolution> => {
-    const store = await prisma.laundryStore.findFirst({
-      // No coordinates → no distance to compute, but the store picked here is
-      // still the CUSTOMER's store, so a Processing Center is not a candidate.
-      // Without this the "first active store" fallback could file a customer's
-      // order against an internal facility.
-      where: { laundryBusinessId: input.laundryBusinessId, isActive: true, ...customerFacingStoreWhere },
-      select: { id: true },
-    })
-    if (!store) return { ok: false, storeId: null, error: "No active store configured", status: 400 }
-    return { ok: true, storeId: store.id }
-  }
-
+  // AN ADDRESS THAT CANNOT BE PLACED ON THE MAP CANNOT BE MEASURED AGAINST A
+  // STORE'S CURRENT SERVICE RADIUS — AND THAT MEASUREMENT IS THE WHOLE POINT
+  // OF THIS FUNCTION.
+  //
+  // There is deliberately NO "first active store" fallback here any more. Such
+  // a fallback filed the customer against whatever store came first — in
+  // practice the same store they had used before, whatever that store's
+  // CURRENT location — so a customer whose saved address had no coordinates
+  // kept booking after the store moved, because the radius rule never ran.
+  // History must not grant serviceability: if the address cannot be verified
+  // against the current store configuration, the booking is refused (the
+  // /api/core/storefront/serviceability preview already refuses this same
+  // shape), never silently approved.
   if (input.lat == null || input.lng == null || Number.isNaN(input.lat) || Number.isNaN(input.lng)) {
-    return legacy()
+    return {
+      ok: false,
+      storeId: null,
+      pickupAddressId: input.pickupAddressId ?? null,
+      serviceabilityStatus: "OUT_OF_SERVICE_AREA",
+      reason: "This address has no location coordinates. Please select the pin on the map to enable pickup.",
+      status: 422,
+    }
   }
 
   const svc = await checkAddressServiceability({

@@ -170,8 +170,14 @@ describe('the rule is applied once, server-side', () => {
     expect(PROVIDERS).toContain('laundryBusinessId: laundry.id, isActive: true, ...customerFacingStoreWhere')
   })
 
-  it('the no-coordinates fallback is filtered too', () => {
-    expect(SERVICEABILITY).toContain('customerFacingStoreWhere')
+  it('there is no coords-less fallback left in the order seam', () => {
+    // The shared provider filters BEFORE distance runs (above), and the
+    // order seam no longer keeps a "first active store" fallback for
+    // addresses without coordinates — the fallback lookup itself is gone,
+    // and an address that cannot be measured is refused, never filed
+    // against a store selection.
+    expect(SERVICEABILITY).toContain('This address has no location coordinates')
+    expect(SERVICEABILITY).not.toContain('laundryStore.findFirst')
   })
 
   it('the PWA order-creation fallback is filtered too', () => {
