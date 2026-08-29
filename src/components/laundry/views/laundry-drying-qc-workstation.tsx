@@ -15,6 +15,8 @@ import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Undo2, Search
 import { stageLabel, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
+import { LaundryWorkloadSummary } from "@/components/laundry/workload-summary"
+import type { WorkloadSummary } from "@/lib/laundry-workload"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
@@ -46,6 +48,10 @@ interface Completed {
 export function LaundryDryingQcWorkstation() {
   const { currentBusinessId, user } = useAuthStore()
   const { level } = useLaundryPermissions()
+  // Dry & Quality Check owns TWO stages. The workload is aggregated server-side
+  // over BOTH in one pass, so a garment that completed at DRY and again at QC is
+  // counted once — summing two single-stage responses would double it.
+  const [workload, setWorkload] = useState<WorkloadSummary | null>(null)
   // Search is its own race-safe request lifecycle, independent of the queue
   // loader and the 12s poll — see use-garment-search.ts.
   const { query: search, setQuery: setSearch, clear: clearSearch, active: searching, results: searchResults, loading: searchLoading, error: searchError, truncated: searchTruncated, refresh: refreshSearch } = useGarmentSearch(currentBusinessId)
@@ -90,11 +96,14 @@ export function LaundryDryingQcWorkstation() {
     try {
       const results = await Promise.all(
         ["DRY", "QC"].map((stage) =>
-          fetch(`/api/laundry/processing?businessId=${encodeURIComponent(currentBusinessId)}&stage=${stage}`).then((r) => r.json()).catch(() => null),
+          fetch(`/api/laundry/processing?businessId=${encodeURIComponent(currentBusinessId)}&stage=${stage}&stages=DRY,QC`).then((r) => r.json()).catch(() => null),
         ),
       )
       const sound = results.find((r) => r && r.soundEnabled !== undefined)?.soundEnabled
       if (sound !== undefined) setSoundEnabled(sound)
+      // Both responses carry the SAME two-stage aggregate — take one, never add.
+      const wl = results.find((r) => r && r.workload)?.workload
+      if (wl) setWorkload(wl)
       const mergedItems: Item[] = []
       const mergedCompleted: Completed[] = []
       for (const res of results) {
@@ -295,11 +304,15 @@ export function LaundryDryingQcWorkstation() {
             <Badge className="border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px] font-semibold">GARMENT TRACKING</Badge>
           </h1>
           <div className="flex items-center gap-2 text-xs">
-            <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50"><Clock className="h-3 w-3 mr-1" /> {waiting.length} waiting</Badge>
-            <Badge variant="outline" className="border-indigo-300 text-indigo-700 bg-indigo-50"><Play className="h-3 w-3 mr-1" /> {active.length} in progress</Badge>
-            <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50"><Check className="h-3 w-3 mr-1" /> {completed.length} done</Badge>
+            <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50"><Clock className="h-3 w-3 mr-1" /> {workload?.pending.garments ?? waiting.length} waiting</Badge>
+            <Badge variant="outline" className="border-indigo-300 text-indigo-700 bg-indigo-50"><Play className="h-3 w-3 mr-1" /> {workload?.processing.garments ?? active.length} in progress</Badge>
+            <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50"><Check className="h-3 w-3 mr-1" /> {workload?.completed.garments ?? completed.length} done</Badge>
           </div>
         </div>
+
+        {/* Workload at a glance — the same tiles Washing and Dry Cleaning use,
+            aggregated over BOTH stages this workstation owns. */}
+        {workload && <LaundryWorkloadSummary summary={workload} loading={loading} />}
 
         <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
           <CardContent className="p-4">

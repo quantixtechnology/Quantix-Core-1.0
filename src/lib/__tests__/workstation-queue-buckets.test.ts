@@ -89,10 +89,14 @@ describe('counts come from the database, not from the page that was rendered', (
     expect(WS).toContain('In Progress <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{activeCount}</Badge>')
   })
 
-  it('the workload tiles show the same counts as the badges', () => {
-    expect(WS).toContain('pending: { ...workload.pending, garments: waitingCount')
-    expect(WS).toContain('processing: { ...workload.processing, garments: activeCount')
+  // The tiles and the badges now read the SAME server aggregate — the tiles from
+  // `workload`, the badges from `queueCounts`, both computed over the whole
+  // stage in SQL. Neither is derived from the rendered page.
+  it('the workload tiles and the badges both show server figures', () => {
+    expect(WS).toContain('setWorkload(j.workload || null)')
     expect(WS).toContain('summary={workloadView}')
+    expect(WS).toContain('const waitingCount = queueCounts?.WAITING ?? waiting.length')
+    expect(WS).toContain('const activeCount = queueCounts?.active ?? active.length')
   })
 
   it('a count is never a client-side increment', () => {

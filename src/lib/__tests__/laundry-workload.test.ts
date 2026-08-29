@@ -168,11 +168,17 @@ describe('it is a read model — no workflow surface', () => {
     }
   })
 
-  it('the summary is derived per render, never stored in state', () => {
+  // The figures now come from the SERVER (SQL aggregates over the whole stage),
+  // because summing the loaded page understated a 400-garment queue. What must
+  // still never happen is a count maintained by the client.
+  it('the summary is server data, never a client-side counter', () => {
     const ws = read('src/components/laundry/views/laundry-workstation.tsx')
-    expect(ws).toContain('const workload = summariseWorkload(items, completed')
-    expect(ws).not.toContain('setWorkload')
-    expect(ws).not.toContain('useState<WorkloadSummary')
+    expect(ws).toContain('setWorkload(j.workload || null)')
+    // replaced wholesale from the response — never incremented or adjusted
+    expect(ws).not.toMatch(/workload\.\w+\.garments\s*[+-]/)
+    expect(ws).not.toMatch(/setWorkload\(\(\w+\) =>/)
+    // the pure helper survives only as a fallback for a pre-deploy response
+    expect(ws).toContain('workload ?? summariseWorkload(')
   })
 
   it('shows on Washing and Dry Cleaning, and the queue columns are untouched', () => {
@@ -188,5 +194,57 @@ describe('it is a read model — no workflow surface', () => {
     expect(api).toContain('weightKg: it?.weightKg ?? null')
     expect(api).not.toContain('laundryOrderItem.update')
     expect(api).not.toContain('laundryOrder.update')
+  })
+})
+
+// ============================================================================
+// The tiles are fed by DATABASE aggregates, not by the page of rows that loaded.
+// ============================================================================
+describe('workload comes from the server, for every workstation', () => {
+  const API = read('src/app/api/laundry/processing/route.ts')
+  const WS = read('src/components/laundry/views/laundry-workstation.tsx')
+  const QC = read('src/components/laundry/views/laundry-drying-qc-workstation.tsx')
+
+  it('the API aggregates counts AND weights in SQL', () => {
+    expect(API).toContain('_sum: { weightKg: true }')
+    expect(API).toContain('by: ["processingStatus"], where: stageScope')
+    expect(API).toContain('workload,')
+  })
+
+  it('missing weight is counted, never summed as zero', () => {
+    expect(API).toContain('weightKg: { lte: 0 }')
+  })
+
+  it('Completed is distinct by garment and excludes anything back in the queue', () => {
+    expect(API).toContain('distinct: ["itemId"]')
+    expect(API).toContain('NOT: { processingStage: { in: workloadStages } }')
+  })
+
+  it('a workstation owning several stages aggregates them in ONE pass', () => {
+    // Summing two single-stage responses would double-count a garment that
+    // completed at both DRY and QC.
+    expect(API).toContain('const workloadStages = (sp.get("stages") || stage || "")')
+    expect(API).toContain('processingStage: { in: workloadStages }')
+    expect(QC).toContain('&stages=DRY,QC')
+    expect(QC).toContain('const wl = results.find((r) => r && r.workload)?.workload')
+    expect(QC).not.toContain('workload.pending.garments +')   // never added together
+  })
+
+  it('the clients render the server figures', () => {
+    expect(WS).toContain('setWorkload(j.workload || null)')
+    expect(WS).toContain('const workloadView = workload ??')
+    expect(QC).toContain('<LaundryWorkloadSummary summary={workload}')
+  })
+
+  it('Washing, Dry Cleaning and Dry & Quality Check all show the tiles', () => {
+    expect(WS).toContain('const SHOW_WORKLOAD_SUMMARY = new Set(["WASH", "DRYCLEAN"])')
+    expect(QC).toContain('LaundryWorkloadSummary')
+  })
+
+  it('the aggregate is read-only — it moves no garment', () => {
+    const block = API.slice(API.indexOf('const stageScope'), API.indexOf('const r2w'))
+    for (const w of ['update', 'create', 'delete']) {
+      expect(block, `the workload aggregate must not ${w}`).not.toContain(w)
+    }
   })
 })

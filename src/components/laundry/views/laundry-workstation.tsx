@@ -28,7 +28,7 @@ import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scan
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { LaundryWorkloadSummary } from "@/components/laundry/workload-summary"
-import { summariseWorkload } from "@/lib/laundry-workload"
+import { summariseWorkload, type WorkloadSummary } from "@/lib/laundry-workload"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
@@ -102,6 +102,9 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // TRUE per-status counts from the server. The rendered lists are paged; these
   // are not, so a column's number is the database's number.
   const [queueCounts, setQueueCounts] = useState<Record<string, number> | null>(null)
+  // Counts AND weights, aggregated by the database over the whole stage — not
+  // summed from the page of rows that happened to load.
+  const [workload, setWorkload] = useState<WorkloadSummary | null>(null)
   const [completed, setCompleted] = useState<{ id: string; itemId?: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null; weightKg?: number | null }[]>([])
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
@@ -144,6 +147,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       setItems(j.items || [])
       setCompleted(j.completed || [])
       setQueueCounts(j.queueCounts || null)
+      setWorkload(j.workload || null)
     } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId, stage])
   // The queue loads once per stage and then only on the poll/focus. Typing no
@@ -296,19 +300,14 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // Workload summary — computed from `items` / `completed` on every render, so
   // it is the same server data the three columns below are showing. No stored
   // counter, nothing to go stale after a scan, Start, Complete or refresh.
-  const workload = summariseWorkload(items, completed.map((c) => ({ itemId: c.itemId ?? c.id, weightKg: c.weightKg })))
   // Counts come from the server's unpaged totals when available; the rendered
   // lists can be a page of a long queue, so their length is not the count.
   const waitingCount = queueCounts?.WAITING ?? waiting.length
   const activeCount = queueCounts?.active ?? active.length
-  // The summary tiles show the same true counts as the column badges. Weight
-  // still comes from the loaded rows, so it is flagged as partial when the
-  // queue is longer than one page rather than quietly understating the load.
-  const workloadView = {
-    ...workload,
-    pending: { ...workload.pending, garments: waitingCount, missingWeight: workload.pending.missingWeight + Math.max(0, waitingCount - waiting.length) },
-    processing: { ...workload.processing, garments: activeCount, missingWeight: workload.processing.missingWeight + Math.max(0, activeCount - active.length) },
-  }
+  // The tiles show the DATABASE's figures. The client helper is kept only as a
+  // fallback for a response that predates the server aggregate, so a rolling
+  // deploy never renders an empty summary.
+  const workloadView = workload ?? summariseWorkload(items, completed.map((c) => ({ itemId: c.itemId ?? c.id, weightKg: c.weightKg })))
   const inProgress = active.filter((i) => i.processingStatus === "IN_PROGRESS")
 
   // Keep the selection in sync with what's actually still in progress (a garment

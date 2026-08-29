@@ -17,6 +17,11 @@ export async function GET(request: Request) {
     const sp = new URL(request.url).searchParams
     const businessId = sp.get("businessId")
     const stage = sp.get("stage")
+    // Workstations that own MORE than one stage (Dry & Quality Check owns DRY
+    // and QC) pass them all, so the workload is aggregated in ONE pass. Summing
+    // two single-stage responses would double-count any garment that completed
+    // at both stages. Defaults to the requested stage.
+    const workloadStages = (sp.get("stages") || stage || "").split(",").map((x) => x.trim()).filter(Boolean)
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const guard = await requireLaundryPermission(request, businessId, stage ? `processing.${STAGE_SCREEN[stage] || "washing"}.view` : "processing.console_receive.view")
     if (!guard.ok) return guard.res
@@ -119,6 +124,8 @@ export async function GET(request: Request) {
     let items: unknown[] = []
     let completed: unknown[] = []
     let queueCounts: Record<string, number> = {}
+    type WlBucket = { garments: number; weightKg: number; missingWeight: number }
+    let workload: { pending: WlBucket; processing: WlBucket; completed: WlBucket } | null = null
     if (stage) {
       // ONE CAPPED QUERY CANNOT FEED THREE COLUMNS.
       //
@@ -165,6 +172,65 @@ export async function GET(request: Request) {
       queueCounts = { WAITING: 0, IN_PROGRESS: 0, PAUSED: 0 }
       for (const q of queueGrouped) queueCounts[q.processingStatus ?? "UNSET"] = q._count
       queueCounts.active = (queueCounts.IN_PROGRESS || 0) + (queueCounts.PAUSED || 0)
+
+      // ── WORKLOAD: counts AND weights, aggregated in the database ───────────
+      //
+      // The summary tiles used to sum the weight of the rows that happened to
+      // be on the page, so on a 400-garment queue they described the first 200.
+      // These are SQL aggregates over the whole stage, so the figures stay true
+      // however long the queue gets.
+      //
+      // weightKg defaults to 0 in the schema, so "recorded" means a POSITIVE
+      // weight and everything else is counted as missing rather than summed as
+      // zero — the same rule the client helper applies.
+      const stageScope = { order: { businessId: biz.id }, processingStage: { in: workloadStages } }
+      const ACTIVE = { in: ["IN_PROGRESS", "PAUSED"] }
+      const [liveAgg, liveMissing] = await Promise.all([
+        prisma.laundryOrderItem.groupBy({ by: ["processingStatus"], where: stageScope, _count: true, _sum: { weightKg: true } }),
+        prisma.laundryOrderItem.groupBy({ by: ["processingStatus"], where: { ...stageScope, weightKg: { lte: 0 } }, _count: true }),
+      ])
+      const bucket = () => ({ garments: 0, weightKg: 0, missingWeight: 0 })
+      const pending = bucket(), processing = bucket(), completedWl = bucket()
+      for (const g of liveAgg) {
+        const t = g.processingStatus === "WAITING" ? pending : (g.processingStatus === "IN_PROGRESS" || g.processingStatus === "PAUSED") ? processing : null
+        if (!t) continue
+        t.garments += g._count
+        t.weightKg += g._sum.weightKg ?? 0
+      }
+      for (const g of liveMissing) {
+        const t = g.processingStatus === "WAITING" ? pending : (g.processingStatus === "IN_PROGRESS" || g.processingStatus === "PAUSED") ? processing : null
+        if (t) t.missingWeight += g._count
+      }
+
+      // COMPLETED — the garments that finished at these stages. Distinct by
+      // garment (a rework produces two COMPLETE events for one garment), and
+      // excluding any that are back in this stage's live queue, so nothing is
+      // counted in two buckets at once.
+      const doneRows = await prisma.laundryItemEvent.findMany({
+        where: { businessId: biz.id, stage: { in: workloadStages }, action: { in: ["COMPLETE", "QC_PASS"] } },
+        select: { itemId: true },
+        distinct: ["itemId"],
+      })
+      const doneIds = doneRows.map((d) => d.itemId)
+      // Chunked: SQLite caps the number of bound variables in one statement.
+      for (let i = 0; i < doneIds.length; i += 400) {
+        const slice = doneIds.slice(i, i + 400)
+        const where = { id: { in: slice }, NOT: { processingStage: { in: workloadStages } } }
+        const [agg, miss] = await Promise.all([
+          prisma.laundryOrderItem.aggregate({ where, _count: true, _sum: { weightKg: true } }),
+          prisma.laundryOrderItem.count({ where: { ...where, weightKg: { lte: 0 } } }),
+        ])
+        completedWl.garments += agg._count
+        completedWl.weightKg += agg._sum.weightKg ?? 0
+        completedWl.missingWeight += miss
+      }
+
+      const r2w = (n: number) => Math.round(n * 100) / 100
+      workload = {
+        pending:    { ...pending,    weightKg: r2w(pending.weightKg) },
+        processing: { ...processing, weightKg: r2w(processing.weightKg) },
+        completed:  { ...completedWl, weightKg: r2w(completedWl.weightKg) },
+      }
       const cid = [...new Set(rows.map((r) => r.order.customerId).filter(Boolean) as string[])]
       const cs = cid.length ? await prisma.customer.findMany({ where: { id: { in: cid } }, select: { id: true, name: true } }) : []
       const cm = new Map(cs.map((c) => [c.id, c.name]))
@@ -214,7 +280,7 @@ export async function GET(request: Request) {
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, workload, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
