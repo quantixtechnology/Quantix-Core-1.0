@@ -215,3 +215,63 @@ describe('nothing else changed', () => {
     expect(read('src/lib/laundry-one-service.ts')).not.toContain('@default')
   })
 })
+
+// ============================================================================
+// The operator picks the garment and the quantity. The service is already known.
+// ============================================================================
+describe('Add Garment inherits the order service', () => {
+  const UI = read('src/components/laundry/views/laundry-new-order.tsx')
+
+  it('reopening the modal preselects the established service', () => {
+    expect(UI).toContain('setMService(orderService?.id || "")')
+    // …and blanks it only when the order has none yet
+    expect(UI).not.toContain('const openAddGarment = () => { setMGarment(""); setMService("");')
+  })
+
+  it('changing the garment keeps the inherited service instead of re-picking', () => {
+    expect(UI).toContain('if (orderService) {')
+    expect(UI).toContain('setMService(mServices.some((sv) => sv.id === orderService.id) ? orderService.id : "")')
+  })
+
+  it('the effect re-runs when the order service appears or clears', () => {
+    expect(UI).toContain('}, [mGarment, mServices, orderService])')
+  })
+
+  it('the service renders read-only once established, with its turnaround', () => {
+    expect(UI).toContain('{orderService.name} · {turnaroundLabel(orderService.turnaroundHours)}')
+    expect(UI).toContain('Order service')
+    // the dropdown is only for the FIRST garment
+    expect(UI).toContain('{orderService ? (')
+    expect(UI).toContain(') : (\n                    <SearchableSelect value={mService}')
+  })
+
+  it('an inherited service not priced for the garment is explained, not silently failed', () => {
+    expect(UI).toContain('const lockedServiceUnavailable =')
+    expect(UI).toContain('is not priced for')
+    expect(UI).toContain('create a separate order for another service')
+  })
+
+  it('emptying the order clears the inheritance — the lock is derived, not stored', () => {
+    // orderService reads lineItems[0]; with no lines it is null, so the next
+    // first garment establishes afresh. There is no separate state to reset.
+    expect(UI).toContain('const first = lineItems[0]')
+    expect(UI).toContain('if (!first) return null')
+    expect(UI).not.toContain('setOrderService(')
+  })
+
+  it('the restriction itself is unchanged — a different service is still refused', () => {
+    expect(UI).toContain('if (orderService && mService !== orderService.id)')
+    expect(UI).toContain('conflictMessage(orderService.name')
+  })
+
+  it('the server rules are untouched by this UX change', () => {
+    expect(read('src/lib/laundry-order-engine.ts')).toContain('assertSingleServiceOrder')
+    expect(read('src/app/api/laundry/orders/[id]/items/route.ts')).toContain('assertServiceAllowedOnOrder')
+  })
+
+  it('the online flow was not touched', () => {
+    const store = read('src/components/storefront/web/storefront-laundry-home.tsx')
+    expect(store).not.toContain('orderService')
+    expect(store).toContain('conflictMessage(')
+  })
+})

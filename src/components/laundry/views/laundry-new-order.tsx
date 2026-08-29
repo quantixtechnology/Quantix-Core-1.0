@@ -396,23 +396,38 @@ export default function LaundryNewOrder() {
   }, [addOpen, mGarment, mService, mQty, currentBusinessId, selectedStoreId, customerType])
 
   const mServices = useMemo(() => servicesForGarment(mGarment), [servicesForGarment, mGarment])
-  // Choosing a different garment can invalidate the selected service, so the
-  // selection follows the garment rather than being left stale.
-  useEffect(() => {
-    if (!mGarment) { setMService(""); return }
-    if (!mServices.some((s) => s.id === mService)) setMService(mServices[0]?.id || "")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mGarment, mServices])
-
   // The order's service, derived from the lines rather than held separately, so
   // it can never go stale: empty the order and it is null again.
   const orderService = useMemo(() => {
     const first = lineItems[0]
     if (!first) return null
-    return { id: first.serviceId, name: svcById(first.serviceId)?.name || "this service" }
+    const sv = svcById(first.serviceId)
+    return { id: first.serviceId, name: sv?.name || "this service", turnaroundHours: sv?.defaultTurnaroundHours ?? 0 }
   }, [lineItems, services]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The inherited service must still be priced for the garment being added. It
+  // usually is; when it is not, say so rather than letting Add fail later.
+  const lockedServiceUnavailable = !!orderService && !!mGarment && !mServices.some((sv) => sv.id === orderService.id)
 
-  const openAddGarment = () => { setMGarment(""); setMService(""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
+  // Choosing a different garment can invalidate the selected service, so the
+  // selection follows the garment rather than being left stale.
+  useEffect(() => {
+    // One service per order: once the order has one, every later garment
+    // inherits it — the garment never re-picks the service. It clears only when
+    // the inherited service is not priced for the chosen garment, which the
+    // note below explains.
+    if (orderService) {
+      setMService(mServices.some((sv) => sv.id === orderService.id) ? orderService.id : "")
+      return
+    }
+    if (!mGarment) { setMService(""); return }
+    if (!mServices.some((s) => s.id === mService)) setMService(mServices[0]?.id || "")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mGarment, mServices, orderService])
+
+
+  // Second garment onwards, the service is already known — inherit it so the
+  // operator only picks the garment and the quantity.
+  const openAddGarment = () => { setMGarment(""); setMService(orderService?.id || ""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
     // ONE SERVICE = ONE ORDER. The FIRST garment establishes this order's
@@ -895,13 +910,27 @@ export default function LaundryNewOrder() {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Service</Label>
-                  <SearchableSelect value={mService} onChange={setMService} options={mServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder={mGarment ? (mServices.length ? "Select service…" : "No service priced for this garment") : "Select a garment first…"} />
-                  {mGarment && mServices.length === 0 && (
+                  {orderService ? (
+                    /* Inherited, not chosen — one service per order, so there is
+                       nothing to pick and nothing to get wrong. */
+                    <div className="h-10 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3">
+                      <span className="text-sm font-medium text-slate-700">{orderService.name} · {turnaroundLabel(orderService.turnaroundHours)}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">Order service</span>
+                    </div>
+                  ) : (
+                    <SearchableSelect value={mService} onChange={setMService} options={mServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder={mGarment ? (mServices.length ? "Select service…" : "No service priced for this garment") : "Select a garment first…"} />
+                  )}
+                  {lockedServiceUnavailable && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      {orderService?.name} is not priced for {grmById(mGarment)?.name || "this garment"}. Choose a different garment, or create a separate order for another service.
+                    </p>
+                  )}
+                  {!orderService && mGarment && mServices.length === 0 && (
                     <p className="text-[11px] text-amber-600 mt-1">
                       {grmById(mGarment)?.name || "This garment"} has no service priced in the Pricing Matrix. Add a price there before it can be ordered.
                     </p>
                   )}
-                  {mGarment && mServices.length > 0 && mServices.length < availableServices.length && (
+                  {!orderService && mGarment && mServices.length > 0 && mServices.length < availableServices.length && (
                     <p className="text-[11px] text-slate-400 mt-1">Only services priced for this garment are listed.</p>
                   )}
                 </div>
