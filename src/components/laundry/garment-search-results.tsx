@@ -18,7 +18,7 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 export function GarmentSearchResults({
-  query, results, loading, error, truncated, stages, canReturn, busy, onReturn,
+  query, results, loading, error, truncated, stages, canReturn, busy, onReturn, onLocate,
 }: {
   query: string
   results: GarmentHit[]
@@ -31,6 +31,12 @@ export function GarmentSearchResults({
   canReturn: boolean
   busy: boolean
   onReturn: (hit: GarmentHit) => void
+  /**
+   * Optional: take the operator TO the garment on this screen. Only offered for
+   * a hit that belongs to a stage this workstation owns — a garment elsewhere
+   * has nothing here to jump to.
+   */
+  onLocate?: (hit: GarmentHit) => void
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -73,6 +79,17 @@ export function GarmentSearchResults({
                   <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border ${STATUS_STYLE[r.processingStatus || ""] || "border-slate-200 text-slate-500 bg-slate-50"}`}>
                     {(r.processingStatus || "—").replace(/_/g, " ")}
                   </span>
+                  {here && onLocate && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => onLocate(r)}
+                        className="mt-1 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-indigo-200 text-indigo-700 text-[12px] font-medium"
+                      >
+                        <MapPin className="h-3.5 w-3.5" /> Locate
+                      </button>
+                    </div>
+                  )}
                   {returnable && (
                     <div>
                       <button

@@ -23,6 +23,9 @@ import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scan
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
+import { useGarmentSearch } from "@/hooks/use-garment-search"
+import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
+import { Search, X, MapPin, History } from "lucide-react"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
@@ -31,6 +34,30 @@ interface Item {
 }
 
 interface OrderGroup { orderId: string; orderNumber: string; expected: number; customer: string | null; garments: Item[] }
+
+/**
+ * A scan the operator just made — a NAVIGATION AID, not business data.
+ *
+ * It is derived entirely from the scan response the server already returns plus
+ * the order already on screen, so it costs no extra request and never becomes a
+ * second source of truth about what has been scanned: `scannedRef` remains the
+ * only thing that counts. Nothing here is persisted; the workstation's own
+ * event trail is untouched.
+ */
+interface ScanRecord {
+  itemId: string
+  garmentName: string
+  gar: string
+  serviceName: string | null
+  orderId: string
+  orderNumber: string
+  customer: string | null
+  scannedCount: number
+  expected: number
+  at: number
+}
+
+const RECENT_LIMIT = 8
 
 /** One order card's bag list — its own hook instance, its own refresh. */
 function SortingOrderBags({ orderId, businessId, busy }: { orderId: string; businessId: string; busy: boolean }) {
@@ -49,6 +76,28 @@ export function LaundrySortingWorkstation() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [offline, setOffline] = useState(false)
   const [bagTarget, setBagTarget] = useState<{ label: string; hint: string } | null>(null)
+  // ── Navigation aids. None of these are written by load(), so the 12s poll can
+  // never erase the last scan, the history or the highlight.
+  const [lastScanned, setLastScanned] = useState<ScanRecord | null>(null)
+  const [recent, setRecent] = useState<ScanRecord[]>([])
+  const [highlight, setHighlight] = useState<{ orderId: string; itemId: string | null } | null>(null)
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Order card nodes, so a located order can be scrolled to WITHOUT reordering
+  // the list — the operator's queue stays exactly where it was.
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  // The same race-safe search the processing workstations use: generation-
+  // guarded, aborts superseded requests, and independent of the queue poll.
+  const { query: search, setQuery: setSearch, clear: clearSearch, active: searching, results: searchResults, loading: searchLoading, error: searchError, truncated: searchTruncated } = useGarmentSearch(currentBusinessId)
+
+  /** Bring an order into view and flag it — presentation only, no state change. */
+  const locate = useCallback((orderId: string, itemId: string | null) => {
+    setHighlight({ orderId, itemId })
+    if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    // The flag fades; the order list itself is never touched.
+    highlightTimer.current = setTimeout(() => setHighlight(null), 6000)
+    const node = cardRefs.current.get(orderId)
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" })
+  }, [])
 
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
@@ -119,7 +168,7 @@ export function LaundrySortingWorkstation() {
       playScanError(soundEnabled); setScanErr(msg); scanErrTimer.current = setTimeout(() => setScanErr(null), ms)
     }
 
-    let j: { success?: boolean; data?: { itemId: string; garmentName: string; orderId: string; orderNumber: string; expected: number }; error?: string }
+    let j: { success?: boolean; data?: { itemId: string; garmentName: string; serviceName?: string | null; barcode?: string | null; orderId: string; orderNumber: string; expected: number }; error?: string }
     try {
       j = await fetch("/api/laundry/processing/sorting", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -138,6 +187,28 @@ export function LaundrySortingWorkstation() {
     scannedRef.current = { ...scannedRef.current, [d.orderId]: list }
     setScanned(scannedRef.current)
     const scannedCount = list.length
+
+    // ── Say WHAT was scanned and WHERE it belongs, immediately ──────────────
+    // Built from the scan response the server already returns plus the order
+    // already on screen — no extra request, and the garment's OWN service, never
+    // the order's first service.
+    const group = orders.find((o) => o.orderId === d.orderId)
+    const record: ScanRecord = {
+      itemId: d.itemId,
+      garmentName: d.garmentName,
+      gar: d.barcode || group?.garments.find((g) => g.id === d.itemId)?.barcode || "",
+      serviceName: d.serviceName ?? group?.garments.find((g) => g.id === d.itemId)?.serviceName ?? null,
+      orderId: d.orderId,
+      orderNumber: d.orderNumber,
+      customer: group?.customer ?? null,
+      scannedCount,
+      expected: d.expected,
+      at: Date.now(),
+    }
+    setLastScanned(record)
+    setRecent((prev) => [record, ...prev.filter((r) => r.itemId !== record.itemId)].slice(0, RECENT_LIMIT))
+    locate(d.orderId, d.itemId)
+
     if (scannedCount >= d.expected) {
       playScanOk(soundEnabled)
       toast({ title: "Order complete", description: `${d.orderNumber} — all ${d.expected} garments scanned. Scan the ${bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind this order.`, duration: 4000 })
@@ -145,7 +216,7 @@ export function LaundrySortingWorkstation() {
       playScanOk(soundEnabled)
       toast({ title: `Scanned ${scannedCount} / ${d.expected}`, description: `${d.garmentName} → ${d.orderNumber}`, duration: 1500 })
     }
-  }, [currentBusinessId, soundEnabled, bagTarget, toast])
+  }, [currentBusinessId, soundEnabled, bagTarget, toast, orders, locate])
 
   // Bound to the order whose card was used, so every ready order can be bagged
   // (and in any order) rather than only the most recently completed one.
@@ -201,6 +272,70 @@ export function LaundrySortingWorkstation() {
             <p className="mt-2 text-[11px] text-slate-500">Scan every garment of the order. When the scanned count equals the order, scan ONE {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind it — every garment barcode is then retired and only the bag QR is used from here on.</p>
           </CardContent>
         </Card>
+
+        {/* WHAT DID I JUST SCAN, AND WHERE DOES IT BELONG.
+            Written only by a successful scan; load() never touches it, so the
+            12s poll cannot wipe it mid-shift. */}
+        {lastScanned && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Last scanned</span>
+            <span className="text-sm font-semibold text-slate-800">{lastScanned.garmentName}</span>
+            <span className="font-mono text-[11px] text-slate-500">{lastScanned.gar || "—"}</span>
+            <span className="text-[11px] text-slate-600">{lastScanned.customer || "—"}</span>
+            <span className="text-[11px] text-slate-600">{lastScanned.serviceName || "—"}</span>
+            <span className="font-mono text-[11px] text-slate-700">{lastScanned.orderNumber}</span>
+            <span className="text-[12px] font-bold tabular-nums text-emerald-700">{lastScanned.scannedCount} / {lastScanned.expected} scanned</span>
+            <button type="button" onClick={() => locate(lastScanned.orderId, lastScanned.itemId)} className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+              <MapPin className="h-3.5 w-3.5" /> Show order
+            </button>
+          </div>
+        )}
+
+        {/* Find any garment — global, so a code that is NOT at Sorting reports
+            where it actually is instead of "not found". */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Find any garment by GAR / ITM / barcode, name or order no…"
+            className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+          {searchLoading && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-indigo-500" />}
+          {search && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+        </div>
+        {searching && (
+          <GarmentSearchResults
+            query={search} results={searchResults} loading={searchLoading}
+            error={searchError} truncated={searchTruncated} stages={["SORTING"]}
+            canReturn={false} busy={busy}
+            onReturn={() => { /* Sorting has no return-to-queue action */ }}
+            onLocate={(hit) => locate(hit.orderId, hit.id)}
+          />
+        )}
+
+        {/* The last few scans, so the operator can step back to any of them. */}
+        {recent.length > 1 && (
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-1"><History className="h-3 w-3" /> Recent scans</p>
+            <div className="flex flex-wrap gap-1.5">
+              {recent.map((r) => (
+                <button
+                  key={r.itemId}
+                  type="button"
+                  onClick={() => locate(r.orderId, r.itemId)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] hover:border-indigo-300"
+                  title={`${r.garmentName} · ${r.serviceName || "—"} · ${r.orderNumber}`}
+                >
+                  <span className="font-medium text-slate-700">{r.garmentName}</span>
+                  <span className="font-mono text-slate-400">{r.gar || "—"}</span>
+                  <span className="font-mono text-slate-500">{r.orderNumber}</span>
+                  <span className="tabular-nums text-indigo-600">{r.scannedCount}/{r.expected}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && !orders.length ? (
@@ -221,7 +356,13 @@ export function LaundrySortingWorkstation() {
                 const done = scannedFor(o.orderId).length
                 const complete = done >= o.expected
                 return (
-                  <div key={o.orderId} className={`rounded-lg border p-3 ${complete ? "border-emerald-300 bg-emerald-50/50" : "border-slate-200 bg-white"}`}>
+                  <div
+                    key={o.orderId}
+                    // Registered so a located order can be scrolled to. The list
+                    // itself is never reordered — the operator's position holds.
+                    ref={(el) => { if (el) cardRefs.current.set(o.orderId, el); else cardRefs.current.delete(o.orderId) }}
+                    className={`rounded-lg border p-3 transition-shadow ${highlight?.orderId === o.orderId ? "border-indigo-400 ring-2 ring-indigo-300 bg-indigo-50/40" : complete ? "border-emerald-300 bg-emerald-50/50" : "border-slate-200 bg-white"}`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
@@ -235,13 +376,26 @@ export function LaundrySortingWorkstation() {
                       <div className={`h-full rounded-full ${complete ? "bg-emerald-500" : "bg-indigo-500"}`} style={{ width: `${Math.min(100, (done / o.expected) * 100)}%` }} />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {o.garments.slice(0, 12).map((g) => (
-                        <span key={g.id} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${scannedFor(o.orderId).includes(g.id) ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                          {scannedFor(o.orderId).includes(g.id) && <Check className="h-3 w-3" />}
-                          {g.garmentName}
-                        </span>
-                      ))}
-                      {o.expected > 12 && <span className="text-[10px] text-slate-400">+{o.expected - 12} more</span>}
+                      {/* The chip list is capped at 12 for density. When a
+                          garment on this order is the one being located, show
+                          the whole set so it cannot be hidden behind "+N more". */}
+                      {(highlight?.orderId === o.orderId ? o.garments : o.garments.slice(0, 12)).map((g) => {
+                        const isScanned = scannedFor(o.orderId).includes(g.id)
+                        const isJust = highlight?.itemId === g.id
+                        return (
+                          <span
+                            key={g.id}
+                            title={g.serviceName || undefined}
+                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${isJust ? "bg-indigo-600 text-white ring-2 ring-indigo-300" : isScanned ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
+                          >
+                            {isScanned && !isJust && <Check className="h-3 w-3" />}
+                            {g.garmentName}
+                            {/* Presentation only — the garment's status is untouched. */}
+                            {isJust && <span className="ml-0.5 font-semibold">✓ JUST SCANNED</span>}
+                          </span>
+                        )
+                      })}
+                      {highlight?.orderId !== o.orderId && o.expected > 12 && <span className="text-[10px] text-slate-400">+{o.expected - 12} more</span>}
                     </div>
                   </div>
                 )
