@@ -27,10 +27,139 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { stageLabel, nextStageOf, departmentFor, TERMINAL_STAGE } from "@/lib/laundry-processing"
 import { assignFinishingBag, syncPackageLifecycle } from "@/lib/laundry-finishing"
+import { orderBags } from "@/lib/laundry-order-bags"
+import { activeBagForService, bagAtTime, type SortingBagRow } from "@/lib/laundry-sorting-bags"
 
 export const runtime = "nodejs"
 
+// THE persisted record of "this garment was scanned at Sorting".
+//
+// Progress used to live only in React state, so a refresh showed 0 / 27 and the
+// operator had to scan the order again. It is now one LaundryItemEvent per
+// garment — the per-garment event trail this route already writes — which makes
+// the server the source of truth, survives a refresh, a new tab, a different
+// device and a different operator, and needs no schema change. It is append-only
+// and additive: nothing else reads this action, and the garment's own stage and
+// status are untouched, so no other workstation, queue or count changes.
+const SCAN_ACTION = "SORTING_SCAN"
+
+/** Every garment of these orders already scanned at Sorting, oldest first. */
+async function scannedEvents(businessId: string, orderIds: string[]) {
+  if (!orderIds.length) return []
+  return prisma.laundryItemEvent.findMany({
+    where: { businessId, action: SCAN_ACTION, orderId: { in: orderIds } },
+    orderBy: { createdAt: "asc" },
+    select: { itemId: true, orderId: true, createdAt: true },
+  })
+}
+
+
 const ITEM_SELECT = { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceId: true, serviceName: true, quantity: true, processFlow: true, processingStage: true, order: { select: { id: true, orderNumber: true, businessId: true } } } as const
+
+/**
+ * GET /api/laundry/processing/sorting?businessId=&recent=
+ *
+ * REHYDRATION. Everything the workstation needs to come back exactly as the
+ * operator left it: which garments are already scanned, the last few scans with
+ * their full context, and every order's bags. All of it read from persisted
+ * records, so a refresh, a second tab, another device or another operator all
+ * see the same state.
+ *
+ * Read-only: it scans nothing, assigns nothing and advances nothing.
+ */
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url)
+    const businessId = url.searchParams.get("businessId")
+    const recentLimit = Math.min(Math.max(Number(url.searchParams.get("recent")) || 5, 1), 25)
+    if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "processing.sorting.process")
+    if (!guard.ok) return guard.res
+    const biz = await resolveLaundryBusiness(businessId)
+    if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+
+    // The orders currently at Sorting — the only ones this screen shows.
+    const atSorting = await prisma.laundryOrderItem.findMany({
+      where: { processingStage: "SORTING", order: { businessId: biz.id } },
+      select: { id: true, orderId: true },
+    })
+    const orderIds = [...new Set(atSorting.map((i) => i.orderId))]
+
+    const events = await scannedEvents(biz.id, orderIds)
+    // Only garments still AT Sorting count — an order whose bag was bound has
+    // moved on, and its events are history rather than progress.
+    const live = new Set(atSorting.map((i) => i.id))
+    const scanned: Record<string, string[]> = {}
+    for (const e of events) {
+      if (!live.has(e.itemId)) continue
+      ;(scanned[e.orderId] ||= []).push(e.itemId)
+    }
+
+    // Every order's bags, in one pass, so the client never has to ask per order.
+    const bags: Record<string, SortingBagRow[]> = {}
+    await Promise.all(orderIds.map(async (id) => { bags[id] = (await orderBags(biz.id, id)) as SortingBagRow[] }))
+
+    // Scan times per order+service, so each bag can report what it holds.
+    const scanTimes: Record<string, string> = {}
+    for (const e of events) if (live.has(e.itemId)) scanTimes[e.itemId] = e.createdAt.toISOString()
+
+    // LAST N SCANS, newest first, with everything needed to place the garment.
+    const recentEvents = [...events].filter((e) => live.has(e.itemId)).reverse().slice(0, recentLimit)
+    const recentItems = recentEvents.length
+      ? await prisma.laundryOrderItem.findMany({
+          where: { id: { in: recentEvents.map((e) => e.itemId) } },
+          select: {
+            id: true, garmentName: true, barcode: true, itemNumber: true, garmentScanCode: true,
+            serviceId: true, serviceName: true,
+            order: { select: { id: true, orderNumber: true, customerId: true } },
+          },
+        })
+      : []
+    const customerIds = [...new Set(recentItems.map((i) => i.order.customerId).filter(Boolean) as string[])]
+    const customers = customerIds.length
+      ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true } })
+      : []
+    const nameOf = new Map(customers.map((c) => [c.id, c.name]))
+    const itemById = new Map(recentItems.map((i) => [i.id, i]))
+    // How far the order had got AT THAT MOMENT — counted from the trail itself,
+    // so the history reads 23/27, 24/27 … exactly as the operator saw it.
+    const progressAt = new Map<string, number>()
+    const running: Record<string, number> = {}
+    for (const e of events) {
+      if (!live.has(e.itemId)) continue
+      running[e.orderId] = (running[e.orderId] || 0) + 1
+      progressAt.set(e.itemId, running[e.orderId])
+    }
+    const expectedByOrder: Record<string, number> = {}
+    for (const i of atSorting) expectedByOrder[i.orderId] = (expectedByOrder[i.orderId] || 0) + 1
+
+    const recent = recentEvents.flatMap((e) => {
+      const it = itemById.get(e.itemId)
+      if (!it) return []
+      return [{
+        itemId: it.id,
+        garmentName: it.garmentName,
+        gar: it.garmentScanCode || it.barcode || it.itemNumber || "",
+        serviceId: it.serviceId,
+        serviceName: it.serviceName,
+        orderId: it.order.id,
+        orderNumber: it.order.orderNumber,
+        customer: it.order.customerId ? nameOf.get(it.order.customerId) ?? null : null,
+        // The bag that was active WHEN IT WAS SCANNED — never the bag that
+        // happens to be active now, so history is not rewritten by a later bag.
+        bagNumber: bagAtTime(bags[it.order.id] || [], it.serviceId, it.serviceName, e.createdAt)?.bagNumber ?? null,
+        scannedCount: progressAt.get(it.id) ?? 0,
+        expected: expectedByOrder[it.order.id] ?? 0,
+        at: e.createdAt.toISOString(),
+      }]
+    })
+
+    return NextResponse.json({ success: true, data: { scanned, bags, recent, scanTimes } })
+  } catch (e) {
+    console.error("[laundry-sorting] GET", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -64,6 +193,47 @@ export async function POST(request: Request) {
       const expected = await prisma.laundryOrderItem.count({
         where: { orderId: item.order.id, processingStage: "SORTING" },
       })
+
+      // ALREADY SCANNED — answered from the persisted trail, not from whatever
+      // the browser happens to remember, so a refresh cannot resurrect a garment
+      // and two operators cannot both count the same one.
+      const prior = await prisma.laundryItemEvent.findFirst({
+        where: { businessId: biz.id, action: SCAN_ACTION, itemId: item.id },
+        select: { id: true },
+      })
+      if (prior) {
+        const scannedCount = await prisma.laundryItemEvent.count({
+          where: { businessId: biz.id, action: SCAN_ACTION, orderId: item.order.id },
+        })
+        return NextResponse.json({
+          success: false, code: "ALREADY_SCANNED",
+          error: `"${item.garmentName}" is already scanned for ${item.order.orderNumber}.`,
+          data: { scannedCount, expected },
+        }, { status: 409 })
+      }
+
+      // Record it BEFORE answering. The operator's count and the database can
+      // then never disagree: if this write fails the scan fails, rather than
+      // showing progress that disappears on the next refresh.
+      const event = await prisma.laundryItemEvent.create({
+        data: {
+          itemId: item.id, orderId: item.order.id, businessId: biz.id,
+          stage: "SORTING", action: SCAN_ACTION, department: departmentFor("SORTING"),
+          actorName: b.actorName || null,
+          note: `Sorted at Sorting: ${item.garmentName}`,
+        },
+        select: { createdAt: true },
+      })
+      const scannedCount = await prisma.laundryItemEvent.count({
+        where: { businessId: biz.id, action: SCAN_ACTION, orderId: item.order.id },
+      })
+
+      // WHICH BAG this garment goes in, resolved server-side from the order's
+      // own assignment rows so every client agrees. Null = this service has no
+      // bag yet, which is the BAG REQUIRED prompt.
+      const bags = (await orderBags(biz.id, item.order.id)) as SortingBagRow[]
+      const bag = activeBagForService(bags, item.serviceId, item.serviceName)
+
       return NextResponse.json({
         success: true,
         data: {
@@ -73,7 +243,10 @@ export async function POST(request: Request) {
           serviceId: item.serviceId, serviceName: item.serviceName,
           barcode: item.garmentScanCode || item.barcode || item.itemNumber,
           orderId: item.order.id, orderNumber: item.order.orderNumber,
-          expected,
+          expected, scannedCount,
+          scannedAt: event.createdAt,
+          bagNumber: bag?.bagNumber ?? null,
+          bags,
         },
       })
     }
@@ -120,7 +293,15 @@ export async function POST(request: Request) {
 
       // Scanned set must cover the WHOLE order — the operator scanned every
       // garment. Compare id sets; a skipped garment blocks the bag.
-      const scannedSet = new Set(scanned)
+      //
+      // The client's list is UNIONED with the persisted trail rather than
+      // replaced by it. The rule is unchanged — every garment at Sorting must
+      // have been scanned — but it no longer depends on one browser's memory, so
+      // an operator who refreshed, or who finished an order another operator
+      // started, can still bind. A persisted id is a real scan, so this can
+      // never let an unscanned garment through.
+      const persisted = await scannedEvents(biz.id, [order.id])
+      const scannedSet = new Set([...scanned, ...persisted.map((e) => e.itemId)])
       const missing = atSorting.filter((g) => !scannedSet.has(g.id))
       if (missing.length > 0)
         return NextResponse.json({ error: `${missing.length} garment(s) have not been scanned at Sorting yet — every garment must be scanned before the bag is assigned.` }, { status: 409 })

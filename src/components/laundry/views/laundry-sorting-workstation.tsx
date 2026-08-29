@@ -25,11 +25,12 @@ import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
-import { Search, X, MapPin, History } from "lucide-react"
+import { Search, X, MapPin, History, Plus } from "lucide-react"
+import { activeBagForService, sortingBagViews, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
-  garmentName: string; serviceName: string | null; quantity: number
+  garmentName: string; serviceName: string | null; serviceId?: string | null; quantity: number
   orderId: string; orderNumber: string | null; customer: string | null
 }
 
@@ -57,7 +58,24 @@ interface ScanRecord {
   customer: string | null
   scannedCount: number
   expected: number
-  at: number
+  /** ISO timestamp of the persisted scan — the server's own, so client and
+   *  server order the history identically. */
+  at: string
+}
+
+/**
+ * Where a scanned bag is going: one order, one service.
+ *
+ * Both the first-garment prompt and "+ Add New Bag" produce one of these, so a
+ * second bag is filed against exactly the same order+service as the first and
+ * goes through the same single writer.
+ */
+interface BagTarget {
+  orderId: string
+  orderNumber: string
+  serviceId: string | null
+  serviceName: string | null
+  customer: string | null
 }
 
 /** A bag just bound to an order — the confirmation line, not a stored record. */
@@ -87,50 +105,68 @@ interface WrongBag {
 /** LAST 5 SCANS — five is what an operator can actually read at a glance. */
 const RECENT_LIMIT = 5
 
-/** One bag on an order, as /orders/[id]/bags returns it. */
-interface OrderBagRow {
-  bagNumber: string
-  serviceId?: string | null
-  serviceName?: string | null
-  /** Still carrying this order, as opposed to closed history. */
-  open?: boolean
-}
-
 /**
- * The bag carrying THIS garment's service on this order, RIGHT NOW.
+ * The bags of ONE order, grouped by service.
  *
- * Three things had to be true before this answered the operator's real question
- * — "which bag do I put this garment in?" — and each of them was found the hard
- * way, in production data.
- *
- * 1. Not "does the order have any bag". Most orders reaching Sorting already
- *    carry one from pickup or packing, so an order-level check finds a bag that
- *    has nothing to do with the garment in hand and the prompt never appears.
- * 2. It must be THIS garment's service. Matched on service id, falling back to
- *    the name — the same rule the service-aware bag accounting uses. A bag with
- *    no service recorded is a legacy row: it answers only when the order has no
- *    service-tagged bag at all, so it can never mask a genuinely missing bag for
- *    a second service.
- * 3. It must still be WITH the order. orderBags() deliberately returns closed
- *    rows too — a bag handed to the customer is still one of the order's bags —
- *    but a reusable bag is normally RELEASED back to AVAILABLE when Processing
- *    receives it, which happens BEFORE Sorting. ORD-…-000045 carried exactly
- *    that: a RETURNED Wash & Fold row for V8BAG036, a bag already back in stock
- *    and free to be assigned to somebody else. Pointing the operator at it would
- *    be worse than saying nothing, so a closed row is not an answer here.
+ * Everything here is derived from the assignment rows the order already has:
+ * the newest bag of a service is ACTIVE and takes the next garment, the earlier
+ * ones are FULL, and each bag's garment count comes from which bag was active
+ * when each garment was scanned. Nothing is stored twice and nothing is marked
+ * full automatically — adding a bag is the operator's explicit act, and it is
+ * what makes the previous one full.
  */
-export function bagForService(bags: OrderBagRow[], serviceId: string | null, serviceName: string | null): OrderBagRow | null {
-  const key = (id?: string | null, name?: string | null) => (id && id.trim()) || (name || "").trim().toUpperCase()
-  // `open` is absent only on a caller that does not track it; the API always
-  // sends it, and "not explicitly closed" is the safe reading of a missing flag.
-  const live = bags.filter((b) => b.open !== false)
-  const want = key(serviceId, serviceName)
-  if (want) {
-    const exact = live.find((b) => key(b.serviceId, b.serviceName) === want)
-    if (exact) return exact
+function OrderBags({ order, bags, scanTimes, onAdd }: {
+  order: OrderGroup
+  bags: SortingBagRow[]
+  scanTimes: Record<string, string>
+  onAdd: (serviceId: string | null, serviceName: string | null) => void
+}) {
+  // The services actually present on this order's garments — so a two-service
+  // order gets two bag tracks, and neither can borrow the other's bag.
+  const services: { id: string | null; name: string | null; itemIds: string[] }[] = []
+  for (const g of order.garments) {
+    const id = g.serviceId ?? null
+    const name = g.serviceName ?? null
+    const key = (id || "") + "|" + (name || "")
+    let row = services.find((s2) => (s2.id || "") + "|" + (s2.name || "") === key)
+    if (!row) { row = { id, name, itemIds: [] }; services.push(row) }
+    row.itemIds.push(g.id)
   }
-  const untagged = live.find((b) => !key(b.serviceId, b.serviceName))
-  return untagged ?? null
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {services.map((svc) => {
+        const views = sortingBagViews(bags, svc.id, svc.name, svc.itemIds.map((id) => scanTimes[id] ?? null).filter(Boolean))
+        return (
+          <div key={(svc.id || "") + (svc.name || "")} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{svc.name || "Service"}</span>
+              {views.length === 0 && <span className="text-[10px] font-semibold text-amber-700">⚠ NO BAG YET</span>}
+              {views.map((v) => (
+                <span
+                  key={v.bagNumber}
+                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${v.state === "ACTIVE" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 bg-slate-50 text-slate-500"}`}
+                  title={`Bag ${v.index} — ${v.garments} garment${v.garments === 1 ? "" : "s"}`}
+                >
+                  <span className="font-semibold">BAG {v.index}</span>
+                  <span className="font-mono font-semibold">{v.bagNumber}</span>
+                  <span className="tabular-nums">{v.garments}</span>
+                  <span className="font-semibold">{v.state}</span>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => onAdd(svc.id, svc.name)}
+                className="ml-auto inline-flex items-center gap-1 rounded-md border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-50"
+              >
+                <Plus className="h-3 w-3" /> Add New Bag
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /** One order card's bag list — its own hook instance, its own refresh. */
@@ -164,7 +200,7 @@ export function LaundrySortingWorkstation() {
   // that relationship, never a second source of truth: it is re-read after every
   // scan and after every assignment, so a refresh, a poll, or another operator's
   // assignment all converge on the same answer.
-  const [bagsByOrder, setBagsByOrder] = useState<Record<string, OrderBagRow[]>>({})
+  const [bagsByOrder, setBagsByOrder] = useState<Record<string, SortingBagRow[]>>({})
   // The order whose first garment was just scanned and which still has no bag.
   // Per-order and advisory: the scanner is NEVER gated on it, so another order
   // can be scanned freely while this one waits for its bag.
@@ -182,17 +218,23 @@ export function LaundrySortingWorkstation() {
   // Mirror of `bagsByOrder`, written synchronously. A USB wedge fires scans
   // back-to-back, so the render closure can still hold the previous map when the
   // next scan resolves — the same reason `scannedRef` exists.
-  const bagsRef = useRef<Record<string, OrderBagRow[]>>({})
+  const bagsRef = useRef<Record<string, SortingBagRow[]>>({})
   // The generation of the most recently STARTED garment scan. Only the newest
   // may write the panel, so a slow response can never overwrite a newer scan.
   const scanGen = useRef(0)
+  // itemId → when it was scanned, from the persisted trail. Each garment is
+  // attributed to the bag that was active AT THAT MOMENT, which is what keeps
+  // garments 1-15 in bag 1 after bag 2 is added.
+  const [scanTimes, setScanTimes] = useState<Record<string, string>>({})
+  // The order whose bag panel is open for adding another bag.
+  const [addBagFor, setAddBagFor] = useState<{ orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null>(null)
 
   /** Re-read one order's bags from the authoritative list. */
-  const refreshBags = useCallback(async (orderId: string): Promise<OrderBagRow[]> => {
+  const refreshBags = useCallback(async (orderId: string): Promise<SortingBagRow[]> => {
     if (!currentBusinessId) return []
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/bags?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
-      const rows: OrderBagRow[] = j?.success ? (j.data.bags || []) : []
+      const rows: SortingBagRow[] = j?.success ? (j.data.bags || []) : []
       bagsRef.current = { ...bagsRef.current, [orderId]: rows }
       setBagsByOrder(bagsRef.current)
       return rows
@@ -240,6 +282,37 @@ export function LaundrySortingWorkstation() {
         byOrder.set(oid, g)
       }
       setOrders([...byOrder.values()])
+
+      // ── REHYDRATE. Progress, history and bags all come back from persisted
+      // records, so a refresh, a new tab, another device or another operator
+      // show the same state. This is why a reload no longer reads 0 / 27.
+      //
+      // The server's answer is MERGED with anything scanned locally since the
+      // request went out, never allowed to replace it: a poll that started
+      // before the last scan must not un-scan a garment on screen.
+      const h = await fetch(`/api/laundry/processing/sorting?businessId=${encodeURIComponent(currentBusinessId)}&recent=${RECENT_LIMIT}`).then((r) => r.json())
+      if (h?.success) {
+        const server: Record<string, string[]> = h.data.scanned || {}
+        const merged: Record<string, string[]> = {}
+        for (const oid of new Set([...Object.keys(server), ...Object.keys(scannedRef.current)])) {
+          merged[oid] = [...new Set([...(server[oid] || []), ...(scannedRef.current[oid] || [])])]
+        }
+        scannedRef.current = merged
+        setScanned(merged)
+        bagsRef.current = { ...bagsRef.current, ...(h.data.bags || {}) }
+        setBagsByOrder(bagsRef.current)
+        setScanTimes((prev) => ({ ...prev, ...(h.data.scanTimes || {}) }))
+        // History: the server's list, with anything newer than it kept on top.
+        const rows: ScanRecord[] = h.data.recent || []
+        setRecent((prev) => {
+          const newest = rows.length ? Math.max(...rows.map((r) => new Date(r.at).getTime())) : 0
+          const localOnly = prev.filter((r) => new Date(r.at).getTime() > newest)
+          return [...localOnly, ...rows]
+            .filter((r, i, all) => all.findIndex((x) => x.itemId === r.itemId) === i)
+            .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+            .slice(0, RECENT_LIMIT)
+        })
+      }
     } catch {
       setOffline(true)
     } finally {
@@ -272,7 +345,7 @@ export function LaundrySortingWorkstation() {
    * barcodes — and it accepts a bag already sitting on the same order, so
    * pre-assigning here cannot block completion.
    */
-  const assignOrderBag = useCallback(async (code: string, rec: ScanRecord): Promise<boolean> => {
+  const assignOrderBag = useCallback(async (code: string, rec: BagTarget): Promise<boolean> => {
     if (!currentBusinessId) return false
     const scanned = code.trim().toUpperCase()
     if (!scanned) return false
@@ -290,7 +363,7 @@ export function LaundrySortingWorkstation() {
         // Both halves come from the server's refusal — `conflict` names the
         // order holding the scanned bag, `bags` is this order's list read back
         // fresh, so a stale cache cannot make the message wrong.
-        const fresh: OrderBagRow[] = Array.isArray(j?.bags) ? j.bags : (bagsRef.current[rec.orderId] ?? [])
+        const fresh: SortingBagRow[] = Array.isArray(j?.bags) ? j.bags : (bagsRef.current[rec.orderId] ?? [])
         if (Array.isArray(j?.bags)) {
           bagsRef.current = { ...bagsRef.current, [rec.orderId]: fresh }
           setBagsByOrder(bagsRef.current)
@@ -299,7 +372,7 @@ export function LaundrySortingWorkstation() {
           scanned: j?.conflict?.bagNumber || scanned,
           heldBy: j?.conflict?.heldByOrderNumber ?? null,
           orderNumber: rec.orderNumber,
-          expected: bagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null,
+          expected: activeBagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null,
           message: j?.error || "Could not assign that bag.",
         })
         if (wrongBagTimer.current) clearTimeout(wrongBagTimer.current)
@@ -309,8 +382,9 @@ export function LaundrySortingWorkstation() {
       playScanOk(soundEnabled)
       setWrongBag(null)
       const rows = await refreshBags(rec.orderId)
-      const bagNumber = bagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber ?? scanned
+      const bagNumber = activeBagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber ?? scanned
       setBagNeededFor(null)
+      setAddBagFor(null)
       setBagCode("")
       // ✓ BAG ASSIGNED — confirmation of the physical fact, spelled out.
       setBagAssigned({ bagNumber, orderNumber: rec.orderNumber, customer: rec.customer, serviceName: rec.serviceName })
@@ -319,7 +393,7 @@ export function LaundrySortingWorkstation() {
       // Reflect the bag on what is already on screen, without re-querying. Only
       // rows for the SAME order and service — another service's history entry
       // keeps its own answer.
-      const sameLeg = (r: ScanRecord) => r.orderId === rec.orderId && bagForService([{ bagNumber, serviceId: rec.serviceId, serviceName: rec.serviceName }], r.serviceId, r.serviceName) !== null
+      const sameLeg = (r: ScanRecord) => r.orderId === rec.orderId && activeBagForService([{ bagNumber, serviceId: rec.serviceId, serviceName: rec.serviceName }], r.serviceId, r.serviceName) !== null
       setLastScanned((p) => (p && sameLeg(p) ? { ...p, bagNumber } : p))
       setRecent((p) => p.map((r) => (sameLeg(r) && !r.bagNumber ? { ...r, bagNumber } : r)))
       return true
@@ -346,7 +420,7 @@ export function LaundrySortingWorkstation() {
       return
     }
     lastScan.current = { code: norm, at: now }
-    // This scan's generation, and the moment it was MADE.
+    // This scan's generation.
     //
     // Only the newest generation may write LAST SCANNED, so a slow reply can
     // never repaint over a later garment (§12). The tally is deliberately NOT
@@ -355,13 +429,24 @@ export function LaundrySortingWorkstation() {
     // ordered by `at`, the scan time, so a late arrival lands in its true place
     // instead of jumping to the front.
     const mine = ++scanGen.current
-    const at = now
 
     const showErr = (msg: string, ms = 4000) => {
       playScanError(soundEnabled); setScanErr(msg); scanErrTimer.current = setTimeout(() => setScanErr(null), ms)
     }
 
-    let j: { success?: boolean; data?: { itemId: string; garmentName: string; serviceId?: string | null; serviceName?: string | null; barcode?: string | null; orderId: string; orderNumber: string; expected: number }; error?: string }
+    // The scan response now also carries the PERSISTED result: when the scan was
+    // recorded, how many of the order are scanned according to the database, the
+    // active bag for this garment's service, and the order's full bag list.
+    let j: {
+      success?: boolean
+      data?: {
+        itemId: string; garmentName: string; serviceId?: string | null; serviceName?: string | null
+        barcode?: string | null; orderId: string; orderNumber: string; expected: number
+        scannedCount?: number; scannedAt?: string; bagNumber?: string | null; bags?: SortingBagRow[]
+      }
+      error?: string
+      code?: string
+    }
     try {
       j = await fetch("/api/laundry/processing/sorting", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -370,7 +455,13 @@ export function LaundrySortingWorkstation() {
     } catch {
       setOffline(true); showErr("Unable to reach the server. Check your connection and scan again.", 5000); return
     }
-    if (!j.success || !j.data) { showErr(j.error || "Garment not found"); return }
+    if (!j.success || !j.data) {
+      // The server owns "already scanned" now, so a garment counted on another
+      // device — or before this browser was refreshed — is refused here too.
+      if (j.code === "ALREADY_SCANNED") showErr(j.error || "Already scanned.")
+      else showErr(j.error || "Garment not found")
+      return
+    }
 
     const d = j.data
     const already = (scannedRef.current[d.orderId] || []).includes(d.itemId)
@@ -395,18 +486,22 @@ export function LaundrySortingWorkstation() {
     // "no bag" is re-checked against the server, because another operator may
     // have assigned one since — and that is the one reading that would put a
     // false BAG REQUIRED in front of the operator.
-    const cached = bagsRef.current[d.orderId]
     const serviceId = d.serviceId ?? null
     // Resolved ONCE, before the lookup, so the bag is matched against exactly
     // the service the operator is shown. Two different values here would let the
     // panel name one service while the bag was resolved for another.
     const serviceName = d.serviceName ?? group?.garments.find((g) => g.id === d.itemId)?.serviceName ?? null
-    let bags = cached ?? []
-    let bag = bagForService(bags, serviceId, serviceName)
-    if (!bag) {
-      bags = await refreshBags(d.orderId)
-      bag = bagForService(bags, serviceId, serviceName)
+    // WHICH BAG — resolved BY THE SERVER from the order's own assignment rows,
+    // using the same resolver this file uses, and returned with the scan. One
+    // round trip instead of a second request per scan, and no cache to go stale:
+    // another operator's bag is already reflected in the answer.
+    if (d.bags) {
+      bagsRef.current = { ...bagsRef.current, [d.orderId]: d.bags }
+      setBagsByOrder(bagsRef.current)
     }
+    const bags = d.bags ?? bagsRef.current[d.orderId] ?? []
+    const bag = d.bagNumber ? { bagNumber: d.bagNumber } : activeBagForService(bags, serviceId, serviceName)
+    if (d.scannedAt) setScanTimes((prev) => ({ ...prev, [d.itemId]: d.scannedAt as string }))
 
     const record: ScanRecord = {
       itemId: d.itemId,
@@ -418,12 +513,16 @@ export function LaundrySortingWorkstation() {
       orderNumber: d.orderNumber,
       customer: group?.customer ?? null,
       bagNumber: bag?.bagNumber ?? null,
-      scannedCount,
+      scannedCount: d.scannedCount ?? scannedCount,
       expected: d.expected,
-      at,
+      // The SERVER's stamp for the persisted scan, so the history it hands back
+      // after a refresh interleaves with these identically.
+      at: d.scannedAt || new Date(now).toISOString(),
     }
     // Every successful scan is in the history, ordered by when it was MADE.
-    setRecent((prev) => [record, ...prev.filter((r) => r.itemId !== record.itemId)].sort((a2, b2) => b2.at - a2.at).slice(0, RECENT_LIMIT))
+    setRecent((prev) => [record, ...prev.filter((r) => r.itemId !== record.itemId)]
+      .sort((a2, b2) => new Date(b2.at).getTime() - new Date(a2.at).getTime())
+      .slice(0, RECENT_LIMIT))
     // …but only the newest scan owns the LAST SCANNED panel, the bag prompt and
     // the highlight. A superseded order's missing bag is not lost: it still
     // reads BAG REQUIRED in the history, and asks again on its next garment.
@@ -587,6 +686,53 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
+        {/* + ADD NEW BAG — the operator says the current bag is full.
+            Never automatic (§8): the system cannot see a physical bag fill up,
+            and silently assigning one would put garments somewhere nobody
+            chose. Adding a bag is exactly what marks the previous one full. */}
+        {addBagFor && (
+          <div className="rounded-xl border border-indigo-300 bg-indigo-50/70 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-800">Add new bag</span>
+              <div className="font-mono text-[12px] font-semibold text-slate-800">{addBagFor.orderNumber}</div>
+              <div className="text-[11px] text-slate-600">{addBagFor.serviceName || "—"}</div>
+            </div>
+            <p className="text-[11px] text-indigo-900 basis-full sm:basis-auto">Scan the next physical bag — the current one becomes FULL and every later garment of this service goes into the new bag.</p>
+            <div className="ml-auto flex items-center gap-2">
+              <input
+                value={bagCode}
+                onChange={(e) => setBagCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return
+                  e.preventDefault()
+                  const c = bagCode.trim()
+                  if (c) assignOrderBag(c, { ...addBagFor, customer: null })
+                }}
+                placeholder="Scan or type bag no…"
+                aria-label="New bag number"
+                className="h-9 w-40 rounded-lg border border-indigo-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <Button
+                size="sm"
+                disabled={!bagCode.trim() || busy}
+                onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, { ...addBagFor, customer: null }) }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                Add bag
+              </Button>
+              <BagScanButton
+                label={bagTarget?.label || "Scan Bag QR"}
+                size="sm"
+                closeOnScan
+                disabled={busy}
+                onScan={(code) => assignOrderBag(code, { ...addBagFor, customer: null })}
+              />
+              <button type="button" onClick={() => setAddBagFor(null)} className="text-[11px] text-slate-500 underline">Cancel</button>
+            </div>
+            <p className="w-full text-[10px] text-indigo-800">The existing bag keeps the garments already sorted into it — scanning continues normally.</p>
+          </div>
+        )}
+
         {/* BAG REQUIRED — only for an order that has no bag for THIS service.
             Advisory: the scanner is never gated on this, so a garment from any
             other order scans straight through while this one waits. */}
@@ -728,28 +874,40 @@ export function LaundrySortingWorkstation() {
                     <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className={`h-full rounded-full ${complete ? "bg-emerald-500" : "bg-indigo-500"}`} style={{ width: `${Math.min(100, (done / o.expected) * 100)}%` }} />
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {/* The chip list is capped at 12 for density. When a
-                          garment on this order is the one being located, show
-                          the whole set so it cannot be hidden behind "+N more". */}
-                      {(highlight?.orderId === o.orderId ? o.garments : o.garments.slice(0, 12)).map((g) => {
-                        const isScanned = scannedFor(o.orderId).includes(g.id)
-                        const isJust = highlight?.itemId === g.id
-                        return (
-                          <span
-                            key={g.id}
-                            title={g.serviceName || undefined}
-                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${isJust ? "bg-indigo-600 text-white ring-2 ring-indigo-300" : isScanned ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
-                          >
-                            {isScanned && !isJust && <Check className="h-3 w-3" />}
-                            {g.garmentName}
-                            {/* Presentation only — the garment's status is untouched. */}
-                            {isJust && <span className="ml-0.5 font-semibold">✓ JUST SCANNED</span>}
-                          </span>
-                        )
-                      })}
-                      {highlight?.orderId !== o.orderId && o.expected > 12 && <span className="text-[10px] text-slate-400">+{o.expected - 12} more</span>}
+                    {/* EVERY GARMENT OF THE ORDER — no "+N more".
+                        The operator has to know what is still outstanding, so
+                        nothing is hidden. A long order scrolls inside its own
+                        card instead of stretching the page. */}
+                    <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-slate-100 bg-slate-50/40 p-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        {o.garments.map((g) => {
+                          const isScanned = scannedFor(o.orderId).includes(g.id)
+                          const isJust = highlight?.itemId === g.id
+                          return (
+                            <span
+                              key={g.id}
+                              title={g.serviceName || undefined}
+                              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${isJust ? "bg-indigo-600 text-white ring-2 ring-indigo-300" : isScanned ? "bg-emerald-100 text-emerald-700" : "bg-white text-slate-500 border border-slate-200"}`}
+                            >
+                              {isScanned && !isJust && <Check className="h-3 w-3" />}
+                              {!isScanned && !isJust && <span className="text-slate-300">○</span>}
+                              {g.garmentName}
+                              {/* Presentation only — the garment's status is untouched. */}
+                              {isJust && <span className="ml-0.5 font-semibold">✓ JUST SCANNED</span>}
+                            </span>
+                          )
+                        })}
+                      </div>
                     </div>
+
+                    {/* THIS ORDER'S BAGS, per service. One bag fills up and the
+                        operator adds another; both stay on the order for good. */}
+                    <OrderBags
+                      order={o}
+                      bags={bagsByOrder[o.orderId] || []}
+                      scanTimes={scanTimes}
+                      onAdd={(serviceId, serviceName) => { setBagCode(""); setAddBagFor({ orderId: o.orderId, orderNumber: o.orderNumber, serviceId, serviceName }) }}
+                    />
                   </div>
                 )
               })}

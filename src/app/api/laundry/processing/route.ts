@@ -236,7 +236,10 @@ export async function GET(request: Request) {
       const cm = new Map(cs.map((c) => [c.id, c.name]))
       items = rows.map((r) => ({
         id: r.id, itemNumber: r.itemNumber, barcode: r.barcode, garmentScanCode: r.garmentScanCode, garmentName: r.garmentName,
-        serviceName: r.serviceName, quantity: r.quantity, orderId: r.orderId, orderNumber: r.order.orderNumber,
+        // The garment's OWN service id as well as its name. Sorting groups an
+        // order's bags by service, and a name alone cannot tell two services
+        // apart reliably once one is renamed.
+        serviceId: r.serviceId, serviceName: r.serviceName, quantity: r.quantity, orderId: r.orderId, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
         processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
         // The garment's OWN recorded weight, in kg, exactly as stored — read

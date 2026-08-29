@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { bagForService } from '@/components/laundry/views/laundry-sorting-workstation'
+import { activeBagForService, bagsForService, bagAtTime, sortingBagViews } from '@/lib/laundry-sorting-bags'
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const code = (p: string) =>
@@ -80,8 +80,11 @@ describe('the correct order and garment are located', () => {
     expect(src).toContain('const isScanned = scannedFor(o.orderId).includes(g.id)')
   })
 
-  it('a highlighted order shows every chip, so the garment cannot hide behind "+N more"', () => {
-    expect(src).toContain('(highlight?.orderId === o.orderId ? o.garments : o.garments.slice(0, 12))')
+  it('every garment is always shown — there is no "+N more" to hide behind', () => {
+    const src = code(SORT)
+    expect(src).toContain('{o.garments.map((g) => {')
+    expect(src).not.toContain('slice(0, 12)')
+    expect(src).not.toContain('more</span>')
   })
 
   it('clicking a recent scan re-locates it', () => {
@@ -115,21 +118,46 @@ describe('search locates, and tells the truth about another stage', () => {
 })
 
 describe('polling cannot destroy the operator’s context', () => {
+  // THE RULE CHANGED, DELIBERATELY.
+  //
+  // load() used to be forbidden from touching progress and history, because
+  // they lived only in the browser and a poll would have wiped them. They are
+  // now PERSISTED, and rehydrating them is the entire point — a refresh must
+  // come back at 15 / 27, not 0 / 27. So the invariant is no longer "the poll
+  // writes nothing"; it is "the poll MERGES and never replaces", which is what
+  // these assert.
+  it('the poll merges the server’s answer with anything scanned since', () => {
+    const src = code(SORT)
+    const start = src.indexOf('const load = useCallback')
+    const load = src.slice(start, src.indexOf('}, [currentBusinessId])', start))
+    expect(load).toContain('new Set([...(server[oid] || []), ...(scannedRef.current[oid] || [])])')
+    // a late poll cannot un-scan a garment that is already on screen
+    expect(load).not.toMatch(/setScanned\(\s*server\s*\)/)
+    expect(load).not.toMatch(/scannedRef\.current\s*=\s*server/)
+  })
+
+  it('history keeps anything newer than the server’s newest row', () => {
+    const src = code(SORT)
+    const start = src.indexOf('const load = useCallback')
+    const load = src.slice(start, src.indexOf('}, [currentBusinessId])', start))
+    expect(load).toContain('const localOnly = prev.filter((r) => new Date(r.at).getTime() > newest)')
+  })
+
+  it('the poll still never touches the live scan panel or the search box', () => {
+    const src = code(SORT)
+    const start = src.indexOf('const load = useCallback')
+    const load = src.slice(start, src.indexOf('}, [currentBusinessId])', start))
+    for (const setter of ['setLastScanned', 'setBagNeededFor', 'setBagAssigned', 'setWrongBag', 'setBagCode', 'setSearch', 'setAddBagFor']) {
+      expect(load, `load() must not call ${setter}`).not.toContain(setter)
+    }
+  })
+
   const src = code(SORT)
   // Bounded precisely: start of the loader to the end of its dependency array.
   const loadStart = src.indexOf('const load = useCallback')
   const load = src.slice(loadStart, src.indexOf('}, [currentBusinessId])', loadStart))
 
-  it('load() writes none of the navigation state', () => {
-    for (const setter of ['setLastScanned', 'setRecent', 'setHighlight', 'setSearch']) {
-      expect(load, `load() must not call ${setter}`).not.toContain(setter)
-    }
-  })
 
-  it('load() does not touch the scanned tally either', () => {
-    expect(load).not.toContain('setScanned')
-    expect(load).not.toContain('scannedRef.current =')
-  })
 
   it('the 12s poll is unchanged', () => {
     expect(src).toContain('useAutoRefresh(() => load(true), { intervalMs: 12000 })')
@@ -150,7 +178,7 @@ describe('multi-service correctness', () => {
     expect(src).toContain('const serviceId = d.serviceId ?? null')
     expect(src).toContain("const serviceName = d.serviceName ?? group?.garments.find((g) => g.id === d.itemId)?.serviceName ?? null")
     // the SAME value feeds the bag lookup and the panel — never two readings
-    expect(src).toContain('let bag = bagForService(bags, serviceId, serviceName)')
+    expect(src).toContain('activeBagForService(bags, serviceId, serviceName)')
     expect(src).not.toContain('services[0]')
     expect(src).not.toContain('services?.[0]')
   })
@@ -234,10 +262,9 @@ describe('the order’s bag is known from its first garment', () => {
   })
 
   it('several orders hold different bags at once — keyed by orderId', () => {
-    expect(src).toContain('const [bagsByOrder, setBagsByOrder] = useState<Record<string, OrderBagRow[]>>({})')
-    expect(src).toContain('bagsRef.current = { ...bagsRef.current, [orderId]: rows }')
+    expect(src).toContain('const [bagsByOrder, setBagsByOrder] = useState<Record<string, SortingBagRow[]>>({})')
     // resolution is always by the scanned garment's own order
-    expect(src).toContain('const cached = bagsRef.current[d.orderId]')
+    expect(src).toContain('bagsRef.current = { ...bagsRef.current, [d.orderId]: d.bags }')
   })
 })
 
@@ -304,14 +331,6 @@ describe('last scans survive, and show the bag', () => {
     expect(src).toContain('BAG REQUIRED')
   })
 
-  it('polling writes none of the bag or history state', () => {
-    const src = code(SORT)
-    const loadStart = src.indexOf('const load = useCallback')
-    const load = src.slice(loadStart, src.indexOf('}, [currentBusinessId])', loadStart))
-    for (const setter of ['setBagsByOrder', 'setBagNeededFor', 'setLastScanned', 'setRecent', 'setBagAssigned', 'setWrongBag', 'setBagCode']) {
-      expect(load, `load() must not call ${setter}`).not.toContain(setter)
-    }
-  })
 })
 
 // ============================================================================
@@ -327,34 +346,36 @@ describe('the bag is resolved for the GARMENT’s service, not the order', () =>
   const WI = { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron' }
 
   it('reproduces it: an order with a Wash & Fold bag still needs one for Wash & Iron', () => {
-    expect(bagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
+    expect(activeBagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
   })
 
   it('finds the bag for the matching service', () => {
-    expect(bagForService([WF, WI], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
-    expect(bagForService([WF, WI], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+    expect(activeBagForService([WF, WI], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
+    expect(activeBagForService([WF, WI], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
   })
 
   it('falls back to the service NAME when there is no id', () => {
-    expect(bagForService([{ bagNumber: 'B1', serviceId: null, serviceName: 'Wash & Iron' }], null, 'wash & iron')?.bagNumber).toBe('B1')
+    expect(activeBagForService([{ bagNumber: 'B1', serviceId: null, serviceName: 'Wash & Iron' }], null, 'wash & iron')?.bagNumber).toBe('B1')
   })
 
   it('an untagged legacy bag answers only when nothing is service-tagged', () => {
     const legacy = { bagNumber: 'OLD', serviceId: null, serviceName: null }
-    expect(bagForService([legacy], 's-wi', 'Wash & Iron')?.bagNumber).toBe('OLD')
+    expect(activeBagForService([legacy], 's-wi', 'Wash & Iron')?.bagNumber).toBe('OLD')
     // …and can never mask a genuinely missing bag for a second service
-    expect(bagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
+    expect(activeBagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
   })
 
   it('an order with no bags at all needs one', () => {
-    expect(bagForService([], 's-wf', 'Wash & Fold')).toBeNull()
+    expect(activeBagForService([], 's-wf', 'Wash & Fold')).toBeNull()
   })
 
   it('the scan path uses it, and prompts on the match — not on the count', () => {
     const src = code(SORT)
-    expect(src).toContain('let bag = bagForService(bags, serviceId, serviceName)')
+    expect(src).toContain('const bag = d.bagNumber ? { bagNumber: d.bagNumber } : activeBagForService(bags, serviceId, serviceName)')
     expect(src).toContain('setBagNeededFor(bag ? null : record)')
     expect(src).not.toContain('bags.length === 0 ? record : null')
+    // …and the server resolves it with the SAME function, so both agree
+    expect(code(API)).toContain('activeBagForService(bags, item.serviceId, item.serviceName)')
   })
 })
 
@@ -387,7 +408,7 @@ describe('the bag state is visible where the operator is looking', () => {
   it('a wrong bag names both the holder and the bag this order needs', () => {
     const src2 = code(SORT)
     expect(src2).toContain('heldBy: j?.conflict?.heldByOrderNumber ?? null')
-    expect(src2).toContain('expected: bagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null')
+    expect(src2).toContain('expected: activeBagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null')
     expect(code('src/lib/laundry-bag-assign.ts')).toContain('belongs to ${bag.currentOrderNumber}')
   })
 })
@@ -438,7 +459,7 @@ describe('the bag is established at garment #1 and shown on every later garment'
   it('the assignment is read back from the server, never assumed from the scan', () => {
     const early = src.slice(src.indexOf('const assignOrderBag'), src.indexOf('const scannedFor'))
     expect(early).toContain('const rows = await refreshBags(rec.orderId)')
-    expect(early).toContain('bagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber')
+    expect(early).toContain('activeBagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber')
   })
 })
 
@@ -446,7 +467,8 @@ describe('the bag is resolved from the scanned garment, never from the last scan
   const src = code(SORT)
 
   it('resolution is keyed on the SCANNED garment’s own order', () => {
-    expect(src).toContain('const cached = bagsRef.current[d.orderId]')
+    expect(src).toContain('bagsRef.current = { ...bagsRef.current, [d.orderId]: d.bags }')
+    expect(src).toContain('const bags = d.bags ?? bagsRef.current[d.orderId] ?? []')
     // never the previous scan, never a position in the list
     expect(src).not.toMatch(/lastScanned\??\.\s*bagNumber\s*\?\?/)
     expect(src).not.toContain('bags[0]')
@@ -469,7 +491,7 @@ describe('the bag is resolved from the scanned garment, never from the last scan
       { orderId: 'o-045', serviceId: WI, want: 'V8BAG051' },
     ]
     for (const s2 of scans) {
-      expect(bagForService(byOrder[s2.orderId], s2.serviceId, null)?.bagNumber).toBe(s2.want)
+      expect(activeBagForService(byOrder[s2.orderId], s2.serviceId, null)?.bagNumber).toBe(s2.want)
     }
   })
 
@@ -478,13 +500,13 @@ describe('the bag is resolved from the scanned garment, never from the last scan
       { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' },
       { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron' },
     ]
-    expect(bagForService(bags, 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
-    expect(bagForService(bags, 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
+    expect(activeBagForService(bags, 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+    expect(activeBagForService(bags, 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
   })
 
   it('another service’s bag never satisfies this garment’s requirement', () => {
     const onlyFold = [{ bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' }]
-    expect(bagForService(onlyFold, 's-wi', 'Wash & Iron')).toBeNull()
+    expect(activeBagForService(onlyFold, 's-wi', 'Wash & Iron')).toBeNull()
   })
 
   it('no second bag entity was introduced — the same assignment rows are read', () => {
@@ -518,9 +540,10 @@ describe('LAST 5 SCANS carry the full context', () => {
 
   it('history is ordered by when the scan was MADE, so a late reply cannot jump the queue', () => {
     const src = code(SORT)
-    expect(src).toContain('.sort((a2, b2) => b2.at - a2.at)')
-    expect(src).toContain('const at = now')
-    expect(src).toContain('at,')
+    expect(src).toContain('.sort((a2, b2) => new Date(b2.at).getTime() - new Date(a2.at).getTime())')
+    // the SERVER's stamp for the persisted scan, so a rehydrated history and a
+    // live one interleave identically
+    expect(src).toContain('at: d.scannedAt || new Date(now).toISOString()')
   })
 })
 
@@ -659,23 +682,23 @@ describe('a bag that has left the order cannot answer for it', () => {
   const LIVE = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true }
 
   it('reproduces it: ORD-000045’s RETURNED Wash & Fold bag prompts instead of pointing', () => {
-    expect(bagForService([RETURNED], 's-wf', 'Wash & Fold')).toBeNull()
+    expect(activeBagForService([RETURNED], 's-wf', 'Wash & Fold')).toBeNull()
   })
 
   it('a live bag for the same service still answers', () => {
-    expect(bagForService([LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+    expect(activeBagForService([LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
   })
 
   it('the live bag wins over the order’s closed history', () => {
-    expect(bagForService([RETURNED, LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+    expect(activeBagForService([RETURNED, LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
   })
 
   it('a closed untagged legacy row is not a fallback either', () => {
-    expect(bagForService([{ bagNumber: 'OLD', serviceId: null, serviceName: null, open: false }], 's-wf', 'Wash & Fold')).toBeNull()
+    expect(activeBagForService([{ bagNumber: 'OLD', serviceId: null, serviceName: null, open: false }], 's-wf', 'Wash & Fold')).toBeNull()
   })
 
   it('a missing flag still counts as open — callers that do not track it are unaffected', () => {
-    expect(bagForService([{ bagNumber: 'B1', serviceId: 's-wf', serviceName: 'Wash & Fold' }], 's-wf', 'Wash & Fold')?.bagNumber).toBe('B1')
+    expect(activeBagForService([{ bagNumber: 'B1', serviceId: 's-wf', serviceName: 'Wash & Fold' }], 's-wf', 'Wash & Fold')?.bagNumber).toBe('B1')
   })
 
   it('the shared reader really does return closed rows, which is why this is needed', () => {
@@ -683,5 +706,192 @@ describe('a bag that has left the order cannot answer for it', () => {
     expect(lib).toContain('open: r.status === OPEN_ASSIGNMENT')
     // it is NOT filtered server-side — other stages need the history
     expect(lib).not.toContain('.filter((r) => r.status === OPEN_ASSIGNMENT)')
+  })
+})
+
+// ============================================================================
+// PROGRESS SURVIVES A REFRESH.
+//
+// Scanning 15 of 27 and reloading showed 0 / 27 and forced the operator to scan
+// the order again, because the scanned set only ever lived in React state. It is
+// now one LaundryItemEvent per garment — the per-garment event trail this route
+// already writes — so the database is the source of truth. No schema change: the
+// table, its indexes and its columns are all pre-existing.
+// ============================================================================
+describe('Sorting progress is persisted, not remembered', () => {
+  const api = code(API)
+  const src = code(SORT)
+
+  it('a scan writes a durable record before it answers', () => {
+    expect(api).toContain('const SCAN_ACTION = "SORTING_SCAN"')
+    expect(api).toContain('prisma.laundryItemEvent.create')
+    // the count returned to the operator is the DATABASE's count
+    expect(api).toContain('const scannedCount = await prisma.laundryItemEvent.count')
+  })
+
+  it('it reuses the existing event table — no new entity, no new field', () => {
+    const schema = read('prisma/schema.prisma')
+    expect(schema).toContain('model LaundryItemEvent')
+    expect(schema).not.toContain('model LaundrySortingScan')
+    expect(schema).not.toContain('sortingBagNumber')
+    expect(schema).not.toContain('sortingScannedAt')
+  })
+
+  it('the garment’s own stage and status are NOT touched by a scan', () => {
+    const scan = api.slice(api.indexOf('if (action === "scan")'), api.indexOf('if (action === "assign_bag")'))
+    expect(scan).not.toContain('processingStatus:')
+    expect(scan).not.toContain('processingStage:  ')
+    expect(scan).not.toContain('updateMany')
+    // …so no other workstation, queue or count changes behaviour
+    expect(scan).not.toContain('laundryOrderItem.update')
+  })
+
+  it('“already scanned” is decided by the database, not the browser', () => {
+    expect(api).toContain('const prior = await prisma.laundryItemEvent.findFirst')
+    expect(api).toContain('code: "ALREADY_SCANNED"')
+    expect(src).toContain("j.code === \"ALREADY_SCANNED\"")
+  })
+
+  it('the workstation rehydrates progress, bags and history on load', () => {
+    expect(api).toContain('export async function GET')
+    expect(src).toContain('await fetch(`/api/laundry/processing/sorting?businessId=')
+    expect(src).toContain('scannedRef.current = merged')
+    expect(src).toContain('setScanned(merged)')
+  })
+
+  it('only garments STILL at Sorting count as progress', () => {
+    // a bound order has moved on; its events are history, not progress
+    expect(api).toContain('const live = new Set(atSorting.map((i) => i.id))')
+    expect(api).toContain('if (!live.has(e.itemId)) continue')
+  })
+
+  it('the rehydration endpoint writes nothing', () => {
+    const get = api.slice(api.indexOf('export async function GET'), api.indexOf('export async function POST'))
+    for (const w of ['.create(', '.update(', '.updateMany(', '.delete(', '.upsert(']) {
+      expect(get, `GET must not call ${w}`).not.toContain(w)
+    }
+  })
+
+  it('binding unions the client’s list with the trail, so a refresh cannot block it', () => {
+    expect(api).toContain('const scannedSet = new Set([...scanned, ...persisted.map((e) => e.itemId)])')
+  })
+
+  it('history is reconstructed with the progress the operator actually saw', () => {
+    expect(api).toContain('const progressAt = new Map<string, number>()')
+    expect(api).toContain('progressAt.set(e.itemId, running[e.orderId])')
+  })
+})
+
+describe('every garment of the order is visible', () => {
+  const raw = read(SORT)
+
+  it('the full list renders, with no cap and no "+N more"', () => {
+    expect(raw).toContain('{o.garments.map((g) => {')
+    expect(raw).not.toContain('slice(0, 12)')
+    expect(raw).not.toMatch(/\+\{o\.expected - 12\}/)
+  })
+
+  it('a long order scrolls inside its own card rather than stretching the page', () => {
+    expect(raw).toContain('max-h-56 overflow-y-auto')
+  })
+
+  it('scanned and unscanned stay visually distinct, and the highlight is kept', () => {
+    const list = raw.slice(raw.indexOf('{o.garments.map((g) => {'), raw.indexOf('<OrderBags'))
+    expect(list).toContain('bg-emerald-100 text-emerald-700')   // scanned
+    expect(list).toContain('bg-white text-slate-500')            // waiting
+    expect(list).toContain('ring-2 ring-indigo-300')             // just scanned
+    expect(list).toContain('JUST SCANNED')
+  })
+})
+
+// ============================================================================
+// ONE ORDER + SERVICE MAY NEED SEVERAL BAGS.
+//
+// Modelled entirely on the assignment rows that already exist: the newest bag is
+// ACTIVE, the earlier ones are FULL, and a garment belongs to whichever bag was
+// active when it was scanned. Adding a bag is the operator's explicit act and is
+// what makes the previous one full — nothing is ever marked full automatically.
+// ============================================================================
+describe('multiple bags per order and service', () => {
+  const t = (iso: string) => new Date(iso)
+  const B1 = { bagNumber: 'V8BAG051', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T10:00:00Z') }
+  const B2 = { bagNumber: 'V8BAG054', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T11:00:00Z') }
+  const OTHER = { bagNumber: 'V8BAG052', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true, assignedAt: t('2026-08-29T10:30:00Z') }
+
+  it('the newest bag takes the next garment', () => {
+    expect(activeBagForService([B1, B2], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG054')
+  })
+
+  it('order of arrival does not matter — the timestamps decide', () => {
+    expect(activeBagForService([B2, B1], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG054')
+  })
+
+  it('a garment keeps the bag that was active when IT was scanned', () => {
+    expect(bagAtTime([B1, B2], 's-wi', 'Wash & Iron', t('2026-08-29T10:30:00Z'))?.bagNumber).toBe('V8BAG051')
+    expect(bagAtTime([B1, B2], 's-wi', 'Wash & Iron', t('2026-08-29T11:30:00Z'))?.bagNumber).toBe('V8BAG054')
+  })
+
+  it('adding bag 2 does not retroactively move garments already in bag 1', () => {
+    const scannedBefore = t('2026-08-29T10:15:00Z')
+    // with only bag 1, and later with both, the answer is the same
+    expect(bagAtTime([B1], 's-wi', 'Wash & Iron', scannedBefore)?.bagNumber).toBe('V8BAG051')
+    expect(bagAtTime([B1, B2], 's-wi', 'Wash & Iron', scannedBefore)?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('a garment scanned before any bag existed borrows nobody’s bag', () => {
+    expect(bagAtTime([B1], 's-wi', 'Wash & Iron', t('2026-08-29T09:00:00Z'))).toBeNull()
+  })
+
+  it('another service’s bags are never part of the answer', () => {
+    expect(bagsForService([B1, B2, OTHER], 's-wi', 'Wash & Iron').map((b) => b.bagNumber)).toEqual(['V8BAG051', 'V8BAG054'])
+    expect(activeBagForService([B1, B2, OTHER], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG052')
+  })
+
+  it('the panel reports each bag’s position, state and garment count', () => {
+    const times = [
+      t('2026-08-29T10:05:00Z'), t('2026-08-29T10:06:00Z'), t('2026-08-29T10:07:00Z'),  // bag 1
+      t('2026-08-29T11:05:00Z'), t('2026-08-29T11:06:00Z'),                              // bag 2
+    ]
+    expect(sortingBagViews([B1, B2], 's-wi', 'Wash & Iron', times)).toEqual([
+      { bagNumber: 'V8BAG051', index: 1, state: 'FULL', garments: 3 },
+      { bagNumber: 'V8BAG054', index: 2, state: 'ACTIVE', garments: 2 },
+    ])
+  })
+
+  it('a released bag is still excluded, even with several bags present', () => {
+    const released = { ...B1, open: false }
+    expect(bagsForService([released, B2], 's-wi', 'Wash & Iron').map((b) => b.bagNumber)).toEqual(['V8BAG054'])
+  })
+
+  it('bag history is never overwritten — adding goes through the existing writer', () => {
+    const src = code(SORT)
+    expect(src).toContain('await fetch(`/api/laundry/orders/${rec.orderId}/bags`')
+    expect(read('src/lib/laundry-order-bags.ts')).toContain('Adding NEVER replaces')
+    expect(code('src/lib/laundry-bag-assign.ts')).toContain('tx.laundryBagAssignment.create')
+  })
+
+  it('a new bag is never created automatically — the operator asks for it', () => {
+    const raw = read(SORT)
+    expect(raw).toContain('Add New Bag')
+    expect(raw).toContain('setAddBagFor({')
+    // nothing in the scan path opens or completes an assignment by itself
+    const src = code(SORT)
+    const handler = src.slice(src.indexOf('const handleGarmentScan'), src.indexOf('const handleAssignBag'))
+    expect(handler).not.toContain('assignOrderBag')
+    expect(handler).not.toContain('setAddBagFor')
+  })
+
+  it('the added bag is filed against the SAME order and service', () => {
+    const raw = read(SORT)
+    expect(raw).toContain('assignOrderBag(c, { ...addBagFor, customer: null })')
+    expect(code(SORT)).toContain('serviceId: rec.serviceId')
+  })
+
+  it('the add-bag prompt is an inline card the operator can cancel', () => {
+    const raw = read(SORT)
+    const card = raw.slice(raw.indexOf('{addBagFor && ('), raw.indexOf('{/* BAG REQUIRED'))
+    expect(card).not.toContain('Dialog')
+    expect(card).toContain('Cancel')
+    expect(card).toContain('scanning continues normally')
   })
 })
