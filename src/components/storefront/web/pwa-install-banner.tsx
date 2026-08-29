@@ -2,7 +2,10 @@
 
 // PwaInstallBanner — shown at the top of the home page when the app can be installed.
 //
-// Android: shows a one-tap "Add to Home Screen" button that triggers the native prompt.
+// Android: shows a one-tap "Install App" button that triggers the native prompt.
+//          (It is deliberately NOT labelled "Add to Home Screen" — on Android
+//          that is Chrome's Create Shortcut flow, which is a bookmark, not an
+//          install. The button here really does install.)
 // iOS:     shows a small tip explaining how to use Safari's Share → Add to Home Screen.
 //
 // Dismissed for 30 days on close. Does not render at all when already installed
@@ -84,7 +87,7 @@ export function PwaInstallBanner({ brandColor }: PwaInstallBannerProps) {
             className="mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
             style={{ backgroundColor: brandColor }}
           >
-            {installing ? "Installing…" : "Add to Home Screen"}
+            {installing ? "Installing…" : "Install App"}
           </button>
         )}
       </div>
