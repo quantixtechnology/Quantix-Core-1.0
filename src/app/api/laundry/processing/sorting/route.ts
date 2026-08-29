@@ -30,7 +30,7 @@ import { assignFinishingBag, syncPackageLifecycle } from "@/lib/laundry-finishin
 
 export const runtime = "nodejs"
 
-const ITEM_SELECT = { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceName: true, quantity: true, processFlow: true, processingStage: true, order: { select: { id: true, orderNumber: true, businessId: true } } } as const
+const ITEM_SELECT = { id: true, itemNumber: true, barcode: true, garmentScanCode: true, garmentName: true, serviceId: true, serviceName: true, quantity: true, processFlow: true, processingStage: true, order: { select: { id: true, orderNumber: true, businessId: true } } } as const
 
 export async function POST(request: Request) {
   try {
@@ -67,7 +67,10 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         data: {
-          itemId: item.id, garmentName: item.garmentName, serviceName: item.serviceName,
+          itemId: item.id, garmentName: item.garmentName,
+          // The GARMENT's own service — what the bag is filed against on a
+          // multi-service order. Never the order's first service.
+          serviceId: item.serviceId, serviceName: item.serviceName,
           barcode: item.garmentScanCode || item.barcode || item.itemNumber,
           orderId: item.order.id, orderNumber: item.order.orderNumber,
           expected,

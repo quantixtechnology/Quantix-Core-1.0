@@ -47,7 +47,8 @@ describe('a successful scan produces LAST SCANNED and history', () => {
 
   it('the endpoint already returns the garment name, service and code', () => {
     const api = code(API)
-    expect(api).toContain('garmentName: item.garmentName, serviceName: item.serviceName')
+    expect(api).toContain('garmentName: item.garmentName')
+    expect(api).toContain('serviceId: item.serviceId, serviceName: item.serviceName')
     expect(api).toContain('barcode: item.garmentScanCode || item.barcode || item.itemNumber')
   })
 })
@@ -183,5 +184,114 @@ describe('the Sorting workflow itself is untouched', () => {
     // otherwise it swallows load()'s own fetch and the assertion is meaningless.
     const nav = src.slice(src.indexOf('const locate = useCallback'), src.indexOf('const load = useCallback'))
     expect(nav).not.toContain('fetch(')
+  })
+})
+
+// ============================================================================
+// BAG IDENTIFICATION FROM THE FIRST GARMENT
+// ============================================================================
+describe('the order’s bag is known from its first garment', () => {
+  const src = code(SORT)
+
+  it('the bag comes from the PERSISTED assignment, not client memory', () => {
+    // The same endpoint Packing and the order Bags panel use.
+    expect(src).toContain('`/api/laundry/orders/${orderId}/bags?businessId=')
+    expect(src).toContain('await fetch(`/api/laundry/orders/${rec.orderId}/bags`')
+    expect(src).toContain('method: "POST"')
+    // no parallel store
+    expect(src).not.toContain('localStorage')
+    expect(src).not.toContain('sessionStorage')
+  })
+
+  it('only an order with NO bag is asked for one', () => {
+    expect(src).toContain('setBagNeededFor(bags.length === 0 ? record : null)')
+  })
+
+  it('a later garment of the same order finds the bag and asks nothing', () => {
+    // bags.length > 0 ⇒ the prompt is cleared, and the record carries the bag.
+    expect(src).toContain('bagNumber: bags[0] ?? null')
+  })
+
+  it('the scanner is NEVER gated on a pending bag — other orders keep scanning', () => {
+    const handler = src.slice(src.indexOf('const handleGarmentScan'), src.indexOf('const assignOrderBag'))
+    // nothing in the scan path reads bagNeededFor to decide whether to proceed
+    expect(handler).not.toMatch(/if \s*\(\s*bagNeededFor/)
+    expect(handler).not.toContain('return')  // no early bail added after the success path
+  })
+
+  it('the bag is filed against the GARMENT’s own service', () => {
+    expect(src).toContain('serviceId: rec.serviceId')
+    expect(code(API)).toContain('serviceId: item.serviceId')
+    expect(src).not.toContain('services[0]')
+  })
+
+  it('several orders hold different bags at once — keyed by orderId', () => {
+    expect(src).toContain('const [bagsByOrder, setBagsByOrder] = useState<Record<string, string[]>>({})')
+    expect(src).toContain('setBagsByOrder((prev) => ({ ...prev, [orderId]: nums }))')
+    // resolution is always by the scanned garment's own order
+    expect(src).toContain('const known = bagsByOrder[d.orderId]')
+  })
+})
+
+describe('wrong bag is refused, and says which order holds it', () => {
+  it('the engine names the occupying order', () => {
+    const eng = code('src/lib/laundry-bag-assign.ts')
+    expect(eng).toContain('belongs to ${bag.currentOrderNumber}')
+    // and refuses rather than moving the bag
+    expect(eng).toContain('return { ok: false, status: 409, error: msg }')
+  })
+
+  it('a bag already on THIS order is accepted, not duplicated', () => {
+    expect(code('src/lib/laundry-bag-assign.ts')).toContain('if (bag.currentOrderId === orderId) return { ok: true, bag }')
+  })
+
+  it('a failed assignment leaves the standing bag untouched', () => {
+    const fn = code(SORT).slice(code(SORT).indexOf('const assignOrderBag'), code(SORT).indexOf('const scannedFor'))
+    const fail = fn.slice(fn.indexOf('if (!res.ok || !j.success)'), fn.indexOf('playScanOk'))
+    expect(fail).not.toContain('setBagsByOrder')
+    expect(fail).not.toContain('setBagNeededFor(null)')
+  })
+})
+
+describe('the terminal bag binding is untouched', () => {
+  it('completion still requires every garment and still retires barcodes', () => {
+    const api = code(API)
+    expect(api).toContain('every garment must be scanned before the bag is assigned')
+    expect(api).toContain('assignFinishingBag({ orderId: order.id')
+  })
+
+  it('pre-assigning cannot block completion — the binder accepts its own bag', () => {
+    // assignFinishingBag only treats a bag as occupied when it is on a DIFFERENT
+    // order, so a bag pre-assigned to this order at garment 1 still binds.
+    expect(code('src/lib/laundry-finishing.ts')).toContain('if (bag.currentOrderId !== orderId)')
+  })
+
+  it('the pre-assignment does not call the terminal action', () => {
+    const fn = code(SORT).slice(code(SORT).indexOf('const assignOrderBag'), code(SORT).indexOf('const scannedFor'))
+    expect(fn).not.toContain('assign_bag')
+    expect(fn).not.toContain('processing/sorting')
+  })
+})
+
+describe('last scans survive, and show the bag', () => {
+  it('at least five remain visible', () => {
+    let list: Rec[] = []
+    for (let i = 0; i < 12; i++) list = pushRecent(list, { itemId: `i${i}`, orderId: `o${i % 3}`, scannedCount: i })
+    expect(list.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('the panel shows from the first scan and carries the bag number', () => {
+    const src = code(SORT)
+    expect(src).toContain('{recent.length > 0 && (')
+    expect(src).toContain('{r.bagNumber && <span className="font-mono text-indigo-700">BAG {r.bagNumber}</span>}')
+  })
+
+  it('polling writes none of the bag or history state', () => {
+    const src = code(SORT)
+    const loadStart = src.indexOf('const load = useCallback')
+    const load = src.slice(loadStart, src.indexOf('}, [currentBusinessId])', loadStart))
+    for (const setter of ['setBagsByOrder', 'setBagNeededFor', 'setLastScanned', 'setRecent']) {
+      expect(load, `load() must not call ${setter}`).not.toContain(setter)
+    }
   })
 })

@@ -45,7 +45,12 @@ export async function assignBagToOrder(opts: {
     const msg = bag.status === "DAMAGED" ? "Bag marked as Damaged. Please use another bag."
       : bag.status === "LOST" ? "Bag is marked Lost."
       : bag.status === "CLEANING" ? "Bag is being cleaned. Please use another bag."
-      : "Bag already assigned to another order."
+      // Name the order holding it. "Already assigned to another order" tells an
+      // operator at Sorting nothing they can act on; the bag row already stores
+      // the order number, so say it.
+      : bag.currentOrderNumber
+        ? `${bag.bagNumber} belongs to ${bag.currentOrderNumber}. Scan the bag assigned to this order.`
+        : "Bag already assigned to another order."
     return { ok: false, status: 409, error: msg }
   }
 
