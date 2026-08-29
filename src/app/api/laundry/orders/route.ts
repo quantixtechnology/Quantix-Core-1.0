@@ -5,6 +5,7 @@ import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } 
 import { unavailableCombinationError } from "@/lib/laundry-garment-services"
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { createLaundryOrder, defaultOrderSource } from "@/lib/laundry-order-engine"
+import { oneServiceError } from "@/lib/laundry-one-service"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } from "@/lib/laundry-transport-server"
@@ -180,6 +181,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: order, subscription }, { status: 201 })
   } catch (error) {
+    // A mixed-service create is a client mistake, not a server fault: answer
+    // 400 with the operator-facing message instead of a generic 500.
+    const oneSvc = oneServiceError(error)
+    if (oneSvc) return NextResponse.json({ success: false, ...oneSvc }, { status: 400 })
     console.error("[laundry-orders] POST Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

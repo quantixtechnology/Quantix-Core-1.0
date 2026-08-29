@@ -26,6 +26,7 @@ import { generateOrderNumber } from "@/lib/laundry-codes"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
+import { oneServiceError } from "@/lib/laundry-one-service"
 import { assertDeliverySlotAvailable } from "@/lib/laundry-slot-capacity"
 import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
 import { slotHasEnded } from "@/lib/laundry-slots"
@@ -266,6 +267,10 @@ export async function POST(request: Request) {
       subscription: subscriptionResult,
     } }, { status: 201 })
   } catch (e) {
+    // A mixed-service create is a client mistake, not a server fault: answer
+    // 400 with the operator-facing message instead of a generic 500.
+    const oneSvc = oneServiceError(e)
+    if (oneSvc) return NextResponse.json({ success: false, ...oneSvc }, { status: 400 })
     console.error("[laundry-order] POST", e)
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Order failed" }, { status: 500 })
   }

@@ -33,6 +33,7 @@ import { dayKey, earliestDeliveryDayKey } from "@/lib/laundry-tat"
 import { fulfilmentError, fulfilmentPayload, needsAddress as fulfilmentNeedsAddress, addressLabel, type FulfilmentState } from "@/lib/laundry-fulfilment"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
+import { conflictMessage } from "@/lib/laundry-one-service"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -403,9 +404,29 @@ export default function LaundryNewOrder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mGarment, mServices])
 
+  // The order's service, derived from the lines rather than held separately, so
+  // it can never go stale: empty the order and it is null again.
+  const orderService = useMemo(() => {
+    const first = lineItems[0]
+    if (!first) return null
+    return { id: first.serviceId, name: svcById(first.serviceId)?.name || "this service" }
+  }, [lineItems, services]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const openAddGarment = () => { setMGarment(""); setMService(""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
+    // ONE SERVICE = ONE ORDER. The FIRST garment establishes this order's
+    // service; a different one is refused with the reason and what to do about
+    // it, never silently disabled. Removing every line clears the lock, because
+    // an empty order has established nothing. The API refuses it too.
+    if (orderService && mService !== orderService.id) {
+      toast({
+        title: "One service per order",
+        description: conflictMessage(orderService.name, svcById(mService)?.name || "that service"),
+        variant: "destructive",
+      })
+      return
+    }
     // Last line of defence in the UI; the API refuses it too.
     if (!mServices.some((s) => s.id === mService)) {
       const sv = svcById(mService)?.name || "That service"
@@ -857,6 +878,15 @@ export default function LaundryNewOrder() {
                 <DialogDescription>Pick a garment and service, set the quantity — the price is applied automatically.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-1">
+                {/* Once the first garment has set the order's service, say so up
+                    front — the operator should know before picking, not be told
+                    off afterwards. */}
+                {orderService && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Order Service: {orderService.name}</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">One service per order. For a different service, save this order and create a new one.</p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Garment</Label>
                   {/* Shared selector: same master, and searchable by CODE as well as name —

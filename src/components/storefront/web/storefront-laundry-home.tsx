@@ -16,6 +16,7 @@ import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
+import { conflictMessage } from "@/lib/laundry-one-service"
 import { SubscriptionUsageSheet } from "./subscription-usage-sheet"
 import type { WebNav } from "./storefront-website"
 import { GoogleAddressPicker } from "./google/address-picker"
@@ -875,6 +876,15 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   // other services already in the bag (re-adding a service edits its own lines).
   // The subscription line and other workspaces' lines are never touched.
   const addToCart = () => {
+    // ONE SERVICE = ONE ORDER. The first service added fixes the order's
+    // service; a second is refused with the reason and the way forward, never
+    // silently dropped. Subscription lines are not laundry services and do not
+    // establish or violate it. The checkout API refuses it too.
+    const existing = cartItems.find((l) => l.kind === "laundry" && l.serviceId && l.serviceId !== service.id)
+    if (existing) {
+      toast.error(conflictMessage(existing.serviceName || "another service", service.name))
+      return
+    }
     const others = cartItems.filter((l) => !(l.kind === "laundry" && l.serviceId === service.id))
     const mine = isBag
       ? [makeBagLine({ tatEnabled: service.tatEnabled, turnaroundHours: service.turnaroundHours, serviceId: service.id, serviceName: service.name })]

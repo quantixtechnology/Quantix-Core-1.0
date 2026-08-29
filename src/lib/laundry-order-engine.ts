@@ -19,6 +19,7 @@ import { initPickupVerification } from "@/lib/laundry-verification"
 import { notifyPickupOtpGenerated } from "@/lib/laundry-notify"
 import { freezePromise } from "@/lib/laundry-delivery-promise"
 import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
+import { assertSingleServiceOrder } from "@/lib/laundry-one-service"
 
 export interface OrderEngineLine {
   serviceId: string | null
@@ -131,6 +132,20 @@ const DEFAULT_INCLUDE = {
 
 // The one and only LaundryOrder creator.
 export async function createLaundryOrder(input: CreateLaundryOrderInput) {
+  // ONE SERVICE = ONE ORDER. Enforced HERE because this is the single creation
+  // path every channel goes through — walk-in, store drop, home pickup,
+  // corporate, subscription, website, app and API — so no client, old or new,
+  // can create a mixed-service order. Existing orders are untouched: this runs
+  // only when one is being created.
+  const oneService = assertSingleServiceOrder([...(input.serviceLines ?? []), ...input.lines])
+  if (!oneService.ok) {
+    throw Object.assign(new Error(oneService.error), {
+      code: oneService.code,
+      existingService: oneService.existingService,
+      rejectedService: oneService.rejectedService,
+      status: 400,
+    })
+  }
   const explode = input.explode !== false
   const serviceLines =
     input.serviceLines ??

@@ -27,6 +27,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { createLaundryOrder } from "@/lib/laundry-order-engine"
+import { oneServiceError } from "@/lib/laundry-one-service"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { resolveLaundryStoreForPickup } from "@/lib/laundry-serviceability"
@@ -228,6 +229,10 @@ export async function POST(request: Request) {
       paymentPending: true,
     } }, { status: 201 })
   } catch (e) {
+    // A mixed-service create is a client mistake, not a server fault: answer
+    // 400 with the operator-facing message instead of a generic 500.
+    const oneSvc = oneServiceError(e)
+    if (oneSvc) return NextResponse.json({ success: false, ...oneSvc }, { status: 400 })
     console.error("[laundry-checkout] POST", e)
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Checkout failed" }, { status: 500 })
   }

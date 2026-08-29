@@ -11,6 +11,7 @@ import { unavailableCombinationError } from "@/lib/laundry-garment-services"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
+import { assertServiceAllowedOnOrder, oneServiceError } from "@/lib/laundry-one-service"
 
 export const runtime = "nodejs"
 
@@ -32,11 +33,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const order = await prisma.laundryOrder.findUnique({
       where: { id },
-      select: { id: true, businessId: true, orderNumber: true, storeId: true, customerType: true, subtotal: true, gstTotal: true, grandTotal: true, balanceDue: true, amountPaid: true, totalWeightKg: true, billedAt: true, _count: { select: { items: true } } },
+      select: {
+        id: true, businessId: true, orderNumber: true, storeId: true, customerType: true,
+        subtotal: true, gstTotal: true, grandTotal: true, balanceDue: true, amountPaid: true,
+        totalWeightKg: true, billedAt: true, _count: { select: { items: true } },
+        // The services this order already carries — a garment may use one of
+        // them, never introduce a new one.
+        services: { select: { serviceId: true, serviceName: true } },
+        items: { select: { serviceId: true, serviceName: true } },
+      },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     const guard = await requireLaundryPermission(request, order.businessId, "store_ops.store_audit.view")
     if (!guard.ok) return guard.res
+
+    // ONE SERVICE = ONE ORDER. A garment may only use a service the order
+    // ALREADY has: on a new one-service order that means "the same service"; on
+    // a legacy order that already carries two, both of its services keep
+    // working — so intake and Store Audit continue on it untouched — while a
+    // third can never appear. Checked BEFORE pricing, so a refusal persists no
+    // item, no service row and no bag.
+    const existingServices = [...order.services, ...order.items]
+    const svcCheck = assertServiceAllowedOnOrder(
+      existingServices,
+      clean.map((it) => ({ serviceId: it.serviceId ?? null, serviceName: null })),
+    )
+    if (!svcCheck.ok) {
+      return NextResponse.json({ success: false, error: svcCheck.error, code: svcCheck.code, existingService: svcCheck.existingService, rejectedService: svcCheck.rejectedService }, { status: 400 })
+    }
 
     // Price the recorded garments through the SAME Pricing Engine used at booking.
     const { lines } = await resolveOrderBilling(
@@ -84,6 +108,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const garCodes: string[] = []
     for (let i = 0; i < exploded.length; i++) garCodes.push(await nextGarScanCode())
     const updated = await prisma.$transaction(async (tx) => {
+      // CONCURRENCY: two requests can each have read an empty order and picked a
+      // different service. Re-read inside the transaction and re-assert against
+      // the authoritative state, so only the first can establish it.
+      const [liveServices, liveItems] = await Promise.all([
+        tx.laundryOrderService.findMany({ where: { orderId: order.id }, select: { serviceId: true, serviceName: true } }),
+        tx.laundryOrderItem.findMany({ where: { orderId: order.id }, select: { serviceId: true, serviceName: true }, take: 500 }),
+      ])
+      const recheck = assertServiceAllowedOnOrder(
+        [...liveServices, ...liveItems],
+        exploded.map((l) => ({ serviceId: l.serviceId ?? null, serviceName: l.serviceName ?? null })),
+      )
+      if (!recheck.ok) throw Object.assign(new Error(recheck.error), { code: recheck.code, existingService: recheck.existingService, rejectedService: recheck.rejectedService })
+
       for (let i = 0; i < exploded.length; i++) {
         const l = exploded[i]
         const itemNumber = `ITM-${order.orderNumber}-${String(base + i + 1).padStart(4, "0")}`
@@ -113,6 +150,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
     return NextResponse.json({ success: true, data: { orderId: updated.id, added: exploded.length, grandTotal: updated.grandTotal } }, { status: 201 })
   } catch (e) {
+    // The transactional re-check throws when a concurrent request established a
+    // different service first. That is a client conflict, not a server fault.
+    const oneSvc = oneServiceError(e)
+    if (oneSvc) return NextResponse.json({ success: false, ...oneSvc }, { status: 409 })
     console.error("[order-intake-items] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
