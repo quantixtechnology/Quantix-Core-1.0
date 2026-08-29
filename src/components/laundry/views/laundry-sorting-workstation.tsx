@@ -115,14 +115,9 @@ const RECENT_LIMIT = 5
  * full automatically — adding a bag is the operator's explicit act, and it is
  * what makes the previous one full.
  */
-function OrderBags({ order, bags, scanTimes, onAdd }: {
-  order: OrderGroup
-  bags: SortingBagRow[]
-  scanTimes: Record<string, string>
-  onAdd: (serviceId: string | null, serviceName: string | null) => void
-}) {
-  // The services actually present on this order's garments — so a two-service
-  // order gets two bag tracks, and neither can borrow the other's bag.
+/** The services actually present on an order's garments — so a two-service
+ *  order gets two bag tracks, and neither can borrow the other's bag. */
+function servicesOnOrder(order: OrderGroup): { id: string | null; name: string | null; itemIds: string[] }[] {
   const services: { id: string | null; name: string | null; itemIds: string[] }[] = []
   for (const g of order.garments) {
     const id = g.serviceId ?? null
@@ -132,6 +127,16 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
     if (!row) { row = { id, name, itemIds: [] }; services.push(row) }
     row.itemIds.push(g.id)
   }
+  return services
+}
+
+function OrderBags({ order, bags, scanTimes, onAdd }: {
+  order: OrderGroup
+  bags: SortingBagRow[]
+  scanTimes: Record<string, string>
+  onAdd: (serviceId: string | null, serviceName: string | null) => void
+}) {
+  const services = servicesOnOrder(order)
 
   const others = otherBagsOnOrder(bags)
 
@@ -191,6 +196,61 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
           <p className="mt-1 text-[10px] text-slate-400">Not the Sorting bag. Where each one physically is now is shown in Bag Management.</p>
         </div>
       )}
+    </div>
+  )
+}
+
+/** CURRENT SORTING BAG — the one bag the NEXT garment goes into, made
+ *  unmistakable at the top of the order card.
+ *
+ *  No garment-count capacity and no automatic closing: full/closed is the
+ *  operator's own act (+ Add New Bag). While the operator is closing the
+ *  current bag, the banner demands the next available bag; after the new bag
+ *  is assigned, every later garment points at it. A service with no bag yet
+ *  reads BAG REQUIRED. */
+function CurrentBagBanner({ order, bags, addBagFor }: {
+  order: OrderGroup
+  bags: SortingBagRow[]
+  addBagFor: { orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null
+}) {
+  const services = servicesOnOrder(order)
+  const many = services.length > 1
+  return (
+    <div className="mt-2 space-y-1.5">
+      {services.map((svc) => {
+        const key = (svc.id || "") + "|" + (svc.name || "")
+        const label = many ? svc.name || "Service" : null
+        const closingThis = addBagFor?.orderId === order.orderId &&
+          (addBagFor.serviceId || "") + "|" + (addBagFor.serviceName || "") === key
+        const active = activeBagForService(bags, svc.id, svc.name)
+        if (closingThis && active) {
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-orange-300 bg-orange-500 px-3 py-2 text-white">
+              {label && <span className="text-[10px] font-bold uppercase tracking-wider text-white/80">{label}</span>}
+              <span className="text-[11px] font-bold uppercase tracking-wider text-white/90">Current bag full/closed</span>
+              <span className="font-mono text-sm font-bold text-white">{active.bagNumber}</span>
+              <span className="text-[11px] font-semibold text-white">SCAN NEXT AVAILABLE BAG</span>
+            </div>
+          )
+        }
+        if (active) {
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-indigo-300 bg-indigo-600 px-3 py-2 text-white">
+              {label && <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">{label}</span>}
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100">Current sorting bag</span>
+              <span className="font-mono text-base font-bold text-white">{active.bagNumber}</span>
+              <span className="text-[11px] font-semibold text-indigo-100">ADD GARMENTS TO THIS BAG</span>
+            </div>
+          )
+        }
+        return (
+          <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-amber-300 bg-amber-500 px-3 py-2 text-white">
+            {label && <span className="text-[10px] font-bold uppercase tracking-wider text-amber-100">{label}</span>}
+            <span className="text-[13px] font-bold uppercase tracking-wider text-white">⚠ BAG REQUIRED</span>
+            <span className="text-[11px] font-semibold text-amber-100">SCAN THE BAG THIS ORDER WILL USE</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -900,6 +960,9 @@ export function LaundrySortingWorkstation() {
                         {done} / {o.expected} scanned
                       </Badge>
                     </div>
+                    {/* THE CURRENT SORTING BAG — the one bag the next garment
+                        goes into, unmistakable at the top of the card. */}
+                    <CurrentBagBanner order={o} bags={bagsByOrder[o.orderId] || []} addBagFor={addBagFor} />
                     <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className={`h-full rounded-full ${complete ? "bg-emerald-500" : "bg-indigo-500"}`} style={{ width: `${Math.min(100, (done / o.expected) * 100)}%` }} />
                     </div>
