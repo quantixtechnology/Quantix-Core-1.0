@@ -62,6 +62,33 @@ interface ScanRecord {
 
 const RECENT_LIMIT = 8
 
+/** One bag on an order, as /orders/[id]/bags returns it. */
+interface OrderBagRow { bagNumber: string; serviceId?: string | null; serviceName?: string | null }
+
+/**
+ * The bag carrying THIS garment's service on this order.
+ *
+ * Not "does the order have any bag". Most orders reaching Sorting already carry
+ * one from pickup or packing — 8 of 9 on the live floor did — so an order-level
+ * check finds a bag that has nothing to do with the garment in hand and the
+ * prompt never appears. Matched on service id, falling back to the name, which
+ * is the same rule the service-aware bag accounting uses.
+ *
+ * A bag with no service recorded is a legacy row: it answers for a garment only
+ * when the order has no service-tagged bag at all, so it can never mask a
+ * genuinely missing bag for a second service.
+ */
+export function bagForService(bags: OrderBagRow[], serviceId: string | null, serviceName: string | null): OrderBagRow | null {
+  const key = (id?: string | null, name?: string | null) => (id && id.trim()) || (name || "").trim().toUpperCase()
+  const want = key(serviceId, serviceName)
+  if (want) {
+    const exact = bags.find((b) => key(b.serviceId, b.serviceName) === want)
+    if (exact) return exact
+  }
+  const untagged = bags.find((b) => !key(b.serviceId, b.serviceName))
+  return untagged ?? null
+}
+
 /** One order card's bag list — its own hook instance, its own refresh. */
 function SortingOrderBags({ orderId, businessId, busy }: { orderId: string; businessId: string; busy: boolean }) {
   const { bags, loadBags } = useOrderBags(orderId, businessId)
@@ -93,20 +120,20 @@ export function LaundrySortingWorkstation() {
   // that relationship, never a second source of truth: it is re-read after every
   // scan and after every assignment, so a refresh, a poll, or another operator's
   // assignment all converge on the same answer.
-  const [bagsByOrder, setBagsByOrder] = useState<Record<string, string[]>>({})
+  const [bagsByOrder, setBagsByOrder] = useState<Record<string, OrderBagRow[]>>({})
   // The order whose first garment was just scanned and which still has no bag.
   // Per-order and advisory: the scanner is NEVER gated on it, so another order
   // can be scanned freely while this one waits for its bag.
   const [bagNeededFor, setBagNeededFor] = useState<ScanRecord | null>(null)
 
   /** Re-read one order's bags from the authoritative list. */
-  const refreshBags = useCallback(async (orderId: string): Promise<string[]> => {
+  const refreshBags = useCallback(async (orderId: string): Promise<OrderBagRow[]> => {
     if (!currentBusinessId) return []
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/bags?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
-      const nums: string[] = j?.success ? (j.data.bags || []).map((b: { bagNumber: string }) => b.bagNumber) : []
-      setBagsByOrder((prev) => ({ ...prev, [orderId]: nums }))
-      return nums
+      const rows: OrderBagRow[] = j?.success ? (j.data.bags || []) : []
+      setBagsByOrder((prev) => ({ ...prev, [orderId]: rows }))
+      return rows
     } catch { return [] }
   }, [currentBusinessId])
   // The same race-safe search the processing workstations use: generation-
@@ -195,14 +222,18 @@ export function LaundrySortingWorkstation() {
         // Wrong bag: the engine names the order actually holding it, and the
         // standing assignment is left exactly as it was.
         playScanError(soundEnabled)
-        setScanErr(j.error || "Could not assign that bag.")
+        // The engine names the order holding the scanned bag; add the bag this
+        // order actually needs when it is known, so the operator is told both
+        // halves: what they scanned wrongly, and what to scan instead.
+        const expected = bagForService(bagsByOrder[rec.orderId] ?? [], rec.serviceId, rec.serviceName)?.bagNumber
+        setScanErr(`${j.error || "Could not assign that bag."}${expected ? ` ${rec.orderNumber} requires ${expected}.` : ""}`)
         if (scanErrTimer.current) clearTimeout(scanErrTimer.current)
         scanErrTimer.current = setTimeout(() => setScanErr(null), 6000)
         return false
       }
       playScanOk(soundEnabled)
-      const nums = await refreshBags(rec.orderId)
-      const bagNumber = nums[0] ?? code
+      const rows = await refreshBags(rec.orderId)
+      const bagNumber = bagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber ?? code
       setBagNeededFor(null)
       // Reflect the bag on what is already on screen, without re-querying.
       setLastScanned((p) => (p && p.orderId === rec.orderId ? { ...p, bagNumber } : p))
@@ -213,7 +244,7 @@ export function LaundrySortingWorkstation() {
       setOffline(true); setScanErr("Unable to reach the server. Try again.")
       return false
     }
-  }, [currentBusinessId, soundEnabled, refreshBags, toast])
+  }, [currentBusinessId, soundEnabled, refreshBags, toast, bagsByOrder])
 
   const scannedFor = (orderId: string) => scanned[orderId] || []
   const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)
@@ -267,6 +298,9 @@ export function LaundrySortingWorkstation() {
     // right when another operator assigned it.
     const known = bagsByOrder[d.orderId]
     const bags = known ?? (await refreshBags(d.orderId))
+    // The bag for THIS garment's service — an order-level check would find the
+    // pickup bag and never ask for the Sorting one.
+    const mine = bagForService(bags, d.serviceId ?? null, d.serviceName ?? null)
 
     const record: ScanRecord = {
       itemId: d.itemId,
@@ -277,7 +311,7 @@ export function LaundrySortingWorkstation() {
       orderId: d.orderId,
       orderNumber: d.orderNumber,
       customer: group?.customer ?? null,
-      bagNumber: bags[0] ?? null,
+      bagNumber: mine?.bagNumber ?? null,
       scannedCount,
       expected: d.expected,
       at: Date.now(),
@@ -288,7 +322,7 @@ export function LaundrySortingWorkstation() {
     // Ask for the bag ONLY when this order has none. Every later garment of the
     // same order finds one and scans straight through. This never gates the
     // scanner — a garment from any other order scans normally while this sits.
-    setBagNeededFor(bags.length === 0 ? record : null)
+    setBagNeededFor(mine ? null : record)
 
     if (scannedCount >= d.expected) {
       playScanOk(soundEnabled)
@@ -365,7 +399,9 @@ export function LaundrySortingWorkstation() {
             <span className="text-[11px] text-slate-600">{lastScanned.customer || "—"}</span>
             <span className="text-[11px] text-slate-600">{lastScanned.serviceName || "—"}</span>
             <span className="font-mono text-[11px] text-slate-700">{lastScanned.orderNumber}</span>
-            {lastScanned.bagNumber && <span className="font-mono text-[11px] font-semibold text-indigo-700">BAG {lastScanned.bagNumber}</span>}
+            {lastScanned.bagNumber
+              ? <span className="font-mono text-[11px] font-semibold text-indigo-700">BAG {lastScanned.bagNumber}</span>
+              : <span className="text-[11px] font-semibold text-amber-700">BAG REQUIRED</span>}
             <span className="text-[12px] font-bold tabular-nums text-emerald-700">{lastScanned.scannedCount} / {lastScanned.expected} scanned</span>
             <button type="button" onClick={() => locate(lastScanned.orderId, lastScanned.itemId)} className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
               <MapPin className="h-3.5 w-3.5" /> Show order
@@ -440,7 +476,9 @@ export function LaundrySortingWorkstation() {
                   <span className="font-medium text-slate-700">{r.garmentName}</span>
                   <span className="font-mono text-slate-400">{r.gar || "—"}</span>
                   <span className="font-mono text-slate-500">{r.orderNumber}</span>
-                  {r.bagNumber && <span className="font-mono text-indigo-700">BAG {r.bagNumber}</span>}
+                  {r.bagNumber
+                    ? <span className="font-mono text-indigo-700">BAG {r.bagNumber}</span>
+                    : <span className="font-semibold text-amber-700">BAG REQUIRED</span>}
                   <span className="tabular-nums text-indigo-600">{r.scannedCount}/{r.expected}</span>
                 </button>
               ))}

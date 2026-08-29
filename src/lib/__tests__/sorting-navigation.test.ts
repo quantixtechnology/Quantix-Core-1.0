@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { bagForService } from '@/components/laundry/views/laundry-sorting-workstation'
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const code = (p: string) =>
@@ -204,12 +205,14 @@ describe('the order’s bag is known from its first garment', () => {
   })
 
   it('only an order with NO bag is asked for one', () => {
-    expect(src).toContain('setBagNeededFor(bags.length === 0 ? record : null)')
+    // Asked when there is no bag FOR THIS GARMENT'S SERVICE — see the
+    // service-resolution suite below for why a count was the wrong test.
+    expect(src).toContain('setBagNeededFor(mine ? null : record)')
   })
 
   it('a later garment of the same order finds the bag and asks nothing', () => {
-    // bags.length > 0 ⇒ the prompt is cleared, and the record carries the bag.
-    expect(src).toContain('bagNumber: bags[0] ?? null')
+    // A matched bag clears the prompt, and the record carries that bag.
+    expect(src).toContain('bagNumber: mine?.bagNumber ?? null')
   })
 
   it('the scanner is NEVER gated on a pending bag — other orders keep scanning', () => {
@@ -226,8 +229,8 @@ describe('the order’s bag is known from its first garment', () => {
   })
 
   it('several orders hold different bags at once — keyed by orderId', () => {
-    expect(src).toContain('const [bagsByOrder, setBagsByOrder] = useState<Record<string, string[]>>({})')
-    expect(src).toContain('setBagsByOrder((prev) => ({ ...prev, [orderId]: nums }))')
+    expect(src).toContain('const [bagsByOrder, setBagsByOrder] = useState<Record<string, OrderBagRow[]>>({})')
+    expect(src).toContain('setBagsByOrder((prev) => ({ ...prev, [orderId]: rows }))')
     // resolution is always by the scanned garment's own order
     expect(src).toContain('const known = bagsByOrder[d.orderId]')
   })
@@ -283,7 +286,8 @@ describe('last scans survive, and show the bag', () => {
   it('the panel shows from the first scan and carries the bag number', () => {
     const src = code(SORT)
     expect(src).toContain('{recent.length > 0 && (')
-    expect(src).toContain('{r.bagNumber && <span className="font-mono text-indigo-700">BAG {r.bagNumber}</span>}')
+    expect(src).toContain('BAG {r.bagNumber}')
+    expect(src).toContain('BAG REQUIRED')
   })
 
   it('polling writes none of the bag or history state', () => {
@@ -293,5 +297,79 @@ describe('last scans survive, and show the bag', () => {
     for (const setter of ['setBagsByOrder', 'setBagNeededFor', 'setLastScanned', 'setRecent']) {
       expect(load, `load() must not call ${setter}`).not.toContain(setter)
     }
+  })
+})
+
+// ============================================================================
+// THE BUG THAT MADE THE PROMPT INVISIBLE.
+//
+// Most orders reaching Sorting ALREADY carry a bag from pickup or packing — 8 of
+// 9 on the live floor did. An order-level "has any bag?" therefore found the
+// pickup bag and never asked for the Sorting one. ORD-…-000045 carried a
+// Wash & Fold bag while its garments were Wash & Iron.
+// ============================================================================
+describe('the bag is resolved for the GARMENT’s service, not the order', () => {
+  const WF = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' }
+  const WI = { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron' }
+
+  it('reproduces it: an order with a Wash & Fold bag still needs one for Wash & Iron', () => {
+    expect(bagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
+  })
+
+  it('finds the bag for the matching service', () => {
+    expect(bagForService([WF, WI], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
+    expect(bagForService([WF, WI], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('falls back to the service NAME when there is no id', () => {
+    expect(bagForService([{ bagNumber: 'B1', serviceId: null, serviceName: 'Wash & Iron' }], null, 'wash & iron')?.bagNumber).toBe('B1')
+  })
+
+  it('an untagged legacy bag answers only when nothing is service-tagged', () => {
+    const legacy = { bagNumber: 'OLD', serviceId: null, serviceName: null }
+    expect(bagForService([legacy], 's-wi', 'Wash & Iron')?.bagNumber).toBe('OLD')
+    // …and can never mask a genuinely missing bag for a second service
+    expect(bagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
+  })
+
+  it('an order with no bags at all needs one', () => {
+    expect(bagForService([], 's-wf', 'Wash & Fold')).toBeNull()
+  })
+
+  it('the scan path uses it, and prompts on the match — not on the count', () => {
+    const src = code(SORT)
+    expect(src).toContain('const mine = bagForService(bags, d.serviceId ?? null, d.serviceName ?? null)')
+    expect(src).toContain('setBagNeededFor(mine ? null : record)')
+    expect(src).not.toContain('bags.length === 0 ? record : null')
+  })
+})
+
+describe('the bag state is visible where the operator is looking', () => {
+  const src = read(SORT)
+
+  it('BAG REQUIRED sits directly under LAST SCANNED, not in the order list', () => {
+    const lastScanned = src.indexOf('Last scanned')
+    const bagRequired = src.indexOf('Bag required')
+    const orderList = src.indexOf('Orders at Sorting')
+    expect(bagRequired).toBeGreaterThan(lastScanned)
+    expect(bagRequired).toBeLessThan(orderList)
+  })
+
+  it('it is an inline card, not a modal that traps the operator', () => {
+    const card = src.slice(src.indexOf('{bagNeededFor && ('), src.indexOf('{/* Find any garment'))
+    expect(card).not.toContain('Dialog')
+    expect(card).toContain('Later')          // dismissable
+    expect(card).toContain('other orders are not blocked')
+  })
+
+  it('both panels show BAG REQUIRED when a scan had no bag', () => {
+    expect(src).toContain('BAG REQUIRED')
+    expect(code(SORT)).toContain('BAG {lastScanned.bagNumber}')
+    expect(code(SORT)).toContain('BAG {r.bagNumber}')
+  })
+
+  it('a wrong bag names both the holder and the bag this order needs', () => {
+    expect(code(SORT)).toContain('${rec.orderNumber} requires ${expected}.')
+    expect(code('src/lib/laundry-bag-assign.ts')).toContain('belongs to ${bag.currentOrderNumber}')
   })
 })
