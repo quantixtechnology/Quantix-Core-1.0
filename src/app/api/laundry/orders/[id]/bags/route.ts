@@ -89,7 +89,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       serviceId: pick.service.serviceId,
       serviceName: pick.service.serviceName,
     })
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
+    if (!res.ok) {
+      // A refusal answers BOTH halves of the operator's question: which order is
+      // holding the bag they just scanned (`conflict`), and which bags this order
+      // actually has (`bags`) so the caller can name the one it needs. Read back
+      // from the server, so a stale client cache cannot make the message wrong.
+      const bags = await orderBags(r.biz.id, r.order.id)
+      return NextResponse.json({ error: res.error, conflict: res.conflict, bags }, { status: res.status })
+    }
 
     const bags = await orderBags(r.biz.id, r.order.id)
     const accounting = accountBagsByService(services, bags)

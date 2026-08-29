@@ -8,9 +8,26 @@
 // here; callers gate.
 import { prisma } from "@/lib/prisma"
 
+/**
+ * WHY a bag was refused, in fields rather than in a sentence.
+ *
+ * The prose message is still the one an operator reads, but a caller that wants
+ * to lay the refusal out — "you scanned X, it belongs to Y, this order needs Z"
+ * — should not have to parse English back out of it. Additive: every existing
+ * consumer keeps reading `error` and is unaffected.
+ */
+export interface BagConflict {
+  /** The bag the operator actually scanned. */
+  bagNumber: string
+  /** Its live status — AVAILABLE|COLLECTED|DAMAGED|LOST|CLEANING|… */
+  bagStatus: string
+  /** The order holding it, when one does. Null for damaged/lost/cleaning. */
+  heldByOrderNumber: string | null
+}
+
 export type AssignResult =
   | { ok: true; bag: Awaited<ReturnType<typeof prisma.laundryBag.update>> }
-  | { ok: false; status: number; error: string }
+  | { ok: false; status: number; error: string; conflict?: BagConflict }
 
 export interface ReleaseInput {
   lbId: string
@@ -51,7 +68,10 @@ export async function assignBagToOrder(opts: {
       : bag.currentOrderNumber
         ? `${bag.bagNumber} belongs to ${bag.currentOrderNumber}. Scan the bag assigned to this order.`
         : "Bag already assigned to another order."
-    return { ok: false, status: 409, error: msg }
+    return {
+      ok: false, status: 409, error: msg,
+      conflict: { bagNumber: bag.bagNumber, bagStatus: bag.status, heldByOrderNumber: bag.currentOrderNumber ?? null },
+    }
   }
 
   const order = await prisma.laundryOrder.findFirst({ where: { id: orderId, businessId: opts.lbId }, select: { id: true, orderNumber: true, customerId: true } })

@@ -60,7 +60,32 @@ interface ScanRecord {
   at: number
 }
 
-const RECENT_LIMIT = 8
+/** A bag just bound to an order — the confirmation line, not a stored record. */
+interface BagAssigned {
+  bagNumber: string
+  orderNumber: string
+  customer: string | null
+  serviceName: string | null
+}
+
+/**
+ * A refused bag, in fields rather than in a sentence.
+ *
+ * The operator needs three separate facts to recover: the bag they scanned, the
+ * order that is holding it, and the bag THIS order needs. `expected` is null
+ * when the order genuinely has no bag yet — there is nothing to name, and
+ * inventing one would be worse than saying nothing.
+ */
+interface WrongBag {
+  scanned: string
+  heldBy: string | null
+  orderNumber: string
+  expected: string | null
+  message: string
+}
+
+/** LAST 5 SCANS — five is what an operator can actually read at a glance. */
+const RECENT_LIMIT = 5
 
 /** One bag on an order, as /orders/[id]/bags returns it. */
 interface OrderBagRow { bagNumber: string; serviceId?: string | null; serviceName?: string | null }
@@ -125,6 +150,23 @@ export function LaundrySortingWorkstation() {
   // Per-order and advisory: the scanner is NEVER gated on it, so another order
   // can be scanned freely while this one waits for its bag.
   const [bagNeededFor, setBagNeededFor] = useState<ScanRecord | null>(null)
+  // The bag just bound to an order — the operator's confirmation that the scan
+  // landed. Presentation only; the assignment itself lives in the database.
+  const [bagAssigned, setBagAssigned] = useState<BagAssigned | null>(null)
+  const bagAssignedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // A refused bag, laid out as fields: what was scanned, who holds it, what this
+  // order needs. Both sides come from the server's refusal, never from a cache.
+  const [wrongBag, setWrongBag] = useState<WrongBag | null>(null)
+  const wrongBagTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The bag code typed (or wedge-scanned) into the inline field on the prompt.
+  const [bagCode, setBagCode] = useState("")
+  // Mirror of `bagsByOrder`, written synchronously. A USB wedge fires scans
+  // back-to-back, so the render closure can still hold the previous map when the
+  // next scan resolves — the same reason `scannedRef` exists.
+  const bagsRef = useRef<Record<string, OrderBagRow[]>>({})
+  // The generation of the most recently STARTED garment scan. Only the newest
+  // may write the panel, so a slow response can never overwrite a newer scan.
+  const scanGen = useRef(0)
 
   /** Re-read one order's bags from the authoritative list. */
   const refreshBags = useCallback(async (orderId: string): Promise<OrderBagRow[]> => {
@@ -132,7 +174,8 @@ export function LaundrySortingWorkstation() {
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/bags?businessId=${encodeURIComponent(currentBusinessId)}`).then((r) => r.json())
       const rows: OrderBagRow[] = j?.success ? (j.data.bags || []) : []
-      setBagsByOrder((prev) => ({ ...prev, [orderId]: rows }))
+      bagsRef.current = { ...bagsRef.current, [orderId]: rows }
+      setBagsByOrder(bagsRef.current)
       return rows
     } catch { return [] }
   }, [currentBusinessId])
@@ -212,39 +255,60 @@ export function LaundrySortingWorkstation() {
    */
   const assignOrderBag = useCallback(async (code: string, rec: ScanRecord): Promise<boolean> => {
     if (!currentBusinessId) return false
+    const scanned = code.trim().toUpperCase()
+    if (!scanned) return false
     try {
       const res = await fetch(`/api/laundry/orders/${rec.orderId}/bags`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, code, serviceId: rec.serviceId }),
+        body: JSON.stringify({ businessId: currentBusinessId, code: scanned, serviceId: rec.serviceId }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) {
-        // Wrong bag: the engine names the order actually holding it, and the
-        // standing assignment is left exactly as it was.
+        // WRONG BAG. Neither assignment is touched: the scanned bag stays with
+        // whoever holds it, this order keeps whatever it had, and the garment
+        // tally is not affected — a failed bag scan is not a garment scan.
         playScanError(soundEnabled)
-        // The engine names the order holding the scanned bag; add the bag this
-        // order actually needs when it is known, so the operator is told both
-        // halves: what they scanned wrongly, and what to scan instead.
-        const expected = bagForService(bagsByOrder[rec.orderId] ?? [], rec.serviceId, rec.serviceName)?.bagNumber
-        setScanErr(`${j.error || "Could not assign that bag."}${expected ? ` ${rec.orderNumber} requires ${expected}.` : ""}`)
-        if (scanErrTimer.current) clearTimeout(scanErrTimer.current)
-        scanErrTimer.current = setTimeout(() => setScanErr(null), 6000)
+        // Both halves come from the server's refusal — `conflict` names the
+        // order holding the scanned bag, `bags` is this order's list read back
+        // fresh, so a stale cache cannot make the message wrong.
+        const fresh: OrderBagRow[] = Array.isArray(j?.bags) ? j.bags : (bagsRef.current[rec.orderId] ?? [])
+        if (Array.isArray(j?.bags)) {
+          bagsRef.current = { ...bagsRef.current, [rec.orderId]: fresh }
+          setBagsByOrder(bagsRef.current)
+        }
+        setWrongBag({
+          scanned: j?.conflict?.bagNumber || scanned,
+          heldBy: j?.conflict?.heldByOrderNumber ?? null,
+          orderNumber: rec.orderNumber,
+          expected: bagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null,
+          message: j?.error || "Could not assign that bag.",
+        })
+        if (wrongBagTimer.current) clearTimeout(wrongBagTimer.current)
+        wrongBagTimer.current = setTimeout(() => setWrongBag(null), 10000)
         return false
       }
       playScanOk(soundEnabled)
+      setWrongBag(null)
       const rows = await refreshBags(rec.orderId)
-      const bagNumber = bagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber ?? code
+      const bagNumber = bagForService(rows, rec.serviceId, rec.serviceName)?.bagNumber ?? scanned
       setBagNeededFor(null)
-      // Reflect the bag on what is already on screen, without re-querying.
-      setLastScanned((p) => (p && p.orderId === rec.orderId ? { ...p, bagNumber } : p))
-      setRecent((p) => p.map((r) => (r.orderId === rec.orderId && !r.bagNumber ? { ...r, bagNumber } : r)))
-      toast({ title: `Bag ${bagNumber}`, description: `Assigned to ${rec.orderNumber}`, duration: 2500 })
+      setBagCode("")
+      // ✓ BAG ASSIGNED — confirmation of the physical fact, spelled out.
+      setBagAssigned({ bagNumber, orderNumber: rec.orderNumber, customer: rec.customer, serviceName: rec.serviceName })
+      if (bagAssignedTimer.current) clearTimeout(bagAssignedTimer.current)
+      bagAssignedTimer.current = setTimeout(() => setBagAssigned(null), 12000)
+      // Reflect the bag on what is already on screen, without re-querying. Only
+      // rows for the SAME order and service — another service's history entry
+      // keeps its own answer.
+      const sameLeg = (r: ScanRecord) => r.orderId === rec.orderId && bagForService([{ bagNumber, serviceId: rec.serviceId, serviceName: rec.serviceName }], r.serviceId, r.serviceName) !== null
+      setLastScanned((p) => (p && sameLeg(p) ? { ...p, bagNumber } : p))
+      setRecent((p) => p.map((r) => (sameLeg(r) && !r.bagNumber ? { ...r, bagNumber } : r)))
       return true
     } catch {
       setOffline(true); setScanErr("Unable to reach the server. Try again.")
       return false
     }
-  }, [currentBusinessId, soundEnabled, refreshBags, toast, bagsByOrder])
+  }, [currentBusinessId, soundEnabled, refreshBags])
 
   const scannedFor = (orderId: string) => scanned[orderId] || []
   const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)
@@ -263,6 +327,16 @@ export function LaundrySortingWorkstation() {
       return
     }
     lastScan.current = { code: norm, at: now }
+    // This scan's generation, and the moment it was MADE.
+    //
+    // Only the newest generation may write LAST SCANNED, so a slow reply can
+    // never repaint over a later garment (§12). The tally is deliberately NOT
+    // guarded — the garment was scanned either way, and dropping it from the
+    // count would be a far worse bug than the flicker this prevents. History is
+    // ordered by `at`, the scan time, so a late arrival lands in its true place
+    // instead of jumping to the front.
+    const mine = ++scanGen.current
+    const at = now
 
     const showErr = (msg: string, ms = 4000) => {
       playScanError(soundEnabled); setScanErr(msg); scanErrTimer.current = setTimeout(() => setScanErr(null), ms)
@@ -296,33 +370,59 @@ export function LaundrySortingWorkstation() {
     // WHICH BAG does this order already have? Read from the persisted
     // assignment, not remembered locally — so it is right after a refresh and
     // right when another operator assigned it.
-    const known = bagsByOrder[d.orderId]
-    const bags = known ?? (await refreshBags(d.orderId))
-    // The bag for THIS garment's service — an order-level check would find the
-    // pickup bag and never ask for the Sorting one.
-    const mine = bagForService(bags, d.serviceId ?? null, d.serviceName ?? null)
+    //
+    // The mirror answers instantly for the second and every later garment of an
+    // order, which is the common case. It is trusted ONLY when it names a bag:
+    // "no bag" is re-checked against the server, because another operator may
+    // have assigned one since — and that is the one reading that would put a
+    // false BAG REQUIRED in front of the operator.
+    const cached = bagsRef.current[d.orderId]
+    const serviceId = d.serviceId ?? null
+    // Resolved ONCE, before the lookup, so the bag is matched against exactly
+    // the service the operator is shown. Two different values here would let the
+    // panel name one service while the bag was resolved for another.
+    const serviceName = d.serviceName ?? group?.garments.find((g) => g.id === d.itemId)?.serviceName ?? null
+    let bags = cached ?? []
+    let bag = bagForService(bags, serviceId, serviceName)
+    if (!bag) {
+      bags = await refreshBags(d.orderId)
+      bag = bagForService(bags, serviceId, serviceName)
+    }
 
     const record: ScanRecord = {
       itemId: d.itemId,
       garmentName: d.garmentName,
       gar: d.barcode || group?.garments.find((g) => g.id === d.itemId)?.barcode || "",
-      serviceId: d.serviceId ?? null,
-      serviceName: d.serviceName ?? group?.garments.find((g) => g.id === d.itemId)?.serviceName ?? null,
+      serviceId,
+      serviceName,
       orderId: d.orderId,
       orderNumber: d.orderNumber,
       customer: group?.customer ?? null,
-      bagNumber: mine?.bagNumber ?? null,
+      bagNumber: bag?.bagNumber ?? null,
       scannedCount,
       expected: d.expected,
-      at: Date.now(),
+      at,
     }
-    setLastScanned(record)
-    setRecent((prev) => [record, ...prev.filter((r) => r.itemId !== record.itemId)].slice(0, RECENT_LIMIT))
-    locate(d.orderId, d.itemId)
+    // Every successful scan is in the history, ordered by when it was MADE.
+    setRecent((prev) => [record, ...prev.filter((r) => r.itemId !== record.itemId)].sort((a2, b2) => b2.at - a2.at).slice(0, RECENT_LIMIT))
+    // …but only the newest scan owns the LAST SCANNED panel, the bag prompt and
+    // the highlight. A superseded order's missing bag is not lost: it still
+    // reads BAG REQUIRED in the history, and asks again on its next garment.
+    const newest = mine === scanGen.current
+    if (newest) {
+      setLastScanned(record)
+      locate(d.orderId, d.itemId)
+    }
     // Ask for the bag ONLY when this order has none. Every later garment of the
     // same order finds one and scans straight through. This never gates the
     // scanner — a garment from any other order scans normally while this sits.
-    setBagNeededFor(mine ? null : record)
+    if (newest) {
+      setBagNeededFor(bag ? null : record)
+      // A new garment supersedes the previous bag confirmation and any standing
+      // refusal — both described the scan before this one.
+      if (bag) { setBagAssigned(null); setWrongBag(null) }
+      else setBagCode("")
+    }
 
     if (scannedCount >= d.expected) {
       playScanOk(soundEnabled)
@@ -331,7 +431,7 @@ export function LaundrySortingWorkstation() {
       playScanOk(soundEnabled)
       toast({ title: `Scanned ${scannedCount} / ${d.expected}`, description: `${d.garmentName} → ${d.orderNumber}`, duration: 1500 })
     }
-  }, [currentBusinessId, soundEnabled, bagTarget, toast, orders, locate, bagsByOrder, refreshBags])
+  }, [currentBusinessId, soundEnabled, bagTarget, toast, orders, locate, refreshBags])
 
   // Bound to the order whose card was used, so every ready order can be bagged
   // (and in any order) rather than only the most recently completed one.
@@ -388,21 +488,36 @@ export function LaundrySortingWorkstation() {
           </CardContent>
         </Card>
 
-        {/* WHAT DID I JUST SCAN, AND WHERE DOES IT BELONG.
-            Written only by a successful scan; load() never touches it, so the
-            12s poll cannot wipe it mid-shift. */}
+        {/* WHAT DID I JUST SCAN, WHERE DOES IT BELONG, AND WHICH BAG DOES IT
+            GO IN. Written only by a successful scan; load() never touches it,
+            so the 12s poll cannot wipe it mid-shift. */}
         {lastScanned && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Last scanned</span>
-            <span className="text-sm font-semibold text-slate-800">{lastScanned.garmentName}</span>
-            <span className="font-mono text-[11px] text-slate-500">{lastScanned.gar || "—"}</span>
-            <span className="text-[11px] text-slate-600">{lastScanned.customer || "—"}</span>
-            <span className="text-[11px] text-slate-600">{lastScanned.serviceName || "—"}</span>
-            <span className="font-mono text-[11px] text-slate-700">{lastScanned.orderNumber}</span>
-            {lastScanned.bagNumber
-              ? <span className="font-mono text-[11px] font-semibold text-indigo-700">BAG {lastScanned.bagNumber}</span>
-              : <span className="text-[11px] font-semibold text-amber-700">BAG REQUIRED</span>}
-            <span className="text-[12px] font-bold tabular-nums text-emerald-700">{lastScanned.scannedCount} / {lastScanned.expected} scanned</span>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Last scanned</span>
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-sm font-semibold text-slate-800">{lastScanned.garmentName}</span>
+                <span className="font-mono text-[11px] text-slate-500">{lastScanned.gar || "—"}</span>
+              </div>
+              <div className="text-[11px] text-slate-600">
+                {lastScanned.customer || "—"} · <span className="font-mono">{lastScanned.orderNumber}</span> · {lastScanned.serviceName || "—"}
+              </div>
+            </div>
+            <span className="text-[13px] font-bold tabular-nums text-emerald-700">{lastScanned.scannedCount} / {lastScanned.expected} scanned</span>
+            {/* WHICH BAG THIS GARMENT GOES IN — the whole point of the panel.
+                Resolved from the garment's own order AND service, never from the
+                previous scan or the first bag on the order. */}
+            {lastScanned.bagNumber ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5">
+                <Check className="h-4 w-4 text-indigo-700" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">Add to bag</span>
+                <span className="font-mono text-sm font-bold text-indigo-800">{lastScanned.bagNumber}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5">
+                <span className="text-[13px] font-bold text-amber-800">⚠ BAG REQUIRED</span>
+              </span>
+            )}
             <button type="button" onClick={() => locate(lastScanned.orderId, lastScanned.itemId)} className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
               <MapPin className="h-3.5 w-3.5" /> Show order
             </button>
@@ -414,16 +529,82 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
-        {/* BAG REQUIRED — only for an order that has none yet. Advisory: the
-            scanner is never gated on this, so a garment from any other order
-            scans straight through while this one waits. */}
+        {/* ✓ BAG ASSIGNED — the bag scan landed and is now in the database. */}
+        {bagAssigned && (
+          <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-indigo-800">
+              <Check className="h-4 w-4" /> Bag assigned
+            </span>
+            <span className="font-mono text-base font-bold text-indigo-800">{bagAssigned.bagNumber}</span>
+            <span className="font-mono text-[12px] text-slate-700">{bagAssigned.orderNumber}</span>
+            <span className="text-[11px] text-slate-600">{bagAssigned.customer || "—"} · {bagAssigned.serviceName || "—"}</span>
+            <button type="button" onClick={() => setBagAssigned(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+          </div>
+        )}
+
+        {/* ❌ WRONG BAG — three facts, laid out, so the operator can recover.
+            Neither assignment was changed and no garment count moved. */}
+        {wrongBag && (
+          <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">✗ Wrong bag</span>
+              <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+            </div>
+            <p className="text-[12px] text-slate-700">
+              <span className="font-mono font-semibold">{wrongBag.scanned}</span>{" "}
+              {wrongBag.heldBy
+                ? <>is assigned to <span className="font-mono font-semibold">{wrongBag.heldBy}</span>.</>
+                : <>cannot be used. {wrongBag.message}</>}
+            </p>
+            <p className="text-[12px] text-slate-700">
+              This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
+            </p>
+            {wrongBag.expected && (
+              <p className="text-[12px] text-slate-700">
+                Expected bag: <span className="font-mono font-semibold text-indigo-800">{wrongBag.expected}</span>
+              </p>
+            )}
+            <p className="text-[10px] text-rose-800">Nothing was changed — both bags keep their orders, and the garment count is unaffected.</p>
+          </div>
+        )}
+
+        {/* BAG REQUIRED — only for an order that has no bag for THIS service.
+            Advisory: the scanner is never gated on this, so a garment from any
+            other order scans straight through while this one waits. */}
         {bagNeededFor && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Bag required</span>
-            <span className="font-mono text-[12px] font-semibold text-slate-800">{bagNeededFor.orderNumber}</span>
-            <span className="text-[11px] text-slate-600">{bagNeededFor.customer || "—"} · {bagNeededFor.serviceName || "—"}</span>
-            <span className="text-[11px] tabular-nums text-slate-600">{bagNeededFor.scannedCount} / {bagNeededFor.expected} scanned</span>
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Bag required</span>
+              <div className="font-mono text-[12px] font-semibold text-slate-800">{bagNeededFor.orderNumber}</div>
+              <div className="text-[11px] text-slate-600">{bagNeededFor.customer || "—"} · {bagNeededFor.serviceName || "—"} · <span className="tabular-nums">{bagNeededFor.scannedCount} / {bagNeededFor.expected} scanned</span></div>
+            </div>
+            <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">Scan the bag that this order will use.</p>
             <div className="ml-auto flex items-center gap-2">
+              {/* A plain field, NOT auto-focused: a keyboard-wedge scanner types
+                  into it once the operator clicks it, and until then every scan
+                  still reaches the garment scanner above. Auto-focusing here
+                  would silently hijack the next garment scan. */}
+              <input
+                value={bagCode}
+                onChange={(e) => setBagCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return
+                  e.preventDefault()
+                  const c = bagCode.trim()
+                  if (c) assignOrderBag(c, bagNeededFor)
+                }}
+                placeholder="Scan or type bag no…"
+                aria-label="Bag number"
+                className="h-9 w-40 rounded-lg border border-amber-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+              />
+              <Button
+                size="sm"
+                disabled={!bagCode.trim() || busy}
+                onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, bagNeededFor) }}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                Assign
+              </Button>
               <BagScanButton
                 label={bagTarget?.label || "Scan Bag QR"}
                 size="sm"
@@ -460,26 +641,30 @@ export function LaundrySortingWorkstation() {
           />
         )}
 
-        {/* The last few scans, so the operator can step back to any of them. */}
+        {/* LAST 5 SCANS — enough context on each to place the garment without
+            going back to the order list: what it is, whose it is, which order
+            and service, which bag it goes in, and how far that order has got. */}
         {recent.length > 0 && (
           <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-1"><History className="h-3 w-3" /> Recent scans</p>
-            <div className="flex flex-wrap gap-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-1.5"><History className="h-3 w-3" /> Last {RECENT_LIMIT} scans</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-1.5">
               {recent.map((r) => (
                 <button
                   key={r.itemId}
                   type="button"
                   onClick={() => locate(r.orderId, r.itemId)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] hover:border-indigo-300"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-left hover:border-indigo-300"
                   title={`${r.garmentName} · ${r.serviceName || "—"} · ${r.orderNumber}`}
                 >
-                  <span className="font-medium text-slate-700">{r.garmentName}</span>
-                  <span className="font-mono text-slate-400">{r.gar || "—"}</span>
-                  <span className="font-mono text-slate-500">{r.orderNumber}</span>
+                  <p className="text-[12px] font-semibold text-slate-800 truncate">{r.garmentName}</p>
+                  <p className="font-mono text-[10px] text-slate-400 truncate">{r.gar || "—"}</p>
+                  <p className="text-[10px] text-slate-600 truncate">{r.customer || "—"}</p>
+                  <p className="font-mono text-[10px] text-slate-500 truncate">{r.orderNumber}</p>
+                  <p className="text-[10px] text-slate-600 truncate">{r.serviceName || "—"}</p>
                   {r.bagNumber
-                    ? <span className="font-mono text-indigo-700">BAG {r.bagNumber}</span>
-                    : <span className="font-semibold text-amber-700">BAG REQUIRED</span>}
-                  <span className="tabular-nums text-indigo-600">{r.scannedCount}/{r.expected}</span>
+                    ? <p className="font-mono text-[11px] font-semibold text-indigo-700 truncate">✓ BAG {r.bagNumber}</p>
+                    : <p className="text-[11px] font-semibold text-amber-700">⚠ BAG REQUIRED</p>}
+                  <p className="text-[10px] font-semibold tabular-nums text-emerald-700">{r.scannedCount} / {r.expected} scanned</p>
                 </button>
               ))}
             </div>

@@ -15,7 +15,7 @@
 // Deliberately NOT modelled: which garment is in which bag. The requirement
 // (§18) is one order → many bags, with every physical bag accounted for.
 import { prisma } from "@/lib/prisma"
-import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { assignBagToOrder, type BagConflict } from "@/lib/laundry-bag-assign"
 
 /** An assignment row's status while the bag is still working this order. */
 const OPEN_ASSIGNMENT = "ASSIGNED"
@@ -84,7 +84,10 @@ export async function orderBagCount(lbId: string, orderId: string): Promise<numb
 
 export type AddBagResult =
   | { ok: true; bag: OrderBag; total: number; alreadyOnOrder: boolean }
-  | { ok: false; status: number; error: string }
+  // `conflict` carries the refusal as fields as well as prose, so a caller can
+  // lay it out instead of parsing the sentence. Passed straight through from
+  // assignBagToOrder — nothing is decided here.
+  | { ok: false; status: number; error: string; conflict?: BagConflict }
 
 /**
  * Attach one more scanned bag to an order.
@@ -114,7 +117,7 @@ export async function addBagToOrder(opts: {
     serviceId: opts.serviceId ?? null,
     serviceName: opts.serviceName,
   })
-  if (!res.ok) return { ok: false, status: res.status, error: res.error }
+  if (!res.ok) return { ok: false, status: res.status, error: res.error, conflict: res.conflict }
 
   const after = await orderBags(opts.lbId, opts.orderId)
   const bag = after.find((b) => b.bagId === res.bag.id)
