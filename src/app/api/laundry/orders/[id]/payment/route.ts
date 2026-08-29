@@ -95,7 +95,9 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
   if (primary.internal || primary.custody) return null
 
   if (primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT") {
-    const audit = await checkAuditComplete(orderId)
+    // Same transition, same gate: a Pay Later decision taken at Store Audit
+    // must not slip past the weight requirement.
+    const audit = await checkAuditComplete(orderId, { requireWeight: true })
     if (!audit.ok) return null
   }
 

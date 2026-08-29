@@ -313,15 +313,22 @@ export function LaundryStoreAudit() {
   const hasKgItems = !!detail?.items.some((it) => it.pricingType === "PER_KG")
   const totalWeightKg = totalWeight === "" ? 0 : Math.max(0, Number(totalWeight) || 0)
   const kgRate = detail?.items.find((it) => it.pricingType === "PER_KG" && it.unitPrice > 0)?.unitPrice ?? 0
-  const needsWeight = hasKgItems && !hasPerGarmentWeight && totalWeightKg <= 0
+  // The order's authoritative total: the sum of per-garment weights when intake
+  // captured them, otherwise the one figure weighed here.
+  const orderWeightKg = hasPerGarmentWeight ? (detail?.totalWeightKg ?? 0) : totalWeightKg
+  // EVERY audited order needs a total weight before Payment — per-KG because it
+  // is the price, per-piece because the physical load is still recorded. The
+  // server enforces the same rule; this only keeps the operator from hitting it.
+  const needsWeight = orderWeightKg <= 0
 
   const handleSave = async () => { setSaving(true); const ok = await saveInspection(); setSaving(false); toast(ok ? { title: "Inspection saved" } : { title: "Save failed", variant: "destructive" }) }
 
   const transition = async (toStatus: string, label: string) => {
     if (!detail) return
-    // A KG order must have its total weight before the invoice is generated.
+    // Every order needs its total weight before the invoice is generated — the
+    // server refuses without it, so say so here rather than let the click fail.
     if (toStatus === "PAYMENT_PENDING" && needsWeight) {
-      toast({ title: "Total weight required", description: "Enter the measured total order weight (KG) before approving.", variant: "destructive" })
+      toast({ title: "Weight required", description: "Enter the total garment weight before approving this order.", variant: "destructive" })
       return
     }
     setActing(true)
@@ -409,11 +416,13 @@ export function LaundryStoreAudit() {
                 make Dry Clean look accounted for. */}
             {bagAccounting && <ServiceBagAccountingPanel accounting={bagAccounting} />}
 
-            {/* KG billing. Per-garment weights (from intake) are the single source
+            {/* Weight. Required on EVERY audited order before Payment — the price
+                is a separate concern: a per-piece order records the load without
+                its amount changing. Per-garment weights (from intake) are the
+                single source
                 of truth → total is auto-calculated + read-only. Bag-weight orders
                 enter ONE total weight here. Never both. */}
-            {hasKgItems && (
-              <Card className="border-blue-200">
+            <Card className="border-blue-200">
                 <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2 text-blue-700"><ClipboardCheck className="h-4 w-4" /> {hasPerGarmentWeight ? "Order Weight (KG)" : "Total Order Weight (KG)"}</CardTitle></CardHeader>
                 <CardContent>
                   {hasPerGarmentWeight ? (
@@ -432,14 +441,17 @@ export function LaundryStoreAudit() {
                       <span className="text-sm text-muted-foreground">KG {kgRate > 0 && <>× {inr(kgRate)}/KG</>}</span>
                       <span className="ml-auto text-right">
                         <span className="block text-[11px] text-muted-foreground">KG Amount</span>
-                        <span className="text-xl font-bold text-slate-800 tabular-nums">{totalWeightKg > 0 && kgRate > 0 ? inr(totalWeightKg * kgRate) : <span className="text-sm text-rose-500">Enter total weight</span>}</span>
+                        <span className="text-xl font-bold text-slate-800 tabular-nums">{hasKgItems ? (totalWeightKg > 0 && kgRate > 0 ? inr(totalWeightKg * kgRate) : <span className="text-sm text-rose-500">Enter total weight</span>) : <span className="text-sm text-slate-400">Recorded for tracking — price unchanged</span>}</span>
                       </span>
                     </div>
                   )}
-                  <p className="mt-2 text-[11px] text-muted-foreground">{hasPerGarmentWeight ? "Per-garment weights were captured at intake — the total is the sum, no re-entry needed." : "Weigh the whole KG load once. The invoice is generated from this weight × rate."}</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">{hasPerGarmentWeight
+                    ? "Per-garment weights were captured at intake — the total is the sum, no re-entry needed."
+                    : hasKgItems
+                      ? "Weigh the whole KG load once. The invoice is generated from this weight × rate."
+                      : "Weigh the load once. Required before the invoice; it does not change a per-piece price."}</p>
                 </CardContent>
-              </Card>
-            )}
+            </Card>
 
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-base flex items-center justify-between"><span className="flex items-center gap-2"><Shirt className="h-4 w-4" /> Garments</span><span className="text-xs font-normal text-muted-foreground">{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {detail.items.length} type{detail.items.length === 1 ? "" : "s"}</span></CardTitle></CardHeader>

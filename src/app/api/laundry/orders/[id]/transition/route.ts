@@ -76,14 +76,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // identified & inspected. This keeps incomplete orders in Store Audit so they
     // never reach Payment / Packing & QR. No override.
     if (transition.action === "APPROVE_AUDIT" || transition.action === "COMPLETE_AUDIT") {
-      const audit = await checkAuditComplete(id)
+      // requireWeight: this IS the Audit → Payment transition. Runs BEFORE any
+      // write — the status update, the timeline event and the delivery-OTP
+      // side effect all happen after this returns, so a refusal leaves the
+      // order exactly where it was.
+      const audit = await checkAuditComplete(id, { requireWeight: true })
       if (!audit.ok) {
         console.warn(`[laundry-order-transition] blocked ${order.orderNumber} audit approval: incomplete (expected ${audit.expected}, audited ${audit.audited})`)
         // `error` as well as `message`: the two 409s on this route had different
         // shapes, so a client reading json.error got `undefined` here and showed
         // a bare "Transition failed" — hiding the one thing the operator needed
         // to know. Both keys now carry the reason.
-        return NextResponse.json({ success: false, error: audit.message, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited, currentStatus: fromStatus }, { status: 409 })
+        return NextResponse.json({ success: false, error: audit.message, code: audit.code, message: audit.message, expected: audit.expected, audited: audit.audited, totalWeightKg: audit.totalWeightKg, garmentsWithoutWeight: audit.garmentsWithoutWeight, currentStatus: fromStatus }, { status: 409 })
       }
     }
 

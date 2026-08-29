@@ -55,7 +55,8 @@ describe('CASE A · Pay Later does not block Store Audit approval', () => {
 
   it('the only gate on approval is the audit gate', () => {
     const gate = ROUTE.slice(ROUTE.indexOf('// Audit gate:'), ROUTE.indexOf('// Side-effect transitions'))
-    expect(gate).toContain('checkAuditComplete(id)')
+    // The gate now also requires the audited total weight before Payment.
+    expect(gate).toContain('checkAuditComplete(id, { requireWeight: true })')
     expect(gate).not.toContain('payment')
   })
 

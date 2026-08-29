@@ -244,7 +244,9 @@ describe('PAY_LATER advances the order', () => {
   it('respects the audit gate — a payment decision cannot skip counting garments', () => {
     const fn = API.slice(API.indexOf('async function advanceOnPayLater'), API.indexOf('// Advance PAYMENT_PENDING'))
     expect(fn).toContain('primary.action === "APPROVE_AUDIT" || primary.action === "COMPLETE_AUDIT"')
-    expect(fn).toContain('const audit = await checkAuditComplete(orderId)')
+    // Same transition, same gate — including the weight requirement, so a
+    // Pay Later decision at Store Audit cannot slip past it either.
+    expect(fn).toContain('const audit = await checkAuditComplete(orderId, { requireWeight: true })')
     expect(fn).toContain('if (!audit.ok) return null')
   })
 
@@ -343,7 +345,10 @@ describe('PAY LATER lands the order in the Packing & QR queue', () => {
 
   it('the server-side pack gate is untouched — visibility is not permission', () => {
     const PACK = read('src/app/api/laundry/orders/[id]/pack/route.ts')
+    // Packing runs on orders already PAST audit, so it deliberately does NOT
+    // opt into the weight rule — that would strand in-flight orders.
     expect(PACK).toContain('const audit = await checkAuditComplete(order.id)')
+    expect(PACK).not.toContain('requireWeight')
     expect(PACK).toContain('if (!audit.ok)')
   })
 
