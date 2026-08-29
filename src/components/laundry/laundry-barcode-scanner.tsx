@@ -14,6 +14,47 @@ const getBarcodeDetector = (): DetectorCtor | null =>
 const formats = ["code_128", "code_39", "code_93", "codabar", "ean_13", "ean_8", "qr_code"]
 
 // ── Entry point ────────────────────────────────────────────────────────────────
+/**
+ * Is `el` a surface a person is typing into, that the scanner must not take
+ * focus from?
+ *
+ * The scanner keeps itself focused so a wedge scan always lands somewhere. Two
+ * of its three document handlers already stood aside for a real input; the
+ * focusout handler did not, and that is the whole bug: clicking the garment
+ * search box fired focusout on the scanner, and 10ms later the scanner pulled
+ * focus straight back. The box could not be typed into or pasted into, because
+ * it never kept the caret.
+ */
+export function isEditableTarget(el: EventTarget | null, self?: HTMLElement | null): boolean {
+  const node = el as HTMLElement | null
+  if (!node || node === self) return false
+  const tag = node.tagName
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable === true
+}
+
+/**
+ * Should the scanner pull focus back to itself?
+ *
+ * Pure so the rule can be tested directly instead of inferred from a timer.
+ *   • never while another surface owns the scanner (a Scan Bag dialog);
+ *   • never while the camera is open;
+ *   • never when focus went to, or now sits on, another editable field.
+ * Otherwise yes — a click on empty page area still returns the caret to the
+ * scanner, which is what keeps wedge scanning working hands-free.
+ */
+export function shouldReclaimFocus(o: {
+  busyElsewhere: boolean
+  cameraOpen?: boolean
+  relatedTarget?: EventTarget | null
+  activeElement?: EventTarget | null
+  self?: HTMLElement | null
+}): boolean {
+  if (o.busyElsewhere || o.cameraOpen) return false
+  if (isEditableTarget(o.relatedTarget ?? null, o.self)) return false
+  if (isEditableTarget(o.activeElement ?? null, o.self)) return false
+  return true
+}
+
 export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect: (code: string) => void; departmentLabel: string }) {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [handling, setHandling] = useState(false)
@@ -64,19 +105,26 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
 
   useEffect(() => {
     let focusTimer: ReturnType<typeof setTimeout>
-    const onFocusOut = () => {
-      if (scannerBusyElsewhere()) return
+    const onFocusOut = (e: FocusEvent) => {
+      // WHERE IS FOCUS GOING? This handler never asked. It re-focused the
+      // scanner 10ms after ANY focus loss, including the loss caused by the
+      // operator clicking the garment search box — so that field could never be
+      // typed or pasted into. The other two handlers already stand aside for a
+      // real input; now this one does too.
+      if (!shouldReclaimFocus({ busyElsewhere: scannerBusyElsewhere(), cameraOpen, relatedTarget: e.relatedTarget, self: inputRef.current })) return
       focusTimer = setTimeout(() => {
-        // Re-checked on the timer: the dialog may have opened in between.
-        if (!scannerBusyElsewhere()) inputRef.current?.focus()
+        // Re-checked on the timer: a dialog may have opened, or focus may have
+        // landed on an input by a path that carried no relatedTarget.
+        if (shouldReclaimFocus({ busyElsewhere: scannerBusyElsewhere(), cameraOpen, activeElement: document.activeElement, self: inputRef.current })) {
+          inputRef.current?.focus()
+        }
       }, 10)
     }
     const onKeyDoc = (e: KeyboardEvent) => {
       if (e.key === "Escape") { setCameraOpen(false); return }
       if (cameraOpen || scannerBusyElsewhere()) return
-      if (e.target === inputRef.current) return
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      // Same rule, one implementation.
+      if (isEditableTarget(e.target, inputRef.current)) return
       inputRef.current?.focus()
     }
     const onClickDoc = (e: MouseEvent) => {
