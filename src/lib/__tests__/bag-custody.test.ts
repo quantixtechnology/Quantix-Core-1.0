@@ -239,3 +239,107 @@ describe('the Sorting garment trail is untouched by any of this', () => {
     }
   })
 })
+
+// ============================================================================
+// WHERE A BAG IS PICKED UP IS THE CALLER'S FACT, NOT THE STATUS'S.
+//
+// One COLLECTED status covers two different real situations: a pickup bag taken
+// at the STORE, and a finishing bag picked up at the PROCESSING CENTER during
+// Sorting. Deriving the holder from the status alone marked both as STORE —
+// right for the first, wrong for the second. Asserting a wrong location is worse
+// than the stale one the custody fix replaced, so the caller states it.
+// ============================================================================
+describe('the location of an assignment comes from the caller', () => {
+  const assign = code('src/lib/laundry-bag-assign.ts')
+
+  it('assignBagToOrder takes the location and defaults to the store', () => {
+    expect(assign).toContain('custodian?: Custodian')
+    expect(assign).toContain('custodyFor("COLLECTED", { custodian: opts.custodian ?? CUSTODIAN.STORE })')
+  })
+
+  it('pickup and packing are unchanged — they are at the store', () => {
+    expect(custodianForStatus(BAG_STATUS.COLLECTED)).toBe(CUSTODIAN.STORE)
+  })
+
+  it('Sorting binds its bag at the plant, and says so', () => {
+    // the workstation tells the endpoint where it is standing…
+    expect(read('src/components/laundry/views/laundry-sorting-workstation.tsx')).toContain('custodian: "PROCESSING_CENTER"')
+    // …the endpoint validates it against the enum rather than trusting the body…
+    const route = code('src/app/api/laundry/orders/[id]/bags/route.ts')
+    expect(route).toContain('(Object.values(CUSTODIAN) as string[]).includes(at)')
+    expect(route).toContain('custodian,')
+    // …and the terminal binding does the same server-side, with no client input.
+    expect(code('src/lib/laundry-finishing.ts')).toContain('custodian: CUSTODIAN.PROCESSING_CENTER')
+  })
+
+  it('an invented location is ignored, not stored', () => {
+    const route = code('src/app/api/laundry/orders/[id]/bags/route.ts')
+    expect(route).toContain('? (at as Custodian) : undefined')
+  })
+
+  it('the plant assignment reports the plant, not the store', () => {
+    expect(custodyFor(BAG_STATUS.COLLECTED, { custodian: CUSTODIAN.PROCESSING_CENTER }).currentCustodianType)
+      .toBe(CUSTODIAN.PROCESSING_CENTER)
+    expect(tallyInventory([{ status: BAG_STATUS.COLLECTED, currentCustodianType: CUSTODIAN.PROCESSING_CENTER }]).atProcessingCenter).toBe(1)
+  })
+})
+
+// ============================================================================
+// WHAT THE SORTING QUEUE IS ACTUALLY MADE OF.
+//
+// Sorting is a PROCESSING CENTRE workstation late in the route — WASH/DRYCLEAN
+// → QC → SORTING → IRON/FOLD → Transit — and its queue is per-GARMENT, keyed on
+// LaundryOrderItem.processingStage. It does not read bag status or custody at
+// all, which is why a bag movement cannot add or remove an order from it.
+// ============================================================================
+describe('the Sorting queue is driven by garment stage, not by bags', () => {
+  const proc = code('src/app/api/laundry/processing/route.ts')
+
+  it('the queue query is per-garment and stage-keyed', () => {
+    expect(proc).toContain('const queueWhere = { order: { businessId: biz.id }, processingStage: stage }')
+  })
+
+  it('it does not consult bag status or custody', () => {
+    const q = proc.slice(proc.indexOf('const queueWhere ='), proc.indexOf('const queueGrouped'))
+    expect(q).not.toContain('laundryBag')
+    expect(q).not.toContain('currentCustodianType')
+    expect(q).not.toContain('bagId')
+  })
+
+  it('Sorting sits after cleaning and QC, before the finishing stations', () => {
+    const stages = code('src/lib/laundry-processing.ts')
+    expect(stages).toContain('export const WORKSTATIONS = ["WASH", "DRYCLEAN", "QC", "SORTING", "IRON", "FOLD", "DISPATCHED"]')
+  })
+
+  it('a garment leaves the queue only by its own stage advancing', () => {
+    const api = code('src/app/api/laundry/processing/sorting/route.ts')
+    // the terminal binding is what advances them, per garment, on its own route
+    expect(api).toContain('processingStage: "SORTING"')
+    expect(api).toContain('const nxt = flow ? nextStageOf(flow, "SORTING") : null')
+  })
+
+  it('a released bag never removes a garment from the queue', () => {
+    const release = code('src/lib/laundry-bag-assign.ts')
+    expect(release).not.toContain('processingStage')
+    expect(release).not.toContain('laundryOrderItem')
+  })
+})
+
+describe('bag movement and garment history stay independent', () => {
+  it('releasing a bag leaves its SORTING_SCAN trail untouched', () => {
+    for (const f of ['src/lib/laundry-bag-assign.ts', 'src/lib/laundry-bag-lifecycle.ts', 'src/app/api/laundry/bags/advance/route.ts']) {
+      expect(code(f)).not.toContain('laundryItemEvent')
+    }
+  })
+
+  it('a reusable bag re-entering the workflow opens a NEW usage row', () => {
+    // the same physical bag, released and used again, is a second row — which is
+    // how V8BAG037 legitimately carries ORD-000034 twice: one closed, one open
+    expect(code('src/lib/laundry-bag-assign.ts')).toContain('tx.laundryBagAssignment.create')
+    expect(read('src/lib/laundry-order-bags.ts')).toContain('the existing assignment rows are untouched')
+  })
+
+  it('only the open row counts as current', () => {
+    expect(code('src/lib/laundry-order-bags.ts')).toContain('open: r.status === OPEN_ASSIGNMENT')
+  })
+})

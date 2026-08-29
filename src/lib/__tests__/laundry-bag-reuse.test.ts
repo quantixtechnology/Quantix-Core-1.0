@@ -18,7 +18,9 @@ describe('historical ownership never blocks reuse', () => {
   it('a released bag can be re-scanned by the SAME order', () => {
     // Occupancy is now computed (status AND a live linked order), then bound.
     expect(FINISHING).toContain('let occupied = bag.status !== "AVAILABLE"')
-    expect(FINISHING).toContain('assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId })')
+    // …through the single writer. The call now also states WHERE the bag is
+    // picked up — Sorting binds at the plant — but the binding itself is the same.
+    expect(FINISHING).toContain('assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId, custodian: CUSTODIAN.PROCESSING_CENTER })')
   })
 
   // Test C — occupancy, not history, is what refuses.

@@ -16,6 +16,7 @@
 // (§18) is one order → many bags, with every physical bag accounted for.
 import { prisma } from "@/lib/prisma"
 import { assignBagToOrder, type BagConflict } from "@/lib/laundry-bag-assign"
+import type { Custodian } from "@/lib/laundry-bag-lifecycle"
 
 /** An assignment row's status while the bag is still working this order. */
 const OPEN_ASSIGNMENT = "ASSIGNED"
@@ -106,6 +107,8 @@ export async function addBagToOrder(opts: {
   code: string
   serviceId?: string | null
   serviceName?: string
+  /** Where the bag is being picked up — Sorting binds at the plant, not the store. */
+  custodian?: Custodian
 }): Promise<AddBagResult> {
   const before = await orderBags(opts.lbId, opts.orderId)
   const already = before.find((b) => b.bagNumber === opts.code.trim() || b.qrValue === opts.code.trim())
@@ -116,6 +119,7 @@ export async function addBagToOrder(opts: {
     code: opts.code,
     serviceId: opts.serviceId ?? null,
     serviceName: opts.serviceName,
+    custodian: opts.custodian,
   })
   if (!res.ok) return { ok: false, status: res.status, error: res.error, conflict: res.conflict }
 

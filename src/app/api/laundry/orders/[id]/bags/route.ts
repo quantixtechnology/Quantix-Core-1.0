@@ -16,6 +16,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { orderBags, addBagToOrder } from "@/lib/laundry-order-bags"
 import { accountBagsByService, pickServiceForBag, type ServiceRequirement } from "@/lib/laundry-service-bags"
 import { prisma } from "@/lib/prisma"
+import { CUSTODIAN, type Custodian } from "@/lib/laundry-bag-lifecycle"
 
 export const runtime = "nodejs"
 
@@ -82,12 +83,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const pick = pickServiceForBag(services, b.serviceId)
     if (!pick.ok) return NextResponse.json({ error: pick.error, code: "SERVICE_REQUIRED", services }, { status: 400 })
 
+    // WHERE the bag is being picked up. Sorting binds its finishing bag at the
+    // PLANT; pickup and packing happen at the store, which stays the default.
+    // Validated against the enum so a caller cannot invent a location.
+    const at = String(b.custodian || "").trim().toUpperCase()
+    const custodian = (Object.values(CUSTODIAN) as string[]).includes(at) ? (at as Custodian) : undefined
+
     const res = await addBagToOrder({
       lbId: r.biz.id,
       orderId: r.order.id,
       code,
       serviceId: pick.service.serviceId,
       serviceName: pick.service.serviceName,
+      custodian,
     })
     if (!res.ok) {
       // A refusal answers BOTH halves of the operator's question: which order is

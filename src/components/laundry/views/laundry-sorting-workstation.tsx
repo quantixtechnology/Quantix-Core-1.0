@@ -352,7 +352,10 @@ export function LaundrySortingWorkstation() {
     try {
       const res = await fetch(`/api/laundry/orders/${rec.orderId}/bags`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, code: scanned, serviceId: rec.serviceId }),
+        // Sorting runs at the Processing Center, so the bag it binds is in the
+        // plant's hands. Without this the bag would be recorded as being at the
+        // store — a wrong location asserted, which is worse than none.
+        body: JSON.stringify({ businessId: currentBusinessId, code: scanned, serviceId: rec.serviceId, custodian: "PROCESSING_CENTER" }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) {

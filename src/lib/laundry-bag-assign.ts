@@ -7,7 +7,7 @@
 // all rejected — a bag can never be assigned twice or to two orders. No auth
 // here; callers gate.
 import { prisma } from "@/lib/prisma"
-import { custodyFor, CUSTODIAN } from "@/lib/laundry-bag-lifecycle"
+import { custodyFor, CUSTODIAN, type Custodian } from "@/lib/laundry-bag-lifecycle"
 
 /**
  * WHY a bag was refused, in fields rather than in a sentence.
@@ -48,6 +48,19 @@ export async function assignBagToOrder(opts: {
   orderId: string
   serviceId?: string | null
   serviceName?: string
+  /**
+   * WHERE this assignment is physically happening.
+   *
+   * One COLLECTED status covers several real situations: a pickup bag taken at
+   * the store, and a finishing bag picked up at the Processing Center during
+   * Sorting. Deriving the holder from the status alone marks both as STORE,
+   * which is right for the first and wrong for the second — and asserting a
+   * wrong location is worse than the old behaviour of leaving it stale.
+   *
+   * The caller knows where it is standing, so it says. Default STORE keeps
+   * pickup and packing exactly as they were.
+   */
+  custodian?: Custodian
 }): Promise<AssignResult> {
   const code = String(opts.code || "").trim()
   const orderId = String(opts.orderId || "").trim()
@@ -103,8 +116,9 @@ export async function assignBagToOrder(opts: {
           lastUsedAt: new Date(),
           // WHO HOLDS IT, written with the status rather than left behind. A
           // collected bag is in the store's hands; without this it kept saying
-          // LAUNDRY (in stock) while physically being on an order.
-          ...custodyFor("COLLECTED"),
+          // LAUNDRY (in stock) while physically being on an order. Sorting binds
+          // its finishing bag at the PLANT, so it passes its own location.
+          ...custodyFor("COLLECTED", { custodian: opts.custodian ?? CUSTODIAN.STORE }),
         },
       })
       const assign = await tx.laundryBagAssignment.create({
