@@ -20,7 +20,7 @@ describe('historical ownership never blocks reuse', () => {
     expect(FINISHING).toContain('let occupied = bag.status !== "AVAILABLE"')
     // …through the single writer. The call now also states WHERE the bag is
     // picked up — Sorting binds at the plant — but the binding itself is the same.
-    expect(FINISHING).toContain('assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId, custodian: CUSTODIAN.PROCESSING_CENTER })')
+    expect(FINISHING).toContain('assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId, custodian: CUSTODIAN.PROCESSING_CENTER, purpose: BAG_PURPOSE.SORTING })')
   })
 
   // Test C — occupancy, not history, is what refuses.
@@ -50,7 +50,10 @@ describe('assignment is decided by occupancy alone', () => {
   })
 
   it('re-assigning to the same order is idempotent, not an error', () => {
-    expect(ASSIGN).toContain('if (bag.currentOrderId === orderId) return { ok: true, bag }')
+    expect(ASSIGN).toContain('if (bag.currentOrderId === orderId) {')  // still idempotent: the early
+      // return is now a block, because re-scanning also records a role that was
+      // never captured. It still creates no second assignment row.
+    expect(ASSIGN).toContain('return { ok: true, bag }')
   })
 })
 

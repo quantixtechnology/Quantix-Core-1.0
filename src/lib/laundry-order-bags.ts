@@ -15,7 +15,7 @@
 // Deliberately NOT modelled: which garment is in which bag. The requirement
 // (§18) is one order → many bags, with every physical bag accounted for.
 import { prisma } from "@/lib/prisma"
-import { assignBagToOrder, type BagConflict } from "@/lib/laundry-bag-assign"
+import { assignBagToOrder, type BagConflict, type BagPurpose } from "@/lib/laundry-bag-assign"
 import type { Custodian } from "@/lib/laundry-bag-lifecycle"
 
 /** An assignment row's status while the bag is still working this order. */
@@ -44,6 +44,12 @@ export interface OrderBag {
    */
   serviceId: string | null
   serviceName: string | null
+  /**
+   * WHY this bag is on the order — PICKUP | SORTING | DELIVERY, or null for a
+   * row written before the role was recorded. Null is "not recorded", never
+   * "general purpose": a reader that needs a specific role must require it.
+   */
+  purpose: string | null
 }
 
 /**
@@ -75,6 +81,7 @@ export async function orderBags(lbId: string, orderId: string): Promise<OrderBag
       index: i + 1,
       serviceId: r.serviceId ?? null,
       serviceName: r.serviceName ?? null,
+      purpose: r.purpose ?? null,
     }))
 }
 
@@ -109,6 +116,8 @@ export async function addBagToOrder(opts: {
   serviceName?: string
   /** Where the bag is being picked up — Sorting binds at the plant, not the store. */
   custodian?: Custodian
+  /** WHY the bag is going on the order — see BAG_PURPOSE. */
+  purpose?: BagPurpose
 }): Promise<AddBagResult> {
   const before = await orderBags(opts.lbId, opts.orderId)
   const already = before.find((b) => b.bagNumber === opts.code.trim() || b.qrValue === opts.code.trim())
@@ -120,6 +129,7 @@ export async function addBagToOrder(opts: {
     serviceId: opts.serviceId ?? null,
     serviceName: opts.serviceName,
     custodian: opts.custodian,
+    purpose: opts.purpose,
   })
   if (!res.ok) return { ok: false, status: res.status, error: res.error, conflict: res.conflict }
 

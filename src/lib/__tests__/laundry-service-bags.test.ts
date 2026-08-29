@@ -19,6 +19,9 @@ let seq = 0
 const bag = (bagNumber: string, serviceId: string | null, serviceName: string | null): OrderBag => ({
   assignmentId: `as${++seq}`, bagId: `b-${bagNumber}`, bagNumber, qrValue: bagNumber,
   status: 'COLLECTED', custodian: 'LAUNDRY', open: true, assignedAt: new Date(), index: seq,
+  // Bag ACCOUNTING is about physical transport and counts every bag on the
+  // order whatever its role, so these fixtures deliberately leave it unrecorded.
+  purpose: null,
   serviceId, serviceName,
 })
 
@@ -215,7 +218,10 @@ describe('no second bag system, no lost identity', () => {
 
   it('re-scanning the same bag is still idempotent', () => {
     const assign = read('src/lib/laundry-bag-assign.ts')
-    expect(assign).toContain('if (bag.currentOrderId === orderId) return { ok: true, bag }')
+    expect(assign).toContain('if (bag.currentOrderId === orderId) {')  // still idempotent: the early
+      // return is now a block, because re-scanning also records a role that was
+      // never captured. It still creates no second assignment row.
+    expect(assign).toContain('return { ok: true, bag }')
   })
 
   it('the services[0] collapse is gone from both sites', () => {

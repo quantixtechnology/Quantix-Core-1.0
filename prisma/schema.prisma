@@ -6522,6 +6522,17 @@ model LaundryBagAssignment {
   assignedAt        DateTime  @default(now())
   returnedAt        DateTime?
   status            String    @default("ASSIGNED") // ASSIGNED | RETURNED | HANDED_TO_CUSTOMER
+  // WHY this bag is on this order — the one thing no existing column recorded.
+  //
+  // A pickup bag, a Sorting finishing bag and a delivery bag were all the same
+  // row shape, so the Sorting screen could not tell them apart and presented
+  // whichever open row existed as "the Sorting bag". `status` is the row's
+  // lifecycle (open/closed), not its role, and a row's role never changes.
+  //
+  // Null means "not recorded" — every pre-existing row, and any assignment made
+  // by a caller that does not state a purpose. It is deliberately NOT defaulted
+  // to a guess: an unclassified row is shown as exactly that.
+  purpose           String? // PICKUP | SORTING | DELIVERY
   // ── Usage detail (one row = one bag on one order, never overwritten) ───────
   // A customer-retained bag closes its usage as HANDED_TO_CUSTOMER and the row
   // is complete; if that same physical bag comes back three orders later it

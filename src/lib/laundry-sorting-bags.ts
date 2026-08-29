@@ -19,6 +19,9 @@
 // Every function here is pure and takes the rows as given, so the same answers
 // are produced on the server (the scan response) and on the client (the panel).
 
+/** The only role that answers "which bag are these garments going into". */
+const SORTING_PURPOSE = "SORTING"
+
 /** One assignment row, as /orders/[id]/bags returns it. */
 export interface SortingBagRow {
   bagNumber: string
@@ -27,6 +30,8 @@ export interface SortingBagRow {
   /** Still carrying this order, as opposed to closed history. */
   open?: boolean
   assignedAt?: string | Date | null
+  /** WHY the bag is on the order — PICKUP | SORTING | DELIVERY, or null. */
+  purpose?: string | null
 }
 
 /**
@@ -60,7 +65,19 @@ const time = (v?: string | Date | null): number => {
  * for a second service.
  */
 export function bagsForService(bags: SortingBagRow[], serviceId: string | null, serviceName: string | null): SortingBagRow[] {
-  const live = bags.filter((b) => b.open !== false)
+  // ONLY bags actually being sorted into.
+  //
+  // A pickup bag, a Sorting bag and a delivery bag are the same row shape, and
+  // this used to accept any of them — so an order whose transport bag happened
+  // to still be open showed that bag as the one its garments were going into,
+  // while an order whose transport bag had been released correctly asked for a
+  // new one. Same situation, opposite answers, decided by something with nothing
+  // to do with Sorting.
+  //
+  // A row whose role was never recorded is NOT treated as a Sorting bag. It is
+  // still shown to the operator — as an unclassified assignment, which is what
+  // it is — but it cannot answer "which bag do these garments go into".
+  const live = bags.filter((b) => b.open !== false && b.purpose === SORTING_PURPOSE)
   const want = serviceKey(serviceId, serviceName)
   const ordered = [...live].sort((a, b) => time(a.assignedAt) - time(b.assignedAt))
   if (want) {
@@ -130,4 +147,15 @@ export function sortingBagViews(
     state: i === list.length - 1 ? "ACTIVE" : "FULL",
     garments: counts.get(b.bagNumber) || 0,
   }))
+}
+
+/**
+ * The order's OTHER open bags — transport, delivery, or a role never recorded.
+ *
+ * Shown alongside the Sorting bags so nothing is hidden from the operator, and
+ * labelled for what it is. This is the honest half of the fix: the old screen
+ * did not hide these rows, it mislabelled them as the Sorting bag.
+ */
+export function otherBagsOnOrder(bags: SortingBagRow[]): SortingBagRow[] {
+  return bags.filter((b) => b.open !== false && b.purpose !== SORTING_PURPOSE)
 }

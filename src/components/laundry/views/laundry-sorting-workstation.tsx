@@ -26,7 +26,7 @@ import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Search, X, MapPin, History, Plus } from "lucide-react"
-import { activeBagForService, sortingBagViews, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
+import { activeBagForService, sortingBagViews, otherBagsOnOrder, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
@@ -133,6 +133,8 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
     row.itemIds.push(g.id)
   }
 
+  const others = otherBagsOnOrder(bags)
+
   return (
     <div className="mt-2 space-y-1.5">
       {services.map((svc) => {
@@ -141,17 +143,22 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
           <div key={(svc.id || "") + (svc.name || "")} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{svc.name || "Service"}</span>
-              {views.length === 0 && <span className="text-[10px] font-semibold text-amber-700">⚠ NO BAG YET</span>}
+              {views.length === 0 && <span className="text-[10px] font-semibold text-amber-700">⚠ NO SORTING BAG YET</span>}
               {views.map((v) => (
                 <span
                   key={v.bagNumber}
                   className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${v.state === "ACTIVE" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 bg-slate-50 text-slate-500"}`}
-                  title={`Bag ${v.index} — ${v.garments} garment${v.garments === 1 ? "" : "s"}`}
+                  title={`Sorting bag ${v.index} — ${v.garments} garment${v.garments === 1 ? "" : "s"} sorted into it`}
                 >
-                  <span className="font-semibold">BAG {v.index}</span>
+                  {/* "SORTING BAG n" and "IN USE", not "ACTIVE". ACTIVE reads as
+                      a claim about where the bag physically is; this panel only
+                      ever means "the bag these garments are being sorted into".
+                      Physical custody is a separate fact, shown in Bag
+                      Management, and the two must not look like one. */}
+                  <span className="font-semibold">SORTING BAG {v.index}</span>
                   <span className="font-mono font-semibold">{v.bagNumber}</span>
                   <span className="tabular-nums">{v.garments}</span>
-                  <span className="font-semibold">{v.state}</span>
+                  <span className="font-semibold">{v.state === "ACTIVE" ? "IN USE" : "FULL"}</span>
                 </span>
               ))}
               <button
@@ -165,6 +172,25 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
           </div>
         )
       })}
+
+      {/* THE ORDER'S OTHER BAGS — transport, delivery, or a role never recorded.
+          Shown rather than hidden: the old screen did not omit these rows, it
+          presented them as the Sorting bag. Naming them for what they are is
+          the fix; removing them would just move the confusion. */}
+      {others.length > 0 && (
+        <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Other bags on this order</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {others.map((b) => (
+              <span key={b.bagNumber} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
+                <span className="font-mono font-semibold">{b.bagNumber}</span>
+                <span>{b.purpose === "PICKUP" ? "pickup bag" : b.purpose === "DELIVERY" ? "delivery bag" : "role not recorded"}</span>
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] text-slate-400">Not the Sorting bag. Where each one physically is now is shown in Bag Management.</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -355,7 +381,7 @@ export function LaundrySortingWorkstation() {
         // Sorting runs at the Processing Center, so the bag it binds is in the
         // plant's hands. Without this the bag would be recorded as being at the
         // store — a wrong location asserted, which is worse than none.
-        body: JSON.stringify({ businessId: currentBusinessId, code: scanned, serviceId: rec.serviceId, custodian: "PROCESSING_CENTER" }),
+        body: JSON.stringify({ businessId: currentBusinessId, code: scanned, serviceId: rec.serviceId, custodian: "PROCESSING_CENTER", purpose: "SORTING" }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) {

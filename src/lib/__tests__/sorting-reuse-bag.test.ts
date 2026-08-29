@@ -31,7 +31,7 @@ const H = vi.hoisted(() => {
     items: [] as { id: string; processingStage: string }[],
     retired: 0,
     createdPackages: 0,
-    assignBagCalls: [] as { code: string; orderId: string }[],
+    assignBagCalls: [] as { code: string; orderId: string; purpose?: string }[],
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = {
@@ -91,8 +91,11 @@ vi.mock('@/lib/laundry-codes', () => ({
   generateProcessingPackageCode: vi.fn(async () => 'PKG-202608-000123'),
 }))
 vi.mock('@/lib/laundry-bag-assign', () => ({
-  assignBagToOrder: vi.fn(async (a: { code: string; orderId: string }) => {
-    H.state.assignBagCalls.push({ code: a.code, orderId: a.orderId })
+  // The real module's role constants — the finishing binder imports them to say
+  // the bag it binds is a SORTING bag, so the mock has to carry them too.
+  BAG_PURPOSE: { PICKUP: 'PICKUP', SORTING: 'SORTING', DELIVERY: 'DELIVERY' },
+  assignBagToOrder: vi.fn(async (a: { code: string; orderId: string; purpose?: string }) => {
+    H.state.assignBagCalls.push({ code: a.code, orderId: a.orderId, purpose: a.purpose })
     if (H.state.bag) { H.state.bag.currentOrderId = a.orderId; H.state.bag.status = 'PROCESSING' }
     return { ok: true }
   }),
@@ -143,7 +146,9 @@ describe('REUSE_BAG — the reported production failure', () => {
     const r = await run()
     if (!r.ok) throw new Error('expected success')
     expect(r.retired).toBe(8)
-    expect(state.assignBagCalls).toEqual([{ code: BAG, orderId: ORDER_ID }])
+    // …once, and filed as a SORTING bag — the role the panel needs to tell this
+    // bag apart from the order's pickup and delivery bags.
+    expect(state.assignBagCalls).toEqual([{ code: BAG, orderId: ORDER_ID, purpose: 'SORTING' }])
   })
 
   // 4

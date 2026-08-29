@@ -5,6 +5,7 @@ import {
   CUSTODIAN_FOR_STATUS, custodianForStatus, custodyFor,
   BAG_STATUS, CUSTODIAN, bucketFor, tallyInventory, activeTotal,
 } from '@/lib/laundry-bag-lifecycle'
+import { activeBagForService, bagsForService, sortingBagViews, otherBagsOnOrder } from '@/lib/laundry-sorting-bags'
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const code = (p: string) =>
@@ -341,5 +342,127 @@ describe('bag movement and garment history stay independent', () => {
 
   it('only the open row counts as current', () => {
     expect(code('src/lib/laundry-order-bags.ts')).toContain('open: r.status === OPEN_ASSIGNMENT')
+  })
+})
+
+// ============================================================================
+// A BAG'S ROLE IS NOT ITS LIFECYCLE, AND NOT ITS LOCATION.
+//
+// THE OPERATIONAL CONFUSION THIS FIXES. A pickup bag, a Sorting finishing bag
+// and a delivery bag produced IDENTICAL assignment rows. The Sorting screen
+// therefore showed whichever open row existed and called it "BAG 1 … ACTIVE",
+// which reads as a claim about where the bag physically is.
+//
+// Production proof: ORD-…-000036 showed "BAG 1 V8BAG024 ACTIVE" with 18 garments
+// at Sorting — while that order had ZERO SORTING_SCAN events, two garments still
+// at WASH, and V8BAG024 had no movement history at all. The screen was asserting
+// a sorting relationship that had never happened.
+//
+// Meanwhile ORD-…-000032/37/45, whose transport bags HAD been released, showed
+// "NO BAG YET" — the correct prompt. Same situation, opposite answers, decided
+// by whether an unrelated transport bag happened to still be open.
+// ============================================================================
+describe('the Sorting bag is the bag garments are sorted INTO', () => {
+  const t = (iso: string) => new Date(iso)
+  const sortingBag = { bagNumber: 'V8BAG051', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T11:00:00Z'), purpose: 'SORTING' }
+  const pickupBag  = { bagNumber: 'V8BAG024', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-28T04:00:00Z'), purpose: 'PICKUP' }
+  const legacyBag  = { bagNumber: 'V8BAG024', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-28T04:00:00Z'), purpose: null }
+
+  it('reproduces it: an open PICKUP bag is not the Sorting bag', () => {
+    expect(activeBagForService([pickupBag], 's-wi', 'Wash & Iron')).toBeNull()
+    expect(bagsForService([pickupBag], 's-wi', 'Wash & Iron')).toEqual([])
+  })
+
+  it('a row whose role was never recorded is not the Sorting bag either', () => {
+    // ORD-…-000036's V8BAG024 exactly: open, right service, no evidence it is a
+    // sorting bag. Guessing yes is what produced the false ACTIVE label.
+    expect(activeBagForService([legacyBag], 's-wi', 'Wash & Iron')).toBeNull()
+  })
+
+  it('a genuine Sorting bag still answers', () => {
+    expect(activeBagForService([sortingBag], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('a transport bag alongside a Sorting bag does not displace it', () => {
+    // the pickup bag is NEWER in neither direction — role decides, not time
+    expect(activeBagForService([pickupBag, sortingBag], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG051')
+    expect(bagsForService([pickupBag, sortingBag], 's-wi', 'Wash & Iron').map((b) => b.bagNumber)).toEqual(['V8BAG051'])
+  })
+
+  it('the other bags are SHOWN, not hidden — they are just not the Sorting bag', () => {
+    expect(otherBagsOnOrder([pickupBag, sortingBag]).map((b) => b.bagNumber)).toEqual(['V8BAG024'])
+    expect(otherBagsOnOrder([legacyBag]).map((b) => b.purpose)).toEqual([null])
+    // a closed row is history, not a current other-bag
+    expect(otherBagsOnOrder([{ ...pickupBag, open: false }])).toEqual([])
+  })
+
+  it('multi-bag: two Sorting bags of one service still work, newest in use', () => {
+    const second = { ...sortingBag, bagNumber: 'V8BAG054', assignedAt: t('2026-08-29T12:00:00Z') }
+    expect(sortingBagViews([sortingBag, second, pickupBag], 's-wi', 'Wash & Iron', [])).toEqual([
+      { bagNumber: 'V8BAG051', index: 1, state: 'FULL', garments: 0 },
+      { bagNumber: 'V8BAG054', index: 2, state: 'ACTIVE', garments: 0 },
+    ])
+  })
+
+  it('multi-service: one service’s Sorting bag never answers for another', () => {
+    const fold = { ...sortingBag, bagNumber: 'V8BAG052', serviceId: 's-wf', serviceName: 'Wash & Fold' }
+    expect(activeBagForService([sortingBag, fold], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG052')
+    expect(activeBagForService([sortingBag, fold], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('the role is recorded at write time, by the caller that knows it', () => {
+    const assign = code('src/lib/laundry-bag-assign.ts')
+    expect(assign).toContain('purpose?: BagPurpose')
+    expect(assign).toContain('purpose: opts.purpose ?? null')
+    // Sorting says SORTING; pickup says PICKUP
+    expect(read('src/components/laundry/views/laundry-sorting-workstation.tsx')).toContain('purpose: "SORTING"')
+    expect(code('src/lib/laundry-finishing.ts')).toContain('purpose: BAG_PURPOSE.SORTING')
+    expect(code('src/app/api/laundry/bags/assign/route.ts')).toContain('purpose: BAG_PURPOSE.PICKUP')
+    expect(code('src/app/api/laundry/executive/jobs/[id]/assign-bag/route.ts')).toContain('purpose: BAG_PURPOSE.PICKUP')
+  })
+
+  it('an invented role is ignored rather than stored', () => {
+    expect(code('src/app/api/laundry/orders/[id]/bags/route.ts')).toContain('isBagPurpose(purposeIn) ? purposeIn : undefined')
+  })
+
+  it('re-scanning at Sorting records a role that was never captured — no migration', () => {
+    const assign = code('src/lib/laundry-bag-assign.ts')
+    const branch = assign.slice(assign.indexOf('if (bag.currentOrderId === orderId) {'), assign.indexOf('if (bag.status !== "AVAILABLE")'))
+    expect(branch).toContain('status: "ASSIGNED", purpose: null')   // only fills a blank…
+    expect(branch).toContain('data: { purpose: opts.purpose }')
+    expect(branch).not.toContain('laundryBagAssignment.create')     // …never a second row
+  })
+
+  it('bag ACCOUNTING still counts every bag, whatever its role', () => {
+    // transport accounting is about physical bags, not sorting — it must not
+    // inherit the Sorting screen's narrower question
+    expect(code('src/lib/laundry-service-bags.ts')).not.toContain('purpose')
+  })
+})
+
+describe('custody and Sorting work remain separate facts', () => {
+  it('the Sorting panel says SORTING BAG / IN USE, never ACTIVE', () => {
+    const raw = read('src/components/laundry/views/laundry-sorting-workstation.tsx')
+    expect(raw).toContain('SORTING BAG {v.index}')
+    expect(raw).toContain('"IN USE"')
+    expect(raw).toContain('NO SORTING BAG YET')
+  })
+
+  it('it points custody questions at Bag Management rather than answering them', () => {
+    const raw = read('src/components/laundry/views/laundry-sorting-workstation.tsx')
+    expect(raw).toContain('Other bags on this order')
+    expect(raw).toContain('shown in Bag Management')
+  })
+
+  it('the sorting resolver reads no custody field at all', () => {
+    const lib = code('src/lib/laundry-sorting-bags.ts')
+    expect(lib).not.toContain('currentCustodianType')
+    expect(lib).not.toContain('CUSTODIAN')
+  })
+
+  it('assigning a Sorting bag does not advance any garment', () => {
+    const assign = code('src/lib/laundry-bag-assign.ts')
+    expect(assign).not.toContain('processingStage')
+    expect(assign).not.toContain('laundryOrderItem')
   })
 })

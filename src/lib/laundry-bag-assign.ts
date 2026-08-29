@@ -26,6 +26,18 @@ export interface BagConflict {
   heldByOrderNumber: string | null
 }
 
+/**
+ * The ROLE a bag plays for an order — not its lifecycle, and never changed.
+ *
+ * PICKUP    carrying the customer's garments in to the store / plant
+ * SORTING   the finishing bag garments are sorted into at the plant
+ * DELIVERY  carrying the finished order back out to the customer
+ */
+export const BAG_PURPOSE = { PICKUP: "PICKUP", SORTING: "SORTING", DELIVERY: "DELIVERY" } as const
+export type BagPurpose = (typeof BAG_PURPOSE)[keyof typeof BAG_PURPOSE]
+export const isBagPurpose = (v: unknown): v is BagPurpose =>
+  typeof v === "string" && (Object.values(BAG_PURPOSE) as string[]).includes(v)
+
 export type AssignResult =
   | { ok: true; bag: Awaited<ReturnType<typeof prisma.laundryBag.update>> }
   | { ok: false; status: number; error: string; conflict?: BagConflict }
@@ -61,6 +73,15 @@ export async function assignBagToOrder(opts: {
    * pickup and packing exactly as they were.
    */
   custodian?: Custodian
+  /**
+   * WHY this bag is being put on the order — PICKUP | SORTING | DELIVERY.
+   *
+   * Recorded because it cannot be recovered later: a pickup bag and a Sorting
+   * finishing bag produce identical rows, which is how the Sorting screen ended
+   * up presenting a transport bag as the bag its garments were being sorted
+   * into. Callers that do not know leave it unset rather than guessing.
+   */
+  purpose?: BagPurpose
 }): Promise<AssignResult> {
   const code = String(opts.code || "").trim()
   const orderId = String(opts.orderId || "").trim()
@@ -71,7 +92,20 @@ export async function assignBagToOrder(opts: {
   // Idempotent: this bag is already carrying this order (e.g. the pickup bag
   // re-scanned at Packing to confirm the transport identity). Nothing to do —
   // re-assigning would fail the AVAILABLE check and block the workflow.
-  if (bag.currentOrderId === orderId) return { ok: true, bag }
+  if (bag.currentOrderId === orderId) {
+    // The bag is already on this order. If the caller states a purpose and the
+    // open row has none, record it: an operator re-scanning this bag AT Sorting
+    // is telling us what it is being used for, which is evidence rather than a
+    // guess. This is also the repair path for rows written before `purpose`
+    // existed — no migration, and nothing is ever overwritten.
+    if (opts.purpose) {
+      await prisma.laundryBagAssignment.updateMany({
+        where: { bagId: bag.id, orderId, status: "ASSIGNED", purpose: null },
+        data: { purpose: opts.purpose },
+      }).catch(() => null)
+    }
+    return { ok: true, bag }
+  }
   if (bag.status !== "AVAILABLE") {
     const msg = bag.status === "DAMAGED" ? "Bag marked as Damaged. Please use another bag."
       : bag.status === "LOST" ? "Bag is marked Lost."
@@ -122,7 +156,7 @@ export async function assignBagToOrder(opts: {
         },
       })
       const assign = await tx.laundryBagAssignment.create({
-        data: { bagId: bag.id, businessId: opts.lbId, orderId: order.id, orderNumber: order.orderNumber, serviceId, serviceName, customerId: order.customerId || null, customerName: customer?.name || null, status: "ASSIGNED" },
+        data: { bagId: bag.id, businessId: opts.lbId, orderId: order.id, orderNumber: order.orderNumber, serviceId, serviceName, customerId: order.customerId || null, customerName: customer?.name || null, status: "ASSIGNED", purpose: opts.purpose ?? null },
       })
       // Store the latest assignment ID on the bag for quick lookup on release.
       await tx.laundryBag.update({ where: { id: bag.id }, data: { lastAssignmentId: assign.id } })

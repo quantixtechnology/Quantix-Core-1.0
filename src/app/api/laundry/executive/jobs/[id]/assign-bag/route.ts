@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
-import { assignBagToOrder, releaseBagWithAudit } from "@/lib/laundry-bag-assign"
+import { assignBagToOrder, releaseBagWithAudit , BAG_PURPOSE } from "@/lib/laundry-bag-assign"
 import { prisma as db } from "@/lib/prisma"
 import { receiveReturnedBag, BAG_STATUS, BAG_CONDITION, CUSTODIAN } from "@/lib/laundry-bag-lifecycle"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
@@ -75,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     }
 
-    const r = await assignBagToOrder({ lbId: session.businessId, code, orderId: order.id, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName })
+    const r = await assignBagToOrder({ lbId: session.businessId, code, orderId: order.id, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName , purpose: BAG_PURPOSE.PICKUP})
     // Any rejection at this point is still not the executive's problem to solve:
     // offer the one action that always works.
     if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: r.status })

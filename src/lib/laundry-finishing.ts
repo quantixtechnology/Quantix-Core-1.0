@@ -21,7 +21,7 @@ import { prisma } from "@/lib/prisma"
 import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
 import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
-import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { assignBagToOrder, BAG_PURPOSE } from "@/lib/laundry-bag-assign"
 import { CUSTODIAN } from "@/lib/laundry-bag-lifecycle"
 import { addBagToOrder } from "@/lib/laundry-order-bags"
 import { parseEmployeeId } from "@/lib/tenant-identity"
@@ -338,7 +338,7 @@ export async function assignFinishingBag(opts: {
         // Sorting runs at the Processing Center — WASH/DRYCLEAN → QC → SORTING →
         // IRON/FOLD → Transit — so the finishing bag is in the plant's hands,
         // never the store's.
-        const assigned = await assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId, custodian: CUSTODIAN.PROCESSING_CENTER })
+        const assigned = await assignBagToOrder({ lbId: businessId, code: bag.bagNumber, orderId, custodian: CUSTODIAN.PROCESSING_CENTER, purpose: BAG_PURPOSE.SORTING })
         if (!assigned.ok) return { ok: false, error: assigned.error, code: "WRONG_ORDER" }
       }
       resolvedContainer = true

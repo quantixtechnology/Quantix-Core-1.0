@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { assignBagToOrder } from "@/lib/laundry-bag-assign"
+import { assignBagToOrder , BAG_PURPOSE } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
 
-    const r = await assignBagToOrder({ lbId: biz.id, code, orderId, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName })
+    const r = await assignBagToOrder({ lbId: biz.id, code, orderId, serviceId: b.serviceId ? String(b.serviceId) : null, serviceName: b.serviceName , purpose: BAG_PURPOSE.PICKUP})
     if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: r.status })
     return NextResponse.json({ success: true, data: r.bag }, { status: 201 })
   } catch (e) {

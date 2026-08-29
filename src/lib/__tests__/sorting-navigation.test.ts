@@ -279,7 +279,12 @@ describe('wrong bag is refused, and says which order holds it', () => {
   })
 
   it('a bag already on THIS order is accepted, not duplicated', () => {
-    expect(code('src/lib/laundry-bag-assign.ts')).toContain('if (bag.currentOrderId === orderId) return { ok: true, bag }')
+    const assign = code('src/lib/laundry-bag-assign.ts')
+    expect(assign).toContain('if (bag.currentOrderId === orderId) {')
+    expect(assign).toContain('return { ok: true, bag }')
+    // …and no second assignment row is created for it
+    const branch = assign.slice(assign.indexOf('if (bag.currentOrderId === orderId) {'), assign.indexOf('if (bag.status !== "AVAILABLE")'))
+    expect(branch).not.toContain('laundryBagAssignment.create')
   })
 
   it('a failed assignment leaves the standing bag untouched', () => {
@@ -342,8 +347,8 @@ describe('last scans survive, and show the bag', () => {
 // Wash & Fold bag while its garments were Wash & Iron.
 // ============================================================================
 describe('the bag is resolved for the GARMENT’s service, not the order', () => {
-  const WF = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' }
-  const WI = { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron' }
+  const WF = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', purpose: 'SORTING' }
+  const WI = { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron', purpose: 'SORTING' }
 
   it('reproduces it: an order with a Wash & Fold bag still needs one for Wash & Iron', () => {
     expect(activeBagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
@@ -355,11 +360,11 @@ describe('the bag is resolved for the GARMENT’s service, not the order', () =>
   })
 
   it('falls back to the service NAME when there is no id', () => {
-    expect(activeBagForService([{ bagNumber: 'B1', serviceId: null, serviceName: 'Wash & Iron' }], null, 'wash & iron')?.bagNumber).toBe('B1')
+    expect(activeBagForService([{ bagNumber: 'B1', serviceId: null, serviceName: 'Wash & Iron', purpose: 'SORTING' }], null, 'wash & iron')?.bagNumber).toBe('B1')
   })
 
   it('an untagged legacy bag answers only when nothing is service-tagged', () => {
-    const legacy = { bagNumber: 'OLD', serviceId: null, serviceName: null }
+    const legacy = { bagNumber: 'OLD', serviceId: null, serviceName: null, purpose: 'SORTING' }
     expect(activeBagForService([legacy], 's-wi', 'Wash & Iron')?.bagNumber).toBe('OLD')
     // …and can never mask a genuinely missing bag for a second service
     expect(activeBagForService([WF], 's-wi', 'Wash & Iron')).toBeNull()
@@ -478,10 +483,10 @@ describe('the bag is resolved from the scanned garment, never from the last scan
 
   it('three orders interleaved each keep their own bag', () => {
     const WI = 's-wi', WF = 's-wf'
-    const byOrder: Record<string, { bagNumber: string; serviceId: string; serviceName: string }[]> = {
-      'o-045': [{ bagNumber: 'V8BAG051', serviceId: WI, serviceName: 'Wash & Iron' }],
-      'o-036': [{ bagNumber: 'V8BAG052', serviceId: WF, serviceName: 'Wash & Fold' }],
-      'o-037': [{ bagNumber: 'V8BAG053', serviceId: WI, serviceName: 'Wash & Iron' }],
+    const byOrder: Record<string, { bagNumber: string; serviceId: string; serviceName: string; purpose: string }[]> = {
+      'o-045': [{ bagNumber: 'V8BAG051', serviceId: WI, serviceName: 'Wash & Iron', purpose: 'SORTING' }],
+      'o-036': [{ bagNumber: 'V8BAG052', serviceId: WF, serviceName: 'Wash & Fold', purpose: 'SORTING' }],
+      'o-037': [{ bagNumber: 'V8BAG053', serviceId: WI, serviceName: 'Wash & Iron', purpose: 'SORTING' }],
     }
     // interleaved exactly as the floor works
     const scans = [
@@ -497,15 +502,15 @@ describe('the bag is resolved from the scanned garment, never from the last scan
 
   it('on a multi-service order each service resolves to its OWN bag', () => {
     const bags = [
-      { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' },
-      { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron' },
+      { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', purpose: 'SORTING' },
+      { bagNumber: 'V8BAG052', serviceId: 's-wi', serviceName: 'Wash & Iron', purpose: 'SORTING' },
     ]
     expect(activeBagForService(bags, 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
     expect(activeBagForService(bags, 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG052')
   })
 
   it('another service’s bag never satisfies this garment’s requirement', () => {
-    const onlyFold = [{ bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold' }]
+    const onlyFold = [{ bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', purpose: 'SORTING' }]
     expect(activeBagForService(onlyFold, 's-wi', 'Wash & Iron')).toBeNull()
   })
 
@@ -656,7 +661,12 @@ describe('the final Sorting completion flow is untouched', () => {
   })
 
   it('the early assignment cannot replace it — the binder accepts the order’s own bag', () => {
-    expect(code('src/lib/laundry-bag-assign.ts')).toContain('if (bag.currentOrderId === orderId) return { ok: true, bag }')
+    const assign = code('src/lib/laundry-bag-assign.ts')
+    expect(assign).toContain('if (bag.currentOrderId === orderId) {')
+    expect(assign).toContain('return { ok: true, bag }')
+    // …and no second assignment row is created for it
+    const branch = assign.slice(assign.indexOf('if (bag.currentOrderId === orderId) {'), assign.indexOf('if (bag.status !== "AVAILABLE")'))
+    expect(branch).not.toContain('laundryBagAssignment.create')
   })
 
   it('no schema change was needed', () => {
@@ -678,8 +688,8 @@ describe('the final Sorting completion flow is untouched', () => {
 // suppressed the prompt at exactly the stage that needs it.
 // ============================================================================
 describe('a bag that has left the order cannot answer for it', () => {
-  const RETURNED = { bagNumber: 'V8BAG036', serviceId: 's-wf', serviceName: 'Wash & Fold', open: false }
-  const LIVE = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true }
+  const RETURNED = { bagNumber: 'V8BAG036', serviceId: 's-wf', serviceName: 'Wash & Fold', open: false, purpose: 'SORTING' }
+  const LIVE = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true, purpose: 'SORTING' }
 
   it('reproduces it: ORD-000045’s RETURNED Wash & Fold bag prompts instead of pointing', () => {
     expect(activeBagForService([RETURNED], 's-wf', 'Wash & Fold')).toBeNull()
@@ -694,11 +704,11 @@ describe('a bag that has left the order cannot answer for it', () => {
   })
 
   it('a closed untagged legacy row is not a fallback either', () => {
-    expect(activeBagForService([{ bagNumber: 'OLD', serviceId: null, serviceName: null, open: false }], 's-wf', 'Wash & Fold')).toBeNull()
+    expect(activeBagForService([{ bagNumber: 'OLD', serviceId: null, serviceName: null, open: false, purpose: 'SORTING' }], 's-wf', 'Wash & Fold')).toBeNull()
   })
 
   it('a missing flag still counts as open — callers that do not track it are unaffected', () => {
-    expect(activeBagForService([{ bagNumber: 'B1', serviceId: 's-wf', serviceName: 'Wash & Fold' }], 's-wf', 'Wash & Fold')?.bagNumber).toBe('B1')
+    expect(activeBagForService([{ bagNumber: 'B1', serviceId: 's-wf', serviceName: 'Wash & Fold', purpose: 'SORTING' }], 's-wf', 'Wash & Fold')?.bagNumber).toBe('B1')
   })
 
   it('the shared reader really does return closed rows, which is why this is needed', () => {
@@ -814,9 +824,9 @@ describe('every garment of the order is visible', () => {
 // ============================================================================
 describe('multiple bags per order and service', () => {
   const t = (iso: string) => new Date(iso)
-  const B1 = { bagNumber: 'V8BAG051', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T10:00:00Z') }
-  const B2 = { bagNumber: 'V8BAG054', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T11:00:00Z') }
-  const OTHER = { bagNumber: 'V8BAG052', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true, assignedAt: t('2026-08-29T10:30:00Z') }
+  const B1 = { bagNumber: 'V8BAG051', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T10:00:00Z'), purpose: 'SORTING' }
+  const B2 = { bagNumber: 'V8BAG054', serviceId: 's-wi', serviceName: 'Wash & Iron', open: true, assignedAt: t('2026-08-29T11:00:00Z'), purpose: 'SORTING' }
+  const OTHER = { bagNumber: 'V8BAG052', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true, assignedAt: t('2026-08-29T10:30:00Z'), purpose: 'SORTING' }
 
   it('the newest bag takes the next garment', () => {
     expect(activeBagForService([B1, B2], 's-wi', 'Wash & Iron')?.bagNumber).toBe('V8BAG054')
