@@ -7,6 +7,7 @@
 // all rejected — a bag can never be assigned twice or to two orders. No auth
 // here; callers gate.
 import { prisma } from "@/lib/prisma"
+import { custodyFor, CUSTODIAN } from "@/lib/laundry-bag-lifecycle"
 
 /**
  * WHY a bag was refused, in fields rather than in a sentence.
@@ -100,6 +101,10 @@ export async function assignBagToOrder(opts: {
           currentServiceId: serviceId, currentServiceName: serviceName,
           currentCustomerId: order.customerId || null, currentCustomerName: customer?.name || null,
           lastUsedAt: new Date(),
+          // WHO HOLDS IT, written with the status rather than left behind. A
+          // collected bag is in the store's hands; without this it kept saying
+          // LAUNDRY (in stock) while physically being on an order.
+          ...custodyFor("COLLECTED"),
         },
       })
       const assign = await tx.laundryBagAssignment.create({
@@ -167,6 +172,10 @@ async function releaseBagRow(
       currentCustomerId: null, currentCustomerName: null,
       lastReturnedAt: now, totalUsageCount: { increment: 1 },
       releasedAt: now, releasedBy: null, releaseReason: null,
+      // Releasing cleared every link EXCEPT the holder, so a bag that had been
+      // out with an executive came back to AVAILABLE still claiming to be in
+      // their van. Back in stock = held by the laundry, and by nobody else.
+      ...custodyFor("AVAILABLE", { custodian: CUSTODIAN.LAUNDRY, storeId: null }),
     },
   })
   // Close assignment by lastAssignmentId (precise) or fallback to orderId.

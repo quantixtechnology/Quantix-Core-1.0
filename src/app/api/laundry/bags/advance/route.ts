@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getBagReleaseStage, releaseBag } from "@/lib/laundry-bag-assign"
+import { custodyFor, recordBagEvent, custodianForStatus } from "@/lib/laundry-bag-lifecycle"
 
 export const runtime = "nodejs"
 
@@ -47,7 +48,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: fresh, released: true, orderId })
     }
 
-    const updated = await prisma.laundryBag.update({ where: { id: bag.id }, data: { status: toStatus } })
+    // RECEIVING IS RELEASING. Moving the status moves the holder in the same
+    // write, so the location that now has the bag is the only one that has it.
+    // Guarded on the status we read, so two operators scanning the same bag at
+    // once cannot both claim it — the second finds it already moved.
+    const claimed = await prisma.laundryBag.updateMany({
+      where: { id: bag.id, status: bag.status },
+      data: { status: toStatus, ...custodyFor(toStatus), lastUsedAt: new Date() },
+    })
+    if (claimed.count === 0) {
+      // Idempotent: the same scan repeated, or a colleague got there first. The
+      // bag is already where this scan wanted to put it, so this is success.
+      const now = await prisma.laundryBag.findUnique({ where: { id: bag.id } })
+      if (now?.status === toStatus) return NextResponse.json({ success: true, data: now, orderId: now.currentOrderId, alreadyThere: true })
+      return NextResponse.json({ success: false, code: "CONCURRENT_UPDATE", error: "This bag was just updated by someone else. Scan it again." }, { status: 409 })
+    }
+    const updated = await prisma.laundryBag.findUnique({ where: { id: bag.id } })
+    // Movement history — append-only, never rewritten.
+    await prisma.$transaction(async (tx) => {
+      await recordBagEvent(tx, {
+        businessId: biz.id, bagId: bag.id, bagNumber: bag.bagNumber, action: "REASSIGNED",
+        previousStatus: bag.status, newStatus: toStatus,
+        previousCustodianType: bag.currentCustodianType, newCustodianType: custodianForStatus(toStatus),
+        orderId: bag.currentOrderId, orderNumber: bag.currentOrderNumber,
+        actor: { name: b.actorName || null },
+        reason: `Bag scanned to ${toStatus}`,
+      })
+    }).catch(() => null)
     return NextResponse.json({ success: true, data: updated, orderId: bag.currentOrderId })
   } catch (e) {
     console.error("[bags-advance] POST", e)

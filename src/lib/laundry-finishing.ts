@@ -18,6 +18,7 @@
 //
 // The package is created automatically — operators never create/print one.
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { generateProcessingPackageCode } from "@/lib/laundry-codes"
 import { hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { assignBagToOrder } from "@/lib/laundry-bag-assign"
@@ -325,7 +326,7 @@ export async function assignFinishingBag(opts: {
           if (!linked || linked.status === "DELIVERED" || linked.status === "CANCELLED") {
             await prisma.laundryBag.updateMany({
               where: { id: bag.id, currentOrderId: bag.currentOrderId },
-              data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null },
+              data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, ...custodyFor("AVAILABLE", { storeId: null }) },
             }).catch(() => null)
             occupied = false
           }

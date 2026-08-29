@@ -5,6 +5,7 @@
 // status lifecycle — Store Receive (Admin, existing) still does that.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent, FIELD_STATUS, PICKUP_DONE } from "@/lib/laundry-field-ops"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
@@ -85,7 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           },
         }).catch(() => null)
       }
-      await prisma.laundryBag.updateMany({ where: { businessId: session.businessId, currentOrderId: order.id }, data: { status: "COLLECTED" } }).catch(() => null)
+      await prisma.laundryBag.updateMany({ where: { businessId: session.businessId, currentOrderId: order.id }, data: { status: "COLLECTED", ...custodyFor("COLLECTED") } }).catch(() => null)
       await notifyCustomerForOrder(order.id, session.businessId, { type: "ORDER_STATUS", title: "Items picked up", message: "Your garments have been collected. They are currently on the way to our store." })
     }
     return NextResponse.json({ success: true, done: PICKUP_DONE.has(status) })

@@ -79,6 +79,79 @@ export const CUSTODIAN = {
 } as const
 export type Custodian = (typeof CUSTODIAN)[keyof typeof CUSTODIAN]
 
+/**
+ * WHO HOLDS A BAG IN THIS STATUS — the other half of every transition.
+ *
+ * THE BUG THIS EXISTS FOR. `status` and `custodian` are two halves of ONE
+ * physical fact: a bag being received somewhere means the previous holder let go
+ * of it. But only the two delivery-side functions here ever wrote both halves.
+ * Every other transition — assign, release, advance to PROCESSING, receive at
+ * store, the finishing paths — wrote `status` alone and left custody at whatever
+ * the last delivery had set, or at the LAUNDRY default it was created with.
+ *
+ * So one physical bag could read as current in two places at once. In production
+ * that produced BAG-000001 as status PROCESSING (at the plant) with custodian
+ * DELIVERY_EXECUTIVE (in a van), and sixteen COLLECTED bags still claiming to be
+ * sitting in LAUNDRY stock.
+ *
+ * Deriving the holder from the status makes those states unrepresentable: a
+ * caller cannot move a bag's status and forget its custody, because they are
+ * written together. A transition that genuinely needs a different holder — LOST
+ * stays with the customer, DAMAGED sits with whoever found it — still passes one
+ * explicitly, which is why this is a DEFAULT and not a hard rule.
+ */
+export const CUSTODIAN_FOR_STATUS: Record<BagStatus, Custodian> = {
+  // In stock, nobody has it out.
+  [BAG_STATUS.AVAILABLE]: CUSTODIAN.LAUNDRY,
+  // Allocated to an order but not yet physically moved.
+  [BAG_STATUS.ASSIGNED]: CUSTODIAN.LAUNDRY,
+  // Collected from the customer — it is in the store's hands from here.
+  [BAG_STATUS.COLLECTED]: CUSTODIAN.STORE,
+  [BAG_STATUS.RECEIVED_AT_STORE]: CUSTODIAN.STORE,
+  [BAG_STATUS.UNDER_AUDIT]: CUSTODIAN.STORE,
+  // The Processing Center received it; the store has released it.
+  [BAG_STATUS.PROCESSING]: CUSTODIAN.PROCESSING_CENTER,
+  // Back at the store, waiting to go out.
+  [BAG_STATUS.READY_FOR_DELIVERY]: CUSTODIAN.STORE,
+  [BAG_STATUS.OUT_FOR_DELIVERY]: CUSTODIAN.DELIVERY_EXECUTIVE,
+  [BAG_STATUS.HANDED_TO_CUSTOMER]: CUSTODIAN.CUSTOMER,
+  // Taken back at the door — the executive is carrying it.
+  [BAG_STATUS.RETURNED_BY_CUSTOMER]: CUSTODIAN.DELIVERY_EXECUTIVE,
+  [BAG_STATUS.INSPECTION_REQUIRED]: CUSTODIAN.STORE,
+  // Exception states keep the holder the caller records — where it was last
+  // seen is the useful answer, and guessing would erase it.
+  [BAG_STATUS.DAMAGED]: CUSTODIAN.STORE,
+  [BAG_STATUS.LOST]: CUSTODIAN.CUSTOMER,
+  [BAG_STATUS.RETIRED]: CUSTODIAN.LAUNDRY,
+}
+
+/** The holder a status implies, or LAUNDRY for a status we do not model. */
+export function custodianForStatus(status: string): Custodian {
+  return CUSTODIAN_FOR_STATUS[status as BagStatus] ?? CUSTODIAN.LAUNDRY
+}
+
+/**
+ * The custody half of a status change, ready to merge into any bag update.
+ *
+ * Every writer that moves a bag's status merges this, so the two halves can
+ * never be written apart. Handing to a customer and taking it back are the two
+ * moments that also change WHO the named custodian is, so those fields are set
+ * here too rather than left pointing at the previous person.
+ */
+export function custodyFor(status: string, opts?: { custodian?: Custodian; id?: string | null; name?: string | null; storeId?: string | null }) {
+  const custodianType = opts?.custodian ?? custodianForStatus(status)
+  return {
+    currentCustodianType: custodianType,
+    currentCustodianId: opts?.id ?? null,
+    currentCustodianName: opts?.name ?? null,
+    ...(opts?.storeId !== undefined ? { currentStoreId: opts.storeId } : {}),
+    // Back in the laundry's own hands: it is no longer sitting with a customer.
+    ...(custodianType !== CUSTODIAN.CUSTOMER
+      ? { handedToCustomerAt: null, handedToCustomerOrderId: null }
+      : {}),
+  }
+}
+
 export const BAG_CONDITION = {
   GOOD: "GOOD",
   MINOR_DAMAGE: "MINOR_DAMAGE",
@@ -630,13 +703,17 @@ export async function markQrDamaged(opts: { lbId: string; bagId: string; actor?:
 export async function setTerminalState(opts: {
   lbId: string; bagId: string; state: "LOST" | "RETIRED"; reason?: string | null; actor?: BagEventInput["actor"]
 }): Promise<LifecycleResult> {
-  const bag = await prisma.laundryBag.findFirst({ where: { id: opts.bagId, businessId: opts.lbId }, select: { id: true, bagNumber: true, status: true, currentCustodianType: true, currentCustomerId: true, currentCustomerName: true } })
+  const bag = await prisma.laundryBag.findFirst({ where: { id: opts.bagId, businessId: opts.lbId }, select: { id: true, bagNumber: true, status: true, currentCustodianType: true, currentCustodianId: true, currentCustodianName: true, currentCustomerId: true, currentCustomerName: true } })
   if (!bag) return { ok: false, status: 404, error: "Bag not found." }
   const status = opts.state === "LOST" ? BAG_STATUS.LOST : BAG_STATUS.RETIRED
   await prisma.$transaction(async (tx) => {
     await tx.laundryBag.update({
       where: { id: bag.id },
-      data: { status, ...(opts.state === "RETIRED" ? { active: false } : {}) },
+      // Custody is stated explicitly and KEPT. Neither losing nor retiring a bag
+      // moves it: where it was last seen is the only useful answer, and deriving
+      // a holder from the status would erase it — a bag lost at the store would
+      // suddenly read as being with a customer.
+      data: { status, ...custodyFor(status, { custodian: (bag.currentCustodianType as Custodian) || CUSTODIAN.LAUNDRY, id: bag.currentCustodianId, name: bag.currentCustodianName }), ...(opts.state === "RETIRED" ? { active: false } : {}) },
     })
     await recordBagEvent(tx, {
       bagId: bag.id, bagNumber: bag.bagNumber, businessId: opts.lbId, action: status,
@@ -739,7 +816,7 @@ export async function inspectBag(opts: {
   if (!isCondition(opts.condition)) return { ok: false, status: 400, error: "A valid bag condition is required" }
   const bag = await prisma.laundryBag.findFirst({
     where: { id: opts.bagId, businessId: opts.lbId },
-    select: { id: true, bagNumber: true, status: true, currentCustodianType: true, currentStoreId: true },
+    select: { id: true, bagNumber: true, status: true, currentCustodianType: true, currentCustodianId: true, currentCustodianName: true, currentStoreId: true },
   })
   if (!bag) return { ok: false, status: 404, error: "Bag not found." }
   if (bag.status === BAG_STATUS.RETIRED) return { ok: false, status: 409, error: "This bag is retired." }
@@ -752,7 +829,10 @@ export async function inspectBag(opts: {
   const status = conditionToStatus(opts.condition)
   const claimed = await prisma.laundryBag.updateMany({
     where: { id: bag.id, status: bag.status },
-    data: { status, condition: opts.condition, ...(status === BAG_STATUS.RETIRED ? { active: false } : {}) },
+    // Inspection does not move the bag — a customer-held one is refused above,
+    // so it is already in the laundry's hands. Custody is written explicitly and
+    // unchanged, rather than inferred from the new status.
+    data: { status, condition: opts.condition, ...custodyFor(status, { custodian: (bag.currentCustodianType as Custodian) || CUSTODIAN.LAUNDRY, id: bag.currentCustodianId, name: bag.currentCustodianName }), ...(status === BAG_STATUS.RETIRED ? { active: false } : {}) },
   })
   if (claimed.count === 0) return { ok: false, status: 409, code: "CONCURRENT_UPDATE", error: "This bag was just updated by someone else." }
 

@@ -5,6 +5,7 @@
 // AVAILABLE so it can be used again.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveStoreAdmin, resolveStoreScope, bearerToken } from "@/lib/laundry-store-admin-auth"
@@ -62,7 +63,9 @@ export async function POST(request: Request) {
     if (bag && bag.status !== "AVAILABLE") {
       await prisma.laundryBag.update({
         where: { id: bag.id },
-        data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, currentCustomerId: null, currentCustomerName: null },
+        // Back at the store and empty: in stock, held by nobody. Previously the
+        // custodian stayed on the delivery executive who had dropped it off.
+        data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, currentCustomerId: null, currentCustomerName: null, ...custodyFor("AVAILABLE", { storeId: null }) },
       })
       released = true
     }

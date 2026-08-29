@@ -16,6 +16,7 @@
 // single-item process endpoint (server-guarded, backward compatible).
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { stageLabel, hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { packageGarmentsWhere, PACKAGE_STATUS_FINISHING_READY, finishingScanTarget, scanModeAcceptance, syncPackageLifecycle } from "@/lib/laundry-finishing"
@@ -166,7 +167,7 @@ export async function GET(request: Request) {
             if (!linked || linked.status === "DELIVERED" || linked.status === "CANCELLED") {
               await prisma.laundryBag.updateMany({
                 where: { id: bag.id, currentOrderId: live },
-                data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null },
+                data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, ...custodyFor("AVAILABLE", { storeId: null }) },
               }).catch(() => null)
               live = null
             }

@@ -14,6 +14,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { verifyPassword } from "@/lib/password-utils"
 import { unlink } from "fs/promises"
 import { forgetUpload } from "@/lib/storage-guard"
@@ -82,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // failure rolls the whole set back — no partial deletion.
     await prisma.$transaction([
       // Release reusable bags currently held by this order (bags are physical assets).
-      prisma.laundryBag.updateMany({ where: { currentOrderId: id }, data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null } }),
+      prisma.laundryBag.updateMany({ where: { currentOrderId: id }, data: { status: "AVAILABLE", currentOrderId: null, currentOrderNumber: null, ...custodyFor("AVAILABLE", { storeId: null }) } }),
       // Standalone per-order tables (no cascade).
       prisma.laundryItemEvent.deleteMany({ where: { orderId: id } }),
       prisma.laundryBagAssignment.deleteMany({ where: { orderId: id } }),

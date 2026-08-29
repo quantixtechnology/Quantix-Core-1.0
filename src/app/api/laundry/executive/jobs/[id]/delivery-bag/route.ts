@@ -5,6 +5,7 @@
 // a reusable bag we normalise to its bagNumber, else the manual code is kept.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent } from "@/lib/laundry-field-ops"
 
@@ -36,7 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // currentOrderId link → it's untouched by the delivered/store-receive auto-
     // release; only the store's return scan frees it back to AVAILABLE.
     if (bag && bag.status === "AVAILABLE") {
-      await prisma.laundryBag.update({ where: { id: bag.id }, data: { status: "OUT_FOR_DELIVERY", lastUsedAt: new Date() } }).catch(() => null)
+      await prisma.laundryBag.update({ where: { id: bag.id }, data: { status: "OUT_FOR_DELIVERY", lastUsedAt: new Date(), ...custodyFor("OUT_FOR_DELIVERY", { id: session.executiveId, storeId: session.storeId }) } }).catch(() => null)
     }
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: "DELIVERY_BAG_ASSIGNED", note: `Delivery bag ${bagNumber}`, actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
 

@@ -3,6 +3,7 @@
 // unchanged. No QR generated — the same bag QR continues.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { custodyFor } from "@/lib/laundry-bag-lifecycle"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
@@ -40,7 +41,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: true, advanced: released, released: true })
     }
 
-    const res = await prisma.laundryBag.updateMany({ where: { businessId: order.businessId, currentOrderId: id }, data: { status: toStatus } })
+    // The holder moves with the status — see custodyFor(). Without it an order's
+    // bags reached the plant while still claiming to be sitting in the store.
+    const res = await prisma.laundryBag.updateMany({ where: { businessId: order.businessId, currentOrderId: id }, data: { status: toStatus, ...custodyFor(toStatus) } })
     return NextResponse.json({ success: true, advanced: res.count })
   } catch (e) {
     console.error("[bags-order-advance] POST", e)
