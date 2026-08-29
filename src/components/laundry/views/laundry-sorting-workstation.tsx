@@ -88,29 +88,48 @@ interface WrongBag {
 const RECENT_LIMIT = 5
 
 /** One bag on an order, as /orders/[id]/bags returns it. */
-interface OrderBagRow { bagNumber: string; serviceId?: string | null; serviceName?: string | null }
+interface OrderBagRow {
+  bagNumber: string
+  serviceId?: string | null
+  serviceName?: string | null
+  /** Still carrying this order, as opposed to closed history. */
+  open?: boolean
+}
 
 /**
- * The bag carrying THIS garment's service on this order.
+ * The bag carrying THIS garment's service on this order, RIGHT NOW.
  *
- * Not "does the order have any bag". Most orders reaching Sorting already carry
- * one from pickup or packing — 8 of 9 on the live floor did — so an order-level
- * check finds a bag that has nothing to do with the garment in hand and the
- * prompt never appears. Matched on service id, falling back to the name, which
- * is the same rule the service-aware bag accounting uses.
+ * Three things had to be true before this answered the operator's real question
+ * — "which bag do I put this garment in?" — and each of them was found the hard
+ * way, in production data.
  *
- * A bag with no service recorded is a legacy row: it answers for a garment only
- * when the order has no service-tagged bag at all, so it can never mask a
- * genuinely missing bag for a second service.
+ * 1. Not "does the order have any bag". Most orders reaching Sorting already
+ *    carry one from pickup or packing, so an order-level check finds a bag that
+ *    has nothing to do with the garment in hand and the prompt never appears.
+ * 2. It must be THIS garment's service. Matched on service id, falling back to
+ *    the name — the same rule the service-aware bag accounting uses. A bag with
+ *    no service recorded is a legacy row: it answers only when the order has no
+ *    service-tagged bag at all, so it can never mask a genuinely missing bag for
+ *    a second service.
+ * 3. It must still be WITH the order. orderBags() deliberately returns closed
+ *    rows too — a bag handed to the customer is still one of the order's bags —
+ *    but a reusable bag is normally RELEASED back to AVAILABLE when Processing
+ *    receives it, which happens BEFORE Sorting. ORD-…-000045 carried exactly
+ *    that: a RETURNED Wash & Fold row for V8BAG036, a bag already back in stock
+ *    and free to be assigned to somebody else. Pointing the operator at it would
+ *    be worse than saying nothing, so a closed row is not an answer here.
  */
 export function bagForService(bags: OrderBagRow[], serviceId: string | null, serviceName: string | null): OrderBagRow | null {
   const key = (id?: string | null, name?: string | null) => (id && id.trim()) || (name || "").trim().toUpperCase()
+  // `open` is absent only on a caller that does not track it; the API always
+  // sends it, and "not explicitly closed" is the safe reading of a missing flag.
+  const live = bags.filter((b) => b.open !== false)
   const want = key(serviceId, serviceName)
   if (want) {
-    const exact = bags.find((b) => key(b.serviceId, b.serviceName) === want)
+    const exact = live.find((b) => key(b.serviceId, b.serviceName) === want)
     if (exact) return exact
   }
-  const untagged = bags.find((b) => !key(b.serviceId, b.serviceName))
+  const untagged = live.find((b) => !key(b.serviceId, b.serviceName))
   return untagged ?? null
 }
 

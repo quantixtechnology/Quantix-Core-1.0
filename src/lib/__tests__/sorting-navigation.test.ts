@@ -642,3 +642,46 @@ describe('the final Sorting completion flow is untouched', () => {
     expect(bagAssign).not.toContain('sortingBag')
   })
 })
+
+// ============================================================================
+// A RELEASED BAG IS NOT AN ANSWER.
+//
+// Found in production after the service-matching fix shipped. A reusable bag is
+// RELEASED back to AVAILABLE when Processing receives the order — which happens
+// BEFORE Sorting — and orderBags() deliberately returns those closed rows too.
+// ORD-…-000045 carried a RETURNED Wash & Fold row for V8BAG036, a bag already
+// back in stock. Reading it as "this order's bag" would have told the operator
+// to fill a bag that may already be on somebody else's order, and would have
+// suppressed the prompt at exactly the stage that needs it.
+// ============================================================================
+describe('a bag that has left the order cannot answer for it', () => {
+  const RETURNED = { bagNumber: 'V8BAG036', serviceId: 's-wf', serviceName: 'Wash & Fold', open: false }
+  const LIVE = { bagNumber: 'V8BAG051', serviceId: 's-wf', serviceName: 'Wash & Fold', open: true }
+
+  it('reproduces it: ORD-000045’s RETURNED Wash & Fold bag prompts instead of pointing', () => {
+    expect(bagForService([RETURNED], 's-wf', 'Wash & Fold')).toBeNull()
+  })
+
+  it('a live bag for the same service still answers', () => {
+    expect(bagForService([LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('the live bag wins over the order’s closed history', () => {
+    expect(bagForService([RETURNED, LIVE], 's-wf', 'Wash & Fold')?.bagNumber).toBe('V8BAG051')
+  })
+
+  it('a closed untagged legacy row is not a fallback either', () => {
+    expect(bagForService([{ bagNumber: 'OLD', serviceId: null, serviceName: null, open: false }], 's-wf', 'Wash & Fold')).toBeNull()
+  })
+
+  it('a missing flag still counts as open — callers that do not track it are unaffected', () => {
+    expect(bagForService([{ bagNumber: 'B1', serviceId: 's-wf', serviceName: 'Wash & Fold' }], 's-wf', 'Wash & Fold')?.bagNumber).toBe('B1')
+  })
+
+  it('the shared reader really does return closed rows, which is why this is needed', () => {
+    const lib = code('src/lib/laundry-order-bags.ts')
+    expect(lib).toContain('open: r.status === OPEN_ASSIGNMENT')
+    // it is NOT filtered server-side — other stages need the history
+    expect(lib).not.toContain('.filter((r) => r.status === OPEN_ASSIGNMENT)')
+  })
+})
