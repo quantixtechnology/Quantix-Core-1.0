@@ -54,9 +54,16 @@ describe('BUG 1 · GAR search', () => {
     expect(grouped).not.toContain('where: baseWhere')
   })
 
-  it('the search is trimmed, and the client sends the trimmed value', () => {
+  // Garment search moved OFF this endpoint into the global, race-safe
+  // /processing/find (see garment-search.test.ts). The queue endpoint keeps its
+  // own trimmed filter for any caller that still passes one.
+  it('the queue endpoint still trims its search parameter', () => {
     expect(src).toContain('const search = (sp.get("search") || "").trim()')
-    expect(code(WS)).toContain('if (search.trim()) p.set("search", search.trim())')
+  })
+
+  it('the workstation no longer sends search to the queue endpoint at all', () => {
+    expect(code(WS)).not.toContain('p.set("search"')
+    expect(code(WS)).toContain('useGarmentSearch')
   })
 
   it('clearing the search restores the queue — no search means no filter', () => {

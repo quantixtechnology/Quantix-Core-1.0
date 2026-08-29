@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2, Search, X, ScanLine } from "lucide-react"
 import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { useGarmentSearch } from "@/hooks/use-garment-search"
+import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Level } from "@/lib/laundry-rbac-registry"
 
 // Workstation stage → RBAC screen. Mirrors STAGE_SCREEN in the process endpoint,
@@ -89,6 +91,10 @@ const SHOW_WORKLOAD_SUMMARY = new Set(["WASH", "DRYCLEAN"])
 export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
   const { currentBusinessId, user } = useAuthStore()
   const { level } = useLaundryPermissions()
+  // Search is its OWN request lifecycle — see use-garment-search.ts. It is
+  // deliberately NOT part of the queue loader below, which the 12s poll drives:
+  // that shared dependency is what made typing race the poll and flicker.
+  const { query: search, setQuery: setSearch, clear: clearSearch, active: searching, results: searchResults, loading: searchLoading, error: searchError, truncated: searchTruncated, refresh: refreshSearch } = useGarmentSearch(currentBusinessId)
   const { toast } = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,7 +103,6 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // are not, so a column's number is the database's number.
   const [queueCounts, setQueueCounts] = useState<Record<string, number> | null>(null)
   const [completed, setCompleted] = useState<{ id: string; itemId?: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null; garmentName: string; serviceName: string | null; orderNumber: string | null; action: string; actorName: string | null; completedAt: string; toStageLabel: string | null; weightKg?: number | null }[]>([])
-  const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
@@ -135,20 +140,15 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     if (!silent) setLoading(true)
     try {
       const p = new URLSearchParams({ businessId: currentBusinessId, stage })
-      if (search.trim()) p.set("search", search.trim())
       const j = await fetch(`/api/laundry/processing?${p}`).then((r) => r.json())
       setItems(j.items || [])
       setCompleted(j.completed || [])
       setQueueCounts(j.queueCounts || null)
     } catch { /* noop */ } finally { if (!silent) setLoading(false) }
-  }, [currentBusinessId, stage, search])
-  // Debounced so typing in the item-code search doesn't fire a request per keystroke.
-  // First load shows the spinner; search/refreshes update silently (no grid blank).
-  const firstLoad = useRef(true)
-  useEffect(() => {
-    const t = setTimeout(() => { load(!firstLoad.current); firstLoad.current = false }, search ? 250 : 0)
-    return () => clearTimeout(t)
-  }, [load, search])
+  }, [currentBusinessId, stage])
+  // The queue loads once per stage and then only on the poll/focus. Typing no
+  // longer triggers it at all, so the columns cannot blank or flash mid-search.
+  useEffect(() => { load(false) }, [load])
   // Keep the department queue live: refresh on tab focus + a light poll so a
   // garment moved here from an earlier stage appears without a manual refresh.
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
@@ -288,6 +288,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     if (ok) {
       toast({ title: "Returned to queue", description: garment, duration: 1500 })
     }
+    return ok
   }
 
   const waiting = items.filter((i) => i.processingStatus === "WAITING")
@@ -446,17 +447,31 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
         </CardContent>
       </Card>
 
-      {/* Find a garment anywhere in this stage's queue or completed history by its code. */}
+      {/* Find a garment ANYWHERE in this business by its code — a wrongly-added
+          cloth is usually not at the station you are standing at. The input is
+          rendered unconditionally and never re-keyed, so focus, cursor and text
+          survive every keystroke and every background refresh. */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by item code (GAR / ITM / barcode) or garment…"
-          className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+          placeholder="Find any garment by GAR / ITM / barcode, name or order no…"
+          className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
-        {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+        {/* Inline indicator only. The page spinner belongs to the first load. */}
+        {searchLoading && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-500" />}
+        {search && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
       </div>
+
+      {searching && (
+        <GarmentSearchResults
+          query={search} results={searchResults} loading={searchLoading}
+          error={searchError} truncated={searchTruncated} stages={[stage]}
+          canReturn={hasReturnPerm} busy={busy}
+          onReturn={async (hit) => { const ok = await handleReturnToQueue(hit.id, hit.garmentName); if (ok) { refreshSearch(); load(true) } }}
+        />
+      )}
 
       {loading ? (
         <div className="py-12 text-center text-slate-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>

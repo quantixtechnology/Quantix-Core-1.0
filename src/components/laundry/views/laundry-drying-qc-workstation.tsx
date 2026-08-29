@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Undo2, Search, X, ScanLine } from "lucide-react"
 import { stageLabel, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { useGarmentSearch } from "@/hooks/use-garment-search"
+import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
@@ -44,12 +46,14 @@ interface Completed {
 export function LaundryDryingQcWorkstation() {
   const { currentBusinessId, user } = useAuthStore()
   const { level } = useLaundryPermissions()
+  // Search is its own race-safe request lifecycle, independent of the queue
+  // loader and the 12s poll — see use-garment-search.ts.
+  const { query: search, setQuery: setSearch, clear: clearSearch, active: searching, results: searchResults, loading: searchLoading, error: searchError, truncated: searchTruncated, refresh: refreshSearch } = useGarmentSearch(currentBusinessId)
   const { toast } = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [completed, setCompleted] = useState<Completed[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [search, setSearch] = useState("")
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
@@ -86,7 +90,7 @@ export function LaundryDryingQcWorkstation() {
     try {
       const results = await Promise.all(
         ["DRY", "QC"].map((stage) =>
-          fetch(`/api/laundry/processing?businessId=${encodeURIComponent(currentBusinessId)}&stage=${stage}${search ? `&search=${encodeURIComponent(search)}` : ""}`).then((r) => r.json()).catch(() => null),
+          fetch(`/api/laundry/processing?businessId=${encodeURIComponent(currentBusinessId)}&stage=${stage}`).then((r) => r.json()).catch(() => null),
         ),
       )
       const sound = results.find((r) => r && r.soundEnabled !== undefined)?.soundEnabled
@@ -105,12 +109,10 @@ export function LaundryDryingQcWorkstation() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [currentBusinessId, search, apply])
+  }, [currentBusinessId, apply])
 
-  useEffect(() => {
-    const t = setTimeout(() => load(false), search ? 250 : 0)
-    return () => clearTimeout(t)
-  }, [load, search])
+  // Loads per stage, then only on poll/focus. Typing never triggers it.
+  useEffect(() => { load(false) }, [load])
 
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
@@ -310,10 +312,23 @@ export function LaundryDryingQcWorkstation() {
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by item code or garment…"
-            className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
-          {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find any garment by GAR / ITM / barcode, name or order no…"
+            className="w-full h-10 rounded-lg border border-slate-200 bg-white pl-9 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          {searchLoading && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-500" />}
+          {search && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>}
         </div>
+        {searching && (
+          <GarmentSearchResults
+            query={search} results={searchResults} loading={searchLoading}
+            error={searchError} truncated={searchTruncated} stages={["DRY", "QC"]}
+            canReturn={hasReturnPerm} busy={busy}
+            onReturn={async (hit) => {
+              if (!hasReturnPerm) { toast({ title: "Permission denied", description: "You don't have permission to return items to queue.", variant: "destructive" }); return }
+              await act(hit.id, hit.processingStage, "RETURN", { note: `Returned to queue by ${user?.name || "operator"}` })
+              refreshSearch(); load(true)
+            }}
+          />
+        )}
       </div>
 
       {loading && !items.length ? (
