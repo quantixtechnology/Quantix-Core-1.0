@@ -6,8 +6,9 @@
 // presentation only. Cached per business so multiple components share one fetch.
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { Level } from "@/lib/laundry-rbac-registry"
 
-type Snapshot = { isOwner: boolean; perms: Set<string>; roleCode: string }
+type Snapshot = { isOwner: boolean; perms: Set<string>; levels: Record<string, number>; roleCode: string }
 const cache = new Map<string, Snapshot>()
 const inflight = new Map<string, Promise<Snapshot | null>>()
 const listeners = new Set<() => void>()
@@ -22,7 +23,7 @@ async function fetchPerms(businessId: string): Promise<Snapshot | null> {
       // API returns `levels` (Record<string, number>) — convert to Set of screen keys with VIEW+ level
       const levels: Record<string, number> = r.data.levels || {}
       const perms = new Set(Object.keys(levels).filter((k) => (levels[k] ?? 0) >= 1))
-      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms, roleCode: String(r.data.roleCode || "") }
+      const snap: Snapshot = { isOwner: !!r.data.isOwner, perms, levels, roleCode: String(r.data.roleCode || "") }
       cache.set(businessId, snap)
       listeners.forEach((l) => l())
       return snap
@@ -62,5 +63,15 @@ export function useLaundryPermissions() {
   // While permissions are still loading (snap === null) we allow, so the UI never
   // flashes "no access" for a legitimately-permitted user; the server enforces.
   const can = (key: string) => snap === null || isOwner || snap.perms.has(key)
-  return { can, isOwner, isPlatformSuperAdmin, loading: snap === null }
+  /**
+   * The caller's LEVEL on a screen (HIDE/VIEW/CREATE/EDIT) — for actions that
+   * need more than "can see it". `can` only answers VIEW-or-better, which is
+   * not enough to decide whether someone may change a garment.
+   *
+   * Permissive while loading, exactly like `can`, so a legitimate control never
+   * flashes out of view. The server enforces regardless.
+   */
+  const level = (screenKey: string): number =>
+    snap === null || isOwner ? Level.EDIT : (snap.levels[screenKey] ?? Level.HIDE)
+  return { can, level, isOwner, isPlatformSuperAdmin, loading: snap === null }
 }

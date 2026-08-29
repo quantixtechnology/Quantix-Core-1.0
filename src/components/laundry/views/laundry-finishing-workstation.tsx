@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Loader2, Play, Pause, Check, Undo2, Factory, QrCode, RefreshCw, ScanLine, Package, Shirt, ShieldCheck } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
+import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { Level } from "@/lib/laundry-rbac-registry"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useScanSink } from "@/lib/hardware"
@@ -45,12 +47,14 @@ const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("e
 
 export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
   const { currentBusinessId, user } = useAuthStore()
+  const { level } = useLaundryPermissions()
   const { toast } = useToast()
   const [mode, setMode] = useState("GENERATE_NEW")
   const [scanTarget, setScanTarget] = useState("Scan Processing Packet")
   const [scanHint, setScanHint] = useState("PKG-…")
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [hasReturnPerm, setHasReturnPerm] = useState(false)
+  // Same workstation permission as Start/Complete — see laundry-workstation.tsx.
+  const hasReturnPerm = level(`processing.${stage === "FOLD" ? "folding" : "ironing"}`) >= Level.CREATE
   const [containers, setContainers] = useState<ContainerSummary[]>([])
   const [active, setActive] = useState<ContainerDetail | null>(null)
   const [code, setCode] = useState("")
@@ -84,18 +88,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
   }, [load])
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  // Return-to-queue permission (same key as the other workstations).
-  useEffect(() => {
-    if (!currentBusinessId) return
-    fetch(`/api/laundry/rbac/me?businessId=${encodeURIComponent(currentBusinessId)}`)
-      .then((r) => r.json()).then((j) => {
-        if (j.success && j.data) {
-          const screenMap: Record<string, string> = { IRON: "ironing", FOLD: "folding" }
-          const key = `processing.${screenMap[stage] || "ironing"}.return_queue`
-          setHasReturnPerm(j.data.isOwner || j.data.permissions?.includes(key))
-        }
-      }).catch(() => { /* noop */ })
-  }, [currentBusinessId, stage])
+
 
   const resolve = useCallback(async (raw?: string, containerId?: string) => {
     if (!currentBusinessId) return

@@ -13,6 +13,15 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Factory, Undo2, Search, X, ScanLine } from "lucide-react"
 import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
+import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { Level } from "@/lib/laundry-rbac-registry"
+
+// Workstation stage → RBAC screen. Mirrors STAGE_SCREEN in the process endpoint,
+// so the button and the server agree on which permission governs the station.
+const SCREEN_OF_STAGE: Record<string, string> = {
+  WASH: "washing", DRYCLEAN: "dry_cleaning",
+  IRON: "ironing", FOLD: "folding", QC: "quality_check",
+}
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
@@ -79,6 +88,7 @@ const SHOW_WORKLOAD_SUMMARY = new Set(["WASH", "DRYCLEAN"])
 
 export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
   const { currentBusinessId, user } = useAuthStore()
+  const { level } = useLaundryPermissions()
   const { toast } = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +101,14 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [hasReturnPerm, setHasReturnPerm] = useState(false)
+  // Return to Queue takes the workstation's OWN permission — the same one Start
+  // and Complete require. It used to read `permissions` off /rbac/me, a field
+  // that response has never contained, against `…return_queue`, an action that
+  // is never issued: the check was `isOwner || undefined`, so only owners saw
+  // the button. Accountant holds EDIT on every processing screen and was locked
+  // out of a correction it is fully entitled to make.
+  const screenKey = `processing.${SCREEN_OF_STAGE[stage] || "washing"}`
+  const hasReturnPerm = level(screenKey) >= Level.CREATE
   const [offline, setOffline] = useState(false)
   const isQC = stage === "QC"
 
@@ -136,26 +153,13 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // garment moved here from an earlier stage appears without a manual refresh.
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  // Fetch business setting for scan sound + return_queue permission
+  // Fetch business setting for scan sound
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/processing?businessId=${currentBusinessId}&stage=${stage}`)
       .then((r) => r.json()).then((j) => {
         if (j.soundEnabled !== undefined) setSoundEnabled(j.soundEnabled)
       }).catch(() => { /* keep default */ })
-    // Check for return_queue permission
-    fetch(`/api/laundry/rbac/me?businessId=${encodeURIComponent(currentBusinessId)}`)
-      .then((r) => r.json()).then((j) => {
-        if (j.success && j.data) {
-          const screenMap: Record<string, string> = {
-            WASH: "washing", DRYCLEAN: "dry_cleaning",
-            IRON: "ironing", FOLD: "folding", QC: "quality_check",
-          }
-          const screen = screenMap[stage] || "washing"
-          const key = `processing.${screen}.return_queue`
-          setHasReturnPerm(j.data.isOwner || j.data.permissions?.includes(key))
-        }
-      }).catch(() => { /* noop */ })
   }, [currentBusinessId, stage])
 
   const act = useCallback(async (itemId: string, action: string, extra: Record<string, unknown> = {}): Promise<boolean> => {

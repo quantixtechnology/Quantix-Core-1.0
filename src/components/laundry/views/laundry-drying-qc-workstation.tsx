@@ -13,6 +13,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, Undo2, Search, X, ScanLine } from "lucide-react"
 import { stageLabel, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
+import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { Level } from "@/lib/laundry-rbac-registry"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 
@@ -41,6 +43,7 @@ interface Completed {
 // tracking identity through this station; the bag is assigned later at Sorting.
 export function LaundryDryingQcWorkstation() {
   const { currentBusinessId, user } = useAuthStore()
+  const { level } = useLaundryPermissions()
   const { toast } = useToast()
   const [items, setItems] = useState<Item[]>([])
   const [completed, setCompleted] = useState<Completed[]>([])
@@ -50,7 +53,8 @@ export function LaundryDryingQcWorkstation() {
   const [flashId, setFlashId] = useState<string | null>(null)
   const [scanErr, setScanErr] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [hasReturnPerm, setHasReturnPerm] = useState(false)
+  // Same workstation permission as Start/Complete — see laundry-workstation.tsx.
+  const hasReturnPerm = level("processing.quality_check") >= Level.CREATE
   const [offline, setOffline] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -110,19 +114,6 @@ export function LaundryDryingQcWorkstation() {
 
   useAutoRefresh(() => load(true), { intervalMs: 12000 })
 
-  // return_queue permission (the merged "Dry & Quality Check" screen).
-  useEffect(() => {
-    if (!currentBusinessId) return
-    fetch(`/api/laundry/rbac/me?businessId=${encodeURIComponent(currentBusinessId)}`)
-      .then((r) => r.json()).then((j) => {
-        if (j.success && j.data) {
-          const lv = j.data.levels || {}
-          const ok = j.data.isOwner
-            || (lv["processing.quality_check"] ?? 0) >= 3
-          setHasReturnPerm(!!ok)
-        }
-      }).catch(() => { /* noop */ })
-  }, [currentBusinessId])
 
   const act = useCallback(async (itemId: string, expectedStage: string | null, action: string, extra: Record<string, unknown> = {}): Promise<boolean> => {
     setBusy(true); setOffline(false)

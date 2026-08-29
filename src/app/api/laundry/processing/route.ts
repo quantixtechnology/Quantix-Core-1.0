@@ -95,14 +95,25 @@ export async function GET(request: Request) {
 
     // Optional search by item code (barcode / GAR / ITM) or garment name.
     const search = (sp.get("search") || "").trim()
-    const codeOr = search
+    // FIND ONE GARMENT BY ITS CODE.
+    //
+    // Kept as a standalone filter rather than spread into the where, because it
+    // is an OR and two of the bucket queries below carry an OR of their own —
+    // spreading silently REPLACED this one and the search vanished for those
+    // rows. It is composed under AND instead, which cannot clash.
+    //
+    // `contains` maps to SQL LIKE, which SQLite evaluates case-insensitively for
+    // ASCII, so gar000000000331 finds GAR000000000331 and a partial "331" finds
+    // it too. `search` is already trimmed above.
+    const searchFilter = search
       ? { OR: [
+          { garmentScanCode: { contains: search } },  // GAR — the operator's main handle
+          { itemNumber: { contains: search } },       // ITM
           { barcode: { contains: search } },
-          { itemNumber: { contains: search } },
-          { garmentScanCode: { contains: search } },
           { garmentName: { contains: search } },
+          { order: { orderNumber: { contains: search } } },
         ] }
-      : {}
+      : null
 
     // Garments in the requested workstation queue + this stage's COMPLETED history.
     let items: unknown[] = []
@@ -120,7 +131,12 @@ export async function GET(request: Request) {
       //
       // Each bucket is now fetched on its own, so a backlog in one can never
       // starve another out of the payload.
-      const baseWhere = { order: { businessId: biz.id }, processingStage: stage, ...codeOr }
+      // The queue itself — no search. The counts below use THIS, so the workload
+      // figures keep showing the real department load while an operator is
+      // looking one garment up.
+      const queueWhere = { order: { businessId: biz.id }, processingStage: stage }
+      // The rows to render: the queue, narrowed by the search when there is one.
+      const baseWhere = searchFilter ? { ...queueWhere, AND: [searchFilter] } : queueWhere
       const ACTIVE_STATUSES = ["IN_PROGRESS", "PAUSED"]
       const QUEUE_STATUSES = ["WAITING", ...ACTIVE_STATUSES]
       const rowInclude = { order: { select: { orderNumber: true, customerId: true } } }
@@ -143,7 +159,7 @@ export async function GET(request: Request) {
       // showing only the first page of a long queue.
       const queueGrouped = await prisma.laundryOrderItem.groupBy({
         by: ["processingStatus"],
-        where: baseWhere,
+        where: queueWhere,
         _count: true,
       })
       queueCounts = { WAITING: 0, IN_PROGRESS: 0, PAUSED: 0 }

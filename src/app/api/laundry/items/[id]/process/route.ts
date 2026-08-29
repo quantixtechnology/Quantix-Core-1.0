@@ -4,8 +4,9 @@
 // State transitions are server-guarded with optimistic locking (no double
 // completion, no duplicate starts). QC failure requires a reason and a valid
 // rework destination from the garment's own route; processing history is never
-// overwritten. RETURN (return-to-queue) requires return_queue permission and
-// records a full audit with operator, department, timestamps, and reason.
+// overwritten. RETURN (return-to-queue) takes the SAME workstation permission as
+// Start/Complete (processing.<screen>.process) and records a full audit with
+// operator, department, timestamps, and reason.
 //
 // Garment barcodes are valid ONLY through Cleaning + Dry & Quality Check (QC).
 // Sorting is the garment→bag transition: once the order's finishing bag is
@@ -46,7 +47,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const screen = STAGE_SCREEN[item.processingStage || ""] || "washing"
     let permAction: string
     if (action === "QC_FAIL" || action === "REJECT") permAction = "override"
-    else if (action === "RETURN") permAction = "return_queue"
+    // RETURN-TO-QUEUE IS AN ORDINARY WORKSTATION ACTION.
+    //
+    // It used to require `processing.<screen>.return_queue`, which is not a
+    // registered action — actionToLevel() does not recognise it, so it fell
+    // through to VIEW and guarded nothing, while the CLIENT looked for a
+    // permission key that is never issued and hid the button from everyone
+    // except owners. Accountant, a full-access role holding EDIT on every
+    // processing screen, could not return a garment.
+    //
+    // It is the same station, the same garment and a move backwards within that
+    // station, so it takes the same permission as Start and Complete.
+    else if (action === "RETURN") permAction = "process"
     else permAction = "process"
     const guard = await requireLaundryPermission(request, item.order.businessId, `processing.${screen}.${permAction}`)
     if (!guard.ok) return guard.res
