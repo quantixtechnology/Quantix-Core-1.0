@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   description: "Run Your Business Smarter. Managed white-label multi-tenant SaaS platform for Grocery, Food Delivery, Laundry, Car Wash, Pharmacy, Home Services and more.",
   keywords: ["Quantix", "SaaS", "White-Label", "Multi-Tenant", "Business Platform", "India"],
   authors: [{ name: "Quantix Technology" }],
-  manifest: "/manifest.json",
+  // manifest is NOT declared here — see the <link rel="manifest"> in <head>.
   appleWebApp: {
     capable: true,
     // black-translucent lets the app extend behind the iOS status bar in
@@ -88,6 +88,17 @@ export default function RootLayout({
       <head>
         {/* Early-capture: must execute before React hydrates */}
         <script dangerouslySetInnerHTML={{ __html: EARLY_CAPTURE_SCRIPT }} />
+        {/* THE MANIFEST MUST BE A REAL <head> CHILD.
+            Declaring it through Next's `metadata.manifest` emitted the link with
+            the streamed metadata — on the live customer storefront it landed at
+            byte 14642, deep inside <body>, while </head> closed at 2323. Chrome
+            only honours a manifest link in <head>, so it never even REQUESTED
+            the manifest: Page.getInstallabilityErrors reported "no-manifest",
+            beforeinstallprompt never fired, and every Install App tap fell
+            through to the unavailable message on a site that is otherwise
+            perfectly installable. Rendering it here puts it in the head the
+            parser sees. */}
+        <link rel="manifest" href="/manifest.json" />
         {/* Dynamic favicon — served from PlatformSettings or falls back gracefully */}
         <link rel="icon" href="/api/assets/favicon" type="image/png" />
       </head>

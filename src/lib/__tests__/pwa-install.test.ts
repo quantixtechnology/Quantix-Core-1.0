@@ -194,3 +194,34 @@ describe('one shared prompt, however many consumers are on the page', () => {
     expect(read(BTN)).toContain('Already installed it?')
   })
 })
+
+// ============================================================================
+// THE root cause on vastrasudha.co.in. Chrome only honours a manifest link in
+// <head>; Next's streamed `metadata.manifest` emitted it into <body>, so Chrome
+// never requested the manifest at all:
+//   Page.getInstallabilityErrors → [{ errorId: "no-manifest" }]
+// and beforeinstallprompt therefore never fired.
+// ============================================================================
+describe('the manifest link is a real <head> child', () => {
+  // Comment-stripped: the explanation above the link mentions <head> and the
+  // link itself, and must not be mistaken for either.
+  const LAYOUT = code('src/app/layout.tsx')
+
+  it('is rendered inside the literal <head> element', () => {
+    const head = LAYOUT.slice(LAYOUT.indexOf('<head>'), LAYOUT.indexOf('</head>'))
+    expect(head).toContain('<link rel="manifest" href="/manifest.json" />')
+  })
+
+  it('is NOT declared through streamed metadata, which lands in <body>', () => {
+    const meta = LAYOUT.slice(LAYOUT.indexOf('export const metadata'), LAYOUT.indexOf('export default'))
+    expect(meta).not.toMatch(/^\s*manifest:/m)
+  })
+
+  it('there is exactly one manifest declaration, so none can win over the other', () => {
+    expect((LAYOUT.match(/rel="manifest"/g) ?? []).length).toBe(1)
+  })
+
+  it('the head link precedes the body in source order', () => {
+    expect(LAYOUT.indexOf('rel="manifest"')).toBeLessThan(LAYOUT.indexOf('<body'))
+  })
+})
