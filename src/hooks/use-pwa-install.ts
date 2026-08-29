@@ -36,6 +36,43 @@ declare global {
 const DISMISS_KEY    = "quantix_pwa_dismissed_at"
 const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
+// ── ONE prompt, shared by every consumer on the page ────────────────────────
+//
+// `beforeinstallprompt` fires ONCE and the event is single-use. Each hook
+// instance used to claim window.__bip and null it, so on a page with more than
+// one consumer — the storefront home renders the banner twice AND the header
+// button — whichever mounted first took the prompt and the others were left
+// with nothing. The header button then reported that installation was
+// unavailable on a perfectly installable site.
+//
+// The event now lives in module scope with a subscriber list: every instance
+// sees the same prompt, and it is cleared for everyone only when it is actually
+// consumed.
+let sharedPrompt: BeforeInstallPromptEvent | null = null
+let sharedInstalled = false
+const subscribers = new Set<() => void>()
+const notify = () => subscribers.forEach((fn) => fn())
+let wired = false
+
+/** Attach the window listeners once per page, not once per component. */
+function wireOnce() {
+  if (wired || typeof window === "undefined") return
+  wired = true
+  // Recover the event captured by the early script in layout.tsx, which runs
+  // before React hydrates.
+  if (window.__bip) { sharedPrompt = window.__bip; window.__bip = null }
+  window.addEventListener("beforeinstallprompt", (e: Event) => {
+    e.preventDefault()
+    sharedPrompt = e as BeforeInstallPromptEvent
+    notify()
+  })
+  window.addEventListener("appinstalled", () => {
+    sharedInstalled = true
+    sharedPrompt = null
+    notify()
+  })
+}
+
 function isDismissed(): boolean {
   try {
     const ts = localStorage.getItem(DISMISS_KEY)
@@ -114,41 +151,33 @@ export function usePwaInstall(options: PwaInstallOptions = {}): PwaInstallState 
     // ── Dismiss state ────────────────────────────────────────────────────────
     setDismissed(isDismissed())
 
-    // ── Recover event captured before React hydrated ─────────────────────────
-    // layout.tsx installs a synchronous listener that stores the event on
-    // window.__bip before any useEffect can run. Claim it here if available.
-    if (typeof window !== "undefined" && window.__bip) {
-      setPrompt(window.__bip)
-      setCapturedEarly(true)
-      window.__bip = null // claim it — prevent double-use
+    // ── Subscribe to the ONE shared prompt ───────────────────────────────────
+    // Every consumer on the page reads the same event, so mounting order can no
+    // longer decide which of them can install.
+    wireOnce()
+    const sync = () => {
+      setPrompt(sharedPrompt)
+      setIsInstalled(sharedInstalled || isInStandaloneMode())
     }
+    subscribers.add(sync)
+    if (sharedPrompt) setCapturedEarly(true)
+    sync()
 
-    // ── Live listener for events that fire after hydration ───────────────────
-    const onBeforeInstall = (e: Event) => {
-      e.preventDefault()
-      setPrompt(e as BeforeInstallPromptEvent)
-    }
-    const onInstalled = () => {
-      setIsInstalled(true)
-      setPrompt(null)
-    }
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstall)
-    window.addEventListener("appinstalled",        onInstalled)
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall)
-      window.removeEventListener("appinstalled",        onInstalled)
-    }
+    return () => { subscribers.delete(sync) }
   }, [])
 
   const install = useCallback(async (): Promise<boolean> => {
-    if (!prompt) return false
-    await prompt.prompt()
-    const { outcome } = await prompt.userChoice
-    setPrompt(null)
+    const p = sharedPrompt
+    if (!p) return false
+    await p.prompt()
+    const { outcome } = await p.userChoice
+    // Single-use by spec: once prompted the event cannot be reused, so it is
+    // cleared for EVERY consumer, not just this one. Chrome re-fires
+    // beforeinstallprompt on a later visit if the site is still installable.
+    sharedPrompt = null
+    notify()
     return outcome === "accepted"
-  }, [prompt])
+  }, [])
 
   const dismiss = useCallback(() => {
     try { localStorage.setItem(DISMISS_KEY, Date.now().toString()) } catch { /* ignore */ }

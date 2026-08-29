@@ -149,6 +149,10 @@ export function InstallAppButton({ brandColor = "#10B981", mode = "pwa", playsto
                   </li>
                   <li className="flex items-start gap-2">
                     <ArrowDownToLine className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
+                    <span>Already installed it? Open the app from your home screen — Chrome won&apos;t offer to install it twice.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ArrowDownToLine className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
                     <span>On Android, open this site in <strong>Chrome</strong> to install it as an app.</span>
                   </li>
                 </ul>

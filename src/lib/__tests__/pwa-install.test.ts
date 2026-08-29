@@ -61,8 +61,8 @@ describe('one install system, not two', () => {
 describe('Android / Chromium', () => {
   it('the button calls the native prompt', () => {
     expect(code(BTN)).toContain('const accepted = await install()')
-    expect(code(HOOK)).toContain('await prompt.prompt()')
-    expect(code(HOOK)).toContain('const { outcome } = await prompt.userChoice')
+    expect(code(HOOK)).toContain('await p.prompt()')
+    expect(code(HOOK)).toContain('const { outcome } = await p.userChoice')
   })
 
   it('accept vs dismiss is handled, not ignored', () => {
@@ -72,7 +72,8 @@ describe('Android / Chromium', () => {
   })
 
   it('the prompt is cleared once consumed — it can only be used once', () => {
-    expect(code(HOOK)).toContain('setPrompt(null)')
+    // Cleared in the SHARED store, so every consumer on the page sees it go.
+    expect(code(HOOK)).toContain('sharedPrompt = null')
   })
 
   it('a dismissed prompt leaves the button usable, never a shortcut', () => {
@@ -140,5 +141,56 @@ describe('nothing else was touched', () => {
     // 192/512 icons already exist, which is what makes a real install possible.
     expect(read('src/app/sw.js/route.ts')).toContain("addEventListener('fetch'")
     expect(read('src/app/manifest.json/route.ts')).toContain("sizes: '512x512'")
+  })
+})
+
+// ============================================================================
+// The regression the customer actually hit on vastrasudha.co.in: several
+// consumers on one page, one single-use event.
+// ============================================================================
+describe('one shared prompt, however many consumers are on the page', () => {
+  const H = code(HOOK)
+
+  it('the storefront home really does mount several consumers at once', () => {
+    // banner (twice) + the header button — all usePwaInstall
+    const home = read('src/components/storefront/web/storefront-home.tsx')
+    expect((home.match(/<PwaInstallBanner/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    expect(code('src/components/storefront/web/storefront-layout.tsx')).toContain('<InstallAppButton')
+    expect(code(BANNER)).toContain('usePwaInstall')
+    expect(code(BTN)).toContain('usePwaInstall')
+  })
+
+  it('the event lives in module scope, not per component', () => {
+    expect(H).toContain('let sharedPrompt: BeforeInstallPromptEvent | null = null')
+    expect(H).toContain('const subscribers = new Set<() => void>()')
+  })
+
+  it('no instance claims window.__bip for itself any more', () => {
+    // Exactly one claim, inside the once-per-page wiring — not in the hook body.
+    expect((H.match(/window\.__bip = null/g) ?? []).length).toBe(1)
+    expect(H).toContain('function wireOnce()')
+    expect(H).toContain('if (wired || typeof window === "undefined") return')
+  })
+
+  it('listeners are attached once per page, not once per component', () => {
+    const effect = H.slice(H.indexOf('useEffect(() => {'))
+    expect(effect).not.toContain('window.addEventListener("beforeinstallprompt"')
+    expect(effect).toContain('wireOnce()')
+    expect(effect).toContain('subscribers.add(sync)')
+  })
+
+  it('consuming the prompt clears it for everyone, and notifies them', () => {
+    const inst = H.slice(H.indexOf('const install = useCallback'), H.indexOf('const dismiss = useCallback'))
+    expect(inst).toContain('sharedPrompt = null')
+    expect(inst).toContain('notify()')
+  })
+
+  it('appinstalled clears the shared prompt and flips every consumer', () => {
+    expect(H).toContain('sharedInstalled = true')
+    expect(H).toContain('sharedPrompt = null')
+  })
+
+  it('the Android modal explains the already-installed case', () => {
+    expect(read(BTN)).toContain('Already installed it?')
   })
 })
