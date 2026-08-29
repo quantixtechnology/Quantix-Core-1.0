@@ -141,6 +141,9 @@ export default function LaundryNewOrder() {
   const [seeding, setSeeding] = useState(false)
   // Add-Garment modal
   const [addOpen, setAddOpen] = useState(false)
+  // Reveal for the one-service disclaimer. Explains the rule on demand; it can
+  // never change the order's service.
+  const [svcNote, setSvcNote] = useState(false)
   const [mGarment, setMGarment] = useState("")
   const [mService, setMService] = useState("")
   const [mQty, setMQty] = useState(1)
@@ -427,7 +430,7 @@ export default function LaundryNewOrder() {
 
   // Second garment onwards, the service is already known — inherit it so the
   // operator only picks the garment and the quantity.
-  const openAddGarment = () => { setMGarment(""); setMService(orderService?.id || ""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
+  const openAddGarment = () => { setMGarment(""); setMService(orderService?.id || ""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setSvcNote(false); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
     // ONE SERVICE = ONE ORDER. The FIRST garment establishes this order's
@@ -893,15 +896,6 @@ export default function LaundryNewOrder() {
                 <DialogDescription>Pick a garment and service, set the quantity — the price is applied automatically.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-1">
-                {/* Once the first garment has set the order's service, say so up
-                    front — the operator should know before picking, not be told
-                    off afterwards. */}
-                {orderService && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Order Service: {orderService.name}</p>
-                    <p className="text-[11px] text-slate-600 mt-0.5">One service per order. For a different service, save this order and create a new one.</p>
-                  </div>
-                )}
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600">Garment</Label>
                   {/* Shared selector: same master, and searchable by CODE as well as name —
@@ -909,16 +903,30 @@ export default function LaundryNewOrder() {
                   <LaundryGarmentSelect value={mGarment} onChange={setMGarment} garments={garments} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-600">Service</Label>
+                  {/* Established → ONE compact line, not a field and not a card:
+                      the service is inherited, so there is nothing to pick. The
+                      action beside it exists purely to make the restriction
+                      discoverable — it can never add a second service. */}
                   {orderService ? (
-                    /* Inherited, not chosen — one service per order, so there is
-                       nothing to pick and nothing to get wrong. */
-                    <div className="h-10 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3">
-                      <span className="text-sm font-medium text-slate-700">{orderService.name} · {turnaroundLabel(orderService.turnaroundHours)}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-slate-400">Order service</span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs text-slate-600">
+                        <span className="uppercase tracking-wide text-[10px] text-slate-400">Order service</span>{" "}
+                        <span className="font-semibold text-slate-800">{orderService.name} · {turnaroundLabel(orderService.turnaroundHours)}</span>
+                      </p>
+                      <button type="button" onClick={() => setSvcNote((v) => !v)} className="text-[11px] font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5">
+                        <Plus className="h-3 w-3" /> Add another service
+                      </button>
                     </div>
                   ) : (
-                    <SearchableSelect value={mService} onChange={setMService} options={mServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder={mGarment ? (mServices.length ? "Select service…" : "No service priced for this garment") : "Select a garment first…"} />
+                    <>
+                      <Label className="text-xs text-slate-600">Service</Label>
+                      <SearchableSelect value={mService} onChange={setMService} options={mServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder={mGarment ? (mServices.length ? "Select service…" : "No service priced for this garment") : "Select a garment first…"} />
+                    </>
+                  )}
+                  {orderService && svcNote && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      One service per order. For a different service, save this order and create a new one.
+                    </p>
                   )}
                   {lockedServiceUnavailable && (
                     <p className="text-[11px] text-amber-600 mt-1">

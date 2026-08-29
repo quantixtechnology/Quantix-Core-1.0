@@ -174,7 +174,8 @@ describe('both entry surfaces refuse it, and explain', () => {
     expect(ui).toContain('const first = lineItems[0]')
     expect(ui).toContain('if (orderService && mService !== orderService.id)')
     expect(ui).toContain('conflictMessage(orderService.name')
-    expect(ui).toContain('Order Service: {orderService.name}')
+    // the service is shown as a compact line rather than the old banner card
+    expect(ui).toContain('Order service')
   })
 
   it('the storefront cart refuses a second service with the same message', () => {
@@ -237,12 +238,30 @@ describe('Add Garment inherits the order service', () => {
     expect(UI).toContain('}, [mGarment, mServices, orderService])')
   })
 
-  it('the service renders read-only once established, with its turnaround', () => {
+  it('the established service is ONE compact line, not a card or a field', () => {
     expect(UI).toContain('{orderService.name} · {turnaroundLabel(orderService.turnaroundHours)}')
     expect(UI).toContain('Order service')
     // the dropdown is only for the FIRST garment
     expect(UI).toContain('{orderService ? (')
-    expect(UI).toContain(') : (\n                    <SearchableSelect value={mService}')
+    expect(UI).toContain('<SearchableSelect value={mService}')
+    // the large information card is gone
+    expect(UI).not.toContain('rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2')
+    expect(UI).not.toContain('Order Service: {orderService.name}')
+  })
+
+  it('"Add another service" only explains the rule — it can never add one', () => {
+    expect(UI).toContain('Add another service')
+    expect(UI).toContain('setSvcNote((v) => !v)')
+    expect(UI).toContain('One service per order. For a different service, save this order and create a new one.')
+    // it toggles a note and nothing else: no line, no service, no submit
+    const btn = UI.slice(UI.indexOf('onClick={() => setSvcNote'), UI.indexOf('Add another service') + 40)
+    for (const forbidden of ['setLineItems', 'setMService', 'confirmAddGarment', 'fetch(']) {
+      expect(btn, `the action must not ${forbidden}`).not.toContain(forbidden)
+    }
+  })
+
+  it('the disclaimer resets each time the modal opens', () => {
+    expect(UI).toContain('setSvcNote(false); setAddOpen(true)')
   })
 
   it('an inherited service not priced for the garment is explained, not silently failed', () => {
