@@ -886,7 +886,11 @@ describe('multiple bags per order and service', () => {
   it('a new bag is never created automatically — the operator asks for it', () => {
     const raw = read(SORT)
     expect(raw).toContain('Add New Bag')
-    expect(raw).toContain('setAddBagFor({')
+    // The panel opens only from an operator act. Both routes are pinned: the
+    // FIRST bag straight from the button, and a SECOND bag only after the
+    // operator confirms the previous one is full.
+    expect(raw).toContain('else setAddBagFor(target)')
+    expect(raw).toContain('setAddBagFor(confirmSecondBag)')
     // nothing in the scan path opens or completes an assignment by itself
     const src = code(SORT)
     const handler = src.slice(src.indexOf('const handleGarmentScan'), src.indexOf('const handleAssignBag'))

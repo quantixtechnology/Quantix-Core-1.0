@@ -154,7 +154,11 @@ describe('Bug 2 — bag sequencing is driven by real assignments, not the button
 
   it('the "+ Add New Bag" button is relabelled to bind the FIRST bag when none exists', () => {
     const raw = read(SORT)
-    const button = raw.slice(raw.indexOf('onClick={() => onAdd(svc.id, svc.name)}'))
+    // Anchored on the current handler; a stale anchor returned -1 and sliced the
+    // file down to one character, so the assertions below silently covered
+    // nothing. The length check makes that impossible to repeat.
+    const button = raw.slice(raw.indexOf('onClick={() => onAdd(svc.id, svc.name, views.length > 0)}'))
+    expect(button.length).toBeGreaterThan(200)
     expect(button).toMatch(/views\.length === 0[\s\S]{0,120}Assign First Bag/)
     expect(button).toContain('Add New Bag') // still the label once a bag exists
   })

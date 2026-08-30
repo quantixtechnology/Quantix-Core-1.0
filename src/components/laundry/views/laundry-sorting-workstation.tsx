@@ -151,7 +151,10 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
   order: OrderGroup
   bags: SortingBagRow[]
   scanTimes: Record<string, string>
-  onAdd: (serviceId: string | null, serviceName: string | null) => void
+  /** `hasBag` — this service already has a Sorting bag, so this is a SECOND
+   *  bag, not the first. The caller decides what that means; OrderBags only
+   *  reports it, from the same `views` the button label already reads. */
+  onAdd: (serviceId: string | null, serviceName: string | null, hasBag: boolean) => void
 }) {
   const services = servicesOnOrder(order)
 
@@ -185,7 +188,7 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
               ))}
               <button
                 type="button"
-                onClick={() => onAdd(svc.id, svc.name)}
+                onClick={() => onAdd(svc.id, svc.name, views.length > 0)}
                 className="ml-auto inline-flex items-center gap-1 rounded-md border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-50"
               >
                 {/* Context-sensitive on the ACTUAL assignment rows: before the
@@ -461,6 +464,11 @@ export function LaundrySortingWorkstation() {
   const [scanTimes, setScanTimes] = useState<Record<string, string>>({})
   // The order whose bag panel is open for adding another bag.
   const [addBagFor, setAddBagFor] = useState<{ orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null>(null)
+  // MOVING TO A SECOND BAG IS A DECISION, so it is asked rather than assumed.
+  // Purely an operator acknowledgement: nothing is counted, weighed, closed,
+  // released or marked FULL by it. Holding the pending target here means Cancel
+  // simply drops it — no bag panel opens and nothing about the order changes.
+  const [confirmSecondBag, setConfirmSecondBag] = useState<{ orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null>(null)
 
   /** Re-read one order's bags from the authoritative list. */
   const refreshBags = useCallback(async (orderId: string): Promise<SortingBagRow[]> => {
@@ -991,6 +999,36 @@ export function LaundrySortingWorkstation() {
             a "next bag", "current becomes FULL" or Bag 2. The bag becomes
             assigned ONLY when its barcode is scanned and the server-side
             binding (assignOrderBag → /orders/[id]/bags) succeeds. */}
+        {/* SECOND BAG — the operator confirms the physical bag is full before
+            the scan panel opens. Nothing here touches bag state: on Yes it does
+            exactly what the button used to do, and on Cancel it does nothing. */}
+        {confirmSecondBag && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Is the first bag full?</span>
+              <div className="font-mono text-[12px] font-semibold text-slate-800">{confirmSecondBag.orderNumber}</div>
+              <div className="text-[11px] text-slate-600">{confirmSecondBag.serviceName || "—"}</div>
+            </div>
+            <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">You are moving this order to a second bag. Continue?</p>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmSecondBag(null)}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddBagFor(confirmSecondBag); setConfirmSecondBag(null) }}
+                className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700"
+              >
+                Yes, Add Second Bag
+              </button>
+            </div>
+          </div>
+        )}
+
         {addBagFor && (
           <div className="rounded-xl border border-indigo-300 bg-indigo-50/70 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="min-w-0">
@@ -1214,7 +1252,14 @@ export function LaundrySortingWorkstation() {
                       order={o}
                       bags={bagsByOrder[o.orderId] || []}
                       scanTimes={scanTimes}
-                      onAdd={(serviceId, serviceName) => { setBagCode(""); setAddBagFor({ orderId: o.orderId, orderNumber: o.orderNumber, serviceId, serviceName }) }}
+                      onAdd={(serviceId, serviceName, hasBag) => {
+                        setBagCode("")
+                        const target = { orderId: o.orderId, orderNumber: o.orderNumber, serviceId, serviceName }
+                        // FIRST bag → straight to the existing scan panel, at any
+                        // scanned count. Only a SECOND bag asks first.
+                        if (hasBag) setConfirmSecondBag(target)
+                        else setAddBagFor(target)
+                      }}
                     />
                   </div>
                 )
