@@ -147,16 +147,23 @@ export async function GET(request: Request) {
       const ACTIVE_STATUSES = ["IN_PROGRESS", "PAUSED"]
       const QUEUE_STATUSES = ["WAITING", ...ACTIVE_STATUSES]
       const rowInclude = { order: { select: { orderNumber: true, customerId: true } } }
+      // Sorting is the garment→bag transition: a partially scanned order MUST stay
+      // on the queue until its Sorting work actually completes. The generic page
+      // cap (take 200 per bucket, oldest first) silently dropped the NEWEST
+      // Sorting orders — exactly the ones being scanned — while Sorting's own
+      // rehydration endpoint already reads the whole stage uncapped. Sorting reads
+      // the full stage; every other workstation keeps the page cap.
+      const rowsTake = stage === "SORTING" ? 5000 : 200
       const [waitingRows, activeRows, otherRows] = await Promise.all([
-        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: "WAITING" }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200 }),
+        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: "WAITING" }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: rowsTake }),
         // Everything an operator has open. In practice a handful; capped only so
         // a pathological queue cannot return unbounded rows.
-        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: { in: ACTIVE_STATUSES } }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200 }),
+        prisma.laundryOrderItem.findMany({ where: { ...baseWhere, processingStatus: { in: ACTIVE_STATUSES } }, include: rowInclude, orderBy: { receivedAt: "asc" }, take: rowsTake }),
         // Any other status at this stage (or none yet). Sorting renders every
         // item regardless of status, so dropping these would empty that screen.
         prisma.laundryOrderItem.findMany({
           where: { ...baseWhere, OR: [{ processingStatus: { notIn: QUEUE_STATUSES } }, { processingStatus: null }] },
-          include: rowInclude, orderBy: { receivedAt: "asc" }, take: 200,
+          include: rowInclude, orderBy: { receivedAt: "asc" }, take: rowsTake,
         }),
       ])
       const rows = [...activeRows, ...waitingRows, ...otherRows]
