@@ -110,6 +110,13 @@ interface WrongBag {
   orderNumber: string
   expected: string | null
   message: string
+  /**
+   * WHICH refusal this was. A bag held by another order is a WRONG BAG — the
+   * operator has the wrong physical thing in their hand. A service the order
+   * cannot attribute is not: the bag may be perfectly good, and calling it
+   * wrong sends the operator hunting for a bag that was never the problem.
+   */
+  kind: "BAG" | "SERVICE"
 }
 
 /** LAST 5 SCANS — five is what an operator can actually read at a glance. */
@@ -603,6 +610,7 @@ export function LaundrySortingWorkstation() {
           orderNumber: rec.orderNumber,
           expected: activeBagForService(fresh, rec.serviceId, rec.serviceName)?.bagNumber ?? null,
           message: j?.error || "Could not assign that bag.",
+          kind: j?.code === "SERVICE_REQUIRED" ? "SERVICE" : "BAG",
         })
         if (wrongBagTimer.current) clearTimeout(wrongBagTimer.current)
         wrongBagTimer.current = setTimeout(() => setWrongBag(null), 10000)
@@ -931,9 +939,27 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
-        {/* ❌ WRONG BAG — three facts, laid out, so the operator can recover.
-            Neither assignment was changed and no garment count moved. */}
-        {wrongBag && (
+        {/* TWO DIFFERENT REFUSALS, said differently.
+            WRONG BAG — the operator is holding the wrong physical bag.
+            SERVICE REQUIRED — the bag is fine; the order cannot attribute the
+            service, which the operator resolves by choosing one, not by
+            fetching another bag. Neither changes any assignment. */}
+        {wrongBag && wrongBag.kind === "SERVICE" && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">⚠ Service required</span>
+              <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+            </div>
+            <p className="text-[12px] text-slate-700">{wrongBag.message}</p>
+            <p className="text-[12px] text-slate-700">
+              This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
+            </p>
+            <p className="text-[10px] text-amber-800">
+              The bag <span className="font-mono font-semibold">{wrongBag.scanned}</span> was not changed — choose the service this bag is for and scan it again.
+            </p>
+          </div>
+        )}
+        {wrongBag && wrongBag.kind === "BAG" && (
           <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">✗ Wrong bag</span>

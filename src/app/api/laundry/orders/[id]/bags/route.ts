@@ -80,7 +80,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // order still needs no choice, so that flow is unchanged; a multi-service
     // order refuses to guess, because a wrong guess silently mis-files a
     // physical bag and makes another service look accounted for.
-    const services = r.order.services as ServiceRequirement[]
+    // A GARMENT'S SERVICE IS PROOF THE SERVICE IS ON THIS ORDER.
+    //
+    // LaundryOrderService is written once, at order creation, and never
+    // updated. Store Audit can change a garment's service (items/[itemId]) or
+    // add a garment under another one (items), both of which write
+    // LaundryOrderItem.serviceId and leave the declared list behind. Sorting
+    // then sends the GARMENT's service, the declared list does not contain it,
+    // and a perfectly good bag was refused with "That service is not on this
+    // order" — blocking the stage with nothing the operator could fix.
+    //
+    // The one-service rule already reads services OR items for exactly this
+    // reason; this brings the bag rule to the same source.
+    //
+    // Consulted ONLY to satisfy a service the caller explicitly NAMED, and only
+    // when the declared list is missing it. With no serviceId the existing
+    // rules decide unchanged — so a caller that cannot render a service choice
+    // (the shared bag panel, Store Stages) behaves exactly as before. Scoped to
+    // THIS order, so another order's service can never make a bag eligible.
+    let services = r.order.services as ServiceRequirement[]
+    const requested = String(b.serviceId || "").trim()
+    if (requested && !services.some((s) => s.serviceId === requested)) {
+      const onGarment = await prisma.laundryOrderItem.findFirst({
+        where: { orderId: r.order.id, serviceId: requested },
+        select: { serviceId: true, serviceName: true },
+      })
+      if (onGarment?.serviceId) {
+        services = [...services, { serviceId: onGarment.serviceId, serviceName: onGarment.serviceName || "Laundry", requiredBags: 1 }]
+      }
+    }
     const pick = pickServiceForBag(services, b.serviceId)
     if (!pick.ok) return NextResponse.json({ error: pick.error, code: "SERVICE_REQUIRED", services }, { status: 400 })
 

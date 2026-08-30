@@ -613,7 +613,10 @@ describe('the operator is never trapped or blocked', () => {
 
 describe('a wrong bag is refused in three facts, and changes nothing', () => {
   const raw = read(SORT)
-  const panel = raw.slice(raw.indexOf('{wrongBag && ('), raw.indexOf('{/* BAG REQUIRED'))
+  // Anchored on the GENUINE wrong-bag panel. A service-resolution refusal is a
+  // different message now, so this slice must name the one it is asserting.
+  const panel = raw.slice(raw.indexOf('{wrongBag && wrongBag.kind === "BAG" && ('), raw.indexOf('{/* BAG REQUIRED'))
+  expect(panel.length).toBeGreaterThan(0)
 
   it('it names what was scanned, who holds it, and what this order needs', () => {
     expect(panel).toContain('{wrongBag.scanned}')
