@@ -150,6 +150,25 @@ export function sortingBagViews(
 }
 
 /**
+ * EVERY bag ever assigned AT SORTING for this order, oldest first.
+ *
+ * The history answer, as opposed to the operational one. bagsForService() drops
+ * closed rows because a released bag must never be offered as the bag to fill;
+ * history is the opposite question — a bag released three stages later was
+ * still the bag this order was sorted into, and dropping it would erase the
+ * record. So `open` is deliberately not consulted here.
+ *
+ * `purpose` still is: a transport or delivery bag was never a Sorting bag, and
+ * a row whose role was never recorded cannot claim to be one. Same constant as
+ * the operational reader, so there is one definition of "a Sorting bag".
+ */
+export function sortingBagsEver(bags: SortingBagRow[]): SortingBagRow[] {
+  return bags
+    .filter((b) => b.purpose === SORTING_PURPOSE)
+    .sort((a, b) => time(a.assignedAt) - time(b.assignedAt))
+}
+
+/**
  * The order's OTHER open bags — transport, delivery, or a role never recorded.
  *
  * Shown alongside the Sorting bags so nothing is hidden from the operator, and

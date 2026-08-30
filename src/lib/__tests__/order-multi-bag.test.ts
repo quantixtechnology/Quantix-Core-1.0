@@ -291,7 +291,11 @@ describe('Sorting · the one-bag restriction is lifted for Sorting only', () => 
 
   it('4,11,12 · an extra bag is ATTACHED through the single writer', () => {
     const branch = FINISHING.slice(FINISHING.indexOf('if (!opts.allowMultiple) {'), FINISHING.indexOf('// Scan-mode gate'))
-    expect(branch).toContain('await addBagToOrder({ lbId: businessId, orderId, code: c })')
+    expect(branch).toContain('await addBagToOrder({ lbId: businessId, orderId, code: c,')
+    // …and the extra bag records WHY it is on the order, exactly as the first
+    // one does. Without the role it was written as an unclassified assignment
+    // and could never be shown as one of the order's Sorting bags.
+    expect(branch).toContain('purpose: BAG_PURPOSE.SORTING')
     // It re-implements none of the validation, and writes no bag row itself.
     for (const w of ['laundryBag.update', 'laundryBagAssignment.create', 'businessId: opts.lbId']) {
       expect(branch, w).not.toContain(w)
@@ -319,7 +323,12 @@ describe('Sorting · the one-bag restriction is lifted for Sorting only', () => 
 
   it('7 · adding a bag does NOT re-run the garment transition', () => {
     expect(SORTING_API).toContain('if (result.addedBag) {')
-    const branch = SORTING_API.slice(SORTING_API.indexOf('if (result.addedBag) {'), SORTING_API.indexOf('// Advance every garment past Sorting'))
+    // Anchored on the CODE that begins the completion (the transaction), not on
+    // a comment: a reworded comment silently made this slice run to EOF, which
+    // is how a passing assertion could stop covering the branch at all.
+    const branch = SORTING_API.slice(SORTING_API.indexOf('if (result.addedBag) {'), SORTING_API.indexOf('await prisma.$transaction('))
+    expect(branch.length).toBeGreaterThan(0)
+    expect(branch.length).toBeLessThan(SORTING_API.length / 2)
     expect(branch).toContain('advanced: 0')
     for (const w of ['barcodeRetired', 'processingStage', 'updateMany']) expect(branch, w).not.toContain(w)
   })

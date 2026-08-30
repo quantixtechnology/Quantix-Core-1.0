@@ -252,7 +252,17 @@ export async function assignFinishingBag(opts: {
     }
     const modeErr = scanModeAcceptance(c, opts.mode)
     if (modeErr) return { ok: false, error: modeErr, code: "INVALID" }
-    const added = await addBagToOrder({ lbId: businessId, orderId, code: c })
+    // Stamped SORTING for the same reason the first bag is: a bag attached
+    // while completing Sorting IS a Sorting bag, and the role cannot be
+    // recovered afterwards. Without it this bag was recorded with no role and
+    // so could never be shown as one of the order's Sorting bags. New rows
+    // only — nothing already written is touched.
+    //
+    // Only the ROLE is stated. Custody is deliberately left at its existing
+    // default: where the bag is held is a separate question from why it is on
+    // the order, and changing it here would alter bag-custody behaviour that
+    // nothing in this change needs.
+    const added = await addBagToOrder({ lbId: businessId, orderId, code: c, purpose: BAG_PURPOSE.SORTING })
     if (!added.ok) {
       return { ok: false, error: added.error, code: added.status === 409 ? "WRONG_ORDER" : "INVALID" }
     }

@@ -28,7 +28,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { stageLabel, nextStageOf, departmentFor, TERMINAL_STAGE } from "@/lib/laundry-processing"
 import { assignFinishingBag, syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { orderBags } from "@/lib/laundry-order-bags"
-import { activeBagForService, bagAtTime, type SortingBagRow } from "@/lib/laundry-sorting-bags"
+import { activeBagForService, bagAtTime, sortingBagsEver, type SortingBagRow } from "@/lib/laundry-sorting-bags"
 
 export const runtime = "nodejs"
 
@@ -77,6 +77,96 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+
+    // ── SORTING HISTORY — successful completions only ────────────────────────
+    //
+    // THE QUALIFYING RECORD is the LaundryOrderEvent this route writes with
+    // action "SORTING_COMPLETE" — the only place in the codebase that writes it,
+    // and written LAST: after every server-side gate has passed (every garment
+    // at Sorting, every garment scanned), after the bag is bound, and after the
+    // garments have actually been advanced out of the stage.
+    //
+    // It is deliberately NOT LaundryProcessingPackage.bagAssigned. That flag is
+    // set by assignFinishingBag(), which has TWO callers: this route, and
+    // /api/laundry/processing/finishing-bag, which binds the same bag under the
+    // same gates but does NOT advance the garments. An order bound that way has
+    // had a bag assigned without completing the stage — it is still at Sorting,
+    // and still on the active queue. Keying History on bagAssigned would have
+    // listed it as completed and shown it in both places at once.
+    //
+    // THE BAGS come from LaundryBagAssignment via the shared orderBags() reader,
+    // filtered by sortingBagsEver() — every row this order was given AT SORTING,
+    // oldest first, including ones since released. A transport or delivery bag is
+    // never included and no bag is reconstructed or inferred.
+    //
+    // Read-only, like the rest of this GET: it scans nothing, assigns nothing,
+    // advances nothing and writes nothing.
+    if (url.searchParams.get("history")) {
+      const search = (url.searchParams.get("search") || "").trim()
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200)
+
+      // A search may name the order or one of its bags. Both resolve to order
+      // ids first, because the completion event itself carries neither.
+      let scope: string[] | null = null
+      if (search) {
+        const [byNumber, byBag] = await Promise.all([
+          prisma.laundryOrder.findMany({ where: { businessId: biz.id, orderNumber: { contains: search } }, select: { id: true }, take: 200 }),
+          prisma.laundryBagAssignment.findMany({
+            where: { businessId: biz.id, purpose: "SORTING", bag: { bagNumber: { contains: search } } },
+            select: { orderId: true }, take: 200,
+          }),
+        ])
+        scope = [...new Set([...byNumber.map((o) => o.id), ...byBag.map((a) => a.orderId)])]
+        if (scope.length === 0) return NextResponse.json({ success: true, history: [] })
+      }
+
+      const completions = await prisma.laundryOrderEvent.findMany({
+        where: { businessId: biz.id, action: "SORTING_COMPLETE", ...(scope ? { orderId: { in: scope } } : {}) },
+        orderBy: { createdAt: "desc" },
+        take: limit * 2, // room to collapse any repeats before slicing
+        select: { orderId: true, createdAt: true, actorName: true },
+      })
+      // ONE row per order. A re-submitted completion returns early long before
+      // this event is written, but history must not double-count if one ever is.
+      const seen = new Set<string>()
+      const latest = completions.filter((e) => (seen.has(e.orderId) ? false : (seen.add(e.orderId), true))).slice(0, limit)
+
+      const histOrders = latest.length
+        ? await prisma.laundryOrder.findMany({
+            where: { id: { in: latest.map((e) => e.orderId) }, businessId: biz.id },
+            select: { id: true, orderNumber: true, status: true, customerId: true, _count: { select: { items: true } } },
+          })
+        : []
+      const byOrder = new Map(histOrders.map((o) => [o.id, o]))
+      const custIds = [...new Set(histOrders.map((o) => o.customerId).filter(Boolean) as string[])]
+      const custNames = new Map(
+        (custIds.length ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } }) : [])
+          .map((c) => [c.id, c.name]),
+      )
+
+      const history = await Promise.all(latest.map(async (e) => {
+        const order = byOrder.get(e.orderId)
+        const rows = (await orderBags(biz.id, e.orderId)) as SortingBagRow[]
+        // Completion requires every garment to have been scanned at Sorting, so
+        // scanned and expected are equal by construction — both are reported so
+        // the card can show "18 / 18" without the client inferring either.
+        const expected = order?._count.items ?? 0
+        return {
+          orderId: e.orderId,
+          orderNumber: order?.orderNumber ?? null,
+          customer: order?.customerId ? custNames.get(order.customerId) || null : null,
+          garments: expected,
+          expected,
+          sortingBags: sortingBagsEver(rows).map((b) => b.bagNumber),
+          completedAt: e.createdAt,
+          completedBy: e.actorName,
+          orderStatus: order?.status ?? null,
+          status: "COMPLETED" as const,
+        }
+      }))
+
+      return NextResponse.json({ success: true, history })
+    }
 
     // The orders currently at Sorting — the only ones this screen shows.
     const atSorting = await prisma.laundryOrderItem.findMany({
@@ -322,43 +412,79 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: { ...result, advanced: 0, addedBag: result.addedBag, totalBags: result.totalBags } })
       }
 
-      // Advance every garment past Sorting to its next stage in its own
-      // SNAPSHOTTED route (Iron / Fold / Transit terminal) — never a hardcoded
-      // transition. Garment barcodes were retired by assignFinishingBag, so only
-      // the bag QR is valid from here on.
-      const items = await prisma.laundryOrderItem.findMany({
-        where: { orderId: order.id },
-        select: { id: true, processFlow: true, processingStage: true },
-      })
+      // ── THE COMPLETION ITSELF — ONE TRANSACTION ──────────────────────────
+      //
+      // Advancing the garments out of Sorting and recording SORTING_COMPLETE are
+      // the SAME fact and are now written together: either the order left the
+      // stage and the completion is on the record, or neither happened. The
+      // event used to be a best-effort write after the loop, so a failure there
+      // produced an order that had left Sorting with nothing saying it ever
+      // completed — invisible to History and unrecoverable, because the second
+      // attempt finds nothing left at SORTING to advance.
+      //
+      // Every garment advances into its own SNAPSHOTTED route (Iron / Fold /
+      // Transit terminal) — never a hardcoded transition. Garment barcodes were
+      // retired by assignFinishingBag, so only the bag QR is valid from here on.
+      //
+      // Nothing here swallows an error any more: inside a transaction a
+      // swallowed failure is the one thing that could still commit a half-done
+      // completion. A throw rolls the whole thing back and the request fails,
+      // which is the honest answer — the operator re-scans and, because the bag
+      // binding above is idempotent, the retry completes cleanly.
+      //
+      // The bag BINDING is deliberately not inside this transaction: it goes
+      // through assignBagToOrder(), the single bag writer, which opens its own
+      // transaction and is shared with every other bag caller. Threading a
+      // client through it would refactor that shared writer, and it is not
+      // needed for the invariant — a binding that succeeds while this
+      // transaction rolls back leaves the order NOT completed and still at
+      // Sorting, which is a valid, retryable state and exactly what the
+      // /finishing-bag endpoint already produces.
       let advanced = 0
-      for (const item of items) {
-        const flow = (() => { try { const a = JSON.parse(item.processFlow || "null"); return Array.isArray(a) ? a.map(String) : null } catch { return null } })()
-        const nxt = flow ? nextStageOf(flow, "SORTING") : null
-        const stage = nxt || TERMINAL_STAGE
-        const updated = await prisma.laundryOrderItem.updateMany({
-          where: { id: item.id, processingStage: "SORTING" },
-          data: { processingStage: stage, processingStatus: "WAITING", processingDept: departmentFor(stage) },
+      await prisma.$transaction(async (tx) => {
+        advanced = 0
+        const items = await tx.laundryOrderItem.findMany({
+          where: { orderId: order.id },
+          select: { id: true, processFlow: true, processingStage: true },
         })
-        if (updated.count) {
-          advanced++
-          await prisma.laundryItemEvent.create({
-            data: {
-              itemId: item.id, orderId: order.id, businessId: biz.id,
-              stage: "SORTING", fromStage: "SORTING", toStage: stage, action: "SORTING_BAG_ASSIGNED",
-              department: departmentFor(stage), actorName: b.actorName || null,
-              note: `Bag ${code} assigned at Sorting; garment advanced to ${stageLabel(stage)}`,
-            },
-          }).catch(() => null)
+        for (const item of items) {
+          const flow = (() => { try { const a = JSON.parse(item.processFlow || "null"); return Array.isArray(a) ? a.map(String) : null } catch { return null } })()
+          const nxt = flow ? nextStageOf(flow, "SORTING") : null
+          const stage = nxt || TERMINAL_STAGE
+          const updated = await tx.laundryOrderItem.updateMany({
+            where: { id: item.id, processingStage: "SORTING" },
+            data: { processingStage: stage, processingStatus: "WAITING", processingDept: departmentFor(stage) },
+          })
+          if (updated.count) {
+            advanced++
+            await tx.laundryItemEvent.create({
+              data: {
+                itemId: item.id, orderId: order.id, businessId: biz.id,
+                stage: "SORTING", fromStage: "SORTING", toStage: stage, action: "SORTING_BAG_ASSIGNED",
+                department: departmentFor(stage), actorName: b.actorName || null,
+                note: `Bag ${code} assigned at Sorting; garment advanced to ${stageLabel(stage)}`,
+              },
+            })
+          }
         }
-      }
 
-      await prisma.laundryOrderEvent.create({
-        data: {
-          orderId: order.id, businessId: biz.id, fromStatus: order.status, toStatus: order.status,
-          action: "SORTING_COMPLETE", actorName: b.actorName || null,
-          note: `Sorting complete: ${advanced} garment(s) bound to bag ${code}`,
-        },
-      }).catch(() => null)
+        // ONE completion per order, enforced where it cannot race: a retry that
+        // reaches this far finds the standing event and adds nothing, so History
+        // can never show the same order twice.
+        const done = await tx.laundryOrderEvent.findFirst({
+          where: { orderId: order.id, action: "SORTING_COMPLETE" },
+          select: { id: true },
+        })
+        if (!done) {
+          await tx.laundryOrderEvent.create({
+            data: {
+              orderId: order.id, businessId: biz.id, fromStatus: order.status, toStatus: order.status,
+              action: "SORTING_COMPLETE", actorName: b.actorName || null,
+              note: `Sorting complete: ${advanced} garment(s) bound to bag ${code}`,
+            },
+          })
+        }
+      })
 
       await syncPackageLifecycle(order.id, biz.id).catch(() => null)
 

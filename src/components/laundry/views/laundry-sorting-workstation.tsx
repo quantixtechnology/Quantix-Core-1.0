@@ -2,15 +2,25 @@
 
 // SORTING workstation — the permanent garment→bag transition point.
 //
-// The operator scans every garment of an order (garment barcodes are still the
-// tracking identity here). When the scanned set equals the order's expected
-// count, ONE laundry bag is scanned and bound to the order (1 order = 1 bag).
-// The server retires every garment barcode and advances every garment past
-// Sorting — from that moment only the bag QR is valid (Iron / Fold / Transit).
+// TWO DIFFERENT ACTS, which used to share one name and one screen:
 //
-// This workstation NEVER accepts garment barcodes after the bag is assigned,
-// and it NEVER assigns a bag before every garment has been scanned (both are
-// enforced server-side in /api/laundry/processing/sorting).
+//   WHICH BAG DO THESE GARMENTS GO IN  — the operator's working question, and
+//     the flow this screen is built around. Scan a garment → its order becomes
+//     current → if that order+service has no Sorting bag, BAG REQUIRED → scan
+//     any AVAILABLE bag → it becomes the current Sorting bag → garments go into
+//     it → when the physical bag is full the operator adds another. An order
+//     may fill several bags; nothing is ever capped or closed automatically.
+//     Written through /api/laundry/orders/[id]/bags (purpose SORTING).
+//
+//   COMPLETING THE STAGE — once every garment of an order has been scanned
+//     here, the order can be finished: the server retires every garment
+//     barcode and advances every garment past Sorting, after which only the
+//     bag QR is valid (Iron / Fold / Transit). Written through
+//     /api/laundry/processing/sorting, which enforces the completeness rule
+//     server-side.
+//
+// The second act is a stage exit, NOT a limit on the first: bags are assigned
+// whenever the operator needs one, not only after a full scan.
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
@@ -171,7 +181,10 @@ function OrderBags({ order, bags, scanTimes, onAdd }: {
                 onClick={() => onAdd(svc.id, svc.name)}
                 className="ml-auto inline-flex items-center gap-1 rounded-md border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-50"
               >
-                <Plus className="h-3 w-3" /> Add New Bag
+                {/* Context-sensitive on the ACTUAL assignment rows: before the
+                    first bag exists this binds Bag 1, so it is never allowed to
+                    imply a "next" bag, a bag becoming FULL, or Bag 2. */}
+                {views.length === 0 ? <><Plus className="h-3 w-3" /> Assign First Bag</> : <><Plus className="h-3 w-3" /> Add New Bag</>}
               </button>
             </div>
           </div>
@@ -255,6 +268,130 @@ function CurrentBagBanner({ order, bags, addBagFor }: {
   )
 }
 
+/**
+ * SORTING HISTORY — orders that actually completed the stage.
+ *
+ * An AUDIT VIEW, not a second queue: it never scans, assigns or advances, and
+ * nothing on it is actionable. An order is here because the server recorded a
+ * successful completion (LaundryProcessingPackage.bagAssigned), and the bags
+ * listed are the rows that order was actually given AT SORTING — never a
+ * transport bag, never one inferred from an earlier journey.
+ *
+ * Read fresh from the server on every open, so a refresh cannot change it and
+ * client state cannot invent it.
+ */
+interface SortingHistoryRow {
+  orderId: string
+  orderNumber: string | null
+  customer: string | null
+  garments: number
+  expected: number
+  sortingBags: string[]
+  completedAt: string | null
+  completedBy: string | null
+  status: string
+}
+
+function SortingHistory({ businessId }: { businessId: string }) {
+  const [rows, setRows] = useState<SortingHistoryRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [query, setQuery] = useState("")
+
+  useEffect(() => {
+    if (!businessId) return
+    let cancelled = false
+    setLoading(true)
+    const p = new URLSearchParams({ businessId, history: "1" })
+    if (query.trim()) p.set("search", query.trim())
+    fetch(`/api/laundry/processing/sorting?${p}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (!j?.success) { setRows([]); setError(j?.error || "Could not load Sorting history."); return }
+        setError(null); setRows(j.history || [])
+      })
+      .catch(() => { if (!cancelled) { setRows([]); setError("Could not load Sorting history.") } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [businessId, query])
+
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—")
+
+  return (
+    <div className="px-4 lg:px-6 py-4 space-y-3">
+      <form
+        onSubmit={(e) => { e.preventDefault(); setQuery(search) }}
+        className="flex items-center gap-2"
+      >
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search order number or bag…"
+            className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-2 text-sm outline-none focus:border-indigo-300"
+          />
+        </div>
+        <Button type="submit" size="sm" variant="outline" className="text-[12px]">Search</Button>
+        {query && (
+          <button type="button" onClick={() => { setSearch(""); setQuery("") }} className="text-[11px] text-slate-500 underline">Clear</button>
+        )}
+      </form>
+
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
+
+      {loading ? (
+        <p className="text-sm text-slate-400 py-8 text-center">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-slate-400 py-8 text-center">
+          {query ? "No completed Sorting order matches that search." : "No order has completed Sorting yet. An order appears here once its Sorting completion succeeds."}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div key={r.orderId} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-[13px] font-semibold text-slate-800 break-all">{r.orderNumber || r.orderId}</p>
+                  <p className="text-[12px] text-slate-600">{r.customer || "—"}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 text-[11px]">
+                    {r.garments} / {r.expected} garments
+                  </Badge>
+                  <Badge className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] font-bold">{r.status}</Badge>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Singular vs plural, because "Sorting Bags: VBBAG001" reads
+                      like something is missing. */}
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {r.sortingBags.length === 1 ? "Sorting bag" : "Sorting bags"}
+                  </span>
+                  {r.sortingBags.length === 0 ? (
+                    <span className="text-[11px] text-slate-400">— none recorded</span>
+                  ) : r.sortingBags.map((b, i) => (
+                    <span key={b} className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-indigo-800">
+                      {r.sortingBags.length > 1 && <span className="text-[9px] font-bold text-indigo-400">{i + 1}</span>}
+                      {b}
+                    </span>
+                  ))}
+                </div>
+                <span className="text-[11px] text-slate-500 ml-auto">
+                  Completed {when(r.completedAt)}{r.completedBy ? ` · ${r.completedBy}` : ""}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** One order card's bag list — its own hook instance, its own refresh. */
 function SortingOrderBags({ orderId, businessId, busy }: { orderId: string; businessId: string; busy: boolean }) {
   const { bags, loadBags } = useOrderBags(orderId, businessId)
@@ -272,6 +409,9 @@ export function LaundrySortingWorkstation() {
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [offline, setOffline] = useState(false)
   const [bagTarget, setBagTarget] = useState<{ label: string; hint: string } | null>(null)
+  // Active ⇄ History. History is an audit view of completed Sorting, read from
+  // the server; switching to it does not stop or disturb the active workflow.
+  const [tab, setTab] = useState<"active" | "history">("active")
   // ── Navigation aids. None of these are written by load(), so the 12s poll can
   // never erase the last scan, the history or the highlight.
   const [lastScanned, setLastScanned] = useState<ScanRecord | null>(null)
@@ -633,7 +773,7 @@ export function LaundrySortingWorkstation() {
 
     if (scannedCount >= d.expected) {
       playScanOk(soundEnabled)
-      toast({ title: "Order complete", description: `${d.orderNumber} — all ${d.expected} garments scanned. Scan the ${bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind this order.`, duration: 4000 })
+      toast({ title: "Order complete", description: `${d.orderNumber} — all ${d.expected} garments scanned. Scan the ${bagTarget?.label?.replace(/^Scan /, "") || "bag"} to complete Sorting and move it on.`, duration: 4000 })
     } else {
       playScanOk(soundEnabled)
       toast({ title: `Scanned ${scannedCount} / ${d.expected}`, description: `${d.garmentName} → ${d.orderNumber}`, duration: 1500 })
@@ -672,6 +812,45 @@ export function LaundrySortingWorkstation() {
   const totalScanned = Object.values(scanned).reduce((n, l) => n + l.length, 0)
   const totalGarments = orders.reduce((n, o) => n + o.expected, 0)
 
+  // Is the order's add-bag panel for a service that ALREADY has a Sorting bag?
+  //
+  // Everything here is derived from the ASSIGNMENT ROWS, never from the button
+  // being clicked: opening the panel changes nothing. With no bag yet the panel
+  // is a FIRST-bag assignment and must never speak of a "next" bag, "becomes
+  // FULL" or Bag 2. With a bag present it is exactly the close-and-add-next act.
+  // The bag is assigned ONLY when its barcode is successfully scanned and the
+  // server-side binding succeeds; until then `activeBagForService` keeps
+  // answering null and the banner keeps reading BAG REQUIRED.
+  const bagPanelExisting = addBagFor
+    ? activeBagForService(bagsByOrder[addBagFor.orderId] || [], addBagFor.serviceId, addBagFor.serviceName)
+    : null
+
+  const tabStrip = (
+    <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+      {([["active", "Active"], ["history", "History"]] as const).map(([k, lbl]) => (
+        <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-4 py-1.5 text-sm font-semibold ${tab === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>{lbl}</button>
+      ))}
+    </div>
+  )
+
+  // HISTORY. Rendered after every hook above has run, so the hook order is
+  // identical in both tabs. The active workflow's state is left exactly as it
+  // was — switching back finds the same queue, scans and bags.
+  if (tab === "history") {
+    return (
+      <div className="min-h-full">
+        <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-6 pt-4 pb-3 space-y-3">
+          <h1 className="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
+            <Layers className="h-5 w-5 text-indigo-600" /> Sorting
+            <Badge className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] font-semibold">COMPLETED — AUDIT VIEW</Badge>
+          </h1>
+          {tabStrip}
+        </div>
+        <SortingHistory businessId={currentBusinessId || ""} />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-full">
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-6 pt-4 pb-3 space-y-3">
@@ -682,8 +861,11 @@ export function LaundrySortingWorkstation() {
           </h1>
           <div className="flex items-center gap-2 text-xs">
             <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50"><ScanLine className="h-3 w-3 mr-1" /> {totalScanned} / {totalGarments} scanned</Badge>
-            <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50"><PackageCheck className="h-3 w-3 mr-1" /> {readyOrders.length} ready for bag</Badge>
+            <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50"><PackageCheck className="h-3 w-3 mr-1" /> {readyOrders.length} ready to complete</Badge>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {tabStrip}
         </div>
 
         <Card className="rounded-xl border-indigo-200 bg-indigo-50/40 shadow-sm">
@@ -691,7 +873,7 @@ export function LaundrySortingWorkstation() {
             <LaundryBarcodeScanner onDetect={handleGarmentScan} departmentLabel="Sorting" />
             {offline && <div className="mt-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">Unable to reach the server. Check your connection.</div>}
             {scanErr && !offline && <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{scanErr}</div>}
-            <p className="mt-2 text-[11px] text-slate-500">Scan every garment of the order. When the scanned count equals the order, scan ONE {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind it — every garment barcode is then retired and only the bag QR is used from here on.</p>
+            <p className="mt-2 text-[11px] text-slate-500">Scan a garment to identify the order. If no sorting bag is assigned, scan the bag this order will use. Once a bag is assigned, continue scanning garments into the current sorting bag.</p>
           </CardContent>
         </Card>
 
@@ -775,18 +957,24 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
-        {/* + ADD NEW BAG — the operator says the current bag is full.
-            Never automatic (§8): the system cannot see a physical bag fill up,
-            and silently assigning one would put garments somewhere nobody
-            chose. Adding a bag is exactly what marks the previous one full. */}
+        {/* + ADD NEW BAG / ASSIGN FIRST BAG — context-sensitive on the order's
+            actual assignments (`bagPanelExisting`), never on the button being
+            clicked. With a bag present this closes it and binds the next — the
+            physical act that marks the previous one full. Before ANY bag exists
+            it is a FIRST-bag assignment: BAG REQUIRED language only, and never
+            a "next bag", "current becomes FULL" or Bag 2. The bag becomes
+            assigned ONLY when its barcode is scanned and the server-side
+            binding (assignOrderBag → /orders/[id]/bags) succeeds. */}
         {addBagFor && (
           <div className="rounded-xl border border-indigo-300 bg-indigo-50/70 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="min-w-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-800">Add new bag</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-800">{bagPanelExisting ? "Add new bag" : "Assign first bag"}</span>
               <div className="font-mono text-[12px] font-semibold text-slate-800">{addBagFor.orderNumber}</div>
               <div className="text-[11px] text-slate-600">{addBagFor.serviceName || "—"}</div>
             </div>
-            <p className="text-[11px] text-indigo-900 basis-full sm:basis-auto">Scan the next physical bag — the current one becomes FULL and every later garment of this service goes into the new bag.</p>
+            <p className="text-[11px] text-indigo-900 basis-full sm:basis-auto">{bagPanelExisting
+              ? "Scan the next physical bag — the current one becomes FULL and every later garment of this service goes into the new bag."
+              : "Scan the bag this order will use — it becomes this service's Sorting bag."}</p>
             <div className="ml-auto flex items-center gap-2">
               <input
                 value={bagCode}
@@ -818,7 +1006,9 @@ export function LaundrySortingWorkstation() {
               />
               <button type="button" onClick={() => setAddBagFor(null)} className="text-[11px] text-slate-500 underline">Cancel</button>
             </div>
-            <p className="w-full text-[10px] text-indigo-800">The existing bag keeps the garments already sorted into it — scanning continues normally.</p>
+            <p className="w-full text-[10px] text-indigo-800">{bagPanelExisting
+              ? "The existing bag keeps the garments already sorted into it — scanning continues normally."
+              : "No Sorting bag is assigned to this order for this service yet — the bag you scan becomes Bag 1."}</p>
           </div>
         )}
 
@@ -1009,17 +1199,17 @@ export function LaundrySortingWorkstation() {
           <Card className="rounded-xl border-emerald-200 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
-                <PackageCheck className="h-[18px] w-[18px] text-emerald-600" /> Bind the Bag (1 order = 1 bag)
+                <PackageCheck className="h-[18px] w-[18px] text-emerald-600" /> Complete Sorting
                 <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">{readyOrders.length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {readyOrders.length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">Scan every garment of an order first — the bag unlock appears here when the scanned count matches.</p>
+                <p className="text-sm text-slate-400 py-6 text-center">An order appears here once every one of its garments has been scanned — that is when Sorting can be completed and the order moved on. Sorting bags are assigned on the order card, whenever one is needed.</p>
               ) : readyOrders.map((o) => (
                 <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-white p-3">
                   <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">All {o.expected} garments scanned. Scan ONE {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to bind the whole order{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null}.</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">All {o.expected} garments scanned. Scan the {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to complete Sorting{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} — this finishes the stage, it is not what decides which bag a garment goes into.</p>
                   <div className="mt-2 space-y-2">
                     {/* Enabled by the same `readyOrders` membership that renders
                         this card — one source of truth, so a card can never
@@ -1036,7 +1226,7 @@ export function LaundrySortingWorkstation() {
                         reads, so both stages see one bag set (§13). */}
                     <SortingOrderBags orderId={o.orderId} businessId={currentBusinessId || ""} busy={busy} />
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-2">Assigning retires every garment barcode and advances the order to Ironing / Folding / Transit.</p>
+                  <p className="text-[10px] text-slate-400 mt-2">Completing Sorting retires every garment barcode and advances the order to Ironing / Folding / Transit.</p>
                 </div>
               ))}
             </CardContent>
