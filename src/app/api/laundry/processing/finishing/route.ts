@@ -113,6 +113,125 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: { containers: [], container: null } })
+
+    // ── FINISHING HISTORY — work actually completed at THIS stage ────────────
+    //
+    // Additive and read-only. It returns BEFORE any of the load logic below, so
+    // the live Active path — scan → resolve container → packageGarmentsWhere —
+    // is not touched by it in any way.
+    //
+    // THE QUALIFYING RECORD is the existing per-garment completion:
+    // LaundryItemEvent { action: "COMPLETE", stage: IRON|FOLD }, written only by
+    // /api/laundry/items/[id]/process. Scanning a bag, loading a container and
+    // opening a batch write no such event, so none of them can appear here. No
+    // new completion state is invented.
+    //
+    // WHAT A ROW IS: one CONTAINER at this stage. The container is the thing the
+    // operator actually scans, and its code is recorded on the package itself —
+    // so it is reported, not inferred. Garments are attributed to a container by
+    // the SAME existing rule the loader uses (packageGarmentsWhere, read in
+    // reverse: a service-scoped package owns that service's garments, an
+    // order-scoped one owns the order's) — no new relationship is introduced.
+    //
+    // DELIBERATELY NOT SHOWN: which individual SORTING bag a garment went into.
+    // That relationship is not stored anywhere, and a plausible guess in an
+    // operational history is worse than an honest omission.
+    if (sp.get("history")) {
+      const search = (sp.get("search") || "").trim().toUpperCase()
+      const limit = Math.min(Math.max(Number(sp.get("limit")) || 50, 1), 200)
+
+      const events = await prisma.laundryItemEvent.findMany({
+        where: { businessId: biz.id, action: "COMPLETE", stage },
+        orderBy: { createdAt: "desc" },
+        take: 2000,
+        select: { itemId: true, orderId: true, actorName: true, createdAt: true },
+      })
+      if (events.length === 0) return NextResponse.json({ success: true, history: [] })
+
+      const orderIds = [...new Set(events.map((e) => e.orderId))]
+      const [items, orders, packages] = await Promise.all([
+        prisma.laundryOrderItem.findMany({
+          where: { id: { in: [...new Set(events.map((e) => e.itemId))] } },
+          select: { id: true, garmentName: true, serviceId: true, serviceName: true, orderId: true },
+        }),
+        prisma.laundryOrder.findMany({
+          where: { id: { in: orderIds }, businessId: biz.id },
+          select: { id: true, orderNumber: true, status: true, customerId: true },
+        }),
+        prisma.laundryProcessingPackage.findMany({
+          where: { businessId: biz.id, orderId: { in: orderIds } },
+          select: { id: true, code: true, bagCode: true, orderId: true, serviceId: true },
+        }),
+      ])
+      const itemById = new Map(items.map((i) => [i.id, i]))
+      const orderById = new Map(orders.map((o) => [o.id, o]))
+      const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
+      const custNames = new Map(
+        (custIds.length ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } }) : [])
+          .map((c) => [c.id, c.name]),
+      )
+
+      /** The loader's rule in reverse: this garment's container on its order. */
+      const containerFor = (orderId: string, serviceId: string | null) => {
+        const mine = packages.filter((p) => p.orderId === orderId)
+        return mine.find((p) => p.serviceId && p.serviceId === serviceId) || mine.find((p) => !p.serviceId) || null
+      }
+
+      interface Row {
+        key: string; orderId: string; orderNumber: string | null; customer: string | null
+        containerCode: string | null; serviceName: string | null
+        itemIds: Set<string>; contents: Map<string, number>
+        completedAt: Date; completedBy: string | null
+      }
+      const rows = new Map<string, Row>()
+      for (const e of events) {
+        const item = itemById.get(e.itemId)
+        if (!item || item.orderId !== e.orderId) continue
+        const order = orderById.get(e.orderId)
+        if (!order) continue // another tenant's order, or deleted
+        const container = containerFor(e.orderId, item.serviceId)
+        const key = container ? container.id : `order:${e.orderId}`
+        let row = rows.get(key)
+        if (!row) {
+          row = {
+            key, orderId: e.orderId, orderNumber: order.orderNumber,
+            customer: order.customerId ? custNames.get(order.customerId) || null : null,
+            containerCode: container ? container.bagCode || container.code : null,
+            serviceName: item.serviceName ?? null,
+            itemIds: new Set(), contents: new Map(),
+            completedAt: e.createdAt, completedBy: e.actorName ?? null,
+          }
+          rows.set(key, row)
+        }
+        // DISTINCT garments: a re-completed garment is the same garment, so a
+        // second event must not inflate the count or the contents.
+        if (row.itemIds.has(e.itemId)) continue
+        row.itemIds.add(e.itemId)
+        row.contents.set(item.garmentName, (row.contents.get(item.garmentName) || 0) + 1)
+      }
+
+      const history = [...rows.values()]
+        .filter((r) => !search || (r.orderNumber || "").toUpperCase().includes(search) || (r.containerCode || "").toUpperCase().includes(search))
+        .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())
+        .slice(0, limit)
+        .map((r) => ({
+          orderId: r.orderId,
+          orderNumber: r.orderNumber,
+          customer: r.customer,
+          container: r.containerCode,
+          serviceName: r.serviceName,
+          garments: r.itemIds.size,
+          contents: [...r.contents.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })),
+          completedAt: r.completedAt,
+          completedBy: r.completedBy,
+          stage,
+          stageLabel: stageLabel(stage),
+          status: "COMPLETED" as const,
+        }))
+
+      return NextResponse.json({ success: true, history })
+    }
+
     const settings = await prisma.laundryBusiness.findUnique({
       where: { id: biz.id },
       select: { processingPackageQrMode: true, workstationScanSound: true },

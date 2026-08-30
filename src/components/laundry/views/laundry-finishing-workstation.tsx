@@ -45,6 +45,116 @@ type ContainerDetail = {
 
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
 
+/**
+ * FINISHING HISTORY — what was actually completed at this stage.
+ *
+ * An audit view, not a second queue: nothing here is actionable, and it never
+ * scans, loads or completes anything. A row appears because the server recorded
+ * real per-garment completions (LaundryItemEvent COMPLETE at this stage) —
+ * scanning a bag, loading a container or opening a batch write no such event.
+ *
+ * One row = one CONTAINER, identified by the code the operator actually scans.
+ * Which individual SORTING bag a garment went into is deliberately NOT shown:
+ * that relationship is not stored, and guessing it in a history would be worse
+ * than leaving it out.
+ */
+interface FinishingHistoryRow {
+  orderId: string
+  orderNumber: string | null
+  customer: string | null
+  container: string | null
+  serviceName: string | null
+  garments: number
+  contents: { name: string; count: number }[]
+  completedAt: string | null
+  completedBy: string | null
+  stageLabel: string
+  status: string
+}
+
+function FinishingHistory({ businessId, stage }: { businessId: string; stage: string }) {
+  const [rows, setRows] = useState<FinishingHistoryRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [query, setQuery] = useState("")
+
+  useEffect(() => {
+    if (!businessId) return
+    let cancelled = false
+    setLoading(true)
+    const p = new URLSearchParams({ businessId, stage, history: "1" })
+    if (query.trim()) p.set("search", query.trim())
+    fetch(`/api/laundry/processing/finishing?${p}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (!j?.success) { setRows([]); setError(j?.error || "Could not load history."); return }
+        setError(null); setRows(j.history || [])
+      })
+      .catch(() => { if (!cancelled) { setRows([]); setError("Could not load history.") } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [businessId, stage, query])
+
+  return (
+    <div className="space-y-3">
+      <form onSubmit={(e) => { e.preventDefault(); setQuery(search) }} className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-md">
+          <ScanLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order number or container…" className="pl-8 h-9 bg-white" />
+        </div>
+        <Button type="submit" size="sm" variant="outline" className="h-9 text-[12px]">Search</Button>
+        {query && <button type="button" onClick={() => { setSearch(""); setQuery("") }} className="text-[11px] text-slate-500 underline">Clear</button>}
+      </form>
+
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
+
+      {loading ? (
+        <p className="text-sm text-slate-400 py-8 text-center">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-slate-400 py-8 text-center">
+          {query ? "Nothing completed here matches that search." : `No ${stageLabel(stage).toLowerCase()} work has been completed yet. A container appears here once its garments are completed at this stage.`}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div key={`${r.orderId}-${r.container || "none"}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-[13px] font-semibold text-slate-800 break-all">{r.orderNumber || r.orderId}</p>
+                  <p className="text-[12px] text-slate-600">{r.customer || "—"}{r.serviceName ? ` · ${r.serviceName}` : ""}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {r.container && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-blue-800">
+                      <Package className="h-3 w-3" />{r.container}
+                    </span>
+                  )}
+                  <Badge variant="outline" className="border-slate-300 text-slate-700 bg-slate-50 text-[11px]">{r.garments} garment{r.garments === 1 ? "" : "s"}</Badge>
+                  <Badge className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] font-bold">{r.status}</Badge>
+                </div>
+              </div>
+              {r.contents.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {r.contents.map((c) => (
+                    <span key={c.name} className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700">
+                      <span className="font-semibold">{c.count} ×</span> {c.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-slate-500">
+                Completed {fmt(r.completedAt)}{r.completedBy ? ` · ${r.completedBy}` : ""}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { stage: string; icon?: React.ComponentType<{ className?: string }> }) {
   const { currentBusinessId, user } = useAuthStore()
   const { level } = useLaundryPermissions()
@@ -55,6 +165,9 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
   const [soundEnabled, setSoundEnabled] = useState(true)
   // Same workstation permission as Start/Complete — see laundry-workstation.tsx.
   const hasReturnPerm = level(`processing.${stage === "FOLD" ? "folding" : "ironing"}`) >= Level.CREATE
+  // Active ⇄ History. History is a read-only audit view of completed work at
+  // this stage; switching to it leaves the Active workflow exactly as it is.
+  const [tab, setTab] = useState<"active" | "history">("active")
   const [containers, setContainers] = useState<ContainerSummary[]>([])
   const [active, setActive] = useState<ContainerDetail | null>(null)
   const [code, setCode] = useState("")
@@ -223,6 +336,19 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
         </p>
       </div>
 
+      <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+        {([["active", "Active"], ["history", "History"]] as const).map(([k, lbl]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-4 py-1.5 text-sm font-semibold ${tab === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>{lbl}</button>
+        ))}
+      </div>
+
+      {/* HISTORY — rendered instead of the operational surfaces below. Every
+          hook above has already run, so the hook order is identical in both
+          tabs and the Active state survives untouched while History is open. */}
+      {tab === "history" && <FinishingHistory businessId={currentBusinessId || ""} stage={stage} />}
+
+      {tab === "active" && (<>
+
       {/* Container scan */}
       <Card className="rounded-xl border-blue-200 bg-blue-50/40 shadow-sm">
         <CardContent className="p-4">
@@ -382,6 +508,8 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
           </CardContent>
         </Card>
       </div>
+
+      </>)}
     </div>
   )
 }
