@@ -177,3 +177,56 @@ describe('the New Order screen offers only what is priced', () => {
     expect(read('src/lib/laundry-garment-services.ts')).toContain('laundryPricingRule.findMany')
   })
 })
+
+// ============================================================================
+// STORE INTAKE (the Store PWA New Order) had neither rule.
+//
+// The desktop New Order derives the order's service from the first garment and
+// offers only services priced for the garment in hand. The store intake screen
+// was never given either: its Service and Garment dropdowns listed everything,
+// so an operator could take Wash & Dry + Curtain — a pair the Pricing Matrix
+// marks NA — and the order was only refused on save. It also let the second
+// garment be given a different service, which createLaundryOrder then rejected.
+//
+// Same rules, same data, applied where the operator actually chooses.
+// ============================================================================
+describe('store intake offers only what is priced, for one service', () => {
+  const PWA = read('src/app/laundry/store/page.tsx')
+
+  it('reads availability from the same pricing endpoint, not a new rule', () => {
+    expect(PWA).toContain('/api/laundry/garment-services?businessId=')
+    expect(PWA).toContain('const garmentPriced = (garmentId: string) =>')
+    expect(PWA).toContain('(priced[garmentId] || []).includes(activeSvc)')
+  })
+
+  it('a garment the service cannot price is greyed out and unselectable', () => {
+    expect(PWA).toContain('disabled={!ok}')
+    expect(PWA).toContain('" — not priced"')
+  })
+
+  it('and cannot be added even if it is somehow still selected', () => {
+    expect(PWA).toContain('if (!s || !g || !garmentPriced(g.id)) return')
+    expect(PWA).toContain('disabled={!activeSvc || !gar || !garmentPriced(gar)}')
+  })
+
+  it('changing the service clears a garment it cannot price', () => {
+    expect(PWA).toContain('if (gar && priced && !(priced[gar] || []).includes(v)) setGar("")')
+  })
+
+  it('nothing is greyed out before availability has loaded', () => {
+    // null = not fetched. Greying everything on a slow connection would block
+    // intake outright; the server still refuses an unpriced pair regardless.
+    expect(PWA).toContain('!activeSvc || !priced ||')
+    expect(PWA).toContain('useState<Record<string, string[]> | null>(null)')
+  })
+
+  it('the first garment fixes the order service, derived from the lines', () => {
+    expect(PWA).toContain('const lockedServiceId = lines.length ? lines[0].serviceId : ""')
+    expect(PWA).toContain('const activeSvc = lockedServiceId || svc')
+    expect(PWA).toContain('disabled={!!lockedServiceId}')
+  })
+
+  it('and says so, instead of silently disabling the box', () => {
+    expect(PWA).toContain('A different service needs its own order.')
+  })
+})

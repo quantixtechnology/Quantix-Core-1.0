@@ -886,6 +886,11 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
   const [garments, setGarments] = useState<any[]>([])
   const [svc, setSvc] = useState(""); const [gar, setGar] = useState(""); const [qty, setQty] = useState("1")
   const [lines, setLines] = useState<{ serviceId: string; serviceName: string; garmentId: string; garmentName: string; quantity: number }[]>([])
+  // garmentId → the services it is actually PRICED for, from the Pricing Matrix
+  // (the same rule the billing engine and the orders API already use). null
+  // while it loads, so nothing is greyed out on a slow connection — the server
+  // still refuses an unpriced pair either way.
+  const [priced, setPriced] = useState<Record<string, string[]> | null>(null)
   // pickup
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
@@ -927,6 +932,7 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
   useEffect(() => {
     api(`/api/laundry/services?businessId=${staff.businessId}`).then((j) => { if (j.success) setServices(j.data || j.services || []) })
     api(`/api/laundry/garments?businessId=${staff.businessId}`).then((j) => { if (j.success) setGarments(j.data || j.garments || []) })
+    api(`/api/laundry/garment-services?businessId=${staff.businessId}`).then((j) => { if (j.success) setPriced(j.data || {}) })
   }, [api, staff.businessId])
   useEffect(() => {
     if (customer || q.trim().length < 2) { setMatches([]); return }
@@ -942,9 +948,20 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
       if (j.success && j.data) setCustomer(j.data); else setErr(j.error || "Could not create customer")
     } finally { setCreatingCust(false) }
   }
+  // ONE SERVICE = ONE ORDER. Derived from the lines themselves, exactly as the
+  // desktop New Order does it, so removing every line clears the lock and a
+  // reload cannot leave a stale one behind. The orders API refuses a mixed
+  // order anyway; this stops the operator building one it will then reject.
+  const lockedServiceId = lines.length ? lines[0].serviceId : ""
+  const activeSvc = lockedServiceId || svc
+  // A garment is selectable only where the Pricing Matrix prices it for the
+  // service in play. An NA cell has no active rule, which is precisely what the
+  // billing engine cannot price.
+  const garmentPriced = (garmentId: string) => !activeSvc || !priced || (priced[garmentId] || []).includes(activeSvc)
+
   const addLine = () => {
-    const s = services.find((x) => x.id === svc), g = garments.find((x) => x.id === gar)
-    if (!s || !g) return
+    const s = services.find((x) => x.id === activeSvc), g = garments.find((x) => x.id === gar)
+    if (!s || !g || !garmentPriced(g.id)) return
     setLines((p) => [...p, { serviceId: s.id, serviceName: s.name, garmentId: g.id, garmentName: g.name, quantity: Math.max(1, Number(qty) || 1) }])
     setGar(""); setQty("1")
   }
@@ -1009,11 +1026,24 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
         <section className="space-y-2">
           <p className="text-[12px] font-semibold text-slate-600">Garments</p>
           <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-            <select value={svc} onChange={(e) => setSvc(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white"><option value="">Service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-            <select value={gar} onChange={(e) => setGar(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white"><option value="">Garment</option>{garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+            {/* Locked to the order's service once the first garment sets it —
+                every later garment follows it instead of being free to differ. */}
+            <select
+              value={activeSvc}
+              disabled={!!lockedServiceId}
+              onChange={(e) => { const v = e.target.value; setSvc(v); if (gar && priced && !(priced[gar] || []).includes(v)) setGar("") }}
+              className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white disabled:bg-slate-100 disabled:text-slate-500"
+            >
+              <option value="">Service</option>
+              {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {/* A garment the selected service has no price for is greyed out and
+                cannot be chosen — by the row or the dropdown. */}
+            <select value={gar} onChange={(e) => setGar(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-2 text-[13px] bg-white"><option value="">Garment</option>{garments.map((g) => { const ok = garmentPriced(g.id); return <option key={g.id} value={g.id} disabled={!ok} className={ok ? "" : "text-slate-300"}>{g.name}{ok ? "" : " — not priced"}</option> })}</select>
             <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className="h-11 w-14 rounded-xl border border-slate-200 px-2 text-[14px] text-center" />
           </div>
-          <button onClick={addLine} disabled={!svc || !gar} className="w-full h-10 rounded-xl border border-blue-200 text-blue-700 text-[13px] font-medium disabled:opacity-40">+ Add garment</button>
+          {lockedServiceId && <p className="text-[10px] text-slate-400">This order is for {lines[0].serviceName}. A different service needs its own order.</p>}
+          <button onClick={addLine} disabled={!activeSvc || !gar || !garmentPriced(gar)} className="w-full h-10 rounded-xl border border-blue-200 text-blue-700 text-[13px] font-medium disabled:opacity-40">+ Add garment</button>
           {lines.length > 0 && <div className="space-y-1">{lines.map((l, i) => (
             <div key={i} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-[13px]"><span>{l.quantity} × {l.garmentName} · {l.serviceName}</span><button onClick={() => setLines((p) => p.filter((_, j) => j !== i))}><X className="h-4 w-4 text-slate-400" /></button></div>
           ))}</div>}
