@@ -83,13 +83,19 @@ describe('Bug 1 — the Sorting queue never drops a partially scanned order', ()
     expect(src).toContain('for (const it of j.items || [])')
     expect(src).toContain('setOrders([...byOrder.values()])')
     // and every grouped order is rendered — no display cap on the queue
-    expect(src).toContain('orders.map((o) =>')
+    // every grouped order is rendered — the collection is the filtered one,
+    // which is `orders` itself whenever no filter is applied
+    expect(src).toContain('visibleOrders.map((o) =>')
+    expect(src).toContain('if (!q) return orders')
     expect(src).not.toMatch(/orders\s*\.slice\(/)
   })
 
   it('Complete Sorting derives from the SAME order set, so one cap moves both', () => {
     const src = code(SORT)
-    expect(src).toContain('const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    expect(src).toContain('const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    // …and with no filter that collection IS `orders`, so the unfiltered
+    // behaviour is byte-for-byte what it was.
+    expect(src).toContain('if (!q) return orders')
     expect(src).not.toMatch(/readyOrders\s*\.slice\(/)
   })
 })

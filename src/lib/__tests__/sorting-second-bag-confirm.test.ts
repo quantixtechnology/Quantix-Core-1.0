@@ -106,7 +106,10 @@ describe('7/8 · nothing outside this screen moved', () => {
   })
 
   it('the completion gate is untouched', () => {
-    expect(code).toContain('const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    expect(code).toContain('const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    // …and with no filter that collection IS `orders`, so the unfiltered
+    // behaviour is byte-for-byte what it was.
+    expect(code).toContain('if (!q) return orders')
     expect(code).toContain('action: "assign_bag"')
   })
 })

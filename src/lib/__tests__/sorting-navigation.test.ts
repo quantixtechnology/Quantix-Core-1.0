@@ -198,7 +198,10 @@ describe('the Sorting workflow itself is untouched', () => {
   })
 
   it('the scanned tally is still the ref, and the ready rule is unchanged', () => {
-    expect(src).toContain('const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    expect(src).toContain('const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    // …and with no filter that collection IS `orders`, so the unfiltered
+    // behaviour is byte-for-byte what it was.
+    expect(src).toContain('if (!q) return orders')
     expect(src).toContain('scannedRef.current = { ...scannedRef.current, [d.orderId]: list }')
   })
 
@@ -658,7 +661,7 @@ describe('the final Sorting completion flow is untouched', () => {
   })
 
   it('the ready-for-bag rule and the terminal caller are unchanged', () => {
-    expect(src).toContain('const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
+    expect(src).toContain('const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)')
     expect(src).toContain('action: "assign_bag", code,')
     expect(src).toContain('scanned: scannedRef.current[order.orderId] || []')
   })

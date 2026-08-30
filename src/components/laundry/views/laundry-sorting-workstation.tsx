@@ -21,7 +21,7 @@
 //
 // The second act is a stage exit, NOT a limit on the first: bags are assigned
 // whenever the operator needs one, not only after a full scan.
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -37,9 +37,13 @@ import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Search, X, MapPin, History, Plus } from "lucide-react"
 import { activeBagForService, sortingBagViews, otherBagsOnOrder, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
+import { CopyButton } from "@/components/ui/copy-button"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null
+  /** The GAR code. The API already sends it; intake writes the same value to
+   *  `barcode`, so `barcode` is the fallback for any row that predates it. */
+  garmentScanCode?: string | null
   garmentName: string; serviceName: string | null; serviceId?: string | null; quantity: number
   orderId: string; orderNumber: string | null; customer: string | null
 }
@@ -134,6 +138,10 @@ const RECENT_LIMIT = 5
  */
 /** The services actually present on an order's garments — so a two-service
  *  order gets two bag tracks, and neither can borrow the other's bag. */
+/** The GAR an operator reads off the label — `garmentScanCode`, else `barcode`. */
+const garOf = (g: { garmentScanCode?: string | null; barcode?: string | null }): string =>
+  (g.garmentScanCode || g.barcode || "").trim()
+
 function servicesOnOrder(order: OrderGroup): { id: string | null; name: string | null; itemIds: string[] }[] {
   const services: { id: string | null; name: string | null; itemIds: string[] }[] = []
   for (const g of order.garments) {
@@ -262,6 +270,7 @@ function CurrentBagBanner({ order, bags, addBagFor }: {
               {label && <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">{label}</span>}
               <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100">Current sorting bag</span>
               <span className="font-mono text-base font-bold text-white">{active.bagNumber}</span>
+              <CopyButton value={active.bagNumber} label="Bag code" size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-white hover:bg-white/20" silent />
               <span className="text-[11px] font-semibold text-indigo-100">ADD GARMENTS TO THIS BAG</span>
             </div>
           )
@@ -469,6 +478,12 @@ export function LaundrySortingWorkstation() {
   // released or marked FULL by it. Holding the pending target here means Cancel
   // simply drops it — no bag panel opens and nothing about the order changes.
   const [confirmSecondBag, setConfirmSecondBag] = useState<{ orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null>(null)
+  // A LOCAL FILTER OVER WHAT IS ALREADY LOADED — not a search.
+  //
+  // Deliberately separate from the global Garment Lookup above, which asks the
+  // SERVER about any garment anywhere. This one never requests anything: it
+  // only decides which of the orders already in `orders` are drawn.
+  const [orderFilter, setOrderFilter] = useState("")
 
   /** Re-read one order's bags from the authoritative list. */
   const refreshBags = useCallback(async (orderId: string): Promise<SortingBagRow[]> => {
@@ -487,6 +502,10 @@ export function LaundrySortingWorkstation() {
 
   /** Bring an order into view and flag it — presentation only, no state change. */
   const locate = useCallback((orderId: string, itemId: string | null) => {
+    // A scanned order must always be reachable. If a filter is hiding it, the
+    // filter yields — the scan is the operator's real intent, and a card that
+    // is not rendered cannot be scrolled to.
+    setOrderFilter("")
     setHighlight({ orderId, itemId })
     if (highlightTimer.current) clearTimeout(highlightTimer.current)
     // The flag fades; the order list itself is never touched.
@@ -649,7 +668,21 @@ export function LaundrySortingWorkstation() {
   }, [currentBusinessId, soundEnabled, refreshBags])
 
   const scannedFor = (orderId: string) => scanned[orderId] || []
-  const readyOrders = orders.filter((o) => scannedFor(o.orderId).length >= o.expected)
+  // ONE FILTERED COLLECTION FEEDS BOTH SECTIONS, so an order can never be
+  // listed at Sorting while missing from Complete Sorting, or the reverse.
+  // Empty filter → `orders` itself, so nothing changes when it is not in use.
+  const visibleOrders = useMemo(() => {
+    const q = orderFilter.trim().toLowerCase()
+    if (!q) return orders
+    return orders.filter((o) => {
+      if ((o.orderNumber || "").toLowerCase().includes(q)) return true
+      if ((o.customer || "").toLowerCase().includes(q)) return true
+      if (o.garments.some((g) => garOf(g).toLowerCase().includes(q))) return true
+      return (bagsByOrder[o.orderId] || []).some((b) => (b.bagNumber || "").toLowerCase().includes(q))
+    })
+  }, [orders, orderFilter, bagsByOrder])
+
+  const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)
 
   const handleGarmentScan = useCallback(async (code: string) => {
     setScanErr(null)
@@ -1188,13 +1221,37 @@ export function LaundrySortingWorkstation() {
             <CardHeader className="pb-3">
               <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
                 <ScanLine className="h-[18px] w-[18px] text-blue-600" /> Orders at Sorting
-                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{orders.length}</Badge>
+                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{visibleOrders.length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {orders.length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">No orders are ready for Sorting.</p>
-              ) : orders.map((o) => {
+              {/* FILTER, not search. The global Garment Lookup above asks the
+                  server about any garment anywhere; this only narrows the
+                  orders already on screen, and requests nothing. */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  value={orderFilter}
+                  onChange={(e) => setOrderFilter(e.target.value)}
+                  placeholder="Filter these orders — number, customer, GAR or bag"
+                  className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 py-2 text-[13px] outline-none focus:border-indigo-300"
+                />
+                {orderFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setOrderFilter("")}
+                    aria-label="Clear filter"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {visibleOrders.length === 0 ? (
+                <p className="text-sm text-slate-400 py-6 text-center">
+                  {orderFilter ? "No loaded order matches that filter." : "No orders are ready for Sorting."}
+                </p>
+              ) : visibleOrders.map((o) => {
                 const done = scannedFor(o.orderId).length
                 const complete = done >= o.expected
                 return (
@@ -1206,8 +1263,11 @@ export function LaundrySortingWorkstation() {
                     className={`rounded-lg border p-3 transition-shadow ${highlight?.orderId === o.orderId ? "border-indigo-400 ring-2 ring-indigo-300 bg-indigo-50/40" : complete ? "border-emerald-300 bg-emerald-50/50" : "border-slate-200 bg-white"}`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-semibold text-slate-800 font-mono break-all">{o.orderNumber}</p>
+                          <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent />
+                        </div>
                         <p className="text-[11px] text-slate-400">{o.customer || "—"} · {o.garments.length} garment{o.garments.length === 1 ? "" : "s"}</p>
                       </div>
                       <Badge variant={complete ? "default" : "outline"} className={complete ? "bg-emerald-600 border-emerald-600 text-white text-[10px]" : "border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px]"}>
@@ -1245,6 +1305,49 @@ export function LaundrySortingWorkstation() {
                         })}
                       </div>
                     </div>
+
+                    {/* SCANNED GARMENTS — what has actually been recorded at
+                        Sorting for this order, and nothing else.
+                        Membership is `scanned[orderId]`, the persisted scan
+                        trail; a garment the operator has not scanned is simply
+                        absent. The ids are matched against the order's own
+                        garments, so a duplicate scan cannot list a garment
+                        twice and another order's garment can never appear.
+                        Deliberately NOT grouped under a bag: which physical bag
+                        a garment went into is not durably stored, and a
+                        plausible-looking grouping would be a claim the data
+                        cannot support. The bag is shown separately, above. */}
+                    {(() => {
+                      const ids = new Set(scannedFor(o.orderId))
+                      const done = o.garments.filter((g) => ids.has(g.id))
+                      if (done.length === 0) return null
+                      const gars = done.map(garOf).filter(Boolean)
+                      return (
+                        <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Scanned garments</span>
+                            <span className="text-[10px] tabular-nums text-slate-400">{done.length}</span>
+                            {gars.length > 0 && (
+                              <CopyButton value={gars.join("\n")} label="GAR codes" size="sm" variant="outline" className="ml-auto h-6 px-1.5 text-[10px]">
+                                Copy all GAR codes
+                              </CopyButton>
+                            )}
+                          </div>
+                          <div className="max-h-40 overflow-y-auto space-y-0.5">
+                            {done.map((g) => {
+                              const gar = garOf(g)
+                              return (
+                                <div key={g.id} className="flex items-center gap-1.5 text-[11px]">
+                                  <span className="font-mono text-slate-700">{gar || "—"}</span>
+                                  <span className="text-slate-500 truncate">— {g.garmentName}</span>
+                                  {gar && <CopyButton value={gar} label="GAR code" size="icon" variant="ghost" className="h-5 w-5 shrink-0 ml-auto" silent />}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* THIS ORDER'S BAGS, per service. One bag fills up and the
                         operator adds another; both stay on the order for good. */}
