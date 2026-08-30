@@ -149,14 +149,14 @@ describe('SCANNED GARMENTS · only what was actually scanned', () => {
   })
 
   it('membership is the scan trail, in the component too', () => {
-    expect(code).toContain('const ids = new Set(scannedFor(o.orderId))')
-    expect(code).toContain('const done = o.garments.filter((g) => ids.has(g.id))')
+    expect(code).toContain('const scannedIds = new Set(scannedFor(o.orderId))')
+    expect(code).toContain('const scannedGarments = o.garments.filter((g) => scannedIds.has(g.id))')
   })
 })
 
 describe('BAG SAFETY · no GAR→bag membership is invented', () => {
   it('the scanned list is per ORDER and names no bag', () => {
-    const block = code.slice(code.indexOf('const ids = new Set(scannedFor(o.orderId))'), code.indexOf('<OrderBags'))
+    const block = code.slice(code.indexOf('{scannedGarments.length > 0 && ('), code.indexOf('<OrderBags'))
     expect(block.length).toBeGreaterThan(300)
     for (const w of ['bagNumber', 'bagsByOrder', 'activeBagForService', 'SORTING BAG', 'Bag 1']) {
       expect(block, w).not.toContain(w)
@@ -178,7 +178,7 @@ describe('COPY · exact values, no side effects', () => {
     expect(code).toContain('<CopyButton value={o.orderNumber} label="Order number"')
     expect(code).toContain('<CopyButton value={gar} label="GAR code"')
     expect(code).toContain('<CopyButton value={active.bagNumber} label="Bag code"')
-    expect(code).toContain('value={gars.join("\\n")} label="GAR codes"')
+    expect(code).toContain('value={scannedGarments.map((g) => `${garOf(g) || "—"} — ${g.garmentName}`).join("\\n")}')
   })
 
   it('the shared button writes to the clipboard and nothing else', () => {

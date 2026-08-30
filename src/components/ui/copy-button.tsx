@@ -33,6 +33,19 @@ export interface CopyButtonProps {
   className?: string
   /** Suppress the toast when several of these sit together. */
   silent?: boolean
+  /**
+   * Do not take focus when clicked with the mouse.
+   *
+   * OPT-IN, and off everywhere it is not asked for. A screen that keeps an
+   * input permanently focused — the workstation barcode scanner does — reclaims
+   * focus the moment a button takes it, and re-focusing an input at the top of
+   * the page scrolls the page there. Copying is meant to leave the operator
+   * exactly where they are, so on those screens the button declines the focus
+   * rather than the scanner being taught about buttons.
+   *
+   * Mouse only: keyboard users still Tab to it and activate it as before.
+   */
+  preventFocusSteal?: boolean
   onCopied?: (value: string) => void
 }
 
@@ -67,7 +80,8 @@ async function writeClipboard(text: string): Promise<boolean> {
 }
 
 export function CopyButton({
-  value, label, children, size = "sm", variant = "outline", className = "", silent = false, onCopied,
+  value, label, children, size = "sm", variant = "outline", className = "", silent = false,
+  preventFocusSteal = false, onCopied,
 }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -98,6 +112,9 @@ export function CopyButton({
       size={size}
       variant={variant}
       onClick={handle}
+      // Declining focus has to happen on mousedown — by click the focus has
+      // already moved and the scanner's reclaim is already queued.
+      onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
       aria-disabled={copied}
       // Names the action for a screen reader even when the visible label is
       // just "Copy" next to an ambiguous value.

@@ -77,7 +77,10 @@ describe('the correct order and garment are located', () => {
     expect(src).toContain('const isJust = highlight?.itemId === g.id')
     expect(read(SORT)).toContain('✓ JUST SCANNED')
     // the chip's scanned state still comes from scannedFor, not the highlight
-    expect(src).toContain('const isScanned = scannedFor(o.orderId).includes(g.id)')
+    // Same membership, now read from the card's single scanned set so the
+    // chip, the count and the list can never disagree.
+    expect(src).toContain('const isScanned = scannedIds.has(g.id)')
+    expect(src).toContain('const scannedIds = new Set(scannedFor(o.orderId))')
   })
 
   it('every garment is always shown — there is no "+N more" to hide behind', () => {

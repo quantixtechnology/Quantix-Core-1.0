@@ -270,7 +270,7 @@ function CurrentBagBanner({ order, bags, addBagFor }: {
               {label && <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">{label}</span>}
               <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100">Current sorting bag</span>
               <span className="font-mono text-base font-bold text-white">{active.bagNumber}</span>
-              <CopyButton value={active.bagNumber} label="Bag code" size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-white hover:bg-white/20" silent />
+              <CopyButton value={active.bagNumber} label="Bag code" size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-white hover:bg-white/20" silent preventFocusSteal />
               <span className="text-[11px] font-semibold text-indigo-100">ADD GARMENTS TO THIS BAG</span>
             </div>
           )
@@ -1252,7 +1252,14 @@ export function LaundrySortingWorkstation() {
                   {orderFilter ? "No loaded order matches that filter." : "No orders are ready for Sorting."}
                 </p>
               ) : visibleOrders.map((o) => {
-                const done = scannedFor(o.orderId).length
+                // ONE COLLECTION ANSWERS "WHAT HAS BEEN SCANNED FOR THIS ORDER".
+                // The badge, the garment list and Copy All all read it, so the
+                // count and the list cannot be computed two different ways and
+                // drift apart — which is exactly how "3 / 25 scanned" came to
+                // render fewer than three rows.
+                const scannedIds = new Set(scannedFor(o.orderId))
+                const scannedGarments = o.garments.filter((g) => scannedIds.has(g.id))
+                const done = scannedGarments.length
                 const complete = done >= o.expected
                 return (
                   <div
@@ -1266,7 +1273,7 @@ export function LaundrySortingWorkstation() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-semibold text-slate-800 font-mono break-all">{o.orderNumber}</p>
-                          <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent />
+                          <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent preventFocusSteal />
                         </div>
                         <p className="text-[11px] text-slate-400">{o.customer || "—"} · {o.garments.length} garment{o.garments.length === 1 ? "" : "s"}</p>
                       </div>
@@ -1287,7 +1294,9 @@ export function LaundrySortingWorkstation() {
                     <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-slate-100 bg-slate-50/40 p-1.5">
                       <div className="flex flex-wrap gap-1">
                         {o.garments.map((g) => {
-                          const isScanned = scannedFor(o.orderId).includes(g.id)
+                          // Same set the count and the list use — one answer to
+                          // "is this garment scanned" per card.
+                          const isScanned = scannedIds.has(g.id)
                           const isJust = highlight?.itemId === g.id
                           return (
                             <span
@@ -1317,37 +1326,41 @@ export function LaundrySortingWorkstation() {
                         a garment went into is not durably stored, and a
                         plausible-looking grouping would be a claim the data
                         cannot support. The bag is shown separately, above. */}
-                    {(() => {
-                      const ids = new Set(scannedFor(o.orderId))
-                      const done = o.garments.filter((g) => ids.has(g.id))
-                      if (done.length === 0) return null
-                      const gars = done.map(garOf).filter(Boolean)
-                      return (
-                        <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Scanned garments</span>
-                            <span className="text-[10px] tabular-nums text-slate-400">{done.length}</span>
-                            {gars.length > 0 && (
-                              <CopyButton value={gars.join("\n")} label="GAR codes" size="sm" variant="outline" className="ml-auto h-6 px-1.5 text-[10px]">
-                                Copy all GAR codes
-                              </CopyButton>
-                            )}
-                          </div>
-                          <div className="max-h-40 overflow-y-auto space-y-0.5">
-                            {done.map((g) => {
-                              const gar = garOf(g)
-                              return (
-                                <div key={g.id} className="flex items-center gap-1.5 text-[11px]">
-                                  <span className="font-mono text-slate-700">{gar || "—"}</span>
-                                  <span className="text-slate-500 truncate">— {g.garmentName}</span>
-                                  {gar && <CopyButton value={gar} label="GAR code" size="icon" variant="ghost" className="h-5 w-5 shrink-0 ml-auto" silent />}
-                                </div>
-                              )
-                            })}
-                          </div>
+                    {scannedGarments.length > 0 && (
+                      <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Scanned garments</span>
+                          {/* The SAME number the badge above shows, from the same
+                              collection that renders the rows below it. */}
+                          <span className="text-[10px] tabular-nums text-slate-400">{scannedGarments.length} / {o.expected}</span>
+                          {/* ONE LINE PER SCANNED GARMENT, exactly as displayed —
+                              a garment with no GAR copies as "— Name" rather than
+                              being silently dropped from the list. */}
+                          <CopyButton
+                            value={scannedGarments.map((g) => `${garOf(g) || "—"} — ${g.garmentName}`).join("\n")}
+                            label="Scanned garments"
+                            size="sm" variant="outline" className="ml-auto h-6 px-1.5 text-[10px]"
+                            preventFocusSteal
+                          >
+                            Copy all scanned garments
+                          </CopyButton>
                         </div>
-                      )
-                    })()}
+                        {/* The one scroll region for this list: 25 garments scroll
+                            here, and the page stays where the operator left it. */}
+                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                          {scannedGarments.map((g) => {
+                            const gar = garOf(g)
+                            return (
+                              <div key={g.id} className="flex items-center gap-1.5 text-[11px]">
+                                <span className="font-mono text-slate-700">{gar || "—"}</span>
+                                <span className="text-slate-500 truncate">— {g.garmentName}</span>
+                                {gar && <CopyButton value={gar} label="GAR code" size="icon" variant="ghost" className="h-5 w-5 shrink-0 ml-auto" silent preventFocusSteal />}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* THIS ORDER'S BAGS, per service. One bag fills up and the
                         operator adds another; both stay on the order for good. */}
