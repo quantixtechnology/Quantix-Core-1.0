@@ -1025,15 +1025,20 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 pt-[max(1rem,var(--safe-top))] pb-[max(1rem,var(--safe-bottom))]" onClick={onClose}>
+      {/* A CENTRED DIALOG, never a bottom sheet — no bottom:0, no anchoring
+          above the navigation, and the bar is not reserved as modal space.
+          Height comes from the content; the cap only bounds a long garment
+          list. vh on iOS Safari measures the LARGEST viewport (chrome hidden),
+          so dvh is used where supported with plain vh as the fallback. */}
+      <div className="w-full max-w-[360px] sm:max-w-md bg-white rounded-2xl shadow-xl max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="font-bold text-gray-900">
               {preAuth ? "Sign In" : step === "select" ? service.name : "Checkout"}
             </p>
             <p className="text-xs text-gray-400">
-              {preAuth ? "Complete your account" : step === "select" ? "Choose garments & quantity" : step === "details" ? "Pickup details" : "Pickup scheduled"}
+              {preAuth ? "Complete your account" : step === "select" ? (isBag ? "Pickup-first · billed after audit" : "Choose garments & quantity") : step === "details" ? "Pickup details" : "Pickup scheduled"}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button>
@@ -1226,15 +1231,25 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
         {/* STEP: select garments (or weight for PER_KG services) */}
         {step === "select" && !preAuth && (<>
           {isBag ? (
-            <div className="overflow-y-auto px-5 py-6 flex-1 space-y-3">
-              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-center">
-                <div className="mx-auto w-12 h-12 rounded-full bg-white flex items-center justify-center" style={{ color: brandColor }}><PackageCheck className="w-6 h-6" /></div>
-                <p className="mt-2 text-sm font-semibold text-gray-900">Pickup-First Service</p>
-                <p className="mt-1 text-xs text-gray-500">No need to count garments. We collect your clothes for <b>{service.name}</b> in a dedicated bag and count them at Store Audit — you only book the pickup.</p>
+            <div className="overflow-y-auto px-4 py-4 sm:px-5 sm:py-6 flex-1 space-y-2.5 sm:space-y-3">
+              {/* PHONE: icon and text on one row, so the panel costs ~72px
+                  instead of a third of the screen. DESKTOP (sm+): the original
+                  centred card, unchanged. The service name is deliberately not
+                  repeated — the sheet header already carries it. */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:p-4 flex items-start gap-3 sm:block sm:text-center">
+                <div className="shrink-0 w-9 h-9 sm:w-12 sm:h-12 sm:mx-auto rounded-full bg-white flex items-center justify-center" style={{ color: brandColor }}>
+                  <PackageCheck className="w-[18px] h-[18px] sm:w-6 sm:h-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13px] sm:text-sm sm:mt-2 font-semibold text-gray-900">Pickup-First Service</p>
+                  <p className="mt-0.5 sm:mt-1 text-xs leading-snug text-gray-500">We collect your clothes in a dedicated bag and count them at Store Audit — you only book the pickup.</p>
+                </div>
               </div>
-              <ul className="text-xs text-gray-500 space-y-1.5">
-                <li>• One bag for this service</li>
-                <li>• Garments counted &amp; priced after Store Audit</li>
+              {/* One line on a phone; the itemised list where there is room. */}
+              <p className="text-xs text-gray-500 sm:hidden">1 bag • Counted &amp; priced at Store Audit</p>
+              <ul className="hidden sm:block text-xs text-gray-500 space-y-1.5">
+                <li>• 1 bag for this service</li>
+                <li>• Counted &amp; priced at Store Audit</li>
                 <li>• Schedule pickup at the next step</li>
               </ul>
             </div>
@@ -1265,7 +1280,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               {visibleItems.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No garments match “{gSearch}”.</p>}
             </div>
           )}
-          <div className="border-t border-gray-100 px-5 py-4 bg-gray-50/60">
+          <div className="border-t border-gray-100 px-4 py-3 sm:px-5 sm:py-4 bg-gray-50/60">
             {!isBag && !isPerKg && selected.length > 0 && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{selected.reduce((s, it) => s + (qty[it.garmentId] || 0), 0)} item(s) selected</span></div>}
             {isBag ? null : hasKgPortion ? (
               <div className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
@@ -1277,7 +1292,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
             )}
             <button disabled={!canContinue} onClick={addToCart} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80 flex items-center justify-center gap-1.5" style={accentBg}><Plus className="w-4 h-4" /> {isBag ? "Add Pickup Bag" : "Add to Cart"}</button>
-            <p className="mt-1.5 text-center text-[11px] text-gray-400">Keep shopping and add more services — pickup details are entered at checkout.</p>
+            <p className={`mt-1.5 text-center text-[11px] text-gray-400 ${isBag ? "hidden sm:block" : ""}`}>Keep shopping and add more services — pickup details are entered at checkout.</p>
           </div>
         </>)}
 
