@@ -748,8 +748,22 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
     // Every garment MUST carry a real service — otherwise it can't be priced
     // and would save as a ₹0 "Service" line.
     if (!serviceId) { toast({ title: "Select a service", description: "Choose the service for this order before saving.", variant: "destructive" }); return }
-    const usable = rows.filter((r) => r.garmentId && ((Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0))
-    if (!usable.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
+    // NOTHING IS DISCARDED SILENTLY. A half-filled row used to be dropped by
+    // this filter with no message, so a garment the operator believed they had
+    // entered simply never reached the order — indistinguishable from a failed
+    // save. Every row is now either saved or named as the reason nothing was.
+    const filled = (r: { garmentId: string; quantity: string; weightKg: string }) => (Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0
+    const started = rows.filter((r) => r.garmentId || filled(r))
+    const usable = started.filter((r) => r.garmentId && filled(r))
+    if (!started.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
+    const incomplete = started
+      .map((r, i) => ({ r, n: i + 1 }))
+      .filter(({ r }) => !usable.includes(r))
+    if (incomplete.length > 0) {
+      const missing = incomplete.map(({ r, n }) => (r.garmentId ? `row ${n} has no quantity or weight` : `row ${n} has no garment`))
+      toast({ title: "Finish every row first", description: `${missing.join(", ")}. Nothing was saved.`, variant: "destructive" })
+      return
+    }
     const items = usable.map((r) => ({ serviceId, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }))
     setSaving(true)
     try {

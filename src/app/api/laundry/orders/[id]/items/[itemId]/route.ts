@@ -16,6 +16,8 @@ import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
+import { explodePieces } from "@/lib/laundry-order-items"
+import { nextGarScanCode, healGarSequenceCounter } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -24,7 +26,7 @@ const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 async function loadOrder(orderId: string) {
   return prisma.laundryOrder.findUnique({
     where: { id: orderId },
-    select: { id: true, businessId: true, storeId: true, customerType: true, amountPaid: true, billedAt: true, status: true },
+    select: { id: true, businessId: true, orderNumber: true, storeId: true, customerType: true, amountPaid: true, billedAt: true, status: true },
   })
 }
 
@@ -201,16 +203,88 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ success: false, error: `${g?.name || "This garment"} is not available for ${s?.name || "this service"}.` }, { status: 400 })
     }
 
+    // ── PER-GARMENT IDENTITY ────────────────────────────────────────────
+    //
+    // "5 × Shirt" is FIVE physical garments, not one row carrying a 5. Barcode
+    // Generation, processing, QC and delivery all operate on individual
+    // LaundryOrderItem records, so every write path normalises through
+    // explodePieces — createLaundryOrder does, the intake/add-garment endpoint
+    // does. THIS one did not: it wrote the quantity straight onto the single
+    // row, so an audited "5 shirts" reached Barcode Generation as one garment
+    // with one barcode, and five physical shirts shared one lifecycle.
+    const units = explodePieces([{ ...line, quantity, weightKg }])
+
+    // A garment that already carries its own operational identity cannot be
+    // split behind itself — its barcode is printed and its siblings were never
+    // in the processing queue. Say so instead of silently corrupting the order.
+    if (units.length > 1 && (item.barcodeGenerated || item.processingStage)) {
+      return NextResponse.json({
+        success: false,
+        error: `${item.garmentName} has already been barcoded, so its quantity cannot be changed here. Add the extra garments as their own lines instead.`,
+      }, { status: 409 })
+    }
+
+    // GAR codes are minted serially — the counter is atomic but not safe to
+    // race — and healed first so a drifted counter cannot re-issue an existing
+    // code and P2002 the whole correction.
+    const extra = units.slice(1)
+    const garCodes: string[] = []
+    if (extra.length > 0) {
+      await healGarSequenceCounter()
+      for (let i = 0; i < extra.length; i++) garCodes.push(await nextGarScanCode())
+    }
+
     const before = `${item.garmentName} · ${item.serviceName} · qty ${item.quantity}${item.weightKg ? ` · ${item.weightKg}kg` : ""}`
-    await prisma.laundryOrderItem.update({
-      where: { id: itemId },
-      data: { serviceId, garmentId, quantity, weightKg, serviceName: line.serviceName, garmentName: line.garmentName },
+    await prisma.$transaction(async (tx) => {
+      const head = units[0]
+      await tx.laundryOrderItem.update({
+        where: { id: itemId },
+        // The edited row KEEPS its id, its GAR code and its history — it becomes
+        // garment 1 of N rather than being replaced, so nothing already scanned
+        // or inspected loses its identity.
+        data: { serviceId, garmentId, quantity: head.quantity, weightKg: head.weightKg, serviceName: line.serviceName, garmentName: line.garmentName },
+      })
+      if (extra.length === 0) return
+      const base = await tx.laundryOrderItem.count({ where: { orderId: id } })
+      for (let i = 0; i < extra.length; i++) {
+        const u = extra[i]
+        const gar = garCodes[i]
+        await tx.laundryOrderItem.create({
+          data: {
+            orderId: id,
+            itemNumber: `ITM-${order.orderNumber}-${String(base + i + 1).padStart(4, "0")}`,
+            barcode: gar, garmentScanCode: gar,
+            serviceId, serviceName: line.serviceName,
+            garmentId, garmentName: line.garmentName,
+            categoryId: line.categoryId, pricingRuleId: line.pricingRuleId, pricingType: line.pricingType,
+            quantity: u.quantity, weightKg: u.weightKg ?? 0,
+            unitPrice: line.unitPrice, lineAmount: u.lineAmount,
+            gstPercent: line.gstPercent, gstAmount: u.gstAmount,
+            discount: u.discount ?? 0, total: u.total,
+            // Saying "this line is 5 garments" does not un-inspect what the
+            // auditor already inspected — the siblings carry the same verdict,
+            // so the audit gate is not silently reset by a correction.
+            condition: item.condition, defects: item.defects,
+            inspectionNotes: item.inspectionNotes, inspectedAt: item.inspectedAt,
+          },
+        })
+      }
     })
+
+    // Prices every item from scratch, so the split lines are re-priced
+    // individually and the order total is unchanged by the normalisation.
     const totals = await recomputeOrder(id)
     const after = `${line.garmentName} · ${line.serviceName} · qty ${quantity}${weightKg ? ` · ${weightKg}kg` : ""}`
-    await logEvent(order, "AUDIT_ITEM_CHANGED", `${before} → ${after}`, guard.ctx?.userName)
+    await logEvent(
+      order,
+      "AUDIT_ITEM_CHANGED",
+      extra.length > 0
+        ? `${before} → ${after} (recorded as ${units.length} individual garments)`
+        : `${before} → ${after}`,
+      guard.ctx?.userName,
+    )
 
-    return NextResponse.json({ success: true, data: { itemId, ...totals } })
+    return NextResponse.json({ success: true, data: { itemId, split: units.length, ...totals } })
   } catch (e) {
     console.error("[audit-item] PATCH", e)
     return NextResponse.json({ success: false, error: "Failed" }, { status: 500 })
