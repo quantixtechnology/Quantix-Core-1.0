@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { unavailableOrderLines, type PricedServices } from "@/lib/laundry-garment-availability"
 import { intakeServiceChoice, intakeRowsToItems, DEFAULT_ROW_QUANTITY } from "@/lib/laundry-intake-service"
+import { scheduleCell, bookedServiceNames, URGENCY_STYLE, urgencyNote } from "@/lib/laundry-schedule-display"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
@@ -39,7 +40,16 @@ const DEFECTS = [
   { code: "COLOR_FADE", label: "Color Fade" },
 ]
 
-interface OrderRow { id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string; customerId: string | null }
+interface OrderRow {
+  id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string; customerId: string | null
+  // All already returned by GET /api/laundry/orders — the list spreads every
+  // LaundryOrder scalar, includes the booked `services` rows, and attaches the
+  // customer from ONE batched lookup. Nothing here costs an extra query.
+  customer?: { name: string; phone: string | null; customerCode: string | null } | null
+  services?: { serviceId: string | null; serviceName: string }[]
+  pickupDate?: string | null; pickupTimeSlot?: string | null
+  deliveryDate?: string | null; deliveryTimeSlot?: string | null
+}
 interface Item {
   id: string; garmentName: string; serviceName: string; quantity: number; weightKg: number
   pricingType: string; unitPrice: number; total?: number
@@ -683,20 +693,69 @@ export function LaundryStoreAudit() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16"><ClipboardCheck className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">{search ? "No orders match" : "No orders waiting for audit"}</p></div>
         ) : (
+          // Nine columns is wider than a laptop — the table scrolls inside its
+          // own container so the page body never scrolls sideways.
+          <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Amount</TableHead><TableHead>Created</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow>
+              <TableHead>Order No.</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Service Booked</TableHead>
+              <TableHead>Pickup</TableHead>
+              <TableHead>Delivery</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow></TableHeader>
             <TableBody>
-              {filtered.map((r) => (
+              {filtered.map((r) => {
+                // Display only. Nothing here reads or writes a status, and an
+                // overdue date is a colour — never a workflow change.
+                const pickup = scheduleCell(r.pickupDate, r.pickupTimeSlot)
+                const delivery = scheduleCell(r.deliveryDate, r.deliveryTimeSlot)
+                const services = bookedServiceNames(r.services)
+                return (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => openOrder(r.id)}>
-                  <TableCell className="font-mono font-medium text-sm">{r.orderNumber}</TableCell>
-                  <TableCell className="tabular-nums">{inr(r.grandTotal)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{fmt(r.createdAt)}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">Pending Audit</Badge></TableCell>
+                  <TableCell className="font-mono font-medium text-sm whitespace-nowrap">{r.orderNumber}</TableCell>
+                  <TableCell>
+                    <p className="text-sm font-medium text-slate-800">{r.customer?.name || "—"}</p>
+                    {r.customer?.phone && <p className="text-[11px] text-muted-foreground">{r.customer.phone}</p>}
+                  </TableCell>
+                  <TableCell>
+                    {/* The order's OWN booked services. More than one is shown
+                        in full — picking one arbitrarily is the thing to avoid. */}
+                    {services.length === 0 ? <span className="text-slate-400">—</span> : (
+                      <div className="flex flex-wrap gap-1">
+                        {services.map((name) => (
+                          <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-normal">{name}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
+                  {[pickup, delivery].map((cell, i) => (
+                    <TableCell key={i} className="whitespace-nowrap">
+                      {!cell.date ? <span className="text-slate-400">—</span> : (
+                        <>
+                          <p className={`text-[13px] leading-tight ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
+                          {cell.slot && <p className="text-[11px] text-muted-foreground leading-tight">{cell.slot}</p>}
+                          {urgencyNote(cell) && (
+                            <span className={`text-[10px] font-semibold ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>
+                          )}
+                        </>
+                      )}
+                    </TableCell>
+                  ))}
+                  <TableCell className="tabular-nums text-right whitespace-nowrap">{inr(r.grandTotal)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmt(r.createdAt)}</TableCell>
+                  <TableCell><Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 whitespace-nowrap">Pending Audit</Badge></TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); openOrder(r.id) }}>Inspect <ArrowRight className="h-3.5 w-3.5" /></Button></TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
+          </div>
         )}
       </CardContent></Card>
     </div>
