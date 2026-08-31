@@ -21,6 +21,11 @@ import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 interface OrderRow {
   id: string; orderNumber: string; status: string; grandTotal: number; paymentStatus: string
   createdAt: string; expectedDeliveryDate: string | null; itemCount: number
+  // The order's OWN pickup schedule — LaundryOrder.pickupDate / pickupTimeSlot,
+  // as booked. Never derived from the delivery date or the creation time: those
+  // answer different questions and an order can be scheduled for either without
+  // the other.
+  pickupDate: string | null; pickupTimeSlot: string | null
   store?: { storeName: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   feedback?: { rating: number } | null
@@ -152,7 +157,7 @@ export function LaundryOrdersView() {
                 <TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead>Store</TableHead>
                 <TableHead className="text-center">Items</TableHead><TableHead className="text-right">Amount</TableHead>
                 <TableHead>Payment</TableHead><TableHead>Stage</TableHead><TableHead>Created</TableHead>
-                <TableHead className="text-center">Rating</TableHead><TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-center">Rating</TableHead><TableHead>Pickup</TableHead><TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {rows.map((o) => {
@@ -170,6 +175,21 @@ export function LaundryOrdersView() {
                       <TableCell className="text-center">
                         {o.feedback?.rating ? (
                           <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600" title={`Rated ${o.feedback.rating}/5`}><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{o.feedback.rating}.0</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </TableCell>
+                      {/* PICKUP — the booked collection slot, read straight off
+                          the order. The slot string is shown exactly as stored,
+                          which is how Order Detail and every scheduling screen
+                          already print it; a second time format on one screen
+                          would make the same order look like two. */}
+                      <TableCell className="text-xs text-slate-500 whitespace-nowrap">
+                        {o.pickupDate ? (
+                          <>
+                            <div>{fmtDay(o.pickupDate)}</div>
+                            {o.pickupTimeSlot && <div className="text-[11px] text-slate-400">{o.pickupTimeSlot}</div>}
+                          </>
                         ) : (
                           <span className="text-slate-300">—</span>
                         )}

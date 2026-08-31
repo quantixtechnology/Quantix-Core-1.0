@@ -10,8 +10,14 @@ import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } from "@/lib/laundry-transport-server"
 import { usesPacket } from "@/lib/laundry-transport"
+import { buildReportRow, type ReportOrder } from "@/lib/laundry-order-report"
 
 export const runtime = "nodejs"
+
+// A report is a file, not a page, so it is not paginated — but it is still
+// bounded, so one export cannot pull an unbounded result set into memory. The
+// response says when it was reached rather than silently shortening the file.
+const REPORT_MAX_ROWS = 5000
 
 export async function POST(request: Request) {
   try {
@@ -309,6 +315,85 @@ export async function GET(request: Request) {
         ...(matched.length ? [{ customerId: { in: matched.map((c) => c.id) } }] : []),
         ...(transportOrderIds.length ? [{ id: { in: transportOrderIds } }] : []),
       ]
+    }
+
+    // ── REPORT MODE ──────────────────────────────────────────────────────
+    //
+    // The SAME guard, the SAME resolved business and the SAME `where` the list
+    // above built — so the report can never show an order the list would not,
+    // and no second, looser reporting endpoint exists. Only the shape differs:
+    // one row per order, enriched with the contact, money, item and bag detail
+    // a printed report needs, and uncapped instead of paginated.
+    if (searchParams.get("report") === "1") {
+      const rows = await prisma.laundryOrder.findMany({
+        where: where as never,
+        include: {
+          store: { select: { storeName: true } },
+          services: { select: { serviceName: true } },
+          items: { select: { garmentName: true, serviceName: true, quantity: true, unitPrice: true, total: true } },
+          payments: { select: { method: true, status: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: REPORT_MAX_ROWS,
+      })
+
+      // Customer contact + address: the platform Customer the order already
+      // references. No customer record is created, copied or reshaped.
+      const custIds = [...new Set(rows.map((o) => o.customerId).filter(Boolean) as string[])]
+      const custs = custIds.length
+        ? await prisma.customer.findMany({
+            where: { id: { in: custIds } },
+            select: {
+              id: true, name: true, phone: true, email: true, customerCode: true,
+              addresses: { select: { addressLine1: true, addressLine2: true, area: true, landmark: true, city: true, state: true, pincode: true }, take: 1, orderBy: { isDefault: "desc" } },
+            },
+          })
+        : []
+      const custById = new Map(custs.map((c) => [c.id, c]))
+
+      // Bags already assigned to these orders — the existing assignment rows.
+      const bagRows = rows.length
+        ? await prisma.laundryBagAssignment.findMany({
+            where: { businessId: resolved.id, orderId: { in: rows.map((o) => o.id) } },
+            select: { orderId: true, bag: { select: { bagNumber: true } } },
+          })
+        : []
+      const bagsByOrder = new Map<string, string[]>()
+      for (const b of bagRows) {
+        if (!b.bag?.bagNumber) continue
+        const list = bagsByOrder.get(b.orderId) || []
+        if (!list.includes(b.bag.bagNumber)) list.push(b.bag.bagNumber)
+        bagsByOrder.set(b.orderId, list)
+      }
+
+      const report = rows.map((o) => {
+        const c = o.customerId ? custById.get(o.customerId) : null
+        const a = c?.addresses?.[0]
+        // The order's OWN address snapshot wins — it is what was agreed for this
+        // job — and the customer's default address is the fallback.
+        const address = o.pickupAddress
+          || (a ? [a.addressLine1, a.addressLine2, a.area, a.landmark, a.city, a.state, a.pincode].filter(Boolean).join(", ") : "")
+        const shaped: ReportOrder = {
+          orderNumber: o.orderNumber, storeName: o.store?.storeName ?? null,
+          status: o.status, orderType: o.orderType, createdAt: o.createdAt,
+          // PICKUP: the order's own booking, never derived.
+          pickupDate: o.pickupDate, pickupTimeSlot: o.pickupTimeSlot,
+          deliveryDate: o.deliveryDate, deliveryTimeSlot: o.deliveryTimeSlot,
+          customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
+          customerEmail: c?.email ?? null, customerCode: c?.customerCode ?? null,
+          address: address || null,
+          items: o.items,
+          services: [...new Set(o.services.map((s) => s.serviceName).filter(Boolean))],
+          subtotal: o.subtotal, discount: o.discount, gstTotal: o.gstTotal, grandTotal: o.grandTotal,
+          amountPaid: o.amountPaid, balanceDue: o.balanceDue, paymentStatus: o.paymentStatus,
+          paymentMethods: [...new Set(o.payments.filter((p) => p.status === "SUCCESS").map((p) => p.method).filter(Boolean))],
+          bagNumbers: bagsByOrder.get(o.id) || [],
+          auditedAt: o.auditedAt, deliveredAt: o.deliveredAt,
+        }
+        return buildReportRow(shaped)
+      })
+
+      return NextResponse.json({ success: true, report, total: report.length, truncated: rows.length === REPORT_MAX_ROWS })
     }
 
     const [orders, total] = await Promise.all([
