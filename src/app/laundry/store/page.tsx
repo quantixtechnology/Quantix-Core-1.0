@@ -13,6 +13,8 @@ import {
   CheckCircle2, PlusCircle, Search, ScanLine, LayoutGrid, ChevronLeft, User, Phone, RefreshCw, X, MapPin, Lock,
 } from "lucide-react"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
+import { unavailableOrderLines, type PricedServices } from "@/lib/laundry-garment-availability"
+import { intakeServiceChoice, type ConfiguredService } from "@/lib/laundry-intake-service"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { PwaInstallButton } from "@/components/laundry/pwa-install-button"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -474,21 +476,38 @@ function AuditScreen({ order, staff, api, onClose, onDone }: { order: any; staff
   const [garments, setGarments] = useState<any[]>([])
   const [svc, setSvc] = useState(""); const [gar, setGar] = useState(""); const [qty, setQty] = useState("1"); const [adding, setAdding] = useState(false)
 
+  // Same Pricing Matrix availability the server guard uses — so the counter is
+  // told WHY an order will not move on, in the same words the rule decides by.
+  const [priced, setPriced] = useState<PricedServices | null>(null)
   useEffect(() => {
     api(`/api/laundry/services?businessId=${staff.businessId}`).then((j) => { if (j.success) setServices(j.data || j.services || []) })
     api(`/api/laundry/garments?businessId=${staff.businessId}`).then((j) => { if (j.success) setGarments(j.data || j.garments || []) })
+    api(`/api/laundry/garment-services?businessId=${staff.businessId}`).then((j) => { if (j.success) setPriced(j.data || {}) })
   }, [api, staff.businessId])
-  const reload = () => api(`/api/laundry/orders/${order.id}`).then((j) => { if (j.success) setItems(j.data.items || []) })
+  const blockedLines = unavailableOrderLines(items as { garmentId?: string | null; serviceId?: string | null; garmentName?: string | null; serviceName?: string | null }[], priced)
+
+  // THE SERVICE IS THE ORDER'S. Same rule as the desktop audit: an order booked
+  // with a service accepts garments for that service ONLY (the /items endpoint
+  // refuses the rest), so it is stated here rather than offered as a free pick
+  // out of the whole master list — which is what left Pickup-First orders sitting
+  // at Store Audit with zero garments.
+  const [booked, setBooked] = useState<{ serviceId: string | null; serviceName: string }[]>(order.services || [])
+  const choice = intakeServiceChoice([...booked, ...items], services as ConfiguredService[])
+  // A locked order IS its booked service — read off the rule, never held in
+  // local state that could drift from it. `svc` only carries a real choice.
+  const serviceId = choice.locked ? choice.serviceId : svc
+
+  const reload = () => api(`/api/laundry/orders/${order.id}`).then((j) => { if (j.success) { setItems(j.data.items || []); setBooked(j.data.services || []) } })
 
   const addGarment = async () => {
-    const s = services.find((x) => x.id === svc), g = garments.find((x) => x.id === gar)
+    const g = garments.find((x) => x.id === gar)
     // A garment can't be priced without a service — alert instead of silently ignoring.
-    if (!s) { setErr("Select a service for this garment."); return }
+    if (!serviceId) { setErr("Select the service for this order."); return }
     if (!g) { setErr("Select a garment."); return }
     setErr(null)
     setAdding(true)
     try {
-      const j = await api(`/api/laundry/orders/${order.id}/items`, { method: "POST", body: JSON.stringify({ items: [{ serviceId: s.id, garmentId: g.id, quantity: Math.max(1, Number(qty) || 1), weightKg: 0 }] }) })
+      const j = await api(`/api/laundry/orders/${order.id}/items`, { method: "POST", body: JSON.stringify({ items: [{ serviceId, garmentId: g.id, quantity: Math.max(1, Number(qty) || 1), weightKg: 0 }] }) })
       if (!j.success) { setErr(j.error || "Could not add garment"); return }
       setGar(""); setQty("1"); await reload()
     } finally { setAdding(false) }
@@ -533,15 +552,29 @@ function AuditScreen({ order, staff, api, onClose, onDone }: { order: any; staff
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <section className="space-y-2">
           <p className="text-[12px] font-semibold text-slate-600">Garments ({items.length})</p>
+          {blockedLines.length > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-1">
+              <p className="text-[13px] font-semibold text-amber-900">⚠️ This order cannot be processed yet</p>
+              {blockedLines.map((l) => <p key={`${l.garmentName}|${l.serviceName}`} className="text-[12px] text-amber-900">{l.message}</p>)}
+              <p className="text-[11px] text-amber-800 pt-0.5">Correct the service for that garment before continuing. Nothing is changed automatically.</p>
+            </div>
+          )}
           <div className="space-y-1">{items.map((it: { id: string; garmentName: string; serviceName: string; quantity: number }) => (
             <div key={it.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-[13px]"><span>{it.quantity} × {it.garmentName} · {it.serviceName}</span></div>
           ))}</div>
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-            <select value={svc} onChange={(e) => setSvc(e.target.value)} className="h-10 rounded-lg border border-slate-200 px-2 text-[12px] bg-white"><option value="">Service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          {choice.locked ? (
+            <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Service</span>
+              <span className="text-[13px] font-semibold text-blue-900">{choice.lockedName}</span>
+            </div>
+          ) : (
+            <select value={svc} onChange={(e) => setSvc(e.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-2 text-[12px] bg-white"><option value="">Select service…</option>{choice.options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          )}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
             <select value={gar} onChange={(e) => setGar(e.target.value)} className="h-10 rounded-lg border border-slate-200 px-2 text-[12px] bg-white"><option value="">Garment</option>{garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
             <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className="h-10 w-12 rounded-lg border border-slate-200 px-2 text-[13px] text-center" />
           </div>
-          <button onClick={addGarment} disabled={adding || !svc || !gar} className="w-full h-9 rounded-lg border border-blue-200 text-blue-700 text-[12px] font-medium disabled:opacity-40">{adding ? "Adding…" : "+ Add missing garment"}</button>
+          <button onClick={addGarment} disabled={adding || !serviceId || !gar} className="w-full h-9 rounded-lg border border-blue-200 text-blue-700 text-[12px] font-medium disabled:opacity-40">{adding ? "Adding…" : "+ Add missing garment"}</button>
         </section>
         <section className="space-y-2">
           <p className="text-[12px] font-semibold text-slate-600">Total Weight (kg)</p>

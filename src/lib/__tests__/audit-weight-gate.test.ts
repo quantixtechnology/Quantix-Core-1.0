@@ -172,7 +172,10 @@ describe('the operator can actually satisfy the gate', () => {
   })
 
   it('the approve button and the pre-check use the same rule as the server', () => {
-    expect(ui).toContain('disabled={acting || needsWeight}')
+    // The weight gate still disables the button. It now shares that button with
+    // the garment gate (an order with no garments can never be approved either),
+    // so the assertion is on the weight term, not the whole expression.
+    expect(ui).toMatch(/disabled=\{acting \|\| needsWeight\b/)
     expect(ui).toContain('toStatus === "PAYMENT_PENDING" && needsWeight')
   })
 

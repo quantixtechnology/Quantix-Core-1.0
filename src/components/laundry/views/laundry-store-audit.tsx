@@ -8,6 +8,8 @@
 // engine. PER_PIECE orders were billed at booking and are unaffected.
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { unavailableOrderLines, type PricedServices } from "@/lib/laundry-garment-availability"
+import { intakeServiceChoice } from "@/lib/laundry-intake-service"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
@@ -48,8 +50,13 @@ interface Item {
 }
 interface OrderEvent { id: string; action: string; note: string | null; actorName: string | null; createdAt: string }
 interface SvcOption { id: string; name: string; subscriptionEligible?: boolean }
+interface BookedService { serviceId: string | null; serviceName: string }
 interface OrderDetail extends OrderRow {
   items: Item[]
+  /** The order's OWN booked services (LaundryOrderService) — what intake is
+   *  locked to. Returned by GET /api/laundry/orders/[id]; a Pickup-First order
+   *  carries its service here even though it carries no garments yet. */
+  services?: BookedService[]
   totalWeightKg: number
   store?: { storeName: string; storeCode: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
@@ -144,6 +151,18 @@ export function LaundryStoreAudit() {
     fetch(`/api/laundry/subscription-coverage?businessId=${encodeURIComponent(currentBusinessId)}`)
       .then((r) => r.json())
       .then((j) => setCoverage(new Set(((j.data || []) as { serviceId: string; garmentId: string | null }[]).map((p) => `${p.serviceId}|${p.garmentId}`))))
+      .catch(() => {})
+  }, [currentBusinessId])
+
+  // PRICING AVAILABILITY — a different question from subscription cover above.
+  // Same source as the server guard: active Pricing Matrix rules. Null until it
+  // loads, so nothing is claimed on a guess.
+  const [priced, setPriced] = useState<PricedServices | null>(null)
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/garment-services?businessId=${encodeURIComponent(currentBusinessId)}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.success) setPriced(j.data || {}) })
       .catch(() => {})
   }, [currentBusinessId])
 
@@ -320,6 +339,11 @@ export function LaundryStoreAudit() {
   // is the price, per-piece because the physical load is still recorded. The
   // server enforces the same rule; this only keeps the operator from hitting it.
   const needsWeight = orderWeightKg <= 0
+  // An order with no garments can never be approved — checkAuditComplete refuses
+  // it ("No garments have been identified for this order"). This is exactly the
+  // state a Pickup-First order sits in until intake is done, so the button says
+  // what is missing rather than spending a click on a guaranteed refusal.
+  const needsGarments = !!detail && detail.items.length === 0
 
   const handleSave = async () => { setSaving(true); const ok = await saveInspection(); setSaving(false); toast(ok ? { title: "Inspection saved" } : { title: "Save failed", variant: "destructive" }) }
 
@@ -380,6 +404,9 @@ export function LaundryStoreAudit() {
   }, [rows, search])
 
   const totalPieces = detail?.items.reduce((s, it) => s + (it.quantity || 0), 0) || 0
+  // The lines the Pricing Matrix cannot price — the reason the server will
+  // refuse to move this order on.
+  const blockedLines = useMemo(() => unavailableOrderLines(detail?.items, priced), [detail, priced])
 
   // ── Detail view ──
   if (selectedId) {
@@ -456,9 +483,27 @@ export function LaundryStoreAudit() {
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-base flex items-center justify-between"><span className="flex items-center gap-2"><Shirt className="h-4 w-4" /> Garments</span><span className="text-xs font-normal text-muted-foreground">{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {detail.items.length} type{detail.items.length === 1 ? "" : "s"}</span></CardTitle></CardHeader>
               <CardContent className="space-y-3">
+                {/* WHY THIS ORDER WILL NOT MOVE ON. The server refuses a
+                    garment its service cannot price; without this the refusal
+                    arrived with no reason and read as a broken system. Every
+                    offending line is listed, and the fix is the Edit control
+                    already on each line — no new action, no new workflow. */}
+                {blockedLines.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 mb-3">
+                    <p className="text-sm font-semibold text-amber-900">⚠️ This order cannot be processed yet</p>
+                    <ul className="mt-1.5 space-y-0.5">
+                      {blockedLines.map((l) => (
+                        <li key={`${l.garmentName}|${l.serviceName}`} className="text-[13px] text-amber-900">{l.message}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[12px] text-amber-800">
+                      Use <span className="font-semibold">Edit</span> on the line{blockedLines.length === 1 ? "" : "s"} above to choose a service that covers the garment, or remove the line. Nothing is changed automatically.
+                    </p>
+                  </div>
+                )}
                 {detail.items.length === 0 ? (
                   intakeOpen ? (
-                    <IntakeAudit orderId={detail.id} orderNumber={detail.orderNumber} businessId={currentBusinessId} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                    <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
                   ) : (
                     <div className="py-6 text-center space-y-3">
                       <p className="text-sm text-muted-foreground">Pickup-First order — garments were not counted at booking. Count them here at intake.</p>
@@ -580,7 +625,7 @@ export function LaundryStoreAudit() {
                 {detail.items.length > 0 && (
                   intakeOpen ? (
                     <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
-                      <IntakeAudit orderId={detail.id} orderNumber={detail.orderNumber} businessId={currentBusinessId} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                      <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
                     </div>
                   ) : (
                     <button onClick={() => setIntakeOpen(true)} className="text-sm font-semibold text-blue-600 hover:text-blue-700">+ Add missed garment</button>
@@ -612,7 +657,7 @@ export function LaundryStoreAudit() {
             <div className="flex flex-wrap items-center justify-end gap-2 pb-4">
               <Button variant="outline" onClick={handleSave} disabled={saving || acting} className="gap-1">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Progress</Button>
               <Button variant="outline" onClick={() => transition("UNDER_AUDIT", "On Hold")} disabled={acting} className="gap-1 text-orange-700 border-orange-300 hover:bg-orange-50"><PauseCircle className="h-4 w-4" /> Hold</Button>
-              <Button onClick={() => transition("PAYMENT_PENDING", "Audit Approved")} disabled={acting || needsWeight} title={needsWeight ? "Enter the total order weight first" : undefined} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {needsWeight ? "Enter Total Weight" : "Approve & Generate Invoice"} <ArrowRight className="h-4 w-4" /></Button>
+              <Button onClick={() => transition("PAYMENT_PENDING", "Audit Approved")} disabled={acting || needsWeight || needsGarments} title={needsGarments ? "Record the garments at intake first" : needsWeight ? "Enter the total order weight first" : undefined} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {needsGarments ? "Record Garments First" : needsWeight ? "Enter Total Weight" : "Approve & Generate Invoice"} <ArrowRight className="h-4 w-4" /></Button>
             </div>
           </>
         )}
@@ -657,55 +702,55 @@ export function LaundryStoreAudit() {
     </div>
   )
 }
-
 // ── Intake Audit (Pickup-First) — record garments for an order that has none.
 // Same order (no new order); on save the garments are priced by the Pricing
 // Engine and the order continues in the EXISTING audit flow.
-function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { orderId: string; orderNumber: string; businessId: string | null; onSaved: () => void; onCancel: () => void }) {
+//
+// THE SERVICE IS THE ORDER'S, NOT THE OPERATOR'S. A Pickup-First order was
+// booked with a service; the intake endpoint refuses any garment carrying a
+// different one (ONE SERVICE = ONE ORDER). So the service is resolved once,
+// from the order itself, and applies to EVERY garment in the panel — it cannot
+// drift as rows are added, and it is not offered as a choice when there is only
+// one possible answer.
+function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCancel }: {
+  orderId: string
+  businessId: string | null
+  /** The order's own service-bearing rows — booked services + garments already on it. */
+  booked: { serviceId: string | null; serviceName: string }[]
+  /** The tenant's configured services, used only to name the booked one. */
+  configured: SvcOption[]
+  onSaved: () => void
+  onCancel: () => void
+}) {
   const { toast } = useToast()
   // Garments come from the shared master hook — same source as New Order and
   // every other operational selector, so the lists cannot diverge.
   const { garments } = useGarmentMaster(businessId)
-  const [services, setServices] = useState<{ serviceId: string; serviceName: string }[]>([])
-  const [rows, setRows] = useState<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }[]>([])
+  const [rows, setRows] = useState<{ garmentId: string; quantity: string; weightKg: string }[]>([{ garmentId: "", quantity: "1", weightKg: "" }])
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    if (!businessId) return
-    // The CONFIGURED services (each with a real id) are the source of truth — a
-    // garment must map to one so the Pricing Engine can price it. The bag's booked
-    // service (if any) only pre-selects the default; it is never the option list,
-    // because a bag may carry only a service NAME (null id) which would save an
-    // unpriceable ₹0 "Service" line.
-    Promise.all([
-      fetch(`/api/laundry/services?businessId=${businessId}`).then((r) => r.json()).catch(() => ({})),
-      fetch(`/api/laundry/bags?businessId=${businessId}&search=${encodeURIComponent(orderNumber)}`).then((r) => r.json()).catch(() => ({})),
-    ]).then(([sj, bj]) => {
-      const svcs = ((sj.data || sj.services || []) as { id: string; name: string }[]).map((s) => ({ serviceId: s.id, serviceName: s.name }))
-      setServices(svcs)
-      const bagSvcId = ((bj.data || []) as { currentOrderId: string | null; currentServiceId: string | null }[]).find((b) => b.currentOrderId === orderId && b.currentServiceId)?.currentServiceId || null
-      const defaultKey = bagSvcId && svcs.some((s) => s.serviceId === bagSvcId) ? bagSvcId : svcs[0]?.serviceId || ""
-      setRows([{ serviceKey: defaultKey, garmentId: "", quantity: "1", weightKg: "" }])
-    })
-  }, [businessId, orderId, orderNumber])
+  const choice = useMemo(
+    () => intakeServiceChoice(booked, configured),
+    [booked, configured],
+  )
+  // ONE service for the whole panel. A locked order IS its booked service, so it
+  // is read straight off the rule and no local state can drift from it; only an
+  // order with a genuine choice keeps a pick, and it starts unselected so the
+  // operator chooses rather than inherits a guess.
+  const [picked, setPicked] = useState("")
+  const serviceId = choice.locked ? choice.serviceId : picked
 
-  const svcByKey = (k: string) => services.find((s) => s.serviceId === k) || null
-  const addRow = () => setRows((r) => [...r, { serviceKey: services[0]?.serviceId || "", garmentId: "", quantity: "1", weightKg: "" }])
-  const upd = (i: number, patch: Partial<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
-  const del = (i: number) => setRows((r) => r.filter((_, j) => j !== i))
+  const addRow = () => setRows((r) => [...r, { garmentId: "", quantity: "1", weightKg: "" }])
+  const upd = (i: number, patch: Partial<{ garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  const del = (i: number) => setRows((r) => (r.length === 1 ? r : r.filter((_, j) => j !== i)))
 
   const save = async () => {
+    // Every garment MUST carry a real service — otherwise it can't be priced
+    // and would save as a ₹0 "Service" line.
+    if (!serviceId) { toast({ title: "Select a service", description: "Choose the service for this order before saving.", variant: "destructive" }); return }
     const usable = rows.filter((r) => r.garmentId && ((Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0))
     if (!usable.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
-    // Every garment MUST have a real service selected — otherwise it can't be
-    // priced and would save as a ₹0 "Service" line.
-    if (usable.some((r) => !svcByKey(r.serviceKey))) {
-      toast({ title: "Select a service", description: "Choose a service for every garment before saving.", variant: "destructive" }); return
-    }
-    const items = usable.map((r) => {
-      const s = svcByKey(r.serviceKey)!
-      return { serviceId: s.serviceId, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }
-    })
+    const items = usable.map((r) => ({ serviceId, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }))
     setSaving(true)
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.json())
@@ -717,27 +762,44 @@ function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { 
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Scan the reusable bag or pick its service, then record each garment. Weight is used for Per-KG services; quantity for piece-based.</p>
+      {/* THE SERVICE — stated when the order has only one, asked only when it
+          genuinely has more than one possible answer. */}
+      {choice.locked ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Service</span>
+          <span className="text-sm font-semibold text-blue-900">{choice.lockedName}</span>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Service for this order</span>
+          <select value={serviceId} onChange={(e) => setPicked(e.target.value)} className="h-9 w-full rounded-md border border-input px-2 text-sm bg-background">
+            <option value="">Select service…</option>
+            {choice.options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {choice.locked
+          ? `Every garment below is recorded under ${choice.lockedName} — the service this order was booked with.`
+          : "One service per order. Every garment below is recorded under the service chosen above."}
+        {" "}Weight is used for Per-KG services; quantity for piece-based.
+      </p>
       <div className="space-y-2">
         {rows.map((r, i) => (
-          <div key={i} className="grid grid-cols-[1fr_1fr_64px_72px_32px] gap-1.5 items-center">
-            <select value={r.serviceKey} onChange={(e) => upd(i, { serviceKey: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
-              <option value="">Select service…</option>
-              {services.map((s) => <option key={s.serviceId} value={s.serviceId}>{s.serviceName}</option>)}
-            </select>
+          <div key={i} className="grid grid-cols-[1fr_64px_72px_32px] gap-1.5 items-center">
             {/* Searchable by name OR code — the list grows over time and
                 scrolling it at a counter is not workable. */}
             <LaundryGarmentSelect value={r.garmentId} onChange={(v) => upd(i, { garmentId: v })} garments={garments} className="h-9" />
             <Input type="number" min={0} value={r.quantity} onChange={(e) => upd(i, { quantity: e.target.value })} placeholder="Qty" className="h-9 text-sm" />
             <Input type="number" min={0} step="0.05" value={r.weightKg} onChange={(e) => upd(i, { weightKg: e.target.value })} placeholder="kg" className="h-9 text-sm" />
-            <button onClick={() => del(i)} className="text-slate-400 hover:text-rose-600 flex justify-center"><X className="h-4 w-4" /></button>
+            <button onClick={() => del(i)} disabled={rows.length === 1} className="text-slate-400 hover:text-rose-600 disabled:opacity-30 flex justify-center"><X className="h-4 w-4" /></button>
           </div>
         ))}
       </div>
       <button onClick={addRow} className="text-xs font-semibold text-blue-600">+ Add garment</button>
       <div className="flex gap-2 pt-1">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={save} disabled={saving} className="flex-1 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save Garments & Continue</Button>
+        <Button onClick={save} disabled={saving} className="flex-1 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save Garments &amp; Continue</Button>
       </div>
     </div>
   )

@@ -88,7 +88,8 @@ describe('CASE B · a duplicate approval does not strand the order', () => {
   })
 
   it('the button is disabled while a request is in flight', () => {
-    expect(AUDIT).toContain('disabled={acting || needsWeight}')
+    // `acting` stays the first term however many gates share the button.
+    expect(AUDIT).toMatch(/disabled=\{acting \|\|/)
     expect(AUDIT).toContain('setActing(true)')
   })
 })
