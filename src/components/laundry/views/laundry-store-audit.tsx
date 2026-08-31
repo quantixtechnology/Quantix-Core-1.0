@@ -677,7 +677,10 @@ export function LaundryStoreAudit() {
 
   // ── Queue view ──
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
+    // Wider than the detail view on purpose: nine operational columns need the
+    // page width, and squeezing them into max-w-5xl is what forced the
+    // horizontal scrollbar.
+    <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect and approve orders waiting for audit</p></div>
         <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">{rows.length} pending</Badge>
@@ -693,14 +696,33 @@ export function LaundryStoreAudit() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16"><ClipboardCheck className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">{search ? "No orders match" : "No orders waiting for audit"}</p></div>
         ) : (
-          // Nine columns is wider than a laptop — the table scrolls inside its
-          // own container so the page body never scrolls sideways.
-          <div className="overflow-x-auto">
-          <Table>
-            <TableHeader><TableRow>
+          <>
+          {/* DESKTOP — table-fixed + a colgroup of PERCENTAGES. The widths sum
+              to 100%, so the table can never exceed its container and the
+              horizontal scrollbar cannot appear at any desktop width. Every
+              text cell is free to wrap; nothing is truncated. */}
+          <Table className="hidden md:table table-fixed">
+            <colgroup>
+              {/* Budget at 1440px: 1440 − 256 sidebar − 32 padding = 1152px.
+                  Order No. gets 22% = 253px, which holds the full 34-character
+                  order number on ONE line at text-[11px] mono (~224px + 16px
+                  cell padding) — the wider share is what buys the larger type
+                  without wrapping or truncating it. Amount, Created and Status
+                  stay the narrow ones, by the stated priority. */}
+              <col className="w-[22%]" />{/* Order No. */}
+              <col className="w-[13%]" />{/* Customer */}
+              <col className="w-[11%]" />{/* Service  */}
+              <col className="w-[11%]" />{/* Pickup   */}
+              <col className="w-[11%]" />{/* Delivery */}
+              <col className="w-[7%]" /> {/* Amount   */}
+              <col className="w-[7%]" /> {/* Created  */}
+              <col className="w-[9%]" /> {/* Status   */}
+              <col className="w-[9%]" /> {/* Inspect  */}
+            </colgroup>
+            <TableHeader><TableRow className="[&>th]:px-2 [&>th]:text-[11px]">
               <TableHead>Order No.</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Service Booked</TableHead>
+              <TableHead>Service</TableHead>
               <TableHead>Pickup</TableHead>
               <TableHead>Delivery</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -716,46 +738,101 @@ export function LaundryStoreAudit() {
                 const delivery = scheduleCell(r.deliveryDate, r.deliveryTimeSlot)
                 const services = bookedServiceNames(r.services)
                 return (
-                <TableRow key={r.id} className="cursor-pointer" onClick={() => openOrder(r.id)}>
-                  <TableCell className="font-mono font-medium text-sm whitespace-nowrap">{r.orderNumber}</TableCell>
+                // whitespace-normal overrides TableCell's default nowrap — that
+                // default is the other half of why the table could not fit.
+                <TableRow key={r.id} className="cursor-pointer align-top [&>td]:px-2 [&>td]:py-2.5 [&>td]:whitespace-normal" onClick={() => openOrder(r.id)}>
+                  <TableCell className="font-mono text-[11px] leading-snug text-slate-700 break-all">{r.orderNumber}</TableCell>
                   <TableCell>
-                    <p className="text-sm font-medium text-slate-800">{r.customer?.name || "—"}</p>
-                    {r.customer?.phone && <p className="text-[11px] text-muted-foreground">{r.customer.phone}</p>}
+                    <p className="text-[13px] font-medium text-slate-800 leading-snug break-words">{r.customer?.name || "—"}</p>
+                    {r.customer?.phone && <p className="text-[12px] text-muted-foreground leading-snug">{r.customer.phone}</p>}
                   </TableCell>
                   <TableCell>
-                    {/* The order's OWN booked services. More than one is shown
-                        in full — picking one arbitrarily is the thing to avoid. */}
+                    {/* The order's OWN booked services. More than one wraps
+                        onto further lines — picking one arbitrarily is the
+                        thing to avoid. */}
                     {services.length === 0 ? <span className="text-slate-400">—</span> : (
                       <div className="flex flex-wrap gap-1">
                         {services.map((name) => (
-                          <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-normal">{name}</Badge>
+                          <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-normal px-1.5 py-0 leading-[18px]">{name}</Badge>
                         ))}
                       </div>
                     )}
                   </TableCell>
                   {[pickup, delivery].map((cell, i) => (
-                    <TableCell key={i} className="whitespace-nowrap">
+                    <TableCell key={i}>
                       {!cell.date ? <span className="text-slate-400">—</span> : (
                         <>
-                          <p className={`text-[13px] leading-tight ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
-                          {cell.slot && <p className="text-[11px] text-muted-foreground leading-tight">{cell.slot}</p>}
+                          <p className={`text-[12px] leading-snug ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
+                          {cell.slot && <p className="text-[12px] text-muted-foreground leading-snug">{cell.slot}</p>}
                           {urgencyNote(cell) && (
-                            <span className={`text-[10px] font-semibold ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>
+                            <span className={`text-[11px] font-semibold leading-tight ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>
                           )}
                         </>
                       )}
                     </TableCell>
                   ))}
-                  <TableCell className="tabular-nums text-right whitespace-nowrap">{inr(r.grandTotal)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmt(r.createdAt)}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 whitespace-nowrap">Pending Audit</Badge></TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="outline" className="gap-1" onClick={(e) => { e.stopPropagation(); openOrder(r.id) }}>Inspect <ArrowRight className="h-3.5 w-3.5" /></Button></TableCell>
+                  <TableCell className="tabular-nums text-right text-[12px]">{inr(r.grandTotal)}</TableCell>
+                  <TableCell className="text-[11px] text-muted-foreground leading-tight">{fmt(r.createdAt)}</TableCell>
+                  <TableCell><Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 text-[10px] px-1.5 py-0 leading-[18px]">Pending Audit</Badge></TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" className="h-8 px-2 gap-1 text-[12px]" onClick={(e) => { e.stopPropagation(); openOrder(r.id) }}>Inspect <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  </TableCell>
                 </TableRow>
                 )
               })}
             </TableBody>
           </Table>
+
+          {/* NARROW SCREENS — a stacked card per order. A phone gets the same
+              information in reading order rather than a scrollbar. */}
+          <div className="md:hidden divide-y">
+            {filtered.map((r) => {
+              const pickup = scheduleCell(r.pickupDate, r.pickupTimeSlot)
+              const delivery = scheduleCell(r.deliveryDate, r.deliveryTimeSlot)
+              const services = bookedServiceNames(r.services)
+              return (
+                <div key={r.id} className="p-3 space-y-2 active:bg-slate-50" onClick={() => openOrder(r.id)}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[11px] text-slate-700 break-all leading-tight">{r.orderNumber}</p>
+                      <p className="text-sm font-medium text-slate-800 mt-0.5">{r.customer?.name || "—"}</p>
+                      {r.customer?.phone && <p className="text-[11px] text-muted-foreground">{r.customer.phone}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-semibold tabular-nums">{inr(r.grandTotal)}</p>
+                      <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 text-[10px] px-1.5 py-0 mt-0.5">Pending Audit</Badge>
+                    </div>
+                  </div>
+                  {services.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {services.map((name) => (
+                        <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-normal px-1.5 py-0">{name}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {([["Pickup", pickup], ["Delivery", delivery]] as const).map(([label, cell]) => (
+                      <div key={label}>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+                        {!cell.date ? <span className="text-slate-400 text-[12px]">—</span> : (
+                          <>
+                            <p className={`text-[12px] leading-tight ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
+                            {cell.slot && <p className="text-[11px] text-muted-foreground leading-tight">{cell.slot}</p>}
+                            {urgencyNote(cell) && <span className={`text-[10px] font-semibold ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[11px] text-muted-foreground">{fmt(r.createdAt)}</span>
+                    <Button size="sm" variant="outline" className="h-8 gap-1 text-[12px]" onClick={(e) => { e.stopPropagation(); openOrder(r.id) }}>Inspect <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
+          </>
         )}
       </CardContent></Card>
     </div>

@@ -120,7 +120,7 @@ const QUEUE = AUDIT.slice(AUDIT.indexOf('// ── Queue view ──'), AUDIT.in
 
 describe('the queue shows what the operator needs', () => {
   it('every requested column is present', () => {
-    for (const h of ['Order No.', 'Customer', 'Service Booked', 'Pickup', 'Delivery', 'Amount', 'Created', 'Status', 'Action']) {
+    for (const h of ['Order No.', 'Customer', 'Service', 'Pickup', 'Delivery', 'Amount', 'Created', 'Status', 'Action']) {
       expect(QUEUE, h).toContain(`>${h}<`)
     }
   })
@@ -144,8 +144,85 @@ describe('the queue shows what the operator needs', () => {
     expect(QUEUE).toContain('openOrder(r.id) }}>Inspect')
   })
 
-  it('the wide table scrolls in its own container, not the page', () => {
-    expect(QUEUE).toContain('overflow-x-auto')
+  it('the layout cannot overflow — fixed table, widths summing to 100%', () => {
+    // table-fixed + a colgroup of percentages means the table is always exactly
+    // its container's width, so no horizontal scrollbar can appear at ANY
+    // desktop width. This replaced the overflow-x-auto workaround.
+    expect(QUEUE).toContain('table-fixed')
+    const widths = [...QUEUE.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((m) => Number(m[1]))
+    expect(widths).toHaveLength(9)
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('the queue no longer relies on a scroll container of its own', () => {
+    expect(QUEUE).not.toContain('overflow-x-auto')
+  })
+
+  it('the queue uses the page width rather than the narrow detail column', () => {
+    // max-w-5xl (1024px) could not hold nine columns — that was the root cause.
+    const queueContainer = QUEUE.slice(0, QUEUE.indexOf('</div>'))
+    expect(queueContainer).toContain('max-w-7xl')
+  })
+
+  it('text cells may wrap — TableCell defaults to nowrap, which must be overridden', () => {
+    expect(QUEUE).toContain('whitespace-normal')
+    expect(QUEUE).toContain('break-all')   // the full order number, never truncated
+    expect(QUEUE).toContain('break-words') // customer names
+  })
+
+  it('the order number is shown in full, not truncated', () => {
+    expect(QUEUE).toContain('{r.orderNumber}')
+    // Asserted on the CODE — the prose above it uses the word "truncated" to
+    // say it does not happen.
+    const code = QUEUE.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '').replace(/^\s*\/\/.*$/gm, '')
+    for (const w of ['truncate', 'text-ellipsis', 'slice(0,', 'substring(']) {
+      expect(code, w).not.toContain(w)
+    }
+  })
+
+  it('cell padding is reduced to buy width', () => {
+    expect(QUEUE).toContain('[&>td]:px-2')
+    expect(QUEUE).toContain('[&>th]:px-2')
+  })
+
+  it('Amount and Created are the narrow columns, by stated priority', () => {
+    const widths = [...QUEUE.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((m) => Number(m[1]))
+    const [order, customer, service, pickup, delivery, amount, created] = widths
+    for (const critical of [order, customer, service, pickup, delivery]) {
+      expect(critical).toBeGreaterThan(Math.max(amount, created))
+    }
+  })
+
+  it('operational text is not shrunk below 11px to make it fit', () => {
+    // The queue is read all day. Order number, service and the urgency flag all
+    // sit at 11px+; only the deliberately compact Status badge stays smaller.
+    const body = QUEUE.slice(QUEUE.indexOf('<TableBody>'), QUEUE.indexOf('</TableBody>'))
+    expect(body).toContain('font-mono text-[11px]')      // order number
+    expect(body).toContain('text-[11px] font-normal')    // service badge
+    expect(body).toContain('text-[11px] font-semibold')  // overdue / today flag
+    expect(body).toContain('text-[13px] font-medium')    // customer name
+    expect(body).not.toContain('text-[9px]')
+  })
+
+  it('rows have vertical breathing room', () => {
+    expect(QUEUE).toContain('[&>td]:py-2.5')
+  })
+
+  it('narrow screens get stacked cards instead of a scrollbar', () => {
+    expect(QUEUE).toContain('hidden md:table')
+    expect(QUEUE).toContain('md:hidden')
+  })
+
+  it('the card layout carries the same information', () => {
+    const cards = QUEUE.slice(QUEUE.indexOf('md:hidden divide-y'))
+    for (const field of ['r.orderNumber', 'r.customer?.name', 'services.map', 'Pickup', 'Delivery', 'inr(r.grandTotal)', 'Inspect']) {
+      expect(cards, field).toContain(field)
+    }
+  })
+
+  it('Inspect works from the card too, without opening a second order', () => {
+    const cards = QUEUE.slice(QUEUE.indexOf('md:hidden divide-y'))
+    expect(cards).toContain('e.stopPropagation(); openOrder(r.id)')
   })
 })
 
