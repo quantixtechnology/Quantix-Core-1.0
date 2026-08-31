@@ -87,6 +87,31 @@ describe('the edited garment keeps its identity', () => {
   })
 })
 
+describe('sibling ITM numbers cannot collide with one already used', () => {
+  // itemNumber is not @unique, so a re-issued suffix is silent — and Barcode
+  // Generation shows itemNumber as the label for a not-yet-barcoded garment,
+  // so two rows would read identically on the operator's screen.
+  const nextIndex = (itemNumbers: (string | null)[]) =>
+    itemNumbers.reduce((n, v) => {
+      const m = /-(\d+)$/.exec(v || '')
+      return m ? Math.max(n, Number(m[1])) : n
+    }, itemNumbers.length)
+
+  it('continues past a gap left by a removed line', () => {
+    // 0001 and 0003 remain; 0002 was removed. Counting would re-issue 0003.
+    expect(nextIndex(['ITM-ORD-1-0001', 'ITM-ORD-1-0003'])).toBe(3)
+  })
+
+  it('never goes backwards when suffixes are missing', () => {
+    expect(nextIndex([null, null, null])).toBe(3)
+  })
+
+  it('the endpoint uses the highest suffix, not the row count', () => {
+    expect(PATCH).toContain('const siblings = await tx.laundryOrderItem.findMany({ where: { orderId: id }, select: { itemNumber: true } })')
+    expect(PATCH).not.toContain('const base = await tx.laundryOrderItem.count({ where: { orderId: id } })')
+  })
+})
+
 describe('a garment already carrying an operational identity is not split', () => {
   it('refuses once barcoded or in processing, and says why', () => {
     expect(PATCH).toContain('item.barcodeGenerated || item.processingStage')

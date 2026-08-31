@@ -245,7 +245,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         data: { serviceId, garmentId, quantity: head.quantity, weightKg: head.weightKg, serviceName: line.serviceName, garmentName: line.garmentName },
       })
       if (extra.length === 0) return
-      const base = await tx.laundryOrderItem.count({ where: { orderId: id } })
+      // The next ITM index is the HIGHEST suffix already on the order, not the
+      // row count: a line removed earlier in the audit leaves a gap, and
+      // counting would re-issue an ITM number the order has already used.
+      // itemNumber is not unique in the schema, so that collision is silent —
+      // and Barcode Generation shows itemNumber as the label for a garment that
+      // is not barcoded yet, so two rows would read identically.
+      const siblings = await tx.laundryOrderItem.findMany({ where: { orderId: id }, select: { itemNumber: true } })
+      const base = siblings.reduce((n, r) => {
+        const m = /-(\d+)$/.exec(r.itemNumber || "")
+        return m ? Math.max(n, Number(m[1])) : n
+      }, siblings.length)
       for (let i = 0; i < extra.length; i++) {
         const u = extra[i]
         const gar = garCodes[i]
