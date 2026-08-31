@@ -46,6 +46,13 @@ export const REPORT_COLUMNS = [
   "Bag Numbers",
   "Audited At",
   "Delivered At",
+  // A DELIVERED order that was administratively reconciled did NOT go through
+  // the delivery workflow. Reporting must be able to separate the two, because
+  // a delivery count that silently mixes them is exactly what this exists to
+  // prevent. Empty for every normally-completed order.
+  "Completion Type",
+  "Reconciliation Reason",
+  "Reconciled By",
 ] as const
 
 export interface ReportItem {
@@ -60,6 +67,11 @@ export interface ReportOrder {
   orderNumber: string | null
   storeName: string | null
   status: string | null
+  /** Attested repair, not a system-recorded completion. False for normal orders. */
+  administrativelyReconciled?: boolean | null
+  reconciliationType?: string | null
+  reconciliationReason?: string | null
+  reconciledBy?: string | null
   orderType: string | null
   createdAt: Date | string | null
   pickupDate: Date | string | null
@@ -162,5 +174,14 @@ export function buildReportRow(o: ReportOrder): (string | number)[] {
     (o.bagNumbers || []).join(", "),
     dt(o.auditedAt),
     dt(o.deliveredAt),
+    // "Normal Workflow" is stated explicitly rather than left blank, so a
+    // reader can never mistake an empty cell for a normal completion.
+    o.administrativelyReconciled
+      ? (o.reconciliationType === "ADMIN_CANCEL"
+          ? "CANCELLED — ADMINISTRATIVE RECONCILIATION"
+          : "DELIVERED — ADMINISTRATIVE RECONCILIATION")
+      : "Normal Workflow",
+    o.administrativelyReconciled ? (o.reconciliationReason || "") : "",
+    o.administrativelyReconciled ? (o.reconciledBy || "") : "",
   ]
 }

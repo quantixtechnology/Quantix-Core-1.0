@@ -93,3 +93,87 @@ export function intakeServiceChoice(
   // it is chosen deliberately from the master rather than defaulted into.
   return { options: master, locked: false, serviceId: "", lockedName: null }
 }
+
+// ── Which intake rows become garments ───────────────────────────────────────
+//
+// THE BUG THIS CLOSES: every "+ Add garment" click appends a PRISTINE row —
+// no garment, and the quantity pre-filled to "1". The save then classified a
+// row as "started" if it had a garment OR any quantity, so that pristine row
+// counted as started-but-incomplete and the whole save was REFUSED. An operator
+// who lined up a spare row and pressed Save added nothing at all: Add Missing
+// Garment appeared to do nothing, and the order moved on without the garment.
+//
+// The fix is to tell three states apart rather than two:
+//   • PRISTINE  — untouched, so it is not a row the operator is trying to save;
+//                 ignored, exactly as an empty row should be.
+//   • PARTIAL   — the operator engaged with it but did not finish. NEVER
+//                 dropped in silence (that was the older defect) — it names
+//                 itself and stops the save.
+//   • COMPLETE  — a garment and a quantity or a weight. Saved.
+//
+// A row counts as touched only by evidence the operator acted: a garment
+// chosen, a weight entered, or a quantity that is no longer the pre-filled
+// default. Pre-filling a field must never, by itself, make a row real.
+
+/** The default quantity every new intake row is pre-filled with. */
+export const DEFAULT_ROW_QUANTITY = "1"
+
+export interface IntakeRow {
+  garmentId: string
+  quantity: string
+  weightKg: string
+}
+
+export interface IntakeItemPayload {
+  serviceId: string
+  garmentId: string
+  quantity: number
+  weightKg: number
+}
+
+export type IntakeRowsVerdict =
+  | { ok: true; items: IntakeItemPayload[] }
+  | { ok: false; code: "NO_SERVICE" | "NO_GARMENTS" | "INCOMPLETE_ROWS"; error: string }
+
+const num = (v: string) => Number(v) || 0
+/** A row carries a countable amount. */
+const hasAmount = (r: IntakeRow) => num(r.quantity) > 0 || num(r.weightKg) > 0
+/** The operator actually engaged with this row — a pre-filled default is not engagement. */
+export function rowTouched(r: IntakeRow): boolean {
+  if (r.garmentId) return true
+  if (num(r.weightKg) > 0) return true
+  const q = String(r.quantity ?? "").trim()
+  return q !== "" && q !== DEFAULT_ROW_QUANTITY
+}
+
+/**
+ * The garments an intake save should persist, or the reason it must not run.
+ *
+ * `serviceId` is the order's locked/booked service — the SAME one for every
+ * garment, which is what keeps a missing-garment add from introducing a second
+ * service (see intakeServiceChoice above and the server's ONE SERVICE rule).
+ */
+export function intakeRowsToItems(rows: IntakeRow[] | null | undefined, serviceId: string): IntakeRowsVerdict {
+  if (!serviceId) {
+    return { ok: false, code: "NO_SERVICE", error: "Choose the service for this order before saving." }
+  }
+  const all = rows || []
+  const touched = all.map((r, i) => ({ r, n: i + 1 })).filter(({ r }) => rowTouched(r))
+  if (touched.length === 0) {
+    return { ok: false, code: "NO_GARMENTS", error: "Add at least one garment." }
+  }
+  const incomplete = touched.filter(({ r }) => !(r.garmentId && hasAmount(r)))
+  if (incomplete.length > 0) {
+    const missing = incomplete.map(({ r, n }) => (r.garmentId ? `row ${n} has no quantity or weight` : `row ${n} has no garment`))
+    return { ok: false, code: "INCOMPLETE_ROWS", error: `${missing.join(", ")}. Nothing was saved.` }
+  }
+  return {
+    ok: true,
+    items: touched.map(({ r }) => ({
+      serviceId,
+      garmentId: r.garmentId,
+      quantity: num(r.quantity),
+      weightKg: num(r.weightKg),
+    })),
+  }
+}

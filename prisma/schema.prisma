@@ -4758,6 +4758,28 @@ model LaundryOrder {
   deliveredBy   String?
   recipientName String?
 
+  // ── ADMINISTRATIVE RECONCILIATION ────────────────────────────────────────
+  // An order whose PHYSICAL work completed while the system failed to record
+  // it. This is an attestation by a named Owner / Super Admin, never a
+  // system-observed operational event, and every surface must be able to tell
+  // the two apart — which is the whole reason these live as their own columns
+  // rather than being folded into deliveredAt/status.
+  //
+  // The normal workflow NEVER writes these. reconciliationType stays null for
+  // every order that completed through the real delivery or cancel flow, so
+  // `administrativelyReconciled = false` is the honest default for all history.
+  administrativelyReconciled Boolean   @default(false)
+  reconciliationType         String? // ADMIN_DELIVERED | ADMIN_CANCEL
+  reconciledFromStatus       String? // the stage the order was stranded in
+  reconciledAt               DateTime? // when the attestation was recorded
+  reconciledBy               String? // the acting Owner / Super Admin
+  reconciledByUserId         String?
+  reconciliationReason       String? // mandatory operator justification
+  // What the operator attests ACTUALLY happened, which is not when they typed
+  // it. Kept separate from deliveredAt so a reconciled order can never be
+  // mistaken for one a delivery scan completed.
+  actualCompletionAt         DateTime?
+
   // ── Field operations (Pickup & Delivery PWA) — ADDITIVE. The Admin Portal
   //    stays the master: these only record WHO is assigned and the live field
   //    status/geo the executive reports. The order's own `status` lifecycle and

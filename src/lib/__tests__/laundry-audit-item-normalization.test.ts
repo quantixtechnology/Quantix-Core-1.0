@@ -131,12 +131,20 @@ describe('the correction is visible on the timeline', () => {
 })
 
 describe('intake never discards a row in silence', () => {
+  // The wording moved into the shared rule (laundry-intake-service) when the
+  // pristine-row defect was fixed; the screen renders whatever it returns.
+  // Asserted at the rule, which is where the behaviour now lives, and covered
+  // behaviourally in laundry-add-missing-garment.test.ts.
+  const RULE = read('src/lib/laundry-intake-service.ts')
+
   it('a half-filled row stops the save and is named', () => {
-    // The old filter dropped it with no message, so a garment the operator
-    // believed they had entered simply never reached the order.
+    expect(RULE).toContain('Nothing was saved.')
+    expect(RULE).toContain('has no quantity or weight')
+    expect(RULE).toContain('has no garment')
+  })
+
+  it('the screen shows that refusal rather than inventing its own', () => {
     expect(AUDIT_UI).toContain('Finish every row first')
-    expect(AUDIT_UI).toContain('Nothing was saved.')
-    expect(AUDIT_UI).toContain('has no quantity or weight')
-    expect(AUDIT_UI).toContain('has no garment')
+    expect(AUDIT_UI).toContain('intakeRowsToItems(rows, serviceId)')
   })
 })

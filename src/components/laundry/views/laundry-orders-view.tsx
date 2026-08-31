@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star } from "lucide-react"
 import { statusLabel, ALL_ORDER_STATUSES } from "@/lib/laundry-workflow"
+import { RECONCILIATION_LABEL, type ReconciliationType } from "@/lib/laundry-reconciliation"
 import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
@@ -29,6 +30,11 @@ interface OrderRow {
   store?: { storeName: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   feedback?: { rating: number } | null
+  // An attested repair, not a system-recorded completion. The list must show
+  // the difference too — an operator scanning the queue should never read a
+  // reconciled order as a normal delivery.
+  administrativelyReconciled?: boolean | null
+  reconciliationType?: string | null
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -170,7 +176,20 @@ export function LaundryOrdersView() {
                       <TableCell className="text-center text-sm tabular-nums">{o.itemCount}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{inr(o.grandTotal)}</TableCell>
                       <TableCell><Badge variant="outline" className={PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}>{o.paymentStatus || "—"}</Badge></TableCell>
-                      <TableCell><Badge variant="outline" className={STATUS_STYLE[o.status] || "border-slate-200"}>{statusLabel(o.status)}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <Badge variant="outline" className={STATUS_STYLE[o.status] || "border-slate-200"}>{statusLabel(o.status)}</Badge>
+                          {o.administrativelyReconciled && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400 bg-amber-50 text-amber-800 text-[10px]"
+                              title={RECONCILIATION_LABEL[o.reconciliationType as ReconciliationType] || "Administrative Reconciliation"}
+                            >
+                              Admin
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs text-slate-500">{fmt(o.createdAt)}</TableCell>
                       <TableCell className="text-center">
                         {o.feedback?.rating ? (

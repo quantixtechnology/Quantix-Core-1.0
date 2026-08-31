@@ -198,6 +198,12 @@ export const ACTION_LABELS: Record<string, string> = {
   RECEIVE_AT_STORE: "Received at Store",
   MARK_DELIVERED: "Delivered",
   STATUS_RECONCILED: "Status Corrected to Match the Workflow",
+  // Administrative reconciliation — an attestation by a named Owner /
+  // Super Admin that the physical work completed while the system failed to
+  // record it. Deliberately worded so it can never read as a normal
+  // system-recorded delivery or cancellation on the timeline.
+  ADMIN_RECONCILE_DELIVERED: "Administratively Delivered (Reconciliation)",
+  ADMIN_RECONCILE_CANCELLED: "Administratively Cancelled (Reconciliation)",
   CANCEL: "Cancelled",
   QC_PASS: "QC Passed",
   QC_REWORK: "Sent for Rework",

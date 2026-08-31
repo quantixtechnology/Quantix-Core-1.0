@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { unavailableOrderLines, type PricedServices } from "@/lib/laundry-garment-availability"
-import { intakeServiceChoice } from "@/lib/laundry-intake-service"
+import { intakeServiceChoice, intakeRowsToItems, DEFAULT_ROW_QUANTITY } from "@/lib/laundry-intake-service"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
@@ -726,7 +726,7 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
   // Garments come from the shared master hook — same source as New Order and
   // every other operational selector, so the lists cannot diverge.
   const { garments } = useGarmentMaster(businessId)
-  const [rows, setRows] = useState<{ garmentId: string; quantity: string; weightKg: string }[]>([{ garmentId: "", quantity: "1", weightKg: "" }])
+  const [rows, setRows] = useState<{ garmentId: string; quantity: string; weightKg: string }[]>([{ garmentId: "", quantity: DEFAULT_ROW_QUANTITY, weightKg: "" }])
   const [saving, setSaving] = useState(false)
 
   const choice = useMemo(
@@ -740,31 +740,28 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
   const [picked, setPicked] = useState("")
   const serviceId = choice.locked ? choice.serviceId : picked
 
-  const addRow = () => setRows((r) => [...r, { garmentId: "", quantity: "1", weightKg: "" }])
+  const addRow = () => setRows((r) => [...r, { garmentId: "", quantity: DEFAULT_ROW_QUANTITY, weightKg: "" }])
   const upd = (i: number, patch: Partial<{ garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const del = (i: number) => setRows((r) => (r.length === 1 ? r : r.filter((_, j) => j !== i)))
 
   const save = async () => {
-    // Every garment MUST carry a real service — otherwise it can't be priced
-    // and would save as a ₹0 "Service" line.
-    if (!serviceId) { toast({ title: "Select a service", description: "Choose the service for this order before saving.", variant: "destructive" }); return }
-    // NOTHING IS DISCARDED SILENTLY. A half-filled row used to be dropped by
-    // this filter with no message, so a garment the operator believed they had
-    // entered simply never reached the order — indistinguishable from a failed
-    // save. Every row is now either saved or named as the reason nothing was.
-    const filled = (r: { garmentId: string; quantity: string; weightKg: string }) => (Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0
-    const started = rows.filter((r) => r.garmentId || filled(r))
-    const usable = started.filter((r) => r.garmentId && filled(r))
-    if (!started.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
-    const incomplete = started
-      .map((r, i) => ({ r, n: i + 1 }))
-      .filter(({ r }) => !usable.includes(r))
-    if (incomplete.length > 0) {
-      const missing = incomplete.map(({ r, n }) => (r.garmentId ? `row ${n} has no quantity or weight` : `row ${n} has no garment`))
-      toast({ title: "Finish every row first", description: `${missing.join(", ")}. Nothing was saved.`, variant: "destructive" })
+    // ONE rule decides which rows become garments — shared, pure and tested.
+    // A pristine row (the one every "+ Add garment" click appends) is ignored;
+    // a row the operator actually engaged with is either saved or named as the
+    // reason nothing was. Neither is silently dropped, and neither blocks a
+    // save the operator never asked for.
+    const plan = intakeRowsToItems(rows, serviceId)
+    if (!plan.ok) {
+      toast({
+        title: plan.code === "NO_SERVICE" ? "Select a service"
+          : plan.code === "NO_GARMENTS" ? "Add at least one garment"
+          : "Finish every row first",
+        description: plan.code === "NO_GARMENTS" ? undefined : plan.error,
+        variant: "destructive",
+      })
       return
     }
-    const items = usable.map((r) => ({ serviceId, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }))
+    const items = plan.items
     setSaving(true)
     try {
       const j = await fetch(`/api/laundry/orders/${orderId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.json())

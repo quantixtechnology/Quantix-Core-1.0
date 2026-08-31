@@ -14,9 +14,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Loader2, ChevronLeft, Clock, User, Phone, Shirt, ShoppingBag, Store as StoreIcon,
-  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation, Trash2, AlertTriangle, Star, MessageSquareQuote,
+  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation, Trash2, AlertTriangle, Star, MessageSquareQuote, ClipboardCheck, ShieldAlert,
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
+import { RECONCILIATION_LABEL, MIN_REASON_LENGTH, type ReconciliationType } from "@/lib/laundry-reconciliation"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
 import type { TransportRef } from "@/lib/laundry-transport"
 import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
@@ -39,6 +40,15 @@ interface Detail {
   id: string; orderNumber: string; status: string; orderType: string; paymentStatus: string
   grandTotal: number; amountPaid: number; balanceDue: number; subscriptionCoveredAmount?: number; createdAt: string
   deliveredAt: string | null; deliveredBy: string | null; recipientName: string | null
+  // Administrative reconciliation — an attested repair, never a system-recorded
+  // completion. Present so every surface can tell the two apart.
+  administrativelyReconciled?: boolean | null
+  reconciliationType?: string | null
+  reconciledFromStatus?: string | null
+  reconciledAt?: string | null
+  reconciledBy?: string | null
+  reconciliationReason?: string | null
+  actualCompletionAt?: string | null
   expectedDeliveryDate: string | null
   storeId?: string | null
   store?: { storeName: string | null; storeCode: string | null } | null
@@ -117,6 +127,47 @@ export function LaundryOrderDetail() {
   const [receiving, setReceiving] = useState(false)
   // Permanent deletion — Super Admin only (server also enforces).
   const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
+
+  // ── ADMINISTRATIVE RECONCILIATION ──────────────────────────────────────
+  // Owner / Super Admin ONLY, and the server enforces the same rule — this
+  // only decides whether the control is worth drawing. A full-access staff
+  // role does NOT qualify: reach is not ownership, and this rewrites the
+  // truth of a completed order.
+  const isBusinessOwner = user?.role === "CLIENT_OWNER" || user?.role === "LAUNDRY_OWNER"
+  const mayReconcileOrder = isSuperAdmin || isBusinessOwner
+  const [recOpen, setRecOpen] = useState(false)
+  const [recType, setRecType] = useState<ReconciliationType | "">("")
+  const [recReason, setRecReason] = useState("")
+  const [recDate, setRecDate] = useState("")
+  // Two-step: choose, then confirm against the stage the order is stranded in.
+  const [recStep, setRecStep] = useState<"choose" | "confirm">("choose")
+  const [recBusy, setRecBusy] = useState(false)
+  const [recError, setRecError] = useState<string | null>(null)
+  const openReconcile = () => {
+    setRecType(""); setRecReason(""); setRecDate(""); setRecStep("choose"); setRecError(null); setRecOpen(true)
+  }
+  const reasonOk = recReason.trim().length >= MIN_REASON_LENGTH
+  const submitReconcile = async () => {
+    if (!order || !recType || !reasonOk) return
+    setRecBusy(true); setRecError(null)
+    try {
+      const res = await fetch(`/api/laundry/orders/${order.id}/reconcile`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: currentBusinessId,
+          type: recType,
+          reason: recReason.trim(),
+          actualCompletionAt: recDate ? new Date(recDate).toISOString() : null,
+        }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { setRecError(j.error || "Could not reconcile this order"); return }
+      setRecOpen(false)
+      await load()
+    } catch {
+      setRecError("Could not reconcile this order")
+    } finally { setRecBusy(false) }
+  }
   const [delOpen, setDelOpen] = useState(false)
   const [delConfirm, setDelConfirm] = useState("")
   const [delPassword, setDelPassword] = useState("")
@@ -278,6 +329,19 @@ export function LaundryOrderDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold tracking-tight font-mono">{order.orderNumber}</h2>
               <Badge className={STATUS_STYLE[order.status] || "bg-blue-100 text-blue-700"}>{statusLabel(order.status)}</Badge>
+              {/* ATTESTED, NOT OBSERVED. The order reached this status because a
+                  named Owner / Super Admin said the work happened, not because
+                  the system recorded it. That distinction is permanent. */}
+              {order.administrativelyReconciled && (
+                <Badge
+                  variant="outline"
+                  className="border-amber-400 bg-amber-50 text-amber-800 gap-1"
+                  title={`${order.reconciliationReason || ""}${order.reconciledBy ? ` — ${order.reconciledBy}` : ""}`}
+                >
+                  <ShieldAlert className="h-3 w-3" />
+                  {RECONCILIATION_LABEL[order.reconciliationType as ReconciliationType] || "Administrative Reconciliation"}
+                </Badge>
+              )}
               {/* Whatever Transport Setup uses. In BOTH mode the order can carry
                   a packet AND a bag — show each one it actually has. */}
               {order.transport?.packetNumber && (
@@ -297,12 +361,44 @@ export function LaundryOrderDetail() {
             </p>
           </div>
         </div>
+        <div className="flex flex-col items-end gap-2">
+          {/* Owner / Super Admin only. Offered only while there is something
+              stranded to repair — never on an order the workflow already
+              finished, and never twice. */}
+          {mayReconcileOrder && !order.administrativelyReconciled && order.status !== "DELIVERED" && order.status !== "CANCELLED" && (
+            <Button variant="outline" size="sm" className="gap-1 border-amber-300 text-amber-800 hover:bg-amber-50" onClick={openReconcile}>
+              <ClipboardCheck className="h-4 w-4" /> Reconcile Order
+            </Button>
+          )}
         <div className="flex gap-2">
           {[{ l: "Total", v: inr(order.grandTotal) }, ...(order.subscriptionCoveredAmount && order.subscriptionCoveredAmount > 0 ? [{ l: "Subscription", v: inr(order.subscriptionCoveredAmount), c: "text-blue-600" }] : []), { l: "Paid", v: inr(order.amountPaid), c: "text-emerald-600" }, { l: "Balance", v: order.paymentStatus === "SUBSCRIPTION" ? "Covered" : inr(order.balanceDue), c: order.balanceDue > 0 ? "text-rose-600" : "text-emerald-600" }].map((s) => (
             <div key={s.l} className="rounded-lg border px-3 py-2 text-right"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-sm font-bold ${s.c || "text-slate-800"}`}>{s.v}</p></div>
           ))}
         </div>
+        </div>
       </div>
+
+      {/* The attestation, stated in full wherever the order is read — the
+          reason and the actor are part of the record, not a tooltip. */}
+      {order.administrativelyReconciled && (
+        <Card className="rounded-lg border-amber-300 bg-amber-50/50">
+          <CardContent className="p-3 space-y-1">
+            <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+              <ShieldAlert className="h-4 w-4" />
+              {RECONCILIATION_LABEL[order.reconciliationType as ReconciliationType] || "Administrative Reconciliation"}
+            </p>
+            <p className="text-xs text-amber-900/90">{order.reconciliationReason}</p>
+            <p className="text-[11px] text-amber-800/80">
+              Recorded by {order.reconciledBy || "—"} on {order.reconciledAt ? fmt(order.reconciledAt) : "—"}
+              {order.reconciledFromStatus ? ` · was stranded at ${statusLabel(order.reconciledFromStatus)}` : ""}
+              {order.actualCompletionAt ? ` · actually completed ${fmt(order.actualCompletionAt)}` : ""}
+            </p>
+            <p className="text-[11px] text-amber-800/70">
+              This was NOT recorded by the delivery workflow. Reports show it separately from a system-recorded delivery.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {selectedOrderId && <LaundryInvoicePanel orderId={selectedOrderId} businessId={currentBusinessId || ""} />}
 
@@ -553,6 +649,105 @@ export function LaundryOrderDetail() {
           </Card>
         )}
       </div>
+
+      {/* ── ADMINISTRATIVE RECONCILIATION ────────────────────────────────
+          Two steps on purpose. The first collects the attestation; the second
+          shows exactly what is about to be asserted, and from which stranded
+          stage, before anything is committed. */}
+      <Dialog open={recOpen} onOpenChange={(o) => { if (!recBusy) setRecOpen(o) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-800"><ClipboardCheck className="h-5 w-5" /> Reconcile Order</DialogTitle>
+            <DialogDescription className="space-y-2 pt-1">
+              <span className="block">
+                For an order whose physical work completed while the system failed to record it.
+                This records your attestation — it does not claim the workflow ran.
+              </span>
+              <span className="block">
+                <span className="font-mono font-semibold text-slate-700">{order.orderNumber}</span> is currently{" "}
+                <span className="font-semibold text-slate-700">{statusLabel(order.status)}</span>.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {recStep === "choose" ? (
+            <div className="space-y-3 py-1">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">What actually happened?</label>
+                <div className="grid gap-2">
+                  {([
+                    { v: "ADMIN_DELIVERED" as const, t: "Mark as Delivered", d: "The garments were washed and physically handed to the customer." },
+                    { v: "ADMIN_CANCEL" as const, t: "Mark as Cancelled", d: "The order was never completed and will not be delivered." },
+                  ]).map((o) => (
+                    <button
+                      key={o.v}
+                      onClick={() => setRecType(o.v)}
+                      className={`rounded-lg border p-2.5 text-left transition-colors ${recType === o.v ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"}`}
+                    >
+                      <p className="text-sm font-semibold text-slate-800">{o.t} <span className="font-normal text-slate-400">— Administrative Reconciliation</span></p>
+                      <p className="text-[11px] text-slate-500">{o.d}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-600">When did it actually happen? <span className="text-slate-400 font-normal">(optional)</span></label>
+                <Input type="date" value={recDate} onChange={(e) => setRecDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-600">Reason <span className="text-rose-500">*</span></label>
+                <textarea
+                  value={recReason}
+                  onChange={(e) => setRecReason(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Order physically completed and delivered during the workflow outage; system status was not updated due to the known post-wash workflow bug."
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+                <p className={`text-[11px] ${reasonOk ? "text-slate-400" : "text-slate-500"}`}>
+                  {reasonOk ? "This is stored permanently on the order and its timeline." : `At least ${MIN_REASON_LENGTH} characters — this is a permanent audit record.`}
+                </p>
+              </div>
+              {recError && <p className="text-xs text-rose-600">{recError}</p>}
+            </div>
+          ) : (
+            <div className="space-y-3 py-1">
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-1.5">
+                <p className="text-sm font-semibold text-amber-900">Confirm this reconciliation</p>
+                <p className="text-xs text-amber-900"><span className="text-amber-700">Previous status:</span> <span className="font-semibold">{statusLabel(order.status)}</span></p>
+                <p className="text-xs text-amber-900"><span className="text-amber-700">Action:</span> <span className="font-semibold">{recType ? RECONCILIATION_LABEL[recType] : "—"}</span></p>
+                {recDate && <p className="text-xs text-amber-900"><span className="text-amber-700">Actually completed:</span> <span className="font-semibold">{recDate}</span></p>}
+                <p className="text-xs text-amber-900"><span className="text-amber-700">Reason:</span> {recReason.trim()}</p>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                This cannot be repeated on this order. The existing timeline is preserved and one reconciliation entry is added.
+              </p>
+              {recError && <p className="text-xs text-rose-600">{recError}</p>}
+            </div>
+          )}
+
+          <DialogFooter>
+            {recStep === "choose" ? (
+              <>
+                <Button variant="outline" onClick={() => setRecOpen(false)} disabled={recBusy}>Cancel</Button>
+                <Button
+                  className="gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+                  disabled={!recType || !reasonOk}
+                  onClick={() => { setRecError(null); setRecStep("confirm") }}
+                >
+                  Review <ArrowRight className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setRecStep("choose")} disabled={recBusy}>Back</Button>
+                <Button className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={submitReconcile} disabled={recBusy}>
+                  {recBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />} Confirm Reconciliation
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={delOpen} onOpenChange={(o) => { if (!deleting) setDelOpen(o) }}>
         <DialogContent>

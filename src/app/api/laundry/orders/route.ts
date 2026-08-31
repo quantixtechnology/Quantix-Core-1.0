@@ -389,6 +389,12 @@ export async function GET(request: Request) {
           paymentMethods: [...new Set(o.payments.filter((p) => p.status === "SUCCESS").map((p) => p.method).filter(Boolean))],
           bagNumbers: bagsByOrder.get(o.id) || [],
           auditedAt: o.auditedAt, deliveredAt: o.deliveredAt,
+          // Carried through so the report can distinguish a system-recorded
+          // completion from an attested administrative reconciliation.
+          administrativelyReconciled: o.administrativelyReconciled,
+          reconciliationType: o.reconciliationType,
+          reconciliationReason: o.reconciliationReason,
+          reconciledBy: o.reconciledBy,
         }
         return buildReportRow(shaped)
       })
