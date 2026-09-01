@@ -54,8 +54,21 @@ export const PROCESSING_QUEUES: OperationalQueue[] = [
   { key: "PC_SORTING",  stage: "SORTING",    label: "Sorting" },
   { key: "PC_IRON",     stage: "IRON",       label: "Ironing" },
   { key: "PC_FOLD",     stage: "FOLD",       label: "Folding" },
-  { key: "PC_TRANSIT",  stage: "DISPATCHED", label: "Transit" },
 ]
+
+/**
+ * Garments finished at the Processing Centre, waiting to be sent back.
+ *
+ * DISPATCHED is the TERMINAL garment stage, so it is deliberately not one of
+ * the work queues above: every completed order's garments carry it forever, and
+ * treating it as a queue would file delivered orders under "Transit". The
+ * console's own rule is used instead — status PROCESSING with every garment
+ * terminal — which is exactly how its "Dispatch to Store" list is built.
+ */
+export const TRANSIT_QUEUE: OperationalQueue = { key: "PC_TRANSIT", label: "Transit" }
+
+/** DISPATCHED / legacy PACKED — mirrors isProcessingTerminal(). */
+export const TERMINAL_STAGES = ["DISPATCHED", "PACKED"]
 
 /** The queues decided by the order's status, in workflow order. */
 export const STATUS_QUEUES: OperationalQueue[] = [
@@ -102,6 +115,7 @@ export function operationalQueues(): OperationalQueue[] {
     if (q) push(q)
   }
   PROCESSING_QUEUES.forEach(push)
+  push(TRANSIT_QUEUE)
   push(UNASSIGNED)
   for (const k of ["STORE_RECEIVE", "READY_DELIVERY", "DELIVERED", "CANCELLED"]) {
     const q = STATUS_QUEUES.find((s) => s.key === k)
@@ -122,24 +136,28 @@ export interface OperationalStageInput {
  */
 export function operationalStage(order: OperationalStageInput): OperationalQueue {
   const status = String(order?.status || "")
+  const stages = new Set((order.itemStages || []).filter(Boolean) as string[])
 
-  // Inside the Processing Centre the GARMENTS decide, not the status.
+  // A GARMENT AT AN UNFINISHED STAGE OUTRANKS THE ORDER STATUS.
+  //
+  // This is not a preference — it is how every Processing Centre queue is
+  // actually built. Barcode Generation is `items.some(processingStage:
+  // "RECEIVED")` and a workstation is `{ processingStage: stage }`; NEITHER
+  // consults LaundryOrder.status. Gating on status here (the original defect)
+  // hid orders from the Orders filter that the dedicated screen was listing —
+  // an order at Packing & QR carrying a RECEIVED garment among them.
+  //
+  // Earliest stage wins: an order is only as far along as its slowest garment.
+  const found = PROCESSING_QUEUES.find((q) => q.stage && stages.has(q.stage))
+  if (found) return found
+
+  // Every garment finished at the Processing Centre. The console's own
+  // "Dispatch to Store" rule: PROCESSING with all garments terminal.
   if (status === "PROCESSING" || status === "QC_PENDING") {
-    const stages = new Set((order.itemStages || []).filter(Boolean) as string[])
-    // Earliest stage still present — an order is only as far along as its
-    // slowest garment.
-    const found = PROCESSING_QUEUES.find((q) => q.stage && stages.has(q.stage))
-    if (found) return found
+    if (TERMINAL_STAGES.some((t) => stages.has(t))) return TRANSIT_QUEUE
     // QC_PENDING is a legacy status that names its own queue.
     if (status === "QC_PENDING") return PROCESSING_QUEUES.find((q) => q.key === "PC_QC")!
     return UNASSIGNED
-  }
-
-  // An order can carry RECEIVED garments while its status still says it is
-  // travelling — Barcode Generation is genuinely where the work is.
-  if (status === "IN_TRANSIT_TO_PROCESSING") {
-    const stages = new Set((order.itemStages || []).filter(Boolean) as string[])
-    if (stages.has("RECEIVED")) return PROCESSING_QUEUES[0]
   }
 
   const byStatus = STATUS_QUEUES.find((q) => q.status === status)

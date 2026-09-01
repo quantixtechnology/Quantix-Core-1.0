@@ -11,7 +11,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } from "@/lib/laundry-transport-server"
 import { usesPacket } from "@/lib/laundry-transport"
 import { buildReportRow, type ReportOrder } from "@/lib/laundry-order-report"
-import { operationalStage, STATUS_QUEUES, PROCESSING_QUEUES, UNASSIGNED, stagesForKey, stagesBefore } from "@/lib/laundry-operational-stage"
+import { operationalStage, STATUS_QUEUES, PROCESSING_QUEUES, UNASSIGNED, TRANSIT_QUEUE, TERMINAL_STAGES, stagesForKey, stagesBefore } from "@/lib/laundry-operational-stage"
 
 export const runtime = "nodejs"
 
@@ -253,17 +253,30 @@ export async function GET(request: Request) {
       if (byStatus?.status) {
         opFilters.push({ status: byStatus.status })
       } else if (stages.length > 0) {
-        // "Earliest stage wins": the order has a garment in THIS queue and none
-        // in any earlier one. Without the `none`, an order with one garment at
-        // Washing and one at Folding would answer to both queues.
+        // NO STATUS CONDITION — deliberately. The dedicated queues have none:
+        // Barcode Generation is `items.some(processingStage: "RECEIVED")` and a
+        // workstation is `{ processingStage: stage }`. Adding one here was the
+        // defect: an order the Barcode Generation screen listed was excluded
+        // from Orders → Barcode Generation because its status was not one of
+        // the three this clause allowed.
+        //
+        // "Earliest stage wins" is still enforced by the `none`: the order has a
+        // garment in THIS queue and none in any earlier one, so an order with
+        // one garment at Washing and one at Folding answers only to Washing.
         const earlier = [...new Set(stages.flatMap((st) => stagesBefore(st)))].filter((st) => !stages.includes(st))
-        opFilters.push({ status: { in: ["PROCESSING", "QC_PENDING", "IN_TRANSIT_TO_PROCESSING"] } })
         opFilters.push({ items: { some: { processingStage: { in: stages } } } })
         if (earlier.length) opFilters.push({ items: { none: { processingStage: { in: earlier } } } })
+      } else if (opStage === TRANSIT_QUEUE.key) {
+        // The console's own "Dispatch to Store" rule: PROCESSING with every
+        // garment finished. DISPATCHED is terminal and is NOT a work queue —
+        // treating it as one would file every delivered order under Transit.
+        opFilters.push({ status: { in: ["PROCESSING", "QC_PENDING"] } })
+        opFilters.push({ items: { some: { processingStage: { in: TERMINAL_STAGES } } } })
+        opFilters.push({ items: { none: { processingStage: { in: PROCESSING_QUEUES.map((q) => q.stage!).filter(Boolean) } } } })
       } else if (opStage === UNASSIGNED.key) {
         // At the Processing Centre with no garment stage at all.
         opFilters.push({ status: { in: ["PROCESSING", "QC_PENDING"] } })
-        opFilters.push({ items: { none: { processingStage: { in: PROCESSING_QUEUES.map((q) => q.stage!).filter(Boolean) } } } })
+        opFilters.push({ items: { none: { processingStage: { in: [...PROCESSING_QUEUES.map((q) => q.stage!).filter(Boolean), ...TERMINAL_STAGES] } } } })
       }
       if (opFilters.length) where.AND = [...((where.AND as unknown[]) || []), ...opFilters]
     }
