@@ -2141,6 +2141,31 @@ model LaundryAccessAssignment {
 }
 
 // Append-only RBAC audit trail (role/permission/assignment changes).
+// ============================================================================
+// PER-STAFF UI PREFERENCE — a saved filter, and nothing more.
+//
+// Keyed by (businessId, userId, key) with a UNIQUE constraint, so one staff
+// member's saved filter can never be served to another and a tenant cannot see
+// across the boundary. Server-side rather than localStorage, so the same person
+// gets their filter on any workstation they sign in to.
+//
+// Deliberately generic in shape but tiny in scope: `value` is a JSON string the
+// owning screen defines. It holds display preferences ONLY — never workflow
+// state, never anything an order's correctness depends on.
+// ============================================================================
+model LaundryUserPreference {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  key        String // e.g. "orders.filter"
+  value      String   @default("{}") // JSON, owned by the screen that saves it
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([businessId, userId, key])
+  @@index([businessId, userId])
+}
+
 model LaundryAccessAudit {
   id           String   @id @default(cuid())
   businessId   String

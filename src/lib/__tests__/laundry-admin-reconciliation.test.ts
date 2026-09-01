@@ -277,7 +277,11 @@ describe('the orders list shows the difference too', () => {
   })
 
   it('the row still shows its real status alongside', () => {
-    expect(LIST).toContain('{statusLabel(o.status)}</Badge>')
+    // The badge now leads with the OPERATIONAL queue and keeps the workflow
+    // status as a secondary line beneath it — still shown, no longer the thing
+    // the operator has to decode.
+    expect(LIST).toContain('{o.operationalStage || statusLabel(o.status)}')
+    expect(LIST).toContain('<p className="mt-0.5 text-[10px] text-slate-400">{statusLabel(o.status)}</p>')
   })
 })
 

@@ -11,6 +11,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } from "@/lib/laundry-transport-server"
 import { usesPacket } from "@/lib/laundry-transport"
 import { buildReportRow, type ReportOrder } from "@/lib/laundry-order-report"
+import { operationalStage, STATUS_QUEUES, PROCESSING_QUEUES, UNASSIGNED, stagesForKey, stagesBefore } from "@/lib/laundry-operational-stage"
 
 export const runtime = "nodejs"
 
@@ -208,6 +209,9 @@ export async function GET(request: Request) {
     const search = searchParams.get("search")
     // Stage-completion filters (used by the Barcode / Packing History tabs) —
     // based on STORED completion data, never on order status.
+    // Operational queue the order is waiting in — a DERIVED view over the same
+    // fields the queues themselves read. Read-only: it filters, never moves.
+    const opStage = searchParams.get("opStage")
     const promise = searchParams.get("promise") // delivery-promise filter — see PROMISE_WHERE below
     const barcoded = searchParams.get("barcoded") // "1" → Barcode Generation completed (Moved to Processing)
     const packed = searchParams.get("packed")     // "1" → Packing & QR completed
@@ -237,6 +241,32 @@ export async function GET(request: Request) {
 
     const where: Record<string, unknown> = { businessId: resolved.id }
     if (status) where.status = status
+
+    // ── OPERATIONAL STAGE FILTER ────────────────────────────────────────────
+    // Translated into the SAME rule the row label uses, so the dropdown and the
+    // table can never disagree. Expressed as a where-clause rather than by
+    // filtering in JS, so paging and totals stay correct.
+    if (opStage && opStage !== "ALL") {
+      const opFilters: Record<string, unknown>[] = []
+      const byStatus = STATUS_QUEUES.find((q) => q.key === opStage)
+      const stages = stagesForKey(opStage)
+      if (byStatus?.status) {
+        opFilters.push({ status: byStatus.status })
+      } else if (stages.length > 0) {
+        // "Earliest stage wins": the order has a garment in THIS queue and none
+        // in any earlier one. Without the `none`, an order with one garment at
+        // Washing and one at Folding would answer to both queues.
+        const earlier = [...new Set(stages.flatMap((st) => stagesBefore(st)))].filter((st) => !stages.includes(st))
+        opFilters.push({ status: { in: ["PROCESSING", "QC_PENDING", "IN_TRANSIT_TO_PROCESSING"] } })
+        opFilters.push({ items: { some: { processingStage: { in: stages } } } })
+        if (earlier.length) opFilters.push({ items: { none: { processingStage: { in: earlier } } } })
+      } else if (opStage === UNASSIGNED.key) {
+        // At the Processing Centre with no garment stage at all.
+        opFilters.push({ status: { in: ["PROCESSING", "QC_PENDING"] } })
+        opFilters.push({ items: { none: { processingStage: { in: PROCESSING_QUEUES.map((q) => q.stage!).filter(Boolean) } } } })
+      }
+      if (opFilters.length) where.AND = [...((where.AND as unknown[]) || []), ...opFilters]
+    }
     if (storeId) where.storeId = storeId
     if (customerId) where.customerId = customerId
 
@@ -433,12 +463,31 @@ export async function GET(request: Request) {
     const custMap = new Map(customers.map((c) => [c.id, c]))
     // Transport identifier per order, resolved through Transport Setup.
     const transportRefs = await transportRefsForOrders(resolved.id, orders.map((o) => o.id), listMode)
+
+    // Garment stages for the whole page in ONE grouped query — never per order.
+    // Only the distinct (orderId, processingStage) pairs are needed, because the
+    // rule is a scan for the earliest stage present, not a count.
+    const stageRows = orders.length
+      ? await prisma.laundryOrderItem.groupBy({
+          by: ["orderId", "processingStage"],
+          where: { orderId: { in: orders.map((o) => o.id) } },
+        }).catch(() => [] as { orderId: string; processingStage: string | null }[])
+      : []
+    const stagesByOrder = new Map<string, (string | null)[]>()
+    for (const r of stageRows) {
+      const list = stagesByOrder.get(r.orderId) || []
+      list.push(r.processingStage)
+      stagesByOrder.set(r.orderId, list)
+    }
     // auditComplete: has garments AND none left un-inspected (Store Audit done).
     // Drives the Packing queue filter so incomplete orders never appear there.
     const data = orders.map((o) => {
       const { items, ...rest } = o
       const auditComplete = o._count.items > 0 && (items?.length ?? 0) === 0
       const transport = transportRefs.get(o.id) || null
+      // The queue this order is waiting in — the SAME pure rule the filter above
+      // and the row label use, so all three agree by construction.
+      const opQueue = operationalStage({ status: o.status as string, itemStages: stagesByOrder.get(o.id) || [] })
       return {
         ...rest,
         transport,
@@ -446,6 +495,8 @@ export async function GET(request: Request) {
         customer: o.customerId ? custMap.get(o.customerId) || null : null,
         itemCount: o._count.items,
         auditComplete,
+        operationalStageKey: opQueue.key,
+        operationalStage: opQueue.label,
       }
     })
 

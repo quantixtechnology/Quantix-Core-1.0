@@ -26,14 +26,20 @@ describe('the filter list is derived, not hand-written', () => {
     expect(ALL_ORDER_STATUSES.length).toBe(Object.keys(STATUS_META).length)
   })
 
-  it('the view builds FILTERS from it, with no literal status list', () => {
-    expect(VIEW).toContain('const FILTERS = ["ALL", ...ALL_ORDER_STATUSES]')
-    // The old hand-maintained array is gone.
+  // SUPERSEDED MECHANISM, SAME INVARIANT. The dropdown no longer lists raw
+  // statuses: "PROCESSING" is not a queue and cannot tell an operator whether
+  // to go to Washing or Barcode Generation. It is now built from
+  // operationalQueues(), the one rule that also labels each row and drives the
+  // server filter — so the drift this file exists to prevent is still
+  // impossible, and is now asserted against the rule rather than the old array.
+  // Full coverage lives in laundry-operational-stage.test.ts.
+  it('the view builds its options from the shared rule, with no literal list', () => {
+    expect(VIEW).toContain('const OP_FILTERS = operationalQueues()')
     expect(VIEW).not.toContain('"ALL", "PENDING_STORE_AUDIT"')
   })
 
-  it('keeps All Stages as the first option', () => {
-    expect(VIEW).toContain('s === "ALL" ? "All Stages" : statusLabel(s)')
+  it('keeps an "all" option as the first entry', () => {
+    expect(VIEW).toContain('<SelectItem value="ALL">All Operational Stages</SelectItem>')
   })
 })
 
@@ -101,12 +107,17 @@ describe('no invalid stage is introduced', () => {
 
 describe('filtering behaviour is unchanged', () => {
   it('a chosen stage is sent to the server; ALL sends nothing', () => {
-    expect(VIEW).toContain('if (status !== "ALL") params.set("status", status)')
+    expect(VIEW).toContain('if (opStage !== "ALL") params.set("opStage", opStage)')
   })
 
-  it('the server filters on that exact status — so any valid stage works', () => {
+  it('the server still filters server-side, so paging and totals stay correct', () => {
+    // The raw `status` param is untouched and still serves its other callers
+    // (Barcode/Packing history tabs, the audit queue); the Orders screen now
+    // sends the richer opStage instead.
     expect(API).toContain('const status = searchParams.get("status")')
     expect(API).toContain('if (status) where.status = status')
+    expect(API).toContain('const opStage = searchParams.get("opStage")')
+    expect(API).toContain('where.AND = [...((where.AND as unknown[]) || []), ...opFilters]')
   })
 
   it('search, pagination, customer and tenant filtering are untouched', () => {

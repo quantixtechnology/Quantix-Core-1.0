@@ -13,9 +13,10 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star } from "lucide-react"
-import { statusLabel, ALL_ORDER_STATUSES } from "@/lib/laundry-workflow"
+import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X, Star, Bookmark } from "lucide-react"
+import { statusLabel } from "@/lib/laundry-workflow"
 import { RECONCILIATION_LABEL, type ReconciliationType } from "@/lib/laundry-reconciliation"
+import { operationalQueues } from "@/lib/laundry-operational-stage"
 import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
 
@@ -35,6 +36,10 @@ interface OrderRow {
   // reconciled order as a normal delivery.
   administrativelyReconciled?: boolean | null
   reconciliationType?: string | null
+  // Derived server-side by the shared rule — the row NEVER recomputes it, so
+  // the label, the dropdown and the filter cannot disagree.
+  operationalStage?: string | null
+  operationalStageKey?: string | null
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -61,7 +66,13 @@ const PAY_STYLE: Record<string, string> = {
 // literal omitted six real statuses — Awaiting Pickup Assignment among them — so
 // orders the table displayed could not be filtered for. STATUS_META is declared
 // in workflow order, so the dropdown reads in that order too.
-const FILTERS = ["ALL", ...ALL_ORDER_STATUSES]
+// Operational QUEUES, not raw statuses. "PROCESSING" is not a queue — it cannot
+// tell an operator whether to go to Washing or Barcode Generation — so the
+// dropdown is built from the one shared rule that also labels each row and
+// drives the server-side filter. They cannot drift apart.
+const OP_FILTERS = operationalQueues()
+/** Saved per staff member, server-side, under this key. */
+const FILTER_PREF_KEY = "orders.filter"
 const PAGE = 10
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -88,8 +99,14 @@ export function LaundryOrdersView() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [status, setStatus] = useState("ALL")
+  const [opStage, setOpStage] = useState("ALL")
   const [page, setPage] = useState(0)
+  // Saved filter — restored from the server on mount, so the operator does not
+  // reselect their queue every visit. `prefLoaded` gates the first fetch so the
+  // list is not loaded once with the default and again with the saved value.
+  const [prefLoaded, setPrefLoaded] = useState(false)
+  const [savedFilter, setSavedFilter] = useState<{ opStage?: string; search?: string } | null>(null)
+  const [savingPref, setSavingPref] = useState(false)
   // Customer filter — seeded from the New Order "View Orders" quick action.
   // Prefer the person's MOBILE: the existing `search` param resolves every
   // Customer id sharing that phone, so legacy/duplicate records are included
@@ -108,15 +125,62 @@ export function LaundryOrdersView() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(PAGE), offset: String(page * PAGE) })
-      if (status !== "ALL") params.set("status", status)
+      if (opStage !== "ALL") params.set("opStage", opStage)
       if (search.trim()) params.set("search", search.trim())
       if (custFilter) params.set("customerId", custFilter)
       const json = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, status, search, custFilter])
-  useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(0) }, [status])
+  }, [currentBusinessId, page, opStage, search, custFilter])
+  useEffect(() => { if (prefLoaded) load() }, [load, prefLoaded])
+  useEffect(() => { setPage(0) }, [opStage])
+
+  // ── Saved filter, per staff member ──────────────────────────────────────
+  // Read once on mount. The endpoint resolves the user from the session, so a
+  // staff member can only ever receive their own.
+  useEffect(() => {
+    if (!currentBusinessId) return
+    let cancelled = false
+    fetch(`/api/laundry/user-preferences?businessId=${encodeURIComponent(currentBusinessId)}&key=${FILTER_PREF_KEY}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        const saved = j?.success && j.data && typeof j.data === "object" ? j.data as { opStage?: string; search?: string } : null
+        if (saved) {
+          setSavedFilter(saved)
+          if (saved.opStage) setOpStage(saved.opStage)
+          if (saved.search) setSearch(saved.search)
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPrefLoaded(true) })
+    return () => { cancelled = true }
+  }, [currentBusinessId])
+
+  const saveFilter = async () => {
+    if (!currentBusinessId) return
+    setSavingPref(true)
+    const body = { opStage, search: search.trim() }
+    try {
+      const j = await fetch(`/api/laundry/user-preferences?businessId=${encodeURIComponent(currentBusinessId)}&key=${FILTER_PREF_KEY}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      }).then((r) => r.json())
+      if (j?.success) setSavedFilter(body)
+    } catch { /* the screen still works — the filter just is not remembered */ } finally { setSavingPref(false) }
+  }
+
+  const clearSavedFilter = async () => {
+    if (!currentBusinessId) return
+    setSavingPref(true)
+    try {
+      await fetch(`/api/laundry/user-preferences?businessId=${encodeURIComponent(currentBusinessId)}&key=${FILTER_PREF_KEY}`, { method: "DELETE" })
+      setSavedFilter(null)
+      // Clearing returns the screen to the default, as the operator expects.
+      setOpStage("ALL"); setSearch(""); setPage(0)
+    } catch { /* noop */ } finally { setSavingPref(false) }
+  }
+
+  const filterIsSaved = !!savedFilter && savedFilter.opStage === opStage && (savedFilter.search || "") === search.trim()
 
   const custFilterName = custFilter ? (rows.find((r) => r.customer)?.customer?.name || "selected customer") : null
 
@@ -144,10 +208,28 @@ export function LaundryOrdersView() {
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardContent className="p-3 flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[220px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search order number…" className="pl-9 h-9 bg-slate-50 border-slate-200" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} /></div>
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={opStage} onValueChange={setOpStage}>
             <SelectTrigger className="h-9 w-56 bg-slate-50 border-slate-200"><SelectValue /></SelectTrigger>
-            <SelectContent>{FILTERS.map((s) => <SelectItem key={s} value={s}>{s === "ALL" ? "All Stages" : statusLabel(s)}</SelectItem>)}</SelectContent>
+            <SelectContent>
+              <SelectItem value="ALL">All Operational Stages</SelectItem>
+              {OP_FILTERS.map((q) => <SelectItem key={q.key} value={q.key}>{q.label}</SelectItem>)}
+            </SelectContent>
           </Select>
+          {/* Saved per staff member, server-side — the same person gets their
+              filter back on any workstation they sign in to. */}
+          <Button
+            variant="outline" size="sm" className="h-9 gap-1.5"
+            disabled={savingPref || filterIsSaved}
+            onClick={saveFilter}
+            title={filterIsSaved ? "This filter is already saved" : "Remember this filter for me"}
+          >
+            <Bookmark className="h-3.5 w-3.5" /> {filterIsSaved ? "Filter Saved" : "Save Filter"}
+          </Button>
+          {savedFilter && (
+            <Button variant="ghost" size="sm" className="h-9 text-slate-500" disabled={savingPref} onClick={clearSavedFilter}>
+              Clear Saved
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -162,7 +244,7 @@ export function LaundryOrdersView() {
               <TableHeader><TableRow className="text-[11px] uppercase tracking-wide">
                 <TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead>Store</TableHead>
                 <TableHead className="text-center">Items</TableHead><TableHead className="text-right">Amount</TableHead>
-                <TableHead>Payment</TableHead><TableHead>Stage</TableHead><TableHead>Created</TableHead>
+                <TableHead>Payment</TableHead><TableHead>Operational Stage</TableHead><TableHead>Created</TableHead>
                 <TableHead className="text-center">Rating</TableHead><TableHead>Pickup</TableHead><TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
               </TableRow></TableHeader>
               <TableBody>
@@ -178,7 +260,15 @@ export function LaundryOrdersView() {
                       <TableCell><Badge variant="outline" className={PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}>{o.paymentStatus || "—"}</Badge></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 flex-wrap">
-                          <Badge variant="outline" className={STATUS_STYLE[o.status] || "border-slate-200"}>{statusLabel(o.status)}</Badge>
+                          <div>
+                            <Badge variant="outline" className={STATUS_STYLE[o.status] || "border-slate-200"}>{o.operationalStage || statusLabel(o.status)}</Badge>
+                            {/* The workflow status is kept, small and secondary:
+                                useful context, but never the thing an operator
+                                has to decode to know where the work is. */}
+                            {o.operationalStage && o.operationalStage !== statusLabel(o.status) && (
+                              <p className="mt-0.5 text-[10px] text-slate-400">{statusLabel(o.status)}</p>
+                            )}
+                          </div>
                           {o.administrativelyReconciled && (
                             <Badge
                               variant="outline"
