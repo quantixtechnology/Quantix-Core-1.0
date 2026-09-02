@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { SearchableSelect } from "./views/pricing/searchable-select"
+import { cn } from "@/lib/utils"
 
 export interface GarmentOption {
   id: string
@@ -51,6 +52,7 @@ export function garmentLabel(g: GarmentOption): string {
 
 export function LaundryGarmentSelect({
   value, onChange, garments, categoryId, placeholder = "Search garment name or code…", className,
+  unavailable, invalid,
 }: {
   value: string
   onChange: (garmentId: string) => void
@@ -59,17 +61,42 @@ export function LaundryGarmentSelect({
   categoryId?: string | null
   placeholder?: string
   className?: string
+  /**
+   * Why a garment cannot be chosen right now, or null when it can. Optional:
+   * every existing caller passes nothing and behaves exactly as before.
+   *
+   * The reason comes from the CALLER, which owns the eligibility map — this
+   * component never decides availability itself.
+   */
+  unavailable?: (garmentId: string) => string | null
+  /** Paint the trigger as errored (the chosen garment is not allowed). */
+  invalid?: boolean
 }) {
   const options = useMemo(() => {
     const list = categoryId ? garments.filter((g) => g.categoryId === categoryId) : garments
-    return list.map((g) => ({
-      value: g.id,
-      // The code is part of the LABEL rather than a separate field, so the
-      // existing search — which matches on label — finds "G-SHRT2" as readily
-      // as "shirt", with no second search implementation.
-      label: garmentLabel(g),
-    }))
-  }, [garments, categoryId])
+    return list.map((g) => {
+      const reason = unavailable?.(g.id) || null
+      return {
+        value: g.id,
+        // The code is part of the LABEL rather than a separate field, so the
+        // existing search — which matches on label — finds "G-SHRT2" as readily
+        // as "shirt", with no second search implementation.
+        label: garmentLabel(g),
+        // Shown, greyed and unselectable — never hidden, so the operator can
+        // see the garment exists and read why it is unavailable.
+        disabled: !!reason,
+        hint: reason || undefined,
+      }
+    })
+  }, [garments, categoryId, unavailable])
 
-  return <SearchableSelect value={value} onChange={onChange} options={options} placeholder={placeholder} className={className} />
+  return (
+    <SearchableSelect
+      value={value}
+      onChange={onChange}
+      options={options}
+      placeholder={placeholder}
+      className={cn(className, invalid && "border-rose-400 ring-1 ring-rose-200 text-rose-700")}
+    />
+  )
 }

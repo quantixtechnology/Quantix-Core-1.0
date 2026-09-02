@@ -9,7 +9,14 @@ import {
 } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 
-export interface Option { value: string; label: string }
+export interface Option {
+  value: string
+  label: string
+  /** Present and non-selectable — shown with its reason, never hidden. */
+  disabled?: boolean
+  /** Why it is unavailable. Rendered beside a disabled row. */
+  hint?: string
+}
 
 // Keyboard-friendly, searchable dropdown used across the Pricing wizard/simulator.
 export function SearchableSelect({
@@ -46,10 +53,16 @@ export function SearchableSelect({
                 <CommandItem
                   key={o.value}
                   value={o.label}
-                  onSelect={() => { onChange(o.value); setOpen(false) }}
+                  disabled={o.disabled}
+                  // A disabled option stays VISIBLE and searchable — hiding it
+                  // leaves the operator hunting for a garment that is simply
+                  // not orderable under this service.
+                  onSelect={() => { if (o.disabled) return; onChange(o.value); setOpen(false) }}
+                  className={cn(o.disabled && "opacity-60 cursor-not-allowed")}
                 >
                   <Check className={cn("mr-2 h-4 w-4", value === o.value ? "opacity-100" : "opacity-0")} />
-                  {o.label}
+                  <span className="truncate">{o.label}</span>
+                  {o.hint && <span className="ml-auto pl-2 shrink-0 text-[11px] text-amber-700">{o.hint}</span>}
                 </CommandItem>
               ))}
             </CommandGroup>

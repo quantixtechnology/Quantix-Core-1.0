@@ -60,3 +60,71 @@ export function unavailableOrderLines(
   }
   return out
 }
+
+// ── Selection-time availability ─────────────────────────────────────────────
+//
+// The same question as unavailableOrderLines above, asked one row at a time and
+// BEFORE the save rather than after the refusal. It reads the identical
+// PricedServices map — the active Pricing Matrix rules served by
+// GET /api/laundry/garment-services, which is derived from the same condition
+// resolveLineRule() prices by — so there is no second eligibility matrix and a
+// pair this allows is exactly a pair the server will accept.
+//
+// The SERVER REMAINS THE AUTHORITY. Nothing here bypasses, weakens or replaces
+// SERVICE_NOT_AVAILABLE_FOR_GARMENT; this only stops the operator reaching it
+// blind, with a form they cannot diagnose.
+
+/**
+ * Can this garment be recorded under this service?
+ *
+ * Unknown (`priced` still loading, or either id missing) answers TRUE: the
+ * screen must never block a save on a guess. The server still refuses.
+ */
+export function garmentAvailableForService(
+  garmentId: string | null | undefined,
+  serviceId: string | null | undefined,
+  priced: PricedServices | null | undefined,
+): boolean {
+  if (!priced || !garmentId || !serviceId) return true
+  return (priced[garmentId] || []).includes(serviceId)
+}
+
+export interface UnavailableNotice {
+  /** "Not available for Wash & Fold" */
+  title: string
+  /** The full sentence, naming the garment, the service and the way out. */
+  detail: string
+  /** "Blanket (Single) — Not available for Wash & Fold" — for a dropdown row. */
+  optionLabel: string
+}
+
+/**
+ * Why this pair cannot be recorded, in the operator's words — or null when it
+ * can. Names BOTH the garment and the service, because "which one is wrong?"
+ * is the question the old failed-save left unanswered.
+ */
+export function unavailableNotice(
+  garmentName: string | null | undefined,
+  serviceName: string | null | undefined,
+): UnavailableNotice {
+  const g = (garmentName || "").trim() || "This garment"
+  const s = (serviceName || "").trim() || "the selected service"
+  return {
+    title: `Not available for ${s}`,
+    detail: `${g} cannot be processed under ${s}. Select a supported garment or change the service.`,
+    optionLabel: `${g} — Not available for ${s}`,
+  }
+}
+
+/** The garment ids a service can actually price, for narrowing a picker. */
+export function garmentsForService(
+  serviceId: string | null | undefined,
+  priced: PricedServices | null | undefined,
+): Set<string> | null {
+  if (!priced || !serviceId) return null
+  const out = new Set<string>()
+  for (const [garmentId, services] of Object.entries(priced)) {
+    if (services.includes(serviceId)) out.add(garmentId)
+  }
+  return out
+}

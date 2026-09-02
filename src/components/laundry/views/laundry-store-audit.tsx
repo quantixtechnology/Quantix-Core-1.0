@@ -8,7 +8,7 @@
 // engine. PER_PIECE orders were billed at booking and are unaffected.
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { unavailableOrderLines, type PricedServices } from "@/lib/laundry-garment-availability"
+import { unavailableOrderLines, garmentAvailableForService, unavailableNotice, type PricedServices } from "@/lib/laundry-garment-availability"
 import { intakeServiceChoice, intakeRowsToItems, DEFAULT_ROW_QUANTITY } from "@/lib/laundry-intake-service"
 import { scheduleCell, bookedServiceNames, URGENCY_STYLE, urgencyNote } from "@/lib/laundry-schedule-display"
 import { useAuthStore } from "@/stores/auth-store"
@@ -513,7 +513,7 @@ export function LaundryStoreAudit() {
                 )}
                 {detail.items.length === 0 ? (
                   intakeOpen ? (
-                    <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                    <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} priced={priced} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
                   ) : (
                     <div className="py-6 text-center space-y-3">
                       <p className="text-sm text-muted-foreground">Pickup-First order — garments were not counted at booking. Count them here at intake.</p>
@@ -635,7 +635,7 @@ export function LaundryStoreAudit() {
                 {detail.items.length > 0 && (
                   intakeOpen ? (
                     <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
-                      <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                      <IntakeAudit orderId={detail.id} businessId={currentBusinessId} booked={[...(detail.services || []), ...detail.items]} configured={services} priced={priced} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
                     </div>
                   ) : (
                     <button onClick={() => setIntakeOpen(true)} className="text-sm font-semibold text-blue-600 hover:text-blue-700">+ Add missed garment</button>
@@ -848,13 +848,20 @@ export function LaundryStoreAudit() {
 // from the order itself, and applies to EVERY garment in the panel — it cannot
 // drift as rows are added, and it is not offered as a choice when there is only
 // one possible answer.
-function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCancel }: {
+function IntakeAudit({ orderId, businessId, booked, configured, priced, onSaved, onCancel }: {
   orderId: string
   businessId: string | null
   /** The order's own service-bearing rows — booked services + garments already on it. */
   booked: { serviceId: string | null; serviceName: string }[]
   /** The tenant's configured services, used only to name the booked one. */
   configured: SvcOption[]
+  /**
+   * Active Pricing Matrix availability — the SAME map the parent already loads
+   * from GET /api/laundry/garment-services and the same one the server's
+   * SERVICE_NOT_AVAILABLE_FOR_GARMENT refusal is derived from. Null while it
+   * loads, in which case nothing is claimed and nothing is blocked.
+   */
+  priced: PricedServices | null
   onSaved: () => void
   onCancel: () => void
 }) {
@@ -876,6 +883,31 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
   const [picked, setPicked] = useState("")
   const serviceId = choice.locked ? choice.serviceId : picked
 
+  // ── LIVE ELIGIBILITY ────────────────────────────────────────────────────
+  // Answered the moment a garment is chosen, from the same availability map the
+  // server refuses by — so the operator learns WHICH garment and WHICH service
+  // are in conflict instead of meeting a failed Save with no explanation.
+  // The server stays the authority; this only stops them reaching it blind.
+  const serviceName = useMemo(
+    () => choice.options.find((o) => o.id === serviceId)?.name || choice.lockedName || "",
+    [choice, serviceId],
+  )
+  /** Reason a garment cannot be used under the CURRENT service, or null. */
+  const garmentBlocked = useCallback((garmentId: string): string | null => {
+    if (!serviceId || garmentAvailableForService(garmentId, serviceId, priced)) return null
+    return `Not available for ${serviceName || "this service"}`
+  }, [serviceId, priced, serviceName])
+  /** The rows the operator has filled that the service cannot price. */
+  const invalidRows = useMemo(() => rows
+    .map((r, i) => ({ r, n: i + 1 }))
+    .filter(({ r }) => r.garmentId && !garmentAvailableForService(r.garmentId, serviceId, priced))
+    .map(({ r, n }) => ({
+      n,
+      garmentId: r.garmentId,
+      notice: unavailableNotice(garments.find((g) => g.id === r.garmentId)?.name, serviceName),
+    })), [rows, serviceId, priced, garments, serviceName])
+  const hasInvalid = invalidRows.length > 0
+
   const addRow = () => setRows((r) => [...r, { garmentId: "", quantity: DEFAULT_ROW_QUANTITY, weightKg: "" }])
   const upd = (i: number, patch: Partial<{ garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const del = (i: number) => setRows((r) => (r.length === 1 ? r : r.filter((_, j) => j !== i)))
@@ -886,6 +918,18 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
     // a row the operator actually engaged with is either saved or named as the
     // reason nothing was. Neither is silently dropped, and neither blocks a
     // save the operator never asked for.
+    // The button is disabled while anything is invalid; this is the second
+    // check, so a keyboard submit cannot slip past it.
+    if (hasInvalid) {
+      toast({
+        title: invalidRows[0].notice.title,
+        description: invalidRows.length === 1
+          ? invalidRows[0].notice.detail
+          : `${invalidRows.length} garments cannot be processed under ${serviceName}. Fix the rows marked below.`,
+        variant: "destructive",
+      })
+      return
+    }
     const plan = intakeRowsToItems(rows, serviceId)
     if (!plan.ok) {
       toast({
@@ -932,21 +976,51 @@ function IntakeAudit({ orderId, businessId, booked, configured, onSaved, onCance
         {" "}Weight is used for Per-KG services; quantity for piece-based.
       </p>
       <div className="space-y-2">
-        {rows.map((r, i) => (
-          <div key={i} className="grid grid-cols-[1fr_64px_72px_32px] gap-1.5 items-center">
-            {/* Searchable by name OR code — the list grows over time and
-                scrolling it at a counter is not workable. */}
-            <LaundryGarmentSelect value={r.garmentId} onChange={(v) => upd(i, { garmentId: v })} garments={garments} className="h-9" />
-            <Input type="number" min={0} value={r.quantity} onChange={(e) => upd(i, { quantity: e.target.value })} placeholder="Qty" className="h-9 text-sm" />
-            <Input type="number" min={0} step="0.05" value={r.weightKg} onChange={(e) => upd(i, { weightKg: e.target.value })} placeholder="kg" className="h-9 text-sm" />
-            <button onClick={() => del(i)} disabled={rows.length === 1} className="text-slate-400 hover:text-rose-600 disabled:opacity-30 flex justify-center"><X className="h-4 w-4" /></button>
+        {rows.map((r, i) => {
+          const bad = invalidRows.find((x) => x.n === i + 1)
+          return (
+          <div key={i} className="space-y-1">
+            <div className="grid grid-cols-[1fr_64px_72px_32px] gap-1.5 items-center">
+              {/* Searchable by name OR code — the list grows over time and
+                  scrolling it at a counter is not workable. Garments the
+                  service cannot price are SHOWN but greyed with the reason,
+                  rather than hidden, so the operator can see they exist. */}
+              <LaundryGarmentSelect
+                value={r.garmentId}
+                onChange={(v) => upd(i, { garmentId: v })}
+                garments={garments}
+                className="h-9"
+                unavailable={garmentBlocked}
+                invalid={!!bad}
+              />
+              <Input type="number" min={0} value={r.quantity} onChange={(e) => upd(i, { quantity: e.target.value })} placeholder="Qty" className="h-9 text-sm" />
+              <Input type="number" min={0} step="0.05" value={r.weightKg} onChange={(e) => upd(i, { weightKg: e.target.value })} placeholder="kg" className="h-9 text-sm" />
+              <button onClick={() => del(i)} disabled={rows.length === 1} className="text-slate-400 hover:text-rose-600 disabled:opacity-30 flex justify-center"><X className="h-4 w-4" /></button>
+            </div>
+            {/* Directly beneath the selector that caused it, naming BOTH the
+                garment and the service, and what to do next. */}
+            {bad && (
+              <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5">
+                <p className="text-[12px] font-semibold text-rose-800">⚠️ {bad.notice.title}</p>
+                <p className="text-[11px] text-rose-700 leading-snug">{bad.notice.detail}</p>
+              </div>
+            )}
           </div>
-        ))}
+          )
+        })}
       </div>
       <button onClick={addRow} className="text-xs font-semibold text-blue-600">+ Add garment</button>
       <div className="flex gap-2 pt-1">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={save} disabled={saving} className="flex-1 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save Garments &amp; Continue</Button>
+        <Button
+          onClick={save}
+          disabled={saving || hasInvalid}
+          title={hasInvalid ? `${invalidRows.length} garment(s) cannot be processed under ${serviceName}` : undefined}
+          className="flex-1 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          {hasInvalid ? `Fix ${invalidRows.length} garment${invalidRows.length === 1 ? "" : "s"} to continue` : "Save Garments & Continue"}
+        </Button>
       </div>
     </div>
   )
