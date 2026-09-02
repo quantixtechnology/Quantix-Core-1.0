@@ -110,7 +110,12 @@ export default function RootLayout({
           <CacheBuster />
           {children}
         </ApiProvider>
-        <Toaster position="top-right" richColors closeButton />
+        {/* In an installed PWA the layout viewport starts BEHIND the status
+            bar (viewport-fit=cover + black-translucent), so sonner's default
+            16px mobile offset put a toast under the clock. max() keeps that
+            exact 16px everywhere there is no inset, so nothing moves off iOS.
+            Only `top` is overridden; the other sides keep sonner's default. */}
+        <Toaster position="top-right" richColors closeButton mobileOffset={{ top: "max(16px, env(safe-area-inset-top))" }} />
       </body>
     </html>
   );

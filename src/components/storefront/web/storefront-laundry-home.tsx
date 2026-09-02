@@ -1039,7 +1039,12 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 pt-[max(1rem,var(--safe-top))] pb-[max(1rem,var(--safe-bottom))]" onClick={onClose}>
+    {/* z-60, NOT z-50: the installed-PWA bottom navigation is also a fixed
+        z-50 element and is rendered AFTER <main> in the same stacking
+        context, so at equal z-index it painted OVER this dialog and took
+        the tap on "Confirm Order". 60 clears the nav and still sits below
+        the address/map pickers (z-210 / z-230) that open from this sheet. */}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 pt-[max(1rem,var(--safe-top))] pb-[max(1rem,var(--safe-bottom))]" onClick={onClose}>
       {/* A CENTRED DIALOG, never a bottom sheet — no bottom:0, no anchoring
           above the navigation, and the bar is not reserved as modal space.
           Height comes from the content; the cap only bounds a long garment

@@ -295,7 +295,10 @@ const Row = ({ k, v }: { k: string; v: string }) => <div className="flex justify
 
 function InvoiceModal({ data, onClose, onPrint, printedAt }: { data: InvoiceView | null; onClose: () => void; onPrint: () => void; printedAt?: number }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 no-print" onClick={onClose}>
+    // z-60 for the same reason as the checkout dialog: the installed-PWA
+    // bottom navigation is a fixed z-50 element rendered later in the DOM,
+    // so at z-50 it painted over the last ~130px of the invoice.
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/40 p-4 no-print" onClick={onClose}>
       <div className="relative my-6 w-full max-w-3xl rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="no-print flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
           <p className="text-sm font-semibold text-slate-700">Invoice</p>
