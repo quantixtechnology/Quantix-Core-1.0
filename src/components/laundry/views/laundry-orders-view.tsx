@@ -6,6 +6,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { useAdminStore } from "@/stores/admin-store"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -31,6 +32,11 @@ interface OrderRow {
   store?: { storeName: string } | null
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   feedback?: { rating: number } | null
+  // Both already returned by GET /api/laundry/orders — the list spreads every
+  // LaundryOrder scalar (totalWeightKg) and includes the booked services rows.
+  // Declared here only so the columns can read them; no API change was needed.
+  services?: { serviceId: string | null; serviceName: string }[]
+  totalWeightKg?: number | null
   // An attested repair, not a system-recorded completion. The list must show
   // the difference too — an operator scanning the queue should never read a
   // reconciled order as a normal delivery.
@@ -243,7 +249,10 @@ export function LaundryOrdersView() {
             <Table>
               <TableHeader><TableRow className="text-[11px] uppercase tracking-wide">
                 <TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead>Store</TableHead>
-                <TableHead className="text-center">Items</TableHead><TableHead className="text-right">Amount</TableHead>
+                <TableHead>Service</TableHead>
+                <TableHead className="text-center">Items</TableHead>
+                <TableHead className="text-right">Weight</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Payment</TableHead><TableHead>Operational Stage</TableHead><TableHead>Created</TableHead>
                 <TableHead className="text-center">Rating</TableHead><TableHead>Pickup</TableHead><TableHead>Delivery</TableHead><TableHead className="text-right">Action</TableHead>
               </TableRow></TableHeader>
@@ -255,7 +264,12 @@ export function LaundryOrdersView() {
                       <TableCell><div className="flex items-center gap-1.5 flex-wrap"><button type="button" className="font-mono font-medium text-sm text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button><DeliveryPromiseBadge order={o as DeliveryPromiseInput} /></div></TableCell>
                       <TableCell><div className="text-sm font-medium text-slate-700">{o.customer?.name || "—"}</div><div className="text-[11px] text-slate-400">{o.customer?.phone || ""}</div></TableCell>
                       <TableCell className="text-sm text-slate-600">{o.store?.storeName || "—"}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{orderServiceLabel(o.services)}</TableCell>
                       <TableCell className="text-center text-sm tabular-nums">{o.itemCount}</TableCell>
+                      {/* The RECORDED weight (measured at Store Audit). An order
+                          that has not been weighed shows an em dash, never 0 kg,
+                          and it is never derived from the item count beside it. */}
+                      <TableCell className="text-right text-sm tabular-nums text-slate-600">{orderWeightLabel(o.totalWeightKg)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{inr(o.grandTotal)}</TableCell>
                       <TableCell><Badge variant="outline" className={PAY_STYLE[o.paymentStatus] || "border-slate-200 text-slate-500"}>{o.paymentStatus || "—"}</Badge></TableCell>
                       <TableCell>

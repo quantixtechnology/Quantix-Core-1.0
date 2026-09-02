@@ -34,7 +34,10 @@ describe('the column exists, immediately before Delivery', () => {
     const row = body.slice(body.indexOf('<TableRow'), body.indexOf('</TableRow>'))
     const heads = (hdr.match(/<TableHead[ >]/g) || []).length
     const cells = (row.match(/<TableCell[ >]/g) || []).length
-    expect(heads).toBe(12)
+    // 14 since Service and Weight were added to the list. The invariant this
+    // test actually protects is the line below — every header has a cell — and
+    // it held through that change; only the snapshot of the count moved.
+    expect(heads).toBe(14)
     expect(cells).toBe(heads)
   })
 })

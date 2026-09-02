@@ -146,7 +146,11 @@ export async function GET(request: Request) {
       const baseWhere = searchFilter ? { ...queueWhere, AND: [searchFilter] } : queueWhere
       const ACTIVE_STATUSES = ["IN_PROGRESS", "PAUSED"]
       const QUEUE_STATUSES = ["WAITING", ...ACTIVE_STATUSES]
-      const rowInclude = { order: { select: { orderNumber: true, customerId: true } } }
+      // totalWeightKg is the ORDER's recorded weight (measured at Store Audit).
+      // It is a scalar on the order the row already joins, so this adds no
+      // query. Sorting shows it per order card; it is never summed from the
+      // garments and never derived from their count.
+      const rowInclude = { order: { select: { orderNumber: true, customerId: true, totalWeightKg: true } } }
       // Sorting is the garment→bag transition: a partially scanned order MUST stay
       // on the queue until its Sorting work actually completes. The generic page
       // cap (take 200 per bucket, oldest first) silently dropped the NEWEST
@@ -248,6 +252,9 @@ export async function GET(request: Request) {
         // apart reliably once one is renamed.
         serviceId: r.serviceId, serviceName: r.serviceName, quantity: r.quantity, orderId: r.orderId, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
+        // The ORDER's recorded total weight, repeated on each of its rows so the
+        // Sorting card can show it without a second request. Read as stored.
+        orderTotalWeightKg: r.order.totalWeightKg,
         processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
         // The garment's OWN recorded weight, in kg, exactly as stored — read
         // only, never derived or defaulted. Feeds the workstation workload

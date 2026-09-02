@@ -63,6 +63,11 @@ export async function GET(request: Request) {
         id: true, orderNumber: true, status: true, paymentStatus: true, createdAt: true,
         grandTotal: true, amountPaid: true, balanceDue: true, discount: true, subscriptionCoveredAmount: true,
         customerId: true,
+        // The order's recorded weight (measured at Store Audit) and its booked
+        // services, so the ledger shows the same Service/Weight the other
+        // operational screens do. Both are read as stored — never derived.
+        totalWeightKg: true,
+        services: { select: { serviceId: true, serviceName: true } },
         invoice: { select: { invoiceNumber: true } },
         adjustments: { select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true } },
       },
@@ -93,6 +98,8 @@ export async function GET(request: Request) {
       return {
         id: o.id, orderNumber: o.orderNumber, invoiceNumber: o.invoice?.invoiceNumber ?? null,
         customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
+        services: o.services.map((s) => ({ serviceId: s.serviceId, serviceName: s.serviceName })),
+        totalWeightKg: o.totalWeightKg,
         orderDate: o.createdAt, orderStatus: o.status,
         // Only while something is still owed; once collected it reverts to the
         // real payment status.

@@ -16,12 +16,17 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { Loader2, Search, IndianRupee } from "lucide-react"
 import type { LedgerFilter } from "@/lib/laundry-adjustment"
+import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
 
 interface Row {
   id: string; orderNumber: string; invoiceNumber: string | null
   customerName: string | null; customerPhone: string | null
   orderDate: string; orderStatus: string; paymentStatus: string
+  // The order's booked services and its RECORDED weight (measured at Store
+  // Audit), returned by /api/laundry/payments-ledger. Read as stored.
+  services?: { serviceId: string | null; serviceName: string }[]
+  totalWeightKg?: number | null
   orderTotal: number; subscriptionCovered: number; discount: number
   paid: number; refunded: number; refundDue: number; balance: number
 }
@@ -120,6 +125,8 @@ export function LaundryPaymentsLedger() {
             <tr>
               <th className="px-3 py-2.5 text-left font-semibold">Order</th>
               <th className="px-3 py-2.5 text-left font-semibold">Customer</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Service</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Weight</th>
               <th className="px-3 py-2.5 text-left font-semibold">Invoice</th>
               <th className="px-3 py-2.5 text-right font-semibold">Total</th>
               <th className="px-3 py-2.5 text-right font-semibold">Discount</th>
@@ -131,9 +138,9 @@ export function LaundryPaymentsLedger() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {loading ? (
-              <tr><td colSpan={9} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
+              <tr><td colSpan={11} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
+              <tr><td colSpan={11} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id} onClick={() => setOpenOrder(r)} className="cursor-pointer hover:bg-slate-50/60">
                 <td className="px-3 py-2.5">
@@ -144,6 +151,10 @@ export function LaundryPaymentsLedger() {
                   <div className="text-slate-700">{r.customerName || "Walk-in"}</div>
                   {r.customerPhone && <div className="text-[11px] text-slate-400">{r.customerPhone}</div>}
                 </td>
+                <td className="px-3 py-2.5 text-slate-600">{orderServiceLabel(r.services)}</td>
+                {/* Recorded weight only — an unweighed order shows an em dash,
+                    never 0 kg, and is never derived from the garment count. */}
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{orderWeightLabel(r.totalWeightKg)}</td>
                 <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{r.invoiceNumber || "—"}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{inr(r.orderTotal)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{r.discount > 0 ? <span className="text-amber-700">-{inr(r.discount)}</span> : <span className="text-slate-300">—</span>}</td>

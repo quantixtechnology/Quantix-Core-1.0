@@ -23,6 +23,7 @@
 // whenever the operator needs one, not only after a full scan.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,9 +47,14 @@ interface Item {
   garmentScanCode?: string | null
   garmentName: string; serviceName: string | null; serviceId?: string | null; quantity: number
   orderId: string; orderNumber: string | null; customer: string | null
+  /** The ORDER's recorded total weight (kg), repeated on each of its rows by
+   *  the processing API. Read as stored — never summed from the garments. */
+  orderTotalWeightKg?: number | null
 }
 
-interface OrderGroup { orderId: string; orderNumber: string; expected: number; customer: string | null; garments: Item[] }
+interface OrderGroup { orderId: string; orderNumber: string; expected: number; customer: string | null; garments: Item[]
+  /** The order's recorded weight, taken from its rows as the API sent it. */
+  totalWeightKg: number | null }
 
 /**
  * A scan the operator just made — a NAVIGATION AID, not business data.
@@ -536,7 +542,7 @@ export function LaundrySortingWorkstation() {
       for (const it of j.items || []) {
         const oid = it.orderId
         if (!oid) continue
-        const g: OrderGroup = byOrder.get(oid) || { orderId: oid, orderNumber: it.orderNumber || "", expected: 0, customer: it.customer || null, garments: [] }
+        const g: OrderGroup = byOrder.get(oid) || { orderId: oid, orderNumber: it.orderNumber || "", expected: 0, customer: it.customer || null, garments: [], totalWeightKg: it.orderTotalWeightKg ?? null }
         g.expected++
         g.garments.push(it)
         byOrder.set(oid, g)
@@ -1276,6 +1282,14 @@ export function LaundrySortingWorkstation() {
                           <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent preventFocusSteal />
                         </div>
                         <p className="text-[11px] text-slate-400">{o.customer || "—"} · {o.garments.length} garment{o.garments.length === 1 ? "" : "s"}</p>
+                        {/* Service and the order's RECORDED weight. The weight is
+                            what was measured at Store Audit; an order that has
+                            none shows an em dash rather than "0 kg". */}
+                        <p className="text-[11px] text-slate-500">
+                          <span className="font-medium text-slate-600">{orderServiceLabel(null, o.garments)}</span>
+                          <span className="text-slate-300"> · </span>
+                          <span className="tabular-nums">{orderWeightLabel(o.totalWeightKg)}</span>
+                        </p>
                       </div>
                       <Badge variant={complete ? "default" : "outline"} className={complete ? "bg-emerald-600 border-emerald-600 text-white text-[10px]" : "border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px]"}>
                         {done} / {o.expected} scanned

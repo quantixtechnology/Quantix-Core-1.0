@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { unavailableOrderLines, garmentAvailableForService, unavailableNotice, type PricedServices } from "@/lib/laundry-garment-availability"
 import { intakeServiceChoice, intakeRowsToItems, DEFAULT_ROW_QUANTITY } from "@/lib/laundry-intake-service"
 import { scheduleCell, bookedServiceNames, URGENCY_STYLE, urgencyNote } from "@/lib/laundry-schedule-display"
+import { orderWeightLabel } from "@/lib/laundry-order-display"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
@@ -47,6 +48,10 @@ interface OrderRow {
   // customer from ONE batched lookup. Nothing here costs an extra query.
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   services?: { serviceId: string | null; serviceName: string }[]
+  // Also already returned by the list — totalWeightKg is a LaundryOrder scalar.
+  // Optional here because a row that has not reached Store Audit has no weight
+  // yet; OrderDetail narrows it to a number.
+  totalWeightKg?: number | null
   pickupDate?: string | null; pickupTimeSlot?: string | null
   deliveryDate?: string | null; deliveryTimeSlot?: string | null
 }
@@ -723,6 +728,7 @@ export function LaundryStoreAudit() {
               <TableHead>Order No.</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Service</TableHead>
+              <TableHead className="text-right">Weight</TableHead>
               <TableHead>Pickup</TableHead>
               <TableHead>Delivery</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -758,6 +764,11 @@ export function LaundryStoreAudit() {
                       </div>
                     )}
                   </TableCell>
+                  {/* The RECORDED weight. This queue is PENDING_STORE_AUDIT —
+                      the stage at which weight is measured — so most rows here
+                      legitimately have none yet and show an em dash. It is
+                      never derived from the garment count. */}
+                  <TableCell className="text-right text-[12px] tabular-nums text-slate-600">{orderWeightLabel(r.totalWeightKg)}</TableCell>
                   {[pickup, delivery].map((cell, i) => (
                     <TableCell key={i}>
                       {!cell.date ? <span className="text-slate-400">—</span> : (
