@@ -27,7 +27,12 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
-    const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true } })
+    // businessCode is the canonical BUS-YYYYMM-NNNN identity. Order numbers are
+    // generated as ORD-STR-{businessCode}-{storeSeq}-{orderSeq}, so this is what
+    // lets the Order-wise lookup PREFILL the fixed part instead of making an
+    // operator retype it. Read from the same row the scan-sound setting uses —
+    // no extra query.
+    const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true, businessCode: true } })
 
     // Transport Setup decides which identifier the console shows and scans:
     // inbound packages use the Store → Processing mode, returns the reverse.
@@ -297,7 +302,7 @@ export async function GET(request: Request) {
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, workload, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, workload, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true, businessCode: bizSettings?.businessCode ?? null })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

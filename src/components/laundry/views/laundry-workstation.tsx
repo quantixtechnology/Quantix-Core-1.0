@@ -7,7 +7,8 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -17,6 +18,8 @@ import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Level } from "@/lib/laundry-rbac-registry"
+import { supportsMoveByOrder, moveByOrderConfig, findOrderInQueue, planOrderMove, moveByOrderNote, moveProgressLabel, moveOutcome, orderNumberPrefix, composeOrderNumber, ORDER_SUFFIX_PLACEHOLDER, MOVE_BY_ORDER_PROMPT, MOVE_WAIT_NOTICE, type QueueOrder, type MoveProgress } from "@/lib/laundry-move-by-order"
+import { sortingOrderSummary } from "@/lib/laundry-order-display"
 
 // Workstation stage → RBAC screen. Mirrors STAGE_SCREEN in the process endpoint,
 // so the button and the server agree on which permission governs the station.
@@ -36,6 +39,10 @@ interface Item {
   orderNumber: string; customer: string | null
   processingStatus: string | null; processFlow?: string | null
   weightKg?: number | null
+  // Both already on the wire from /api/laundry/processing — declared here so
+  // Move by Order can group the queue by order and show the recorded weight.
+  orderId: string
+  orderTotalWeightKg?: number | null
 }
 
 interface ScanResult {
@@ -102,6 +109,11 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // TRUE per-status counts from the server. The rendered lists are paged; these
   // are not, so a column's number is the database's number.
   const [queueCounts, setQueueCounts] = useState<Record<string, number> | null>(null)
+  // The canonical BUS-YYYYMM-NNNN code, from the queue response. It builds the
+  // fixed order-number prefix so the operator types only "002-000005".
+  // Declared here with the rest of the state load() writes, not beside its
+  // reader — a setter used above its declaration trips react-hooks/immutability.
+  const [businessCode, setBusinessCode] = useState<string | null>(null)
   // Counts AND weights, aggregated by the database over the whole stage — not
   // summed from the page of rows that happened to load.
   const [workload, setWorkload] = useState<WorkloadSummary | null>(null)
@@ -117,6 +129,9 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // out of a correction it is fully entitled to make.
   const screenKey = `processing.${SCREEN_OF_STAGE[stage] || "washing"}`
   const hasReturnPerm = level(screenKey) >= Level.CREATE
+  // Move by Order performs the same START/COMPLETE transitions as a scan,
+  // so it takes the same level. The endpoint re-checks per call.
+  const canProcess = level(screenKey) >= Level.CREATE
   const [offline, setOffline] = useState(false)
   const isQC = stage === "QC"
 
@@ -147,6 +162,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       setItems(j.items || [])
       setCompleted(j.completed || [])
       setQueueCounts(j.queueCounts || null)
+      setBusinessCode(j.businessCode ?? null)
       setWorkload(j.workload || null)
     } catch { /* noop */ } finally { if (!silent) setLoading(false) }
   }, [currentBusinessId, stage])
@@ -329,6 +345,81 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // Bulk advance: complete (or QC-pass) every selected in-progress garment. Each
   // goes through the same server-guarded single-item endpoint, so partial
   // failures are reported without blocking the rest.
+  // ── MOVE BY ORDER — the additional order-level fast track (WASH/DRYCLEAN).
+  //    The scanner above is untouched; this is a second way to reach the same
+  //    canonical transition, never a replacement for it.
+  const moveCfg = moveByOrderConfig(stage)
+  const [moveQuery, setMoveQuery] = useState("")
+  const [movePicked, setMovePicked] = useState<QueueOrder | null>(null)
+  const [moveErr, setMoveErr] = useState<string | null>(null)
+  const [moveConfirm, setMoveConfirm] = useState(false)
+  const [moving, setMoving] = useState(false)
+  // Live progress for the run. A 50- or 100-garment order takes time, so the
+  // operator watches it advance rather than a bare spinner.
+  const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
+  const movePrefix = orderNumberPrefix(businessCode)
+
+  const findMoveOrder = () => {
+    setMoveErr(null); setMovePicked(null)
+    // The operator types the varying part; the fixed prefix is prepended here.
+    // A pasted full order number is passed through unchanged.
+    const r = findOrderInQueue(items, composeOrderNumber(movePrefix, moveQuery), stage)
+    if (!r.ok) { setMoveErr(r.error); return }
+    setMovePicked(r.order)
+  }
+
+  const clearMove = () => { setMoveQuery(""); setMovePicked(null); setMoveErr(null); setMoveConfirm(false) }
+
+  // Runs ONLY from the confirmation dialog. Every garment goes through the same
+  // server-guarded endpoint the scanner uses, carrying expectedStage — so the
+  // SERVER decides eligibility at mutation time, not this client's queue copy.
+  // A garment another operator already moved comes back 409 and is counted as a
+  // failure rather than retried or forced.
+  const runMoveByOrder = async () => {
+    // Re-entry guard. Once a run starts, the same order cannot be started again
+    // — the dialog closes into a progress panel and every button is disabled.
+    if (!movePicked || moving) return
+    const plan = planOrderMove(movePicked)
+    // NO CAP. 50, 100 or more garments all run; the operator is told to wait.
+    setMoving(true); setOffline(false)
+    setMoveProgress({ done: 0, failed: 0, total: plan.length })
+    const note = moveByOrderNote(movePicked.orderNumber, user?.name)
+    let ok = 0, fail = 0
+    let awaitingBag: { orderId: string; orderNumber: string | null } | null = null
+    for (const step of plan) {
+      let advanced = true
+      for (const action of step.actions) {
+        try {
+          const res = await fetch(`/api/laundry/items/${step.itemId}/process`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, actorName: user?.name || "operator", expectedStage: stage, note }),
+          })
+          const j = await res.json()
+          // A conflict (another operator got there first) is a FAILURE for this
+          // garment, never a silent skip — it is counted and reported.
+          if (!res.ok || !j.success) { advanced = false; break }
+          if (j.data?.awaitingBagAssignment) awaitingBag = { orderId: j.data.awaitingBagAssignment.orderId, orderNumber: j.data.awaitingBagAssignment.orderNumber || null }
+        } catch { advanced = false; break }
+      }
+      if (advanced) ok++; else fail++
+      setMoveProgress({ done: ok, failed: fail, total: plan.length })
+    }
+    // The verdict comes from ONE rule: complete only when every eligible garment
+    // moved. 27 of 50 is reported as a partial move, never as success.
+    const outcome = moveOutcome({ done: ok, failed: fail, total: plan.length })
+    setMoving(false); setMoveProgress(null); setMoveConfirm(false)
+    clearMove()
+    if (awaitingBag) { setBagErr(null); setBagPrompt(awaitingBag) }
+    if (outcome.complete) playScanOk(soundEnabled)
+    toast({
+      title: outcome.title,
+      description: outcome.complete ? `${stageLabel(stage)} → next process` : outcome.description,
+      variant: outcome.complete ? undefined : "destructive",
+    })
+    // The server is authoritative: reload rather than trusting the local copy.
+    load(true)
+  }
+
   const bulkAdvance = async () => {
     const ids = inProgress.filter((i) => selected.has(i.id)).map((i) => i.id)
     if (ids.length === 0) return
@@ -443,8 +534,140 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
               {scanErr}
             </div>
           )}
+
+          {/* ── MOVE BY ORDER ────────────────────────────────────────────────
+              An ADDITIONAL route through this stage, offered only at Washing
+              and Dry Cleaning. The scanner above keeps its place and all of its
+              behaviour; this is for the order whose fifty garments are all
+              physically here and counting them again helps nobody.
+
+              Nothing moves from this panel. Finding an order only selects it —
+              the operator has to read the summary back and confirm in the
+              dialog before a single garment is touched. */}
+          {moveCfg && canProcess && (
+            <div className="mt-3 border-t border-blue-200/70 pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">or move by order</span>
+                <span className="text-[11px] text-slate-400">— when every garment is already here</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Enter runs the LOOKUP only — it never confirms the move.
+                    No preventDefault: this field is not inside a form, so there
+                    is nothing to suppress, and scanner-focus keeps the whole
+                    workstation free of key interception so a fast barcode
+                    reader is never swallowed. */}
+                {/* The fixed part is rendered as a NON-EDITABLE adornment joined to
+                    the input, so it is obviously part of the number but cannot be
+                    typed over or accidentally deleted. It is built from the
+                    business code the queue returned — never hardcoded. When the
+                    code is unknown the field falls back to a plain full-number
+                    entry rather than showing a prefix that might be wrong. */}
+                <div className="flex items-stretch w-full sm:w-auto">
+                  {movePrefix && (
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex items-center rounded-l-md border border-r-0 border-input bg-slate-100 px-2 font-mono text-[11px] text-slate-500 select-none whitespace-nowrap"
+                    >
+                      {movePrefix}
+                    </span>
+                  )}
+                  <Input
+                    value={moveQuery}
+                    onChange={(e) => { setMoveQuery(e.target.value); setMoveErr(null); setMovePicked(null) }}
+                    onKeyDown={(e) => { if (e.key === "Enter") findMoveOrder() }}
+                    placeholder={movePrefix ? ORDER_SUFFIX_PLACEHOLDER : "Full order number"}
+                    className={`h-9 w-full sm:w-[170px] bg-white font-mono ${movePrefix ? "rounded-l-none" : ""}`}
+                    aria-label={movePrefix ? `Store number and order digits, after ${movePrefix}` : "Order number"}
+                  />
+                </div>
+                <Button size="sm" variant="outline" className="h-9" onClick={findMoveOrder} disabled={!moveQuery.trim()}>
+                  <Search className="h-3.5 w-3.5 mr-1.5" /> Find Order
+                </Button>
+                {(movePicked || moveErr) && (
+                  <Button size="sm" variant="ghost" className="h-9 px-2 text-slate-500" onClick={clearMove}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+
+              {moveErr && (
+                <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{moveErr}</div>
+              )}
+
+              {/* The operator verifies the ORDER, not a generic "found" tick. */}
+              {movePicked && (
+                <div className="mt-2 rounded-lg border border-blue-200 bg-white p-3">
+                  <p className="font-mono text-[12px] font-semibold text-slate-800 break-all">{movePicked.orderNumber}</p>
+                  <p className="text-[12px] text-slate-500">{movePicked.customer || "—"}</p>
+                  <p className="text-[12px] font-medium text-slate-600 tabular-nums">
+                    {sortingOrderSummary({ garments: movePicked.garments, garmentCount: movePicked.garments.length, totalWeightKg: movePicked.totalWeightKg })}
+                  </p>
+                  <Button size="sm" className="mt-2 h-9" onClick={() => setMoveConfirm(true)} disabled={moving}>
+                    {moveCfg.pushLabel}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Confirmation — the whole point of the feature. Move by Order asserts
+          that every garment is present, so the operator says so explicitly
+          before anything happens. Nothing has mutated at this point. */}
+      <Dialog open={moveConfirm} onOpenChange={(o) => { if (!moving) setMoveConfirm(o) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{moveCfg?.modalTitle}</DialogTitle></DialogHeader>
+          {movePicked && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="font-mono text-[12px] font-semibold text-slate-800 break-all">{movePicked.orderNumber}</p>
+              <p className="text-[12px] text-slate-500">{movePicked.customer || "—"}</p>
+              <p className="text-[12px] font-medium text-slate-600 tabular-nums">
+                {sortingOrderSummary({ garments: movePicked.garments, garmentCount: movePicked.garments.length, totalWeightKg: movePicked.totalWeightKg })}
+              </p>
+            </div>
+          )}
+          {/* Two states, never a bare spinner: ASK, then MOVING-with-progress.
+              There is no cancel once the run starts — the backend has no way to
+              undo a transition that already committed, so offering "cancel"
+              would be a lie about what the system can do. */}
+          {moving && moveProgress ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+              <p className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Moving Order
+              </p>
+              <p className="mt-1 text-sm tabular-nums text-slate-700">{moveProgressLabel(moveProgress)}</p>
+              <div className="mt-2 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${moveProgress.total ? Math.round(((moveProgress.done + moveProgress.failed) / moveProgress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[12px] font-medium text-slate-600">{MOVE_WAIT_NOTICE}</p>
+              {moveProgress.failed > 0 && (
+                <p className="mt-1 text-[12px] text-rose-700">{moveProgress.failed} item{moveProgress.failed === 1 ? "" : "s"} could not be moved so far — the order will not be reported as fully moved.</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              {/* The stage-specific question says WHERE the order is going… */}
+              <p className="text-sm font-medium text-slate-800">{moveCfg?.prompt}</p>
+              {/* …and this says what the operator is vouching for, because this
+                  route skips per-garment scanning. */}
+              <p className="mt-1 text-sm text-slate-600">{MOVE_BY_ORDER_PROMPT}</p>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            {/* Both disabled for the whole run: no duplicate submission, and no
+                pretence that the move can be interrupted safely. */}
+            <Button variant="outline" onClick={() => setMoveConfirm(false)} disabled={moving}>No, Cancel</Button>
+            <Button onClick={runMoveByOrder} disabled={moving}>
+              {moving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {moving ? "Moving…" : "Yes, Move Order"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Find a garment ANYWHERE in this business by its code — a wrongly-added
           cloth is usually not at the station you are standing at. The input is
