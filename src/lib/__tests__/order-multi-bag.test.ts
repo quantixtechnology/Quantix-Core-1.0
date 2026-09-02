@@ -338,10 +338,20 @@ describe('Sorting · the one-bag restriction is lifted for Sorting only', () => 
     expect(SORTING_API).toContain('atSorting.length !== order._count.items')
   })
 
-  it('3,17 · Sorting shows the SAME shared list Packing reads', () => {
-    expect(SORTING_UI).toContain('<OrderBagList')
-    expect(SORTING_UI).toContain('useOrderBags(orderId, businessId)')
-    expect(SORTING_UI).toContain('import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"')
+  it('3,17 · Sorting and Packing read the SAME bag rows', () => {
+    // Packing still renders the shared bag-management panel. (Read inline —
+    // the PACKING constant is scoped to another describe block.)
+    const packingUi = readFileSync(join(process.cwd(), 'src/components/laundry/views/laundry-store-stages.tsx'), 'utf8')
+    expect(packingUi).toContain('<OrderBagList')
+    // Sorting deliberately no longer does: "Bags 2 / Bag 1 of 2 / Closed /
+    // Add Another Bag" is a lifecycle the Complete Sorting operator does not
+    // need. The INVARIANT that mattered — one set of bag rows, no second
+    // source — is unchanged: Sorting reads the same /orders/[id]/bags
+    // assignments into bagsByOrder and derives its panel from those.
+    expect(SORTING_UI).not.toMatch(/<OrderBagList[\s\n]/)
+    expect(SORTING_UI).toContain('/api/laundry/orders/${orderId}/bags')
+    expect(SORTING_UI).toContain('sortingBagStatus(bags, services)')
+    expect(SORTING_UI).toContain('<SortingBagPanel bags={bagsByOrder[o.orderId] || []}')
   })
 
   it('15,16 · no sorting-specific bag counter was introduced', () => {

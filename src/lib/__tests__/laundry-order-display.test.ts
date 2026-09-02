@@ -433,8 +433,12 @@ describe('Sorting: both cards carry Customer + Service + Count + Weight', () => 
     // readyOrders is a filter over visibleOrders: the very same OrderGroup
     // objects the left column renders. No second request, no N+1.
     expect(SORTING).toContain('const readyOrders = visibleOrders.filter(')
-    const right = SORTING.slice(SORTING.indexOf('Complete Sorting'))
+    // Anchored on the CARD RENDER, not the words "Complete Sorting" — those now
+    // appear earlier in a doc comment. The bag panel also takes its rows as a
+    // prop from bagsByOrder rather than fetching, so this card issues nothing.
+    const right = SORTING.slice(SORTING.indexOf('readyOrders.map((o) =>'))
     expect(right).not.toMatch(/fetch\(`\/api\/laundry\/orders\/\$\{/)
+    expect(right).not.toContain('useOrderBags(')
   })
 
   it('the customer name is shown, not an id or a phone number', () => {

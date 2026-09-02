@@ -174,7 +174,9 @@ describe('Bug 2 — bag sequencing is driven by real assignments, not the button
     // the "current bag FULL/CLOSED" banner branch requires an ACTIVE bag
     expect(src).toContain('if (closingThis && active) {')
     // and the no-bag branch of the banner is exactly the required first-bag copy
-    expect(src).toContain('SCAN THE BAG THIS ORDER WILL USE')
+    // Reworded to name the required ACTION, so an operator is not left
+    // wondering whether a bag is already attached. Same banner state.
+    expect(src).toContain('ATTACH A SORTING BAG BEFORE COMPLETING SORTING')
   })
 
   it('opening the panel marks nothing — assignment flows only through the server binding', () => {

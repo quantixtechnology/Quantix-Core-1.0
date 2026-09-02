@@ -178,3 +178,51 @@ export function sortingBagsEver(bags: SortingBagRow[]): SortingBagRow[] {
 export function otherBagsOnOrder(bags: SortingBagRow[]): SortingBagRow[] {
   return bags.filter((b) => b.open !== false && b.purpose !== SORTING_PURPOSE)
 }
+
+/** One service of an order, as the Sorting screen knows it. */
+export interface SortingServiceRef {
+  id: string | null
+  name: string | null
+}
+
+export interface SortingBagStatus {
+  /** Bag numbers currently attached FOR SORTING, oldest first, de-duplicated. */
+  attached: string[]
+  /** Services with no sorting bag yet — the reason `ready` is false. */
+  missingFor: string[]
+  /** Every service has a bag, so Sorting can be completed. */
+  ready: boolean
+}
+
+/**
+ * "Which bag is attached to this order?" — the whole question the Complete
+ * Sorting card needs answered.
+ *
+ * Built from bagsForService, so it inherits the one definition of a Sorting
+ * bag: open, purpose SORTING, matched to the service. A closed bag, a transport
+ * or delivery bag, and a row whose role was never recorded are all excluded —
+ * none of them is the bag these garments went into, and showing one as though
+ * it were is what made the old panel unreadable.
+ *
+ * Several bags for one service is a real state (a bag fills up and the operator
+ * adds another), so they are ALL listed. What is deliberately not returned is
+ * their lifecycle: no index, no ACTIVE/FULL, no counts. The operator at this
+ * card is asking which bags to hand on, not how the order got here.
+ */
+export function sortingBagStatus(
+  bags: SortingBagRow[],
+  services: readonly SortingServiceRef[],
+): SortingBagStatus {
+  const attached: string[] = []
+  const missingFor: string[] = []
+  const list = services.length ? services : [{ id: null, name: null }]
+  for (const svc of list) {
+    const forSvc = bagsForService(bags, svc.id, svc.name)
+    if (!forSvc.length) {
+      missingFor.push(svc.name || "this order")
+      continue
+    }
+    for (const b of forSvc) if (!attached.includes(b.bagNumber)) attached.push(b.bagNumber)
+  }
+  return { attached, missingFor, ready: missingFor.length === 0 && attached.length > 0 }
+}

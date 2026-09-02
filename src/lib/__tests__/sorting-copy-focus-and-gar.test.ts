@@ -64,8 +64,10 @@ describe('1 · the fix: the copy button declines the focus, opt-in', () => {
     expect(btn).not.toContain('onFocus={')
   })
 
-  it('every Sorting copy opts in — order number, GAR, bag and copy-all', () => {
-    expect((code.match(/preventFocusSteal/g) || []).length).toBe(4)
+  it('every Sorting copy opts in — order number, GAR, bag, copy-all, attached bag', () => {
+    // 5 since the Complete Sorting card names the attached bag and lets the
+    // operator copy it. Every one still opts in — that is what this pins.
+    expect((code.match(/preventFocusSteal/g) || []).length).toBe(5)
   })
 
   it('the button is still a plain non-submitting button that navigates nowhere', () => {

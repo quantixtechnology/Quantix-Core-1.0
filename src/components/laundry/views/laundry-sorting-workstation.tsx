@@ -32,12 +32,11 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, ScanLine, PackageCheck, RefreshCw, Check, Layers } from "lucide-react"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Search, X, MapPin, History, Plus } from "lucide-react"
-import { activeBagForService, sortingBagViews, otherBagsOnOrder, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
+import { activeBagForService, sortingBagViews, otherBagsOnOrder, sortingBagStatus, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
 import { CopyButton } from "@/components/ui/copy-button"
 
 interface Item {
@@ -285,7 +284,9 @@ function CurrentBagBanner({ order, bags, addBagFor }: {
           <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-amber-300 bg-amber-500 px-3 py-2 text-white">
             {label && <span className="text-[10px] font-bold uppercase tracking-wider text-amber-100">{label}</span>}
             <span className="text-[13px] font-bold uppercase tracking-wider text-white">⚠ BAG REQUIRED</span>
-            <span className="text-[11px] font-semibold text-amber-100">SCAN THE BAG THIS ORDER WILL USE</span>
+            {/* Names the action rather than leaving the operator to wonder
+                whether a bag is already on the order. */}
+            <span className="text-[11px] font-semibold text-amber-100">ATTACH A SORTING BAG BEFORE COMPLETING SORTING</span>
           </div>
         )
       })}
@@ -418,9 +419,55 @@ function SortingHistory({ businessId }: { businessId: string }) {
 }
 
 /** One order card's bag list — its own hook instance, its own refresh. */
-function SortingOrderBags({ orderId, businessId, busy }: { orderId: string; businessId: string; busy: boolean }) {
-  const { bags, loadBags } = useOrderBags(orderId, businessId)
-  return <OrderBagList orderId={orderId} businessId={businessId} bags={bags} onChanged={loadBags} disabled={busy} />
+/**
+ * SORTING BAG — the one thing the Complete Sorting card has to answer.
+ *
+ * It used to render the shared OrderBagList, which is a bag-management panel:
+ * "Bags 2", "Bag 1 of 2", "Closed", "On this order", "Add Another Bag". All of
+ * that is true and none of it is this operator's question. They are handing the
+ * order on and need to know which bag goes with it — or that none does.
+ *
+ * So this shows the attached Sorting bags and nothing else. No index, no
+ * ACTIVE/FULL, no history, no other-purpose rows: sortingBagStatus reads the
+ * same canonical assignment rows through bagsForService, so a closed bag, a
+ * pickup bag and a delivery bag are all excluded by the same rule the rest of
+ * Sorting already uses. OrderBagList itself is untouched — Packing still uses it.
+ */
+function SortingBagPanel({ bags, services }: {
+  /** The order's assignment rows from the workstation's own bagsByOrder map —
+   *  the same rows the queue card's banner reads, re-read after every scan and
+   *  every assignment. Taking them as a prop rather than fetching per card
+   *  keeps ONE source and removes a request per rendered order. */
+  bags: SortingBagRow[]
+  services: { id: string | null; name: string | null }[]
+}) {
+  const status = sortingBagStatus(bags, services)
+
+  if (!status.ready) {
+    return (
+      <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2">
+        <p className="text-[12px] font-bold uppercase tracking-wider text-amber-800">⚠ Bag Required</p>
+        <p className="mt-0.5 text-[12px] text-amber-900">No sorting bag is attached to this order.</p>
+        <p className="text-[12px] font-medium text-amber-900">Attach a sorting bag before completing sorting.</p>
+      </div>
+    )
+  }
+  const many = status.attached.length > 1
+  return (
+    <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 px-3 py-2">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Sorting Bag{many ? "s" : ""}</p>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[12px] text-emerald-900">Bag{many ? "s" : ""} attached:</span>
+        {status.attached.map((code) => (
+          <span key={code} className="inline-flex items-center gap-1">
+            <span className="font-mono text-[13px] font-bold text-emerald-900">{code}</span>
+            <CopyButton value={code} label="Bag code" size="icon" variant="ghost" className="h-5 w-5 shrink-0" silent preventFocusSteal />
+          </span>
+        ))}
+      </div>
+      <p className="mt-0.5 text-[12px] font-semibold text-emerald-800">✓ Ready for Sorting</p>
+    </div>
+  )
 }
 
 export function LaundrySortingWorkstation() {
@@ -1431,9 +1478,10 @@ export function LaundrySortingWorkstation() {
                       closeOnScan
                       disabled={busy}
                     />
-                    {/* ONE ORDER → ONE OR MORE BAGS. The same shared list Packing
-                        reads, so both stages see one bag set (§13). */}
-                    <SortingOrderBags orderId={o.orderId} businessId={currentBusinessId || ""} busy={busy} />
+                    {/* Which bag is attached — not the order's bag history.
+                        Reads the same bagsByOrder rows the queue card uses, so
+                        both halves of the screen agree and neither fetches. */}
+                    <SortingBagPanel bags={bagsByOrder[o.orderId] || []} services={servicesOnOrder(o)} />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-2">Completing Sorting retires every garment barcode and advances the order to Ironing / Folding / Transit.</p>
                 </div>

@@ -58,7 +58,9 @@ describe('K · no instruction from the superseded workflow survives', () => {
 describe('the three banner states the operator must be able to tell apart', () => {
   it('1 · no bag yet — BAG REQUIRED, and never a "next" bag', () => {
     expect(UI).toContain('BAG REQUIRED')
-    expect(UI).toContain('SCAN THE BAG THIS ORDER WILL USE')
+    // Reworded to name the required ACTION, so an operator is not left
+    // wondering whether a bag is already attached. Same banner state.
+    expect(UI).toContain('ATTACH A SORTING BAG BEFORE COMPLETING SORTING')
   })
 
   it('2 · a bag is current — it is named, and garments are told to go in it', () => {
