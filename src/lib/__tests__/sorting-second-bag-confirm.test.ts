@@ -33,13 +33,16 @@ describe('1/5 · the FIRST bag opens the scan panel directly', () => {
   })
 
   it('the button still names the first bag when there is none', () => {
-    expect(code).toContain('views.length === 0 ? <><Plus className="h-3 w-3" /> Assign First Bag</>')
+    // hasBag now reads bagsForService directly — the same rows sortingBagViews
+    // was derived from, so the first/second-bag rule is unchanged.
+    expect(code).toContain('hasBag ? <><Plus className="h-3 w-3" /> Add New Bag</> : <><Plus className="h-3 w-3" /> Assign First Bag</>')
   })
 })
 
 describe('2 · a SECOND bag asks before the panel opens', () => {
   it('the button reports whether a bag already exists, from the same views', () => {
-    expect(code).toContain('onClick={() => onAdd(svc.id, svc.name, views.length > 0)}')
+    expect(code).toContain('onClick={() => onAdd(svc.id, svc.name, hasBag)}')
+    expect(code).toContain('const hasBag = bagsForService(bags, svc.id, svc.name).length > 0')
   })
 
   it('the confirmation carries the operator wording', () => {

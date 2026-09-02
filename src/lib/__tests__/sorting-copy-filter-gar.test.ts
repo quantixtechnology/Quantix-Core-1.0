@@ -164,8 +164,9 @@ describe('BAG SAFETY · no GAR→bag membership is invented', () => {
   })
 
   it('the bag is shown separately, in the existing banner', () => {
-    expect(code).toContain('Current sorting bag')
-    expect(code).toContain('<CopyButton value={active.bagNumber} label="Bag code"')
+    expect(code).toContain('Sorting Bag{many ? "s" : ""} Attached')
+    // The bag code is still copyable; it is now keyed per attached bag.
+    expect(code).toContain('<CopyButton value={code} label="Bag code"')
   })
 })
 
@@ -177,7 +178,7 @@ describe('COPY · exact values, no side effects', () => {
   it('copies the exact displayed order number, GAR and bag code', () => {
     expect(code).toContain('<CopyButton value={o.orderNumber} label="Order number"')
     expect(code).toContain('<CopyButton value={gar} label="GAR code"')
-    expect(code).toContain('<CopyButton value={active.bagNumber} label="Bag code"')
+    expect(code).toContain('<CopyButton value={code} label="Bag code"')
     expect(code).toContain('value={scannedGarments.map((g) => `${garOf(g) || "—"} — ${g.garmentName}`).join("\\n")}')
   })
 

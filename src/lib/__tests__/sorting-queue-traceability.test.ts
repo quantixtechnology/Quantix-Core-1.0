@@ -163,20 +163,23 @@ describe('Bug 2 — bag sequencing is driven by real assignments, not the button
     // Anchored on the current handler; a stale anchor returned -1 and sliced the
     // file down to one character, so the assertions below silently covered
     // nothing. The length check makes that impossible to repeat.
-    const button = raw.slice(raw.indexOf('onClick={() => onAdd(svc.id, svc.name, views.length > 0)}'))
+    const button = raw.slice(raw.indexOf('const hasBag = bagsForService(bags, svc.id, svc.name).length > 0'))
     expect(button.length).toBeGreaterThan(200)
-    expect(button).toMatch(/views\.length === 0[\s\S]{0,120}Assign First Bag/)
+    expect(button).toMatch(/hasBag \?[\s\S]{0,160}Assign First Bag/)
     expect(button).toContain('Add New Bag') // still the label once a bag exists
   })
 
   it('the BAG REQUIRED banner still demands the first bag until an assignment row exists', () => {
     const src = code(SORT)
-    // the "current bag FULL/CLOSED" banner branch requires an ACTIVE bag
-    expect(src).toContain('if (closingThis && active) {')
-    // and the no-bag branch of the banner is exactly the required first-bag copy
-    // Reworded to name the required ACTION, so an operator is not left
-    // wondering whether a bag is already attached. Same banner state.
-    expect(src).toContain('ATTACH A SORTING BAG BEFORE COMPLETING SORTING')
+    // The "adding another bag" branch is now keyed on the order being the one
+    // the operator chose to add a bag for — it no longer needs an ACTIVE row to
+    // describe, because it asks for the next bag rather than labelling the last.
+    expect(src).toContain("if (addBagFor?.orderId === order.orderId) {")
+    // The no-bag branch names the required ACTION, so an operator is not left
+    // wondering whether a bag is already attached.
+    expect(src).toContain('Attach a sorting bag before completing sorting.')
+    // …and it is still driven by the canonical status, not a local rule.
+    expect(src).toContain('if (!status.ready) {')
   })
 
   it('opening the panel marks nothing — assignment flows only through the server binding', () => {

@@ -60,17 +60,23 @@ describe('the three banner states the operator must be able to tell apart', () =
     expect(UI).toContain('BAG REQUIRED')
     // Reworded to name the required ACTION, so an operator is not left
     // wondering whether a bag is already attached. Same banner state.
-    expect(UI).toContain('ATTACH A SORTING BAG BEFORE COMPLETING SORTING')
+    expect(UI).toContain('Attach a sorting bag before completing sorting.')
   })
 
   it('2 · a bag is current — it is named, and garments are told to go in it', () => {
-    expect(UI).toContain('Current sorting bag')
-    expect(UI).toContain('ADD GARMENTS TO THIS BAG')
+    // The banner still names the attached bag — in ONE phrase now, shared
+    // word-for-word with the Complete Sorting card, instead of a second
+    // sentence about the same fact plus an instruction.
+    expect(UI).toContain('Sorting Bag{many ? "s" : ""} Attached')
+    expect(UI).toContain('{status.attached.map((code) =>')
   })
 
   it('3 · the bag was closed — full, then ask for the next one', () => {
-    expect(UI).toContain('Current bag full/closed')
-    expect(UI).toContain('SCAN NEXT AVAILABLE BAG')
+    // Reworded to an ACTION. "full/closed" described a lifecycle the operator
+    // was left to interpret; the prompt now simply asks for the next bag and
+    // says what it will be used for. Same branch, same trigger (addBagFor).
+    expect(UI).toContain('Scan the next sorting bag')
+    expect(UI).toContain('The following garments go into the bag you scan next.')
   })
 
   it('C · the FIRST bag is never described as a next/second/replacement bag', () => {

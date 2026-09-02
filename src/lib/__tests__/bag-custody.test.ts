@@ -441,17 +441,44 @@ describe('the Sorting bag is the bag garments are sorted INTO', () => {
 })
 
 describe('custody and Sorting work remain separate facts', () => {
-  it('the Sorting panel says SORTING BAG / IN USE, never ACTIVE', () => {
+  it('the Sorting screen states the bag ROLE, and never a custody state', () => {
+    // The panel that carried a bag index and a use/full label is gone — staff
+    // were reading a lifecycle where they wanted one fact. What replaced it
+    // says only which Sorting bag is attached, so there is no longer any label
+    // on this screen that could be mistaken for where a bag physically is.
     const raw = read('src/components/laundry/views/laundry-sorting-workstation.tsx')
-    expect(raw).toContain('SORTING BAG {v.index}')
-    expect(raw).toContain('"IN USE"')
-    expect(raw).toContain('NO SORTING BAG YET')
+    expect(raw).toContain('Sorting Bag{many ? "s" : ""} Attached')
+    expect(raw).toContain('Bag Required')
+    // The screen never DISPLAYS a custody state. It does still SEND one when a
+    // bag is assigned (custodian: "PROCESSING_CENTER" on the assignment call) —
+    // that is the assignment act itself, part of the backend contract, and is
+    // deliberately not what this guards. What must never appear is a custody
+    // state presented to the operator as though it were the bag's Sorting role.
+    const src = code('src/components/laundry/views/laundry-sorting-workstation.tsx')
+    for (const w of ['IN_STORE', 'WITH_CUSTOMER', 'OUT_FOR_DELIVERY', 'AVAILABLE']) {
+      expect(src, w).not.toContain(w)
+    }
+    // The one custody mention is the assignment request field, nothing else.
+    expect((src.match(/custodian/g) || []).length).toBe(1)
+    expect(src).toContain('custodian: "PROCESSING_CENTER"')
   })
 
-  it('it points custody questions at Bag Management rather than answering them', () => {
-    const raw = read('src/components/laundry/views/laundry-sorting-workstation.tsx')
-    expect(raw).toContain('Other bags on this order')
-    expect(raw).toContain('shown in Bag Management')
+  it('it answers no custody question because it no longer shows other-purpose bags', () => {
+    // Stronger than the old guarantee. The screen used to LIST the order's
+    // transport and delivery bags (labelled, to stop them being read as the
+    // Sorting bag) and point custody questions at Bag Management. It now shows
+    // only SORTING-purpose bags at all, so there is nothing to mislabel and
+    // nothing to redirect.
+    // Asserted on the CODE: the surviving mentions are comments explaining
+    // which bag roles the canonical reader excludes.
+    const src = code('src/components/laundry/views/laundry-sorting-workstation.tsx')
+    expect(src).not.toContain('Other bags on this order')
+    expect(src).not.toContain('pickup bag')
+    expect(src).not.toContain('delivery bag')
+    // Bag role is still decided by the canonical reader, which filters on
+    // purpose === SORTING.
+    expect(src).toContain('sortingBagStatus(')
+    expect(src).toContain('bagsForService(')
   })
 
   it('the sorting resolver reads no custody field at all', () => {

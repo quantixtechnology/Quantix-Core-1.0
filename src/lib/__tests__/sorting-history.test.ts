@@ -272,10 +272,13 @@ describe('I/J · History sits beside the workflow, it does not replace it', () =
 
   it('the active workflow still owns BAG REQUIRED and the current bag', () => {
     expect(UI).toContain('BAG REQUIRED')
-    expect(UI).toContain('Current sorting bag')
-    expect(UI).toContain('ADD GARMENTS TO THIS BAG')
-    expect(UI).toContain('Current bag full/closed')
-    expect(UI).toContain('SCAN NEXT AVAILABLE BAG')
+    // The banner still names the attached bag — in ONE phrase now, shared
+    // word-for-word with the Complete Sorting card, instead of a second
+    // sentence about the same fact plus an instruction.
+    expect(UI).toContain('Sorting Bag{many ? "s" : ""} Attached')
+    expect(UI).toContain('{status.attached.map((code) =>')
+    expect(UI).toContain('Scan the next sorting bag')
+    expect(UI).toContain('The following garments go into the bag you scan next.')
   })
 
   it('LAST 5 SCANS stays in the active tab and is not the History source', () => {

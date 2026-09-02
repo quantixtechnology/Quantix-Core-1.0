@@ -36,7 +36,7 @@ import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Search, X, MapPin, History, Plus } from "lucide-react"
-import { activeBagForService, sortingBagViews, otherBagsOnOrder, sortingBagStatus, type SortingBagRow, type SortingBagView } from "@/lib/laundry-sorting-bags"
+import { activeBagForService, bagsForService, sortingBagStatus, type SortingBagRow } from "@/lib/laundry-sorting-bags"
 import { CopyButton } from "@/components/ui/copy-button"
 
 interface Item {
@@ -160,136 +160,100 @@ function servicesOnOrder(order: OrderGroup): { id: string | null; name: string |
   return services
 }
 
-function OrderBags({ order, bags, scanTimes, onAdd }: {
+function OrderBags({ order, bags, onAdd }: {
   order: OrderGroup
   bags: SortingBagRow[]
-  scanTimes: Record<string, string>
   /** `hasBag` — this service already has a Sorting bag, so this is a SECOND
    *  bag, not the first. The caller decides what that means; OrderBags only
-   *  reports it, from the same `views` the button label already reads. */
+   *  reports it, from the canonical bagsForService rows. */
   onAdd: (serviceId: string | null, serviceName: string | null, hasBag: boolean) => void
 }) {
   const services = servicesOnOrder(order)
 
-  const others = otherBagsOnOrder(bags)
-
+  // THE ACTION ONLY. The bag STATUS is stated once, by the banner above — this
+  // used to repeat it as chips carrying a bag index, a per-bag garment tally
+  // and a use/full label, plus a panel listing the order's transport and
+  // delivery bags. All of it was true and none of it was the operator's
+  // question here, and two descriptions of one fact is worse than one. Adding
+  // a bag is still a real operational act (a bag fills up), so the button
+  // stays exactly as it was, wired to the same onAdd and the same second-bag
+  // confirmation.
   return (
     <div className="mt-2 space-y-1.5">
       {services.map((svc) => {
-        const views = sortingBagViews(bags, svc.id, svc.name, svc.itemIds.map((id) => scanTimes[id] ?? null).filter(Boolean))
+        const hasBag = bagsForService(bags, svc.id, svc.name).length > 0
         return (
-          <div key={(svc.id || "") + (svc.name || "")} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div key={(svc.id || "") + (svc.name || "")} className="flex items-center gap-2">
+            {services.length > 1 && (
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{svc.name || "Service"}</span>
-              {views.length === 0 && <span className="text-[10px] font-semibold text-amber-700">⚠ NO SORTING BAG YET</span>}
-              {views.map((v) => (
-                <span
-                  key={v.bagNumber}
-                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${v.state === "ACTIVE" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 bg-slate-50 text-slate-500"}`}
-                  title={`Sorting bag ${v.index} — ${v.garments} garment${v.garments === 1 ? "" : "s"} sorted into it`}
-                >
-                  {/* "SORTING BAG n" and "IN USE", not "ACTIVE". ACTIVE reads as
-                      a claim about where the bag physically is; this panel only
-                      ever means "the bag these garments are being sorted into".
-                      Physical custody is a separate fact, shown in Bag
-                      Management, and the two must not look like one. */}
-                  <span className="font-semibold">SORTING BAG {v.index}</span>
-                  <span className="font-mono font-semibold">{v.bagNumber}</span>
-                  <span className="tabular-nums">{v.garments}</span>
-                  <span className="font-semibold">{v.state === "ACTIVE" ? "IN USE" : "FULL"}</span>
-                </span>
-              ))}
-              <button
-                type="button"
-                onClick={() => onAdd(svc.id, svc.name, views.length > 0)}
-                className="ml-auto inline-flex items-center gap-1 rounded-md border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-50"
-              >
-                {/* Context-sensitive on the ACTUAL assignment rows: before the
-                    first bag exists this binds Bag 1, so it is never allowed to
-                    imply a "next" bag, a bag becoming FULL, or Bag 2. */}
-                {views.length === 0 ? <><Plus className="h-3 w-3" /> Assign First Bag</> : <><Plus className="h-3 w-3" /> Add New Bag</>}
-              </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => onAdd(svc.id, svc.name, hasBag)}
+              className="ml-auto inline-flex items-center gap-1 rounded-md border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-50"
+            >
+              {/* Context-sensitive on the ACTUAL assignment rows: before the
+                  first bag exists this binds Bag 1, so it is never allowed to
+                  imply a "next" bag, a bag becoming FULL, or Bag 2. */}
+              {hasBag ? <><Plus className="h-3 w-3" /> Add New Bag</> : <><Plus className="h-3 w-3" /> Assign First Bag</>}
+            </button>
           </div>
         )
       })}
-
-      {/* THE ORDER'S OTHER BAGS — transport, delivery, or a role never recorded.
-          Shown rather than hidden: the old screen did not omit these rows, it
-          presented them as the Sorting bag. Naming them for what they are is
-          the fix; removing them would just move the confusion. */}
-      {others.length > 0 && (
-        <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2 py-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Other bags on this order</span>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {others.map((b) => (
-              <span key={b.bagNumber} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
-                <span className="font-mono font-semibold">{b.bagNumber}</span>
-                <span>{b.purpose === "PICKUP" ? "pickup bag" : b.purpose === "DELIVERY" ? "delivery bag" : "role not recorded"}</span>
-              </span>
-            ))}
-          </div>
-          <p className="mt-1 text-[10px] text-slate-400">Not the Sorting bag. Where each one physically is now is shown in Bag Management.</p>
-        </div>
-      )}
     </div>
   )
 }
 
-/** CURRENT SORTING BAG — the one bag the NEXT garment goes into, made
- *  unmistakable at the top of the order card.
+/**
+ * SORTING BAG — the left card's answer, in the same words the Complete Sorting
+ * card uses on the right.
  *
- *  No garment-count capacity and no automatic closing: full/closed is the
- *  operator's own act (+ Add New Bag). While the operator is closing the
- *  current bag, the banner demands the next available bag; after the new bag
- *  is assigned, every later garment points at it. A service with no bag yet
- *  reads BAG REQUIRED. */
+ * It used to name the bag with one phrase while the panel below it named the
+ * same bag with another, adding a bag index, a per-garment tally and a
+ * use/full label. An operator scanning the queue does
+ * not need the lifecycle — they need to know whether a bag is on the order and
+ * which one. Both sides now read the SAME sortingBagStatus over the SAME
+ * bagsByOrder rows, so the two halves of the screen cannot disagree.
+ */
 function CurrentBagBanner({ order, bags, addBagFor }: {
   order: OrderGroup
   bags: SortingBagRow[]
   addBagFor: { orderId: string; orderNumber: string; serviceId: string | null; serviceName: string | null } | null
 }) {
-  const services = servicesOnOrder(order)
-  const many = services.length > 1
+  const status = sortingBagStatus(bags, servicesOnOrder(order))
+
+  // Mid-flow: the operator has chosen to add another bag and is being asked for
+  // it. An action prompt, not a lifecycle label — nothing here says "closed".
+  if (addBagFor?.orderId === order.orderId) {
+    return (
+      <div className="mt-2 rounded-lg border-2 border-orange-300 bg-orange-500 px-3 py-2 text-white">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-white/90">Scan the next sorting bag</p>
+        <p className="text-[11px] font-semibold text-white/90">The following garments go into the bag you scan next.</p>
+      </div>
+    )
+  }
+
+  if (!status.ready) {
+    return (
+      <div className="mt-2 rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2">
+        <p className="text-[12px] font-bold uppercase tracking-wider text-amber-800">🟠 Bag Required</p>
+        <p className="text-[12px] text-amber-900">Attach a sorting bag before completing sorting.</p>
+      </div>
+    )
+  }
+
+  const many = status.attached.length > 1
   return (
-    <div className="mt-2 space-y-1.5">
-      {services.map((svc) => {
-        const key = (svc.id || "") + "|" + (svc.name || "")
-        const label = many ? svc.name || "Service" : null
-        const closingThis = addBagFor?.orderId === order.orderId &&
-          (addBagFor.serviceId || "") + "|" + (addBagFor.serviceName || "") === key
-        const active = activeBagForService(bags, svc.id, svc.name)
-        if (closingThis && active) {
-          return (
-            <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-orange-300 bg-orange-500 px-3 py-2 text-white">
-              {label && <span className="text-[10px] font-bold uppercase tracking-wider text-white/80">{label}</span>}
-              <span className="text-[11px] font-bold uppercase tracking-wider text-white/90">Current bag full/closed</span>
-              <span className="font-mono text-sm font-bold text-white">{active.bagNumber}</span>
-              <span className="text-[11px] font-semibold text-white">SCAN NEXT AVAILABLE BAG</span>
-            </div>
-          )
-        }
-        if (active) {
-          return (
-            <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-indigo-300 bg-indigo-600 px-3 py-2 text-white">
-              {label && <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">{label}</span>}
-              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-100">Current sorting bag</span>
-              <span className="font-mono text-base font-bold text-white">{active.bagNumber}</span>
-              <CopyButton value={active.bagNumber} label="Bag code" size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-white hover:bg-white/20" silent preventFocusSteal />
-              <span className="text-[11px] font-semibold text-indigo-100">ADD GARMENTS TO THIS BAG</span>
-            </div>
-          )
-        }
-        return (
-          <div key={key} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-lg border-2 border-amber-300 bg-amber-500 px-3 py-2 text-white">
-            {label && <span className="text-[10px] font-bold uppercase tracking-wider text-amber-100">{label}</span>}
-            <span className="text-[13px] font-bold uppercase tracking-wider text-white">⚠ BAG REQUIRED</span>
-            {/* Names the action rather than leaving the operator to wonder
-                whether a bag is already on the order. */}
-            <span className="text-[11px] font-semibold text-amber-100">ATTACH A SORTING BAG BEFORE COMPLETING SORTING</span>
-          </div>
-        )
-      })}
+    <div className="mt-2 rounded-lg border-2 border-emerald-300 bg-emerald-50 px-3 py-2">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">🟢 Sorting Bag{many ? "s" : ""} Attached</p>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        {status.attached.map((code) => (
+          <span key={code} className="inline-flex items-center gap-1">
+            <span className="font-mono text-[13px] font-bold text-emerald-900">{code}</span>
+            <CopyButton value={code} label="Bag code" size="icon" variant="ghost" className="h-5 w-5 shrink-0" silent preventFocusSteal />
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -1429,7 +1393,6 @@ export function LaundrySortingWorkstation() {
                     <OrderBags
                       order={o}
                       bags={bagsByOrder[o.orderId] || []}
-                      scanTimes={scanTimes}
                       onAdd={(serviceId, serviceName, hasBag) => {
                         setBagCode("")
                         const target = { orderId: o.orderId, orderNumber: o.orderNumber, serviceId, serviceName }

@@ -168,12 +168,16 @@ describe('3-4 · the card states the bag, or stops the operator', () => {
 describe('LEFT queue card keeps its prompt, with the action named', () => {
   it('still says BAG REQUIRED and now says what to do', () => {
     expect(WS).toContain('⚠ BAG REQUIRED')
-    expect(WS).toContain('ATTACH A SORTING BAG BEFORE COMPLETING SORTING')
+    // Both cards now use the same sentence, so the operator reads one
+    // instruction wherever they look.
+    expect((WS.match(/Attach a sorting bag before completing sorting\./g) || []).length).toBe(2)
     expect(WS).not.toContain('SCAN THE BAG THIS ORDER WILL USE')
   })
 
   it('the left banner still reads the canonical active bag', () => {
-    expect(WS).toContain('const active = activeBagForService(bags, svc.id, svc.name)')
+    // The banner now reads the SAME sortingBagStatus the right card reads,
+    // rather than the single active row — one answer for both halves.
+    expect((WS.match(/sortingBagStatus\(/g) || []).length).toBe(2)
   })
 })
 
@@ -203,5 +207,95 @@ describe('5, 8, 9 · nothing else changed', () => {
 
   it('the garment count and weight summary still render on both cards', () => {
     expect((WS.match(/sortingOrderSummary\(/g) || []).length).toBe(2)
+  })
+})
+
+
+// ── BOTH SIDES TELL THE SAME STORY ──────────────────────────────────────────
+//
+// An operator must never have to look at the other half of the screen to learn
+// which order this is, what service, how many garments, what weight, or whether
+// a bag is on it. The left card carried a different bag vocabulary from the
+// right (an index, a per-bag tally, a use/full label, plus the order's
+// transport and delivery bags); it now carries the same one.
+describe('LEFT "Orders at Sorting" card', () => {
+  it('1,2,3 · shows order, customer and service · garments · weight', () => {
+    expect(WS).toContain('{o.orderNumber}')
+    expect(WS).toContain('{o.customer || "—"}')
+    expect(WS).toContain('sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })')
+  })
+
+  it('4 · names the attached sorting bag', () => {
+    expect(WS).toContain('🟢 Sorting Bag{many ? "s" : ""} Attached')
+    expect(WS).toContain('{status.attached.map((code) =>')
+  })
+
+  it('5 · shows BAG REQUIRED with the required action when none is attached', () => {
+    expect(WS).toContain('🟠 Bag Required')
+    expect(WS).toContain('Attach a sorting bag before completing sorting.')
+  })
+
+  it('the lifecycle panel and the other-bags list are gone', () => {
+    const src = WS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    for (const noise of [
+      'Other bags on this order', 'role not recorded', 'SORTING BAG {v.index}',
+      'IN USE', 'NO SORTING BAG YET', 'ADD GARMENTS TO THIS BAG',
+      'Current sorting bag', 'sortingBagViews', 'otherBagsOnOrder',
+    ]) {
+      expect(src, noise).not.toContain(noise)
+    }
+  })
+
+  it('the add-bag action survives — multi-bag workflow is untouched', () => {
+    expect(WS).toContain('const hasBag = bagsForService(bags, svc.id, svc.name).length > 0')
+    expect(WS).toContain('onClick={() => onAdd(svc.id, svc.name, hasBag)}')
+    expect(WS).toContain('Assign First Bag')
+    expect(WS).toContain('Add New Bag')
+  })
+})
+
+describe('6-11 · both sides, one source', () => {
+  it('6,7,8 · the RIGHT card shows the same order, service, count and weight', () => {
+    const right = WS.slice(WS.indexOf('readyOrders.map((o) =>'))
+    expect(right).toContain('{o.orderNumber}')
+    expect(right).toContain('{o.customer || "—"}')
+    expect(right).toContain('sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })')
+  })
+
+  it('the summary is computed ONCE per side from the same OrderGroup — never recalculated', () => {
+    // Both call sites pass the identical expression; neither derives its own
+    // count or weight, and readyOrders is a filter over the same objects.
+    expect((WS.match(/sortingOrderSummary\(\{ garments: o\.garments, garmentCount: o\.garments\.length, totalWeightKg: o\.totalWeightKg \}\)/g) || []).length).toBe(2)
+    expect(WS).toContain('const readyOrders = visibleOrders.filter(')
+  })
+
+  it('9,10,11 · both sides read the SAME bag status from the SAME rows', () => {
+    // One helper, called once per side, over bagsByOrder — no second reader,
+    // no second request.
+    expect((WS.match(/sortingBagStatus\(/g) || []).length).toBe(2)
+    expect(WS).toContain('<CurrentBagBanner order={o} bags={bagsByOrder[o.orderId] || []}')
+    expect(WS).toContain('<SortingBagPanel bags={bagsByOrder[o.orderId] || []}')
+  })
+
+  it('16 · neither side fetches bags per card', () => {
+    const src = WS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(src).not.toContain('useOrderBags(')
+    expect(src).not.toContain('order-bag-list')
+    // The ONE bag read is the workstation's own central loader.
+    expect((src.match(/\/api\/laundry\/orders\/\$\{orderId\}\/bags/g) || []).length).toBe(1)
+  })
+
+  it('12 · closed / pickup / delivery / unrecorded bags are attached on NEITHER side', () => {
+    // Both sides go through sortingBagStatus → bagsForService, so this is one
+    // rule proven once and used twice.
+    const noisy = [
+      bag({ bagNumber: 'OLD1', open: false }),
+      bag({ bagNumber: 'PICK1', purpose: 'PICKUP' }),
+      bag({ bagNumber: 'DEL1', purpose: 'DELIVERY' }),
+      bag({ bagNumber: 'UNK1', purpose: null }),
+    ]
+    const st = sortingBagStatus(noisy, SVC)
+    expect(st.attached).toEqual([])
+    expect(st.ready).toBe(false)
   })
 })
