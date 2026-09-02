@@ -1281,12 +1281,18 @@ export function LaundrySortingWorkstation() {
                           <p className="text-sm font-semibold text-slate-800 font-mono break-all">{o.orderNumber}</p>
                           <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent preventFocusSteal />
                         </div>
-                        <p className="text-[11px] text-slate-400">{o.customer || "—"} · {o.garments.length} garment{o.garments.length === 1 ? "" : "s"}</p>
-                        {/* Service and the order's RECORDED weight. The weight is
-                            what was measured at Store Audit; an order that has
-                            none shows an em dash rather than "0 kg". */}
+                        <p className="text-[11px] text-slate-400">{o.customer || "—"}</p>
+                        {/* Service, then the two facts an operator scans for.
+                            They are INDEPENDENT: the garment count is the real
+                            number of items in this order's sorting queue, and
+                            the weight is what was measured at Store Audit.
+                            Neither is computed from the other, and an order with
+                            no recorded weight shows an em dash, never "0 kg" —
+                            a per-piece order legitimately has a count and no
+                            weight for its whole life. */}
+                        <p className="text-[11px] font-medium text-slate-600">{orderServiceLabel(null, o.garments)}</p>
                         <p className="text-[11px] text-slate-500">
-                          <span className="font-medium text-slate-600">{orderServiceLabel(null, o.garments)}</span>
+                          <span className="tabular-nums">{o.garments.length}</span> garment{o.garments.length === 1 ? "" : "s"}
                           <span className="text-slate-300"> · </span>
                           <span className="tabular-nums">{orderWeightLabel(o.totalWeightKg)}</span>
                         </p>

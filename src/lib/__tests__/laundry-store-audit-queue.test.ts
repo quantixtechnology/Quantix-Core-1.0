@@ -150,7 +150,12 @@ describe('the queue shows what the operator needs', () => {
     // desktop width. This replaced the overflow-x-auto workaround.
     expect(QUEUE).toContain('table-fixed')
     const widths = [...QUEUE.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((m) => Number(m[1]))
-    expect(widths).toHaveLength(9)
+    // TEN since Weight was added. Counting alone is not enough — this suite
+    // passed while the colgroup still had nine entries for ten headers, because
+    // nine widths summing to 100 is internally consistent even when it is
+    // misaligned against the header row. The <col>-per-<TableHead> check that
+    // actually catches that lives in laundry-order-display.test.ts.
+    expect(widths).toHaveLength(10)
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100)
   })
 
@@ -159,9 +164,16 @@ describe('the queue shows what the operator needs', () => {
   })
 
   it('the queue uses the page width rather than the narrow detail column', () => {
-    // max-w-5xl (1024px) could not hold nine columns — that was the root cause.
+    // max-w-5xl (1024px) could not hold the columns — that was the root cause.
+    // The cap is now gone entirely: the queue is a full-width operational
+    // workstation, so it uses page padding and no max-width at all. That is
+    // strictly MORE page than the max-w-7xl this test used to require.
+    // Asserted on the CODE: the comment above the container explains which cap
+    // was removed, so it names max-w-7xl in prose without applying it.
     const queueContainer = QUEUE.slice(0, QUEUE.indexOf('</div>'))
-    expect(queueContainer).toContain('max-w-7xl')
+      .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(queueContainer).toContain('px-4 lg:px-6')
+    expect(queueContainer).not.toMatch(/className="[^"]*max-w-/)
   })
 
   it('text cells may wrap — TableCell defaults to nowrap, which must be overridden', () => {
@@ -187,9 +199,13 @@ describe('the queue shows what the operator needs', () => {
 
   it('Amount and Created are the narrow columns, by stated priority', () => {
     const widths = [...QUEUE.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((m) => Number(m[1]))
-    const [order, customer, service, pickup, delivery, amount, created] = widths
+    // Weight sits fourth, between Service and Pickup. It is a SHORT numeric
+    // ("8.5 kg" / "—") so it belongs with the narrow columns, not the wide
+    // text ones — the positional destructuring has to account for it or every
+    // name below reads the column to its left.
+    const [order, customer, service, weight, pickup, delivery, amount, created] = widths
     for (const critical of [order, customer, service, pickup, delivery]) {
-      expect(critical).toBeGreaterThan(Math.max(amount, created))
+      expect(critical).toBeGreaterThan(Math.max(amount, created, weight))
     }
   })
 

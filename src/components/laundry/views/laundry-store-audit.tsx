@@ -426,7 +426,11 @@ export function LaundryStoreAudit() {
   // ── Detail view ──
   if (selectedId) {
     return (
-      <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      // Widened one step (5xl → 7xl) so the inspection grid breathes, but
+      // still capped: this view is a FORM, and a full-width form on a wide
+      // monitor is harder to read, not easier. The queue is the screen that
+      // wanted the whole viewport.
+      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-5 space-y-5">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={backToQueue}><ArrowLeft className="h-5 w-5" /></Button>
           <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect garments and approve the order</p></div>
@@ -682,10 +686,15 @@ export function LaundryStoreAudit() {
 
   // ── Queue view ──
   return (
-    // Wider than the detail view on purpose: nine operational columns need the
-    // page width, and squeezing them into max-w-5xl is what forced the
-    // horizontal scrollbar.
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
+    // A full-width operational workstation, not a centred report card. Ten
+    // columns need the real page width: max-w-7xl (1280px) left a wide desktop
+    // mostly empty while the table stayed cramped. Same container the Orders
+    // view uses — no max-width, no mx-auto, just page padding — so the two
+    // operational screens line up. The table CANNOT overflow it: table-fixed
+    // plus a colgroup of percentages summing to 100% means the columns scale
+    // with the container instead of demanding a scrollbar. py-4 rather than
+    // py-6 returns a row's worth of vertical space to the queue.
+    <div className="px-4 lg:px-6 py-4 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect and approve orders waiting for audit</p></div>
         <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">{rows.length} pending</Badge>
@@ -708,21 +717,28 @@ export function LaundryStoreAudit() {
               text cell is free to wrap; nothing is truncated. */}
           <Table className="hidden md:table table-fixed">
             <colgroup>
-              {/* Budget at 1440px: 1440 − 256 sidebar − 32 padding = 1152px.
-                  Order No. gets 22% = 253px, which holds the full 34-character
-                  order number on ONE line at text-[11px] mono (~224px + 16px
-                  cell padding) — the wider share is what buys the larger type
-                  without wrapping or truncating it. Amount, Created and Status
-                  stay the narrow ones, by the stated priority. */}
+              {/* TEN columns, summing to 100% — one <col> per <TableHead>.
+                  A missing entry is not harmless under table-fixed: it shifts
+                  every following width one column left and leaves the last one
+                  unsized, which is what adding Weight did before this.
+
+                  Budget at 1440px, now that the page is full width:
+                  1440 − 256 sidebar − 48 padding = 1136px. Order No. keeps 22%
+                  = 250px, still holding the full 34-character order number on
+                  ONE line at text-[11px] mono. Weight is a short numeric so 6%
+                  (68px) fits "8.5 kg" comfortably; the room comes from Customer,
+                  Service, Pickup and Delivery, which wrap cleanly. Every wider
+                  screen scales all ten proportionally. */}
               <col className="w-[22%]" />{/* Order No. */}
-              <col className="w-[13%]" />{/* Customer */}
-              <col className="w-[11%]" />{/* Service  */}
-              <col className="w-[11%]" />{/* Pickup   */}
-              <col className="w-[11%]" />{/* Delivery */}
+              <col className="w-[12%]" />{/* Customer */}
+              <col className="w-[10%]" />{/* Service  */}
+              <col className="w-[6%]" /> {/* Weight   */}
+              <col className="w-[10%]" />{/* Pickup   */}
+              <col className="w-[10%]" />{/* Delivery */}
               <col className="w-[7%]" /> {/* Amount   */}
               <col className="w-[7%]" /> {/* Created  */}
-              <col className="w-[9%]" /> {/* Status   */}
-              <col className="w-[9%]" /> {/* Inspect  */}
+              <col className="w-[8%]" /> {/* Status   */}
+              <col className="w-[8%]" /> {/* Inspect  */}
             </colgroup>
             <TableHeader><TableRow className="[&>th]:px-2 [&>th]:text-[11px]">
               <TableHead>Order No.</TableHead>
@@ -814,13 +830,14 @@ export function LaundryStoreAudit() {
                       <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 text-[10px] px-1.5 py-0 mt-0.5">Pending Audit</Badge>
                     </div>
                   </div>
-                  {services.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {services.map((name) => (
-                        <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-normal px-1.5 py-0">{name}</Badge>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {services.map((name) => (
+                      <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-normal px-1.5 py-0">{name}</Badge>
+                    ))}
+                    {/* The recorded weight, alongside the service on phones too.
+                        Unweighed orders show an em dash, never "0 kg". */}
+                    <span className="text-[11px] tabular-nums text-slate-500">{orderWeightLabel(r.totalWeightKg)}</span>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {([["Pickup", pickup], ["Delivery", delivery]] as const).map(([label, cell]) => (
                       <div key={label}>

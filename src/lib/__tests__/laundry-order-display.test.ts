@@ -157,6 +157,88 @@ describe('the queries return the canonical field', () => {
   })
 })
 
+describe('item count and weight are BOTH shown, and are independent', () => {
+  it('Orders keeps Service, Items AND Weight — Weight never replaces the count', () => {
+    expect(ORDERS).toContain('>Service</TableHead>')
+    expect(ORDERS).toContain('>Items</TableHead>')
+    expect(ORDERS).toContain('>Weight</TableHead>')
+    // The count still comes from the API's own itemCount (_count.items).
+    expect(ORDERS).toContain('{o.itemCount}')
+    expect(ORDERS_API).toContain('itemCount: o._count.items')
+  })
+
+  it('Sorting shows the garment count AND the weight, on one scannable line', () => {
+    expect(SORTING).toContain('{o.garments.length}</span> garment')
+    expect(SORTING).toContain('orderWeightLabel(o.totalWeightKg)')
+    // Service sits on its own line above them.
+    expect(SORTING).toContain('{orderServiceLabel(null, o.garments)}</p>')
+  })
+
+  it('the Sorting count is the real queue length, not a weight-derived figure', () => {
+    // garments[] is the order's items at the SORTING stage, grouped from the
+    // API response — the count is its length and nothing else.
+    expect(SORTING).toContain('g.expected++')
+    expect(SORTING).not.toMatch(/garments\.length\s*[*/]/)
+    expect(SORTING).not.toMatch(/totalWeightKg\s*[*/]\s*\w/)
+  })
+
+  it('neither figure is computed from the other, on any screen', () => {
+    for (const src of [SORTING, ORDERS, AUDIT, LEDGER]) {
+      expect(src).not.toMatch(/itemCount\s*[*/]\s*\w*[Ww]eight/)
+      expect(src).not.toMatch(/[Ww]eight\w*\s*[*/]\s*itemCount/)
+      expect(src).not.toMatch(/totalWeightKg\s*\/\s*\w+/)
+    }
+  })
+
+  it('Store Audit and the Ledger keep their existing information', () => {
+    // Nothing was removed to make room for the two new facts.
+    expect(AUDIT).toContain('>Pickup</TableHead>')
+    expect(AUDIT).toContain('>Delivery</TableHead>')
+    expect(AUDIT).toContain('>Amount</TableHead>')
+    expect(AUDIT).toContain('>Status</TableHead>')
+    expect(AUDIT).toContain('Scan Bag')
+    for (const col of ['>Invoice</th>', '>Total</th>', '>Discount</th>', '>Paid</th>', '>Refund</th>', '>Balance</th>', '>Status</th>']) {
+      expect(LEDGER).toContain(col)
+    }
+  })
+
+  it('Store Audit shows the weight on phones as well as desktop', () => {
+    expect((AUDIT.match(/orderWeightLabel\(r\.totalWeightKg\)/g) || []).length).toBe(2)
+  })
+})
+
+describe('Store Audit uses the full desktop workstation width', () => {
+  it('the queue is not capped to a centred card', () => {
+    const queue = AUDIT.slice(AUDIT.indexOf('// ── Queue view ──'))
+    expect(queue).toContain('className="px-4 lg:px-6 py-4 space-y-4"')
+    expect(queue).not.toMatch(/className="max-w-7xl mx-auto px-4 py-6 space-y-4"/)
+  })
+
+  it('the fix is scoped to Store Audit — the detail form stays capped', () => {
+    // Deliberately NOT full width: a form stretched across a wide monitor is
+    // harder to read. Only the queue wanted the whole viewport.
+    expect(AUDIT).toContain('max-w-7xl mx-auto px-4 lg:px-6 py-5 space-y-5')
+  })
+
+  it('every column has a width, so the table cannot overflow its container', () => {
+    // table-fixed + percentages summing to 100% is what keeps the page from
+    // scrolling horizontally at any width. A missing <col> silently shifts
+    // every following width one column left — which is what adding Weight did.
+    const cg = AUDIT.slice(AUDIT.indexOf('<colgroup>'), AUDIT.indexOf('</colgroup>'))
+    const widths = [...cg.matchAll(/w-\[(\d+)%\]/g)].map((m) => Number(m[1]))
+    const headBlock = AUDIT.slice(AUDIT.indexOf('<TableHeader><TableRow className="[&>th]:px-2'))
+    const heads = (headBlock.slice(0, headBlock.indexOf('</TableRow>')).match(/<TableHead[ >]/g) || []).length
+    expect(widths.length).toBe(heads)
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('keeps the mobile card view and does not force page-level scrolling', () => {
+    expect(AUDIT).toContain('hidden md:table table-fixed')
+    expect(AUDIT).toContain('md:hidden')
+    expect(AUDIT).not.toContain('overflow-x-scroll')
+  })
+})
+
 describe('existing screen behaviour is preserved', () => {
   it('the ledger empty/loading rows span the two new columns', () => {
     expect(LEDGER).not.toContain('colSpan={9}')
