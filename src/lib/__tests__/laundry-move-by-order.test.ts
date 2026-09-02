@@ -15,6 +15,8 @@ import {
   moveOutcome,
   MOVE_WAIT_NOTICE,
   orderNumberPrefix,
+  prefixOfOrderNumber,
+  displayOrderPrefix,
   composeOrderNumber,
   ORDER_SUFFIX_PLACEHOLDER,
   type QueueGarment,
@@ -448,7 +450,9 @@ describe('1-4 · the business prefix is derived, never typed and never hardcoded
 
   it('2 · the workstation renders the prefix as a non-editable adornment', () => {
     expect(WS).toContain('{movePrefix}')
-    expect(WS).toContain('const movePrefix = orderNumberPrefix(businessCode)')
+    // Derived from the queue's own order numbers, with the canonical business
+    // code as the fallback — see the REGRESSION suite below.
+    expect(WS).toContain('const movePrefix = displayOrderPrefix(items, businessCode)')
     // Derived from the server response, never a literal.
     expect(WS).toContain('setBusinessCode(j.businessCode ?? null)')
     // It is a span, not an input — it cannot be typed over.
@@ -515,5 +519,96 @@ describe('11 · the stage-specific confirmation', () => {
     expect(moveByOrderConfig('DRYCLEAN')!.pushLabel).toBe('Push Order to Dry Clean')
     expect(WS).toContain('{moveCfg.pushLabel}')
     expect(WS).toContain('{moveCfg && canProcess && (')
+  })
+})
+
+
+// ── REGRESSION: the displayed prefix must match the queue's real orders ─────
+//
+// Shipped bug: the prefix was built from LaundryBusiness.businessCode, which
+// carries the workspace's RETIRED product code (LND-202608-0002), while order
+// numbers embed the CANONICAL platform Business Code (BUS-202608-0008). The UI
+// showed ORD-STR-LND-202608-0002- and every lookup missed.
+//
+// The guarantee these pin: whatever the business code says, the prefix on
+// screen is the prefix of the orders actually in this queue.
+describe('REGRESSION · displayed prefix matches the queue’s order numbers', () => {
+  const REAL = 'ORD-STR-BUS-202608-0008-002-000005'
+  const LEGACY_CODE = 'LND-202608-0002'          // what LaundryBusiness carries
+  const CANONICAL_CODE = 'BUS-202608-0008'       // what order numbers embed
+
+  it('splits a real order number into its fixed prefix', () => {
+    expect(prefixOfOrderNumber(REAL)).toBe('ORD-STR-BUS-202608-0008-')
+    expect(prefixOfOrderNumber('ord-str-bus-202608-0008-002-000005')).toBe('ORD-STR-BUS-202608-0008-')
+  })
+
+  it('THE BUG: a legacy LND business code can no longer drive the display', () => {
+    const queue = [g({ id: 'a', orderNumber: REAL })]
+    // Even handed the WRONG (legacy) code, the queue's own orders win.
+    expect(displayOrderPrefix(queue, LEGACY_CODE)).toBe('ORD-STR-BUS-202608-0008-')
+    expect(displayOrderPrefix(queue, LEGACY_CODE)).not.toContain('LND')
+  })
+
+  it('the displayed prefix + "002-000005" reconstructs the queue’s own order', () => {
+    const queue = [g({ id: 'a', orderNumber: REAL })]
+    const prefix = displayOrderPrefix(queue, LEGACY_CODE)
+    expect(composeOrderNumber(prefix, '002-000005')).toBe(REAL)
+    // …and that composed value resolves against the queue.
+    const r = findOrderInQueue(queue, composeOrderNumber(prefix, '002-000005'), 'WASH')
+    expect(r.ok).toBe(true)
+  })
+
+  it('every order in the queue is reachable by typing only its last two parts', () => {
+    const queue = [
+      g({ id: 'a', orderId: 'o1', orderNumber: 'ORD-STR-BUS-202608-0008-002-000005' }),
+      g({ id: 'b', orderId: 'o2', orderNumber: 'ORD-STR-BUS-202608-0008-002-000006' }),
+      g({ id: 'c', orderId: 'o3', orderNumber: 'ORD-STR-BUS-202608-0008-003-000001' }),
+    ]
+    const prefix = displayOrderPrefix(queue, LEGACY_CODE)
+    for (const [typed, expected] of [
+      ['002-000005', 'ORD-STR-BUS-202608-0008-002-000005'],
+      ['002-000006', 'ORD-STR-BUS-202608-0008-002-000006'],
+      ['003-000001', 'ORD-STR-BUS-202608-0008-003-000001'],
+    ] as const) {
+      expect(composeOrderNumber(prefix, typed)).toBe(expected)
+      const r = findOrderInQueue(queue, composeOrderNumber(prefix, typed), 'WASH')
+      expect(r.ok, typed).toBe(true)
+      if (r.ok) expect(r.order.orderNumber).toBe(expected)
+    }
+  })
+
+  it('the canonical code is used when the queue is empty', () => {
+    expect(displayOrderPrefix([], CANONICAL_CODE)).toBe('ORD-STR-BUS-202608-0008-')
+    expect(displayOrderPrefix(null, CANONICAL_CODE)).toBe('ORD-STR-BUS-202608-0008-')
+  })
+
+  it('a queue spanning two different prefixes shows none rather than a wrong one', () => {
+    const mixed = [
+      g({ id: 'a', orderId: 'o1', orderNumber: 'ORD-STR-BUS-202608-0008-002-000005' }),
+      g({ id: 'b', orderId: 'o2', orderNumber: 'ORD-STR-BUS-202501-0002-001-000009' }),
+    ]
+    // No single answer → falls back to the canonical code.
+    expect(displayOrderPrefix(mixed, CANONICAL_CODE)).toBe('ORD-STR-BUS-202608-0008-')
+    // …and with no canonical code either, no prefix at all.
+    expect(displayOrderPrefix(mixed, null)).toBe('')
+  })
+
+  it('malformed order numbers never produce a prefix', () => {
+    for (const v of [null, undefined, '', 'ORD', 'ORD-STR', 'ORD-STR-002']) {
+      expect(prefixOfOrderNumber(v as string)).toBe('')
+    }
+  })
+
+  it('the workstation reads the queue-derived prefix, not the raw business code', () => {
+    expect(WS).toContain('const movePrefix = displayOrderPrefix(items, businessCode)')
+    expect(WS).not.toContain('orderNumberPrefix(businessCode)')
+  })
+
+  it('the server sends the CANONICAL code, never LaundryBusiness.businessCode', () => {
+    const API = read('src/app/api/laundry/processing/route.ts')
+    expect(API).toContain('ensureBusinessCode(biz.platformBusinessId)')
+    expect(API).toContain('businessCode: canonicalBusinessCode')
+    // The laundry row is no longer asked for a business code.
+    expect(API).not.toMatch(/laundryBusiness\.findUnique[\s\S]{0,120}businessCode:\s*true/)
   })
 })

@@ -18,7 +18,7 @@ import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 import { useGarmentSearch } from "@/hooks/use-garment-search"
 import { GarmentSearchResults } from "@/components/laundry/garment-search-results"
 import { Level } from "@/lib/laundry-rbac-registry"
-import { supportsMoveByOrder, moveByOrderConfig, findOrderInQueue, planOrderMove, moveByOrderNote, moveProgressLabel, moveOutcome, orderNumberPrefix, composeOrderNumber, ORDER_SUFFIX_PLACEHOLDER, MOVE_BY_ORDER_PROMPT, MOVE_WAIT_NOTICE, type QueueOrder, type MoveProgress } from "@/lib/laundry-move-by-order"
+import { supportsMoveByOrder, moveByOrderConfig, findOrderInQueue, planOrderMove, moveByOrderNote, moveProgressLabel, moveOutcome, displayOrderPrefix, composeOrderNumber, ORDER_SUFFIX_PLACEHOLDER, MOVE_BY_ORDER_PROMPT, MOVE_WAIT_NOTICE, type QueueOrder, type MoveProgress } from "@/lib/laundry-move-by-order"
 import { sortingOrderSummary } from "@/lib/laundry-order-display"
 
 // Workstation stage → RBAC screen. Mirrors STAGE_SCREEN in the process endpoint,
@@ -357,7 +357,10 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   // Live progress for the run. A 50- or 100-garment order takes time, so the
   // operator watches it advance rather than a bare spinner.
   const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
-  const movePrefix = orderNumberPrefix(businessCode)
+  // Derived from the ORDER NUMBERS IN THIS QUEUE when they agree, so the
+  // displayed prefix always matches what the operator is looking at; the
+  // canonical business code is the fallback for an empty queue.
+  const movePrefix = displayOrderPrefix(items, businessCode)
 
   const findMoveOrder = () => {
     setMoveErr(null); setMovePicked(null)

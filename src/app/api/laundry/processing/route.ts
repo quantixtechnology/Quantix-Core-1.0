@@ -7,6 +7,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { WORKSTATIONS, stageLabel, departmentFor, isProcessingTerminal, TERMINAL_STAGE } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTransportModes, transportRefsForOrders } from "@/lib/laundry-transport-server"
+import { ensureBusinessCode } from "@/lib/business-code"
 
 export const runtime = "nodejs"
 
@@ -27,12 +28,23 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
-    // businessCode is the canonical BUS-YYYYMM-NNNN identity. Order numbers are
-    // generated as ORD-STR-{businessCode}-{storeSeq}-{orderSeq}, so this is what
-    // lets the Order-wise lookup PREFILL the fixed part instead of making an
-    // operator retype it. Read from the same row the scan-sound setting uses —
-    // no extra query.
-    const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true, businessCode: true } })
+    const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true } })
+    // THE CANONICAL Business Code, for the Order-wise lookup prefix.
+    //
+    // Read from the PLATFORM Business row, never from LaundryBusiness — that
+    // column may still carry the workspace's retired LND-… product code, while
+    // store codes (and therefore order numbers) embed the canonical BUS-… one:
+    //
+    //   ensureBusinessCode -> BUS-YYYYMM-NNNN
+    //     -> generateStoreCode   -> STR-BUS-YYYYMM-NNNN-NNN
+    //       -> generateOrderNumber -> ORD-STR-BUS-YYYYMM-NNNN-NNN-NNNNNN
+    //
+    // Reading LaundryBusiness.businessCode prefilled ORD-STR-LND-… and every
+    // lookup missed. This is the same resolution the store-creation route uses,
+    // so the prefix is built from the SAME context that generated the numbers.
+    const canonicalBusinessCode = biz.platformBusinessId
+      ? await ensureBusinessCode(biz.platformBusinessId)
+      : null
 
     // Transport Setup decides which identifier the console shows and scans:
     // inbound packages use the Store → Processing mode, returns the reverse.
@@ -302,7 +314,7 @@ export async function GET(request: Request) {
         .filter((c) => !q || [c.itemNumber, c.barcode, c.garmentScanCode, c.garmentName, c.orderNumber].some((v) => (v || "").toLowerCase().includes(q)))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, workload, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true, businessCode: bizSettings?.businessCode ?? null })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, completed, queueCounts, workload, transportModes, soundEnabled: bizSettings?.workstationScanSound ?? true, businessCode: canonicalBusinessCode })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

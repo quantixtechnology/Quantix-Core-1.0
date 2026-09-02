@@ -314,3 +314,49 @@ export function composeOrderNumber(prefix: string, typed: string): string {
 
 /** "002-000005" — what the operator is expected to type. */
 export const ORDER_SUFFIX_PLACEHOLDER = "002-000005"
+
+/**
+ * The prefix implied by an order number that is ACTUALLY in the queue.
+ *
+ * An order number is `ORD-STR-{businessCode}-{storeSeq}-{orderSeq}` and the two
+ * sequences are always the last two dash-separated segments, whatever shape the
+ * business code has. Dropping them leaves exactly the fixed part.
+ *
+ * Returns "" for anything that is not shaped like an order number.
+ */
+export function prefixOfOrderNumber(orderNumber: string | null | undefined): string {
+  const n = String(orderNumber || "").trim().toUpperCase()
+  if (!n) return ""
+  const parts = n.split("-")
+  // ORD, STR, …business code (>=1 part)…, storeSeq, orderSeq
+  if (parts.length < 4) return ""
+  return `${parts.slice(0, parts.length - 2).join("-")}-`
+}
+
+/**
+ * The prefix the workstation should display, derived from the queue itself.
+ *
+ * This is the safeguard against showing a prefix the queue would never match:
+ * the business code is read from one place and the order numbers were minted
+ * from another, and those two disagreed once already (LaundryBusiness carries a
+ * retired LND-… code while order numbers embed the canonical BUS-… one).
+ *
+ * So the ORDERS decide. When every order in this queue shares one prefix, that
+ * is what the operator sees, and typing "002-000005" is guaranteed to resolve.
+ * A queue spanning stores of different eras yields no single answer, and an
+ * empty queue has nothing to say — both fall back to the canonical business
+ * code, which is the correct source for a queue with nothing in it yet.
+ */
+export function displayOrderPrefix(
+  items: readonly QueueGarment[] | null | undefined,
+  canonicalBusinessCode: string | null | undefined,
+): string {
+  const seen = new Set<string>()
+  for (const g of items || []) {
+    const p = prefixOfOrderNumber(g?.orderNumber)
+    if (p) seen.add(p)
+    if (seen.size > 1) break
+  }
+  if (seen.size === 1) return [...seen][0]
+  return orderNumberPrefix(canonicalBusinessCode)
+}
