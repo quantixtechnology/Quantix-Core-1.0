@@ -24,6 +24,7 @@ import type { DeliveryAddress } from "@/stores/cart-store"
 import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey, hasMixedDeliveryTypes, MIXED_DELIVERY_MESSAGE } from "@/lib/laundry-tat"
 import { cartTatHours } from "@/lib/laundry-cart"
 import { slotIsPast, slotHasEnded } from "@/lib/laundry-slots"
+import { resolvePickupLocation, buildStructuredPickupAddress, isUnpinnedAddress, UNPINNED_ADDRESS_BADGE } from "@/lib/laundry-pickup-location"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
@@ -364,7 +365,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
 interface CustomerInfo { id: string; name: string | null; phone: string | null; email: string | null; customerCode: string | null }
 interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
-interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean; isPickupDefault?: boolean }
+interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean; isPickupDefault?: boolean; latitude?: number | null; longitude?: number | null }
 const fmtAddr = (a: Addr) => [a.addressLine1, a.area, a.landmark, [a.city, a.state].filter(Boolean).join(", ") + (a.pincode ? ` - ${a.pincode}` : "")].filter((x) => x && String(x).trim()).join(", ")
 function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, initialDetails, onClose }: { allServices: Service[]; service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; initialDetails?: boolean; onClose: () => void }) {
   // Shared cart — the single source of truth this checkout consumes.
@@ -944,6 +945,15 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     // Email is NEVER required (optional; edited from My Profile). Only name +
     // mobile (identity) and a pickup address/date are needed to place an order.
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
+    // The pickup address must have a point on the map. The store is assigned by
+    // MEASURING the distance from it (resolveLaundryStoreForPickup), so an
+    // address with no coordinates is refused by the server with a 422 — and it
+    // was refused only here, after nine more fields had been filled in. Checked
+    // against whichever address is actually being booked: the selected saved
+    // address when there is one (the server reads that ROW, not this form),
+    // otherwise the form itself. Nothing is geocoded to paper over the gap.
+    const pickupLocation = resolvePickupLocation({ selectedAddressId: selAddr, addresses, form: addrForm })
+    if (!pickupLocation.ok) { toast.error(pickupLocation.reason || ""); return }
     if (!date) { toast.error("Select a pickup date"); return }
     if (mixedDelivery) { toast.error(MIXED_DELIVERY_MESSAGE); return }
     if (!slot) { toast.error("Select a pickup time slot"); return }
@@ -965,7 +975,11 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     if (backupDate < addDays(deliveryDate, 1)) { toast.error("Backup Delivery must be at least 24 hours after the Standard Delivery date."); return }
     if (!backupSlot) { toast.error("Select a backup delivery time slot"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
-    const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
+    // The coordinates the map picker wrote into addrForm MUST travel with the
+    // text: resolvePickupAddress reads latitude/longitude off this object and
+    // the store is assigned by measuring them. Built by the shared helper so a
+    // field the server reads cannot go missing here again.
+    const structured = buildStructuredPickupAddress(addrForm, { fullName: name, phone })
     setSubmitting(true); setLimitNotice(null)
     try {
       // ── Feature 1: persist first-order profile + address ONCE for an
@@ -1194,6 +1208,11 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
                         style={gateAddrId === a.id ? { borderColor: brandColor } : {}}>
                         <span className="text-[10px] font-bold uppercase text-gray-400">{a.label || "Address"}</span>
                         <p className="text-gray-700 text-xs mt-0.5">{a.addressLine1}, {a.city} - {a.pincode}</p>
+                        {isUnpinnedAddress(a) && (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700">
+                            <AlertCircle className="w-3 h-3" /> {UNPINNED_ADDRESS_BADGE}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1361,6 +1380,11 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
                     <button key={a.id} onClick={() => setSelAddr(a.id)} className={`w-full text-left rounded-lg border p-2.5 text-sm ${selAddr === a.id ? "border-2" : "border-gray-200"}`} style={selAddr === a.id ? { borderColor: brandColor } : {}}>
                       <span className="text-[10px] font-bold uppercase text-gray-400">{a.label || "Home"}{a.isDefault ? " · Default" : ""}{selAddr === a.id ? " · Selected" : ""}</span>
                       <p className="text-gray-700">{fmtAddr(a)}</p>
+                      {isUnpinnedAddress(a) && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-700">
+                          <AlertCircle className="w-3 h-3" /> {UNPINNED_ADDRESS_BADGE}
+                        </span>
+                      )}
                     </button>
                   ))}
                   <button onClick={() => setShowAddAddr(true)} className="text-xs font-semibold" style={{ color: brandColor }}>+ Add New Address</button>
