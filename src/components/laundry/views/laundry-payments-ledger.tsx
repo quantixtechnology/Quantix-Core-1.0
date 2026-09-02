@@ -27,6 +27,9 @@ interface Row {
   // Audit), returned by /api/laundry/payments-ledger. Read as stored.
   services?: { serviceId: string | null; serviceName: string }[]
   totalWeightKg?: number | null
+  // The real garment count (_count.items) — the same semantic source the
+  // Orders screen uses. Independent of the weight in both directions.
+  itemCount?: number | null
   orderTotal: number; subscriptionCovered: number; discount: number
   paid: number; refunded: number; refundDue: number; balance: number
 }
@@ -126,6 +129,7 @@ export function LaundryPaymentsLedger() {
               <th className="px-3 py-2.5 text-left font-semibold">Order</th>
               <th className="px-3 py-2.5 text-left font-semibold">Customer</th>
               <th className="px-3 py-2.5 text-left font-semibold">Service</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Items</th>
               <th className="px-3 py-2.5 text-right font-semibold">Weight</th>
               <th className="px-3 py-2.5 text-left font-semibold">Invoice</th>
               <th className="px-3 py-2.5 text-right font-semibold">Total</th>
@@ -138,9 +142,9 @@ export function LaundryPaymentsLedger() {
           </thead>
           <tbody className="divide-y divide-slate-50">
             {loading ? (
-              <tr><td colSpan={11} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
+              <tr><td colSpan={12} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={11} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
+              <tr><td colSpan={12} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id} onClick={() => setOpenOrder(r)} className="cursor-pointer hover:bg-slate-50/60">
                 <td className="px-3 py-2.5">
@@ -152,8 +156,11 @@ export function LaundryPaymentsLedger() {
                   {r.customerPhone && <div className="text-[11px] text-slate-400">{r.customerPhone}</div>}
                 </td>
                 <td className="px-3 py-2.5 text-slate-600">{orderServiceLabel(r.services)}</td>
-                {/* Recorded weight only — an unweighed order shows an em dash,
-                    never 0 kg, and is never derived from the garment count. */}
+                {/* Count and weight are independent readings of the same order:
+                    the count is _count.items, the weight is what Store Audit
+                    measured. Neither is derived from the other, and an unweighed
+                    order shows an em dash rather than 0 kg. */}
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.itemCount ?? 0}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{orderWeightLabel(r.totalWeightKg)}</td>
                 <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{r.invoiceNumber || "—"}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{inr(r.orderTotal)}</td>

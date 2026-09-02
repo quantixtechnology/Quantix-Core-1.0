@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { orderWeightLabel, orderServiceLabel, NOT_RECORDED } from '@/lib/laundry-order-display'
+import { orderWeightLabel, orderServiceLabel, garmentCountLabel, sortingOrderSummary, NOT_RECORDED } from '@/lib/laundry-order-display'
 
 // ============================================================================
 // Service + Weight on the four operational screens.
@@ -100,14 +100,22 @@ const PROCESSING_API = read('src/app/api/laundry/processing/route.ts')
 const ORDERS_API = read('src/app/api/laundry/orders/route.ts')
 
 describe('every screen reads weight through the one helper', () => {
-  for (const [name, src] of [['Sorting', SORTING], ['Orders', ORDERS], ['Store Audit', AUDIT], ['Payments & Ledger', LEDGER]] as const) {
+  // Sorting reaches both labels THROUGH sortingOrderSummary, which is the
+  // point: one helper renders its two cards identically. The others call the
+  // label helpers directly, because they are table cells rather than a summary.
+  for (const [name, src] of [['Orders', ORDERS], ['Store Audit', AUDIT], ['Payments & Ledger', LEDGER]] as const) {
     it(`${name} renders weight via orderWeightLabel`, () => {
       expect(src).toContain('orderWeightLabel')
       expect(src).toContain('@/lib/laundry-order-display')
     })
   }
 
-  for (const [name, src] of [['Sorting', SORTING], ['Orders', ORDERS], ['Payments & Ledger', LEDGER]] as const) {
+  it('Sorting renders weight and service via the shared summary helper', () => {
+    expect(SORTING).toContain('sortingOrderSummary')
+    expect(SORTING).toContain('@/lib/laundry-order-display')
+  })
+
+  for (const [name, src] of [['Orders', ORDERS], ['Payments & Ledger', LEDGER]] as const) {
     it(`${name} renders service via orderServiceLabel`, () => {
       expect(src).toContain('orderServiceLabel')
     })
@@ -129,8 +137,9 @@ describe('weight is never derived from garment count', () => {
   })
 
   it('the Sorting card shows the ORDER weight, not a per-garment sum', () => {
-    expect(SORTING).toContain('orderWeightLabel(o.totalWeightKg)')
-    // The group's weight comes straight off the row the API sent.
+    // Passed into the summary as the order's own value; the group's weight
+    // still comes straight off the row the API sent.
+    expect(SORTING).toContain('totalWeightKg: o.totalWeightKg })')
     expect(SORTING).toContain('totalWeightKg: it.orderTotalWeightKg ?? null')
   })
 })
@@ -167,11 +176,11 @@ describe('item count and weight are BOTH shown, and are independent', () => {
     expect(ORDERS_API).toContain('itemCount: o._count.items')
   })
 
-  it('Sorting shows the garment count AND the weight, on one scannable line', () => {
-    expect(SORTING).toContain('{o.garments.length}</span> garment')
-    expect(SORTING).toContain('orderWeightLabel(o.totalWeightKg)')
-    // Service sits on its own line above them.
-    expect(SORTING).toContain('{orderServiceLabel(null, o.garments)}</p>')
+  it('Sorting shows service, garment count AND weight on one scannable line', () => {
+    // All three travel together through the shared summary, whose exact output
+    // ("Wash & Fold · 18 garments · 6 kg") is asserted in its own suite.
+    expect(SORTING).toContain('garmentCount: o.garments.length')
+    expect(SORTING).toContain('totalWeightKg: o.totalWeightKg })')
   })
 
   it('the Sorting count is the real queue length, not a weight-derived figure', () => {
@@ -240,9 +249,10 @@ describe('Store Audit uses the full desktop workstation width', () => {
 })
 
 describe('existing screen behaviour is preserved', () => {
-  it('the ledger empty/loading rows span the two new columns', () => {
+  it('the ledger empty/loading rows span every column', () => {
     expect(LEDGER).not.toContain('colSpan={9}')
-    expect(LEDGER).toContain('colSpan={11}')
+    expect(LEDGER).not.toContain('colSpan={11}')
+    expect(LEDGER).toContain('colSpan={12}')
   })
 
   it('the orders table keeps its columns in the requested order', () => {
@@ -271,6 +281,165 @@ describe('existing screen behaviour is preserved', () => {
 
   it('sorting keeps its scan progress and garment list intact', () => {
     expect(SORTING).toContain('{done} / {o.expected} scanned')
-    expect(SORTING).toContain('garment{o.garments.length === 1 ? "" : "s"}')
+    // Pluralisation moved into garmentCountLabel; the count itself is still
+    // the real queue length and is still rendered on the card.
+    expect(SORTING).toContain('garmentCount: o.garments.length')
+    expect(SORTING).toContain('All {o.expected} garments scanned.')
+  })
+})
+
+
+// ── The compact Sorting summary, shared by BOTH sorting cards ───────────────
+describe('sortingOrderSummary · one wording for both Sorting cards', () => {
+  const svc = [{ serviceName: 'Wash & Fold' }]
+
+  it('18 garments + 6 kg', () => {
+    expect(sortingOrderSummary({ garments: svc, garmentCount: 18, totalWeightKg: 6 }))
+      .toBe('Wash & Fold · 18 garments · 6 kg')
+  })
+
+  it('18 garments + unmeasured weight', () => {
+    expect(sortingOrderSummary({ garments: svc, garmentCount: 18, totalWeightKg: 0 }))
+      .toBe('Wash & Fold · 18 garments · —')
+  })
+
+  it('0 garments + unmeasured weight (pickup-first)', () => {
+    expect(sortingOrderSummary({ garments: svc, garmentCount: 0, totalWeightKg: 0 }))
+      .toBe('Wash & Fold · 0 garments · —')
+  })
+
+  it('the count survives a missing weight and vice versa', () => {
+    expect(sortingOrderSummary({ garments: svc, garmentCount: 18, totalWeightKg: null })).toContain('18 garments')
+    expect(sortingOrderSummary({ garments: svc, garmentCount: 0, totalWeightKg: 6 })).toContain('6 kg')
+  })
+
+  it('singular garment reads correctly', () => {
+    expect(garmentCountLabel(1)).toBe('1 garment')
+    expect(garmentCountLabel(2)).toBe('2 garments')
+  })
+
+  it('a missing count reads 0, never blank and never weight-derived', () => {
+    expect(garmentCountLabel(null)).toBe('0 garments')
+    expect(garmentCountLabel(undefined)).toBe('0 garments')
+    expect(garmentCountLabel(NaN)).toBe('0 garments')
+    // The function takes ONE argument: it cannot see a weight to derive from.
+    expect(garmentCountLabel.length).toBe(1)
+  })
+})
+
+describe('Store Audit shows Service + Items + Weight', () => {
+  it('has all three headers, Items before Weight', () => {
+    const head = AUDIT.slice(AUDIT.indexOf('<TableHead>Order No.</TableHead>'))
+    expect(head.indexOf('>Service</TableHead>')).toBeLessThan(head.indexOf('>Items</TableHead>'))
+    expect(head.indexOf('>Items</TableHead>')).toBeLessThan(head.indexOf('>Weight</TableHead>'))
+    expect(head.indexOf('>Weight</TableHead>')).toBeLessThan(head.indexOf('>Pickup</TableHead>'))
+  })
+
+  it('the count comes from the list\'s own itemCount, needing no API change', () => {
+    expect(AUDIT).toContain('{r.itemCount ?? 0}')
+    expect(AUDIT).toContain('itemCount?: number | null')
+    expect(ORDERS_API).toContain('itemCount: o._count.items')
+  })
+
+  it('the count is shown even when the weight is unmeasured', () => {
+    // This queue is the stage that RECORDS weight, so a real count beside an
+    // em-dash weight is the normal pending state — the count must not be hidden.
+    const cells = AUDIT.slice(AUDIT.indexOf('{r.itemCount ?? 0}'))
+    expect(cells).toContain('orderWeightLabel(r.totalWeightKg)')
+    expect(AUDIT).not.toMatch(/totalWeightKg[^\n]*&&[^\n]*itemCount/)
+  })
+
+  it('the phone card carries Service, garments AND weight', () => {
+    expect(AUDIT).toContain('garmentCountLabel(r.itemCount)')
+    const mobile = AUDIT.slice(AUDIT.indexOf('md:hidden'))
+    expect(mobile).toContain('garmentCountLabel(r.itemCount)')
+    expect(mobile).toContain('orderWeightLabel(r.totalWeightKg)')
+  })
+
+  it('THE INVARIANT: col count === header count === cell count, widths 100%', () => {
+    const cg = AUDIT.slice(AUDIT.indexOf('<colgroup>'), AUDIT.indexOf('</colgroup>'))
+    const widths = [...cg.matchAll(/w-\[(\d+)%\]/g)].map((m) => Number(m[1]))
+    const headBlock = AUDIT.slice(AUDIT.indexOf('<TableHeader><TableRow className="[&>th]:px-2'))
+    const heads = (headBlock.slice(0, headBlock.indexOf('</TableRow>')).match(/<TableHead[ >]/g) || []).length
+    const bodyStart = AUDIT.indexOf('<TableRow key={r.id} className="cursor-pointer')
+    const body = AUDIT.slice(bodyStart, AUDIT.indexOf('</TableRow>', bodyStart))
+    const cells = (body.match(/<TableCell[ >]/g) || []).length
+    expect(widths.length).toBe(11)
+    expect(heads).toBe(11)
+    expect(cells).toBe(11)
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('the pickup/delivery pair is two explicit cells, not one mapped cell', () => {
+    // A single source cell rendering two columns makes the invariant above
+    // impossible to read off the file — that is why it was expanded.
+    expect(AUDIT).toContain('<TableCell><ScheduleCellContent cell={pickup} /></TableCell>')
+    expect(AUDIT).toContain('<TableCell><ScheduleCellContent cell={delivery} /></TableCell>')
+    expect(AUDIT).not.toContain('[pickup, delivery].map')
+  })
+})
+
+describe('Payments & Ledger shows Service + Items + Weight', () => {
+  it('has all three headers in order, before Invoice', () => {
+    const head = LEDGER.slice(LEDGER.indexOf('>Order</th>'))
+    expect(head.indexOf('>Service</th>')).toBeLessThan(head.indexOf('>Items</th>'))
+    expect(head.indexOf('>Items</th>')).toBeLessThan(head.indexOf('>Weight</th>'))
+    expect(head.indexOf('>Weight</th>')).toBeLessThan(head.indexOf('>Invoice</th>'))
+  })
+
+  it('the count is _count.items — the same semantic source as Orders', () => {
+    expect(LEDGER_API).toContain('_count: { select: { items: true } }')
+    expect(LEDGER_API).toContain('itemCount: o._count.items')
+    expect(LEDGER).toContain('{r.itemCount ?? 0}')
+  })
+
+  it('header, cell and colSpan all agree at twelve', () => {
+    const heads = (LEDGER.match(/<th className="px-3/g) || []).length
+    const bodyStart = LEDGER.indexOf('<tr key={r.id}')
+    const cells = (LEDGER.slice(bodyStart, LEDGER.indexOf('</tr>', bodyStart)).match(/<td /g) || []).length
+    expect(heads).toBe(12)
+    expect(cells).toBe(12)
+    expect(LEDGER).toContain('colSpan={12}')
+    expect(LEDGER).not.toContain('colSpan={11}')
+  })
+
+  it('every existing payment column survives', () => {
+    for (const col of ['>Invoice</th>', '>Total</th>', '>Discount</th>', '>Paid</th>', '>Refund</th>', '>Balance</th>', '>Status</th>']) {
+      expect(LEDGER).toContain(col)
+    }
+  })
+})
+
+describe('Sorting: both cards carry Customer + Service + Count + Weight', () => {
+  it('the LEFT queue card shows all four', () => {
+    const left = SORTING.slice(SORTING.indexOf('const scannedIds'))
+    expect(SORTING).toContain('{o.customer || "—"}')
+    expect(left).toContain('sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })')
+  })
+
+  it('the RIGHT Complete Sorting card shows all four', () => {
+    const right = SORTING.slice(SORTING.indexOf('Complete Sorting'))
+    expect(right).toContain('{o.customer || "—"}')
+    expect(right).toContain('sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })')
+  })
+
+  it('both sides use the SAME helper, so one order cannot read two ways', () => {
+    expect((SORTING.match(/sortingOrderSummary\(/g) || []).length).toBe(2)
+    // The old per-card formatting is gone.
+    expect(SORTING).not.toContain('orderServiceLabel(null, o.garments)')
+  })
+
+  it('Complete Sorting adds NO per-card fetch — it reuses the same objects', () => {
+    // readyOrders is a filter over visibleOrders: the very same OrderGroup
+    // objects the left column renders. No second request, no N+1.
+    expect(SORTING).toContain('const readyOrders = visibleOrders.filter(')
+    const right = SORTING.slice(SORTING.indexOf('Complete Sorting'))
+    expect(right).not.toMatch(/fetch\(`\/api\/laundry\/orders\/\$\{/)
+  })
+
+  it('the customer name is shown, not an id or a phone number', () => {
+    const right = SORTING.slice(SORTING.indexOf('Complete Sorting'))
+    expect(right).not.toContain('o.customerId')
+    expect(right).not.toContain('customerPhone')
   })
 })

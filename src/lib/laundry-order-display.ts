@@ -61,3 +61,42 @@ export function orderServiceLabel(
   const alt = bookedServiceNames(fallback)
   return alt.length ? alt.join(", ") : NOT_RECORDED
 }
+
+/**
+ * "18 garments" / "1 garment" / "0 garments".
+ *
+ * The count is the REAL number of garments the caller already holds — the
+ * order's item rows. It is never inferred from a weight: a 6 kg order and an
+ * 18-garment order are two different measurements of the same bag, and neither
+ * predicts the other.
+ */
+export function garmentCountLabel(count: number | null | undefined): string {
+  const n = Number(count)
+  const safe = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  return `${safe} garment${safe === 1 ? "" : "s"}`
+}
+
+/**
+ * The one compact order summary the Sorting workstation shows, on BOTH the
+ * "Orders at Sorting" card and the "Complete Sorting" card:
+ *
+ *     Wash & Fold · 18 garments · 6 kg
+ *     Wash & Fold · 18 garments · —      (nothing weighed yet)
+ *     Wash & Fold · 0 garments · —       (pickup-first, no garments yet)
+ *
+ * One function so the two sides cannot drift into slightly different wording
+ * for the same order. Each of the three parts is read from its own source and
+ * none is computed from another.
+ */
+export function sortingOrderSummary(input: {
+  services?: { serviceId?: string | null; serviceName?: string | null }[] | null
+  garments?: { serviceId?: string | null; serviceName?: string | null }[] | null
+  garmentCount: number | null | undefined
+  totalWeightKg: number | null | undefined
+}): string {
+  return [
+    orderServiceLabel(input.services ?? null, input.garments ?? null),
+    garmentCountLabel(input.garmentCount),
+    orderWeightLabel(input.totalWeightKg),
+  ].join(" · ")
+}

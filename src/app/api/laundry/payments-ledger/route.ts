@@ -68,6 +68,10 @@ export async function GET(request: Request) {
         // operational screens do. Both are read as stored — never derived.
         totalWeightKg: true,
         services: { select: { serviceId: true, serviceName: true } },
+        // The order's garment count, from the same _count.items the Orders
+        // screen reads. Counted by the database inside the query already being
+        // run — no extra round trip, and never inferred from the weight.
+        _count: { select: { items: true } },
         invoice: { select: { invoiceNumber: true } },
         adjustments: { select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true } },
       },
@@ -100,6 +104,7 @@ export async function GET(request: Request) {
         customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
         services: o.services.map((s) => ({ serviceId: s.serviceId, serviceName: s.serviceName })),
         totalWeightKg: o.totalWeightKg,
+        itemCount: o._count.items,
         orderDate: o.createdAt, orderStatus: o.status,
         // Only while something is still owed; once collected it reverts to the
         // real payment status.

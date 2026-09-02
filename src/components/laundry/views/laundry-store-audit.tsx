@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { unavailableOrderLines, garmentAvailableForService, unavailableNotice, type PricedServices } from "@/lib/laundry-garment-availability"
 import { intakeServiceChoice, intakeRowsToItems, DEFAULT_ROW_QUANTITY } from "@/lib/laundry-intake-service"
 import { scheduleCell, bookedServiceNames, URGENCY_STYLE, urgencyNote } from "@/lib/laundry-schedule-display"
-import { orderWeightLabel } from "@/lib/laundry-order-display"
+import { orderWeightLabel, garmentCountLabel } from "@/lib/laundry-order-display"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
@@ -52,6 +52,10 @@ interface OrderRow {
   // Optional here because a row that has not reached Store Audit has no weight
   // yet; OrderDetail narrows it to a number.
   totalWeightKg?: number | null
+  // The order's garment count, from the list's own itemCount (_count.items) —
+  // the same field the Orders screen shows. Needed no API change; the type
+  // simply never declared it. A pickup-first order legitimately reads 0.
+  itemCount?: number | null
   pickupDate?: string | null; pickupTimeSlot?: string | null
   deliveryDate?: string | null; deliveryTimeSlot?: string | null
 }
@@ -92,6 +96,21 @@ const EVENT_LABEL: Record<string, string> = {
 }
 
 const fmt = (s: string) => new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+
+/** The inner markup of a Pickup / Delivery table cell — one definition, two
+ *  explicit <TableCell> wrappers, so the row's cell count stays literal and
+ *  COL === HEADER === CELL can be read straight off the source. */
+const ScheduleCellContent = ({ cell }: { cell: ReturnType<typeof scheduleCell> }) => (
+  !cell.date ? <span className="text-slate-400">—</span> : (
+    <>
+      <p className={`text-[12px] leading-snug ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
+      {cell.slot && <p className="text-[12px] text-muted-foreground leading-snug">{cell.slot}</p>}
+      {urgencyNote(cell) && (
+        <span className={`text-[11px] font-semibold leading-tight ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>
+      )}
+    </>
+  )
+)
 
 /**
  * Subscription status for one garment×service pair.
@@ -730,20 +749,22 @@ export function LaundryStoreAudit() {
                   Service, Pickup and Delivery, which wrap cleanly. Every wider
                   screen scales all ten proportionally. */}
               <col className="w-[22%]" />{/* Order No. */}
-              <col className="w-[12%]" />{/* Customer */}
-              <col className="w-[10%]" />{/* Service  */}
+              <col className="w-[11%]" />{/* Customer */}
+              <col className="w-[9%]" /> {/* Service  */}
+              <col className="w-[5%]" /> {/* Items    */}
               <col className="w-[6%]" /> {/* Weight   */}
               <col className="w-[10%]" />{/* Pickup   */}
               <col className="w-[10%]" />{/* Delivery */}
               <col className="w-[7%]" /> {/* Amount   */}
               <col className="w-[7%]" /> {/* Created  */}
-              <col className="w-[8%]" /> {/* Status   */}
-              <col className="w-[8%]" /> {/* Inspect  */}
+              <col className="w-[7%]" /> {/* Status   */}
+              <col className="w-[6%]" /> {/* Inspect  */}
             </colgroup>
             <TableHeader><TableRow className="[&>th]:px-2 [&>th]:text-[11px]">
               <TableHead>Order No.</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Service</TableHead>
+              <TableHead className="text-right">Items</TableHead>
               <TableHead className="text-right">Weight</TableHead>
               <TableHead>Pickup</TableHead>
               <TableHead>Delivery</TableHead>
@@ -784,20 +805,19 @@ export function LaundryStoreAudit() {
                       the stage at which weight is measured — so most rows here
                       legitimately have none yet and show an em dash. It is
                       never derived from the garment count. */}
+                  {/* Count and weight are INDEPENDENT. This queue is the stage
+                      that RECORDS the weight, so a pending row showing a real
+                      garment count beside an em-dash weight is the normal state
+                      — the count must not be hidden just because nothing has
+                      been weighed yet. Neither is derived from the other. */}
+                  <TableCell className="text-right text-[12px] tabular-nums text-slate-600">{r.itemCount ?? 0}</TableCell>
                   <TableCell className="text-right text-[12px] tabular-nums text-slate-600">{orderWeightLabel(r.totalWeightKg)}</TableCell>
-                  {[pickup, delivery].map((cell, i) => (
-                    <TableCell key={i}>
-                      {!cell.date ? <span className="text-slate-400">—</span> : (
-                        <>
-                          <p className={`text-[12px] leading-snug ${URGENCY_STYLE[cell.urgency]}`}>{cell.date}</p>
-                          {cell.slot && <p className="text-[12px] text-muted-foreground leading-snug">{cell.slot}</p>}
-                          {urgencyNote(cell) && (
-                            <span className={`text-[11px] font-semibold leading-tight ${cell.urgency === "overdue" ? "text-rose-700" : "text-amber-700"}`}>{urgencyNote(cell)}</span>
-                          )}
-                        </>
-                      )}
-                    </TableCell>
-                  ))}
+                  {/* Two EXPLICIT cells, not a .map over a pair: one source
+                      cell standing for two rendered columns made the
+                      col/header/cell invariant unreadable from the source.
+                      ScheduleCellContent keeps the markup in one place. */}
+                  <TableCell><ScheduleCellContent cell={pickup} /></TableCell>
+                  <TableCell><ScheduleCellContent cell={delivery} /></TableCell>
                   <TableCell className="tabular-nums text-right text-[12px]">{inr(r.grandTotal)}</TableCell>
                   <TableCell className="text-[11px] text-muted-foreground leading-tight">{fmt(r.createdAt)}</TableCell>
                   <TableCell><Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 text-[10px] px-1.5 py-0 leading-[18px]">Pending Audit</Badge></TableCell>
@@ -834,9 +854,12 @@ export function LaundryStoreAudit() {
                     {services.map((name) => (
                       <Badge key={name} variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-normal px-1.5 py-0">{name}</Badge>
                     ))}
-                    {/* The recorded weight, alongside the service on phones too.
-                        Unweighed orders show an em dash, never "0 kg". */}
-                    <span className="text-[11px] tabular-nums text-slate-500">{orderWeightLabel(r.totalWeightKg)}</span>
+                    {/* Garment count AND recorded weight beside the service, so
+                        the phone card carries the same three facts as the table.
+                        The count shows even when nothing has been weighed. */}
+                    <span className="text-[11px] tabular-nums text-slate-500">
+                      {garmentCountLabel(r.itemCount)} · {orderWeightLabel(r.totalWeightKg)}
+                    </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {([["Pickup", pickup], ["Delivery", delivery]] as const).map(([label, cell]) => (

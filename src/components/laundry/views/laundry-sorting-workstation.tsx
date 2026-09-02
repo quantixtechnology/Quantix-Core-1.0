@@ -23,7 +23,7 @@
 // whenever the operator needs one, not only after a full scan.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
-import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
+import { sortingOrderSummary } from "@/lib/laundry-order-display"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1282,20 +1282,15 @@ export function LaundrySortingWorkstation() {
                           <CopyButton value={o.orderNumber} label="Order number" size="icon" variant="ghost" className="h-6 w-6 shrink-0" silent preventFocusSteal />
                         </div>
                         <p className="text-[11px] text-slate-400">{o.customer || "—"}</p>
-                        {/* Service, then the two facts an operator scans for.
-                            They are INDEPENDENT: the garment count is the real
-                            number of items in this order's sorting queue, and
-                            the weight is what was measured at Store Audit.
-                            Neither is computed from the other, and an order with
-                            no recorded weight shows an em dash, never "0 kg" —
-                            a per-piece order legitimately has a count and no
-                            weight for its whole life. */}
-                        <p className="text-[11px] font-medium text-slate-600">{orderServiceLabel(null, o.garments)}</p>
-                        <p className="text-[11px] text-slate-500">
-                          <span className="tabular-nums">{o.garments.length}</span> garment{o.garments.length === 1 ? "" : "s"}
-                          <span className="text-slate-300"> · </span>
-                          <span className="tabular-nums">{orderWeightLabel(o.totalWeightKg)}</span>
-                        </p>
+                        {/* Service · garments · weight, from the ONE helper both
+                            Sorting cards use, so the same order cannot read two
+                            different ways on the two sides of this screen. The
+                            three facts are independent: the count is the real
+                            number of item rows in this order's sorting queue and
+                            the weight is what was measured at Store Audit —
+                            neither is computed from the other, and an order with
+                            no recorded weight shows an em dash, never "0 kg". */}
+                        <p className="text-[11px] font-medium text-slate-600 tabular-nums">{sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })}</p>
                       </div>
                       <Badge variant={complete ? "default" : "outline"} className={complete ? "bg-emerald-600 border-emerald-600 text-white text-[10px]" : "border-indigo-300 text-indigo-700 bg-indigo-50 text-[10px]"}>
                         {done} / {o.expected} scanned
@@ -1416,7 +1411,14 @@ export function LaundrySortingWorkstation() {
               ) : readyOrders.map((o) => (
                 <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-white p-3">
                   <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">All {o.expected} garments scanned. Scan the {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to complete Sorting{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} — this finishes the stage, it is not what decides which bag a garment goes into.</p>
+                  {/* The SAME identity block the left-hand card shows. These are
+                      the very same OrderGroup objects (readyOrders filters
+                      visibleOrders), so the customer, service, garment count and
+                      weight are already in hand — no second request, and no
+                      per-card order fetch. */}
+                  <p className="text-[11px] text-slate-400 mt-0.5">{o.customer || "—"}</p>
+                  <p className="text-[11px] font-medium text-slate-600 tabular-nums">{sortingOrderSummary({ garments: o.garments, garmentCount: o.garments.length, totalWeightKg: o.totalWeightKg })}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">All {o.expected} garments scanned. Scan the {bagTarget?.label?.replace(/^Scan /, "") || "bag"} to complete Sorting{bagTarget?.hint ? <span className="font-mono"> ({bagTarget.hint})</span> : null} — this finishes the stage, it is not what decides which bag a garment goes into.</p>
                   <div className="mt-2 space-y-2">
                     {/* Enabled by the same `readyOrders` membership that renders
                         this card — one source of truth, so a card can never

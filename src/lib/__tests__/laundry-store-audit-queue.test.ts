@@ -155,7 +155,7 @@ describe('the queue shows what the operator needs', () => {
     // nine widths summing to 100 is internally consistent even when it is
     // misaligned against the header row. The <col>-per-<TableHead> check that
     // actually catches that lives in laundry-order-display.test.ts.
-    expect(widths).toHaveLength(10)
+    expect(widths).toHaveLength(11)
     expect(widths.reduce((a, b) => a + b, 0)).toBe(100)
   })
 
@@ -199,13 +199,13 @@ describe('the queue shows what the operator needs', () => {
 
   it('Amount and Created are the narrow columns, by stated priority', () => {
     const widths = [...QUEUE.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((m) => Number(m[1]))
-    // Weight sits fourth, between Service and Pickup. It is a SHORT numeric
-    // ("8.5 kg" / "—") so it belongs with the narrow columns, not the wide
-    // text ones — the positional destructuring has to account for it or every
-    // name below reads the column to its left.
-    const [order, customer, service, weight, pickup, delivery, amount, created] = widths
+    // Items and Weight sit fourth and fifth, between Service and Pickup. Both
+    // are SHORT numerics ("18", "8.5 kg", "—") so they belong with the narrow
+    // columns, not the wide text ones — the positional destructuring has to
+    // account for both or every name below reads a column to its left.
+    const [order, customer, service, items, weight, pickup, delivery, amount, created] = widths
     for (const critical of [order, customer, service, pickup, delivery]) {
-      expect(critical).toBeGreaterThan(Math.max(amount, created, weight))
+      expect(critical).toBeGreaterThan(Math.max(amount, created, items, weight))
     }
   })
 
@@ -215,9 +215,14 @@ describe('the queue shows what the operator needs', () => {
     const body = QUEUE.slice(QUEUE.indexOf('<TableBody>'), QUEUE.indexOf('</TableBody>'))
     expect(body).toContain('font-mono text-[11px]')      // order number
     expect(body).toContain('text-[11px] font-normal')    // service badge
-    expect(body).toContain('text-[11px] font-semibold')  // overdue / today flag
     expect(body).toContain('text-[13px] font-medium')    // customer name
+    expect(body).toContain('text-[12px] tabular-nums')   // items + weight
     expect(body).not.toContain('text-[9px]')
+    // The overdue / today flag moved into ScheduleCellContent when the mapped
+    // pickup/delivery pair became two explicit cells. It is declared above the
+    // queue view, so it is asserted against the whole file rather than the body.
+    expect(AUDIT).toContain('text-[11px] font-semibold')
+    expect(AUDIT).not.toContain('text-[9px]')
   })
 
   it('rows have vertical breathing room', () => {
