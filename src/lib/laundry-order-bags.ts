@@ -85,6 +85,44 @@ export async function orderBags(lbId: string, orderId: string): Promise<OrderBag
     }))
 }
 
+/**
+ * The same rows as orderBags(), for many orders at once.
+ *
+ * A queue screen shows tens of orders and needs each one's bags; asking per
+ * order would be one query per row. Same table, same tenant scope, same
+ * ordering and the same mapping — the only difference is the `in` filter, so
+ * a caller cannot get a different answer by reading in bulk.
+ */
+export async function orderBagsForOrders(lbId: string, orderIds: string[]): Promise<Map<string, OrderBag[]>> {
+  const out = new Map<string, OrderBag[]>()
+  if (!orderIds.length) return out
+  const rows = await prisma.laundryBagAssignment.findMany({
+    where: { businessId: lbId, orderId: { in: orderIds } },
+    orderBy: { assignedAt: "asc" },
+    include: { bag: { select: { id: true, bagNumber: true, qrValue: true, status: true, currentCustodianType: true, businessId: true } } },
+  })
+  for (const r of rows) {
+    if (!r.bag || r.bag.businessId !== lbId) continue
+    const list = out.get(r.orderId) || []
+    list.push({
+      assignmentId: r.id,
+      bagId: r.bagId,
+      bagNumber: r.bag.bagNumber,
+      qrValue: r.bag.qrValue || r.bag.bagNumber,
+      status: r.bag.status,
+      custodian: r.bag.currentCustodianType || "LAUNDRY",
+      open: r.status === OPEN_ASSIGNMENT,
+      assignedAt: r.assignedAt,
+      index: list.length + 1,
+      serviceId: r.serviceId ?? null,
+      serviceName: r.serviceName ?? null,
+      purpose: r.purpose ?? null,
+    })
+    out.set(r.orderId, list)
+  }
+  return out
+}
+
 /** How many bags this order currently has — the number every stage must match. */
 export async function orderBagCount(lbId: string, orderId: string): Promise<number> {
   return prisma.laundryBagAssignment.count({ where: { businessId: lbId, orderId } })

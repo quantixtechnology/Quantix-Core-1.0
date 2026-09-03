@@ -24,10 +24,18 @@ import { BagScanButton } from "@/components/laundry/bag-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
 import { useScanSink } from "@/lib/hardware"
 
+/**
+ * The order's physical bags, as the server read them from
+ * LaundryBagAssignment — the same rows Sorting writes. Shown, never acted on:
+ * the operator holding the bag assigned at Sorting needs to see its number
+ * here to match it against the container in front of them.
+ */
+type BagRef = { bagNumber: string; purpose: string | null; serviceName: string | null }
+
 type ContainerSummary = {
   id: string; code: string; status: string; orderId: string; orderNumber: string | null
   serviceName: string | null; garmentCount: number; atStage: number
-  customer: string | null; updatedAt: string
+  customer: string | null; bags: BagRef[]; updatedAt: string
 }
 type Garment = {
   id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null
@@ -39,8 +47,33 @@ type ContainerDetail = {
   package: { id: string; code: string; status: string; serviceName: string | null; garmentCount: number; updatedAt: string }
   order: { id: string; orderNumber: string; status: string }
   customer: string | null; store: string | null
+  bags: BagRef[]
   garments: Garment[]
   summary: { atStage: number; awaitingQc: number; finished: number }
+}
+
+/**
+ * The bag numbers on a container, in one place so the loaded card and the
+ * waiting list cannot describe the same order differently. Renders nothing
+ * when the order carries no open assignment — an absent bag is stated by its
+ * absence, never invented.
+ */
+function BagNumbers({ bags, className = "" }: { bags: BagRef[]; className?: string }) {
+  if (!bags.length) return null
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+      {bags.map((b) => (
+        <Badge
+          key={b.bagNumber}
+          variant="outline"
+          className="border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px] font-mono font-semibold"
+          title={[b.purpose ? `${b.purpose} bag` : null, b.serviceName].filter(Boolean).join(" · ") || undefined}
+        >
+          {b.bagNumber}
+        </Badge>
+      ))}
+    </span>
+  )
 }
 
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -405,6 +438,9 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
                     <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
                       <Package className="h-[18px] w-[18px] text-blue-600" />
                       <span className="font-mono">{active.package.code}</span>
+                      {/* The bag(s) this order is carrying — what the operator
+                          is physically holding, next to the container code. */}
+                      <BagNumbers bags={active.bags} />
                       <Badge variant="outline" className={active.package.status === "READY_FOR_FINISHING" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-500"}>
                         {active.package.status.replace(/_/g, " ")}
                       </Badge>
@@ -492,6 +528,7 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-slate-800 font-mono">{c.code}</p>
+                      <BagNumbers bags={c.bags} className="mt-0.5" />
                       <p className="text-[11px] text-slate-400 truncate"><span className="font-mono">{c.orderNumber}</span>{c.customer ? ` · ${c.customer}` : ""}</p>
                     </div>
                     <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 text-[10px] shrink-0">{c.atStage} at {stageLabel(stage)}</Badge>

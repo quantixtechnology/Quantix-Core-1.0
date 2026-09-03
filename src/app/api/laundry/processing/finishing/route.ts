@@ -21,6 +21,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { stageLabel, hasPassedQc, isProcessingTerminal } from "@/lib/laundry-processing"
 import { packageGarmentsWhere, PACKAGE_STATUS_FINISHING_READY, finishingScanTarget, scanModeAcceptance, syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { orderBags, orderBagsForOrders } from "@/lib/laundry-order-bags"
 
 export const runtime = "nodejs"
 
@@ -40,9 +41,20 @@ type Garment = {
   stageLabel: string; hasPassedQc: boolean; atThisStage: boolean
 }
 
+/** A bag as the finishing stations need to name it — number and role only. */
+type BagRef = { bagNumber: string; purpose: string | null; serviceName: string | null }
+
 type Batch = {
   package: Pkg; order: { id: string; orderNumber: string; status: string }
   customer: string | null; store: string | null
+  /**
+   * The physical bags this order is carrying, from LaundryBagAssignment — the
+   * same rows Sorting writes and every later stage reads. The finishing
+   * stations showed only the container code, so an operator holding the bag
+   * assigned at Sorting had nothing on screen to match it against. Display
+   * only: nothing here assigns, moves or releases a bag.
+   */
+  bags: BagRef[]
   garments: Garment[]; summary: { atStage: number; awaitingQc: number; finished: number }
 }
 
@@ -79,6 +91,11 @@ async function loadBatch(pkg: Pkg, businessId: string, stage: string): Promise<B
     },
     order: { id: order.id, orderNumber: order.orderNumber, status: order.status },
     customer: customer?.name || null, store: store?.storeName || null,
+    // Still-open assignments only: a bag closed out earlier is part of the
+    // order's history, not something the operator is holding at this station.
+    bags: (await orderBags(businessId, pkg.orderId))
+      .filter((b) => b.open)
+      .map((b) => ({ bagNumber: b.bagNumber, purpose: b.purpose, serviceName: b.serviceName })),
     garments, summary: { atStage, awaitingQc, finished },
   }
 }
@@ -383,6 +400,9 @@ export async function GET(request: Request) {
     const custs = custIds.length ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } }) : []
     const custMap = new Map(custs.map((c) => [c.id, c.name]))
 
+    // One read for every listed order — the same assignment rows, in bulk.
+    const bagsByOrder = await orderBagsForOrders(biz.id, allOrderIds)
+
     const containers = await Promise.all(packages.map(async (pkg) => {
       const o = orderInfo.get(pkg.orderId)
       const atStage = await prisma.laundryOrderItem.count({
@@ -393,6 +413,9 @@ export async function GET(request: Request) {
         orderId: pkg.orderId, orderNumber: pkg.orderNumber || o?.orderNumber || null,
         serviceName: pkg.serviceName, garmentCount: pkg.garmentCount, atStage,
         customer: o?.customerId ? custMap.get(o.customerId) || null : null,
+        bags: (bagsByOrder.get(pkg.orderId) || [])
+          .filter((b) => b.open)
+          .map((b) => ({ bagNumber: b.bagNumber, purpose: b.purpose, serviceName: b.serviceName })),
         updatedAt: pkg.updatedAt,
       }
     }))
