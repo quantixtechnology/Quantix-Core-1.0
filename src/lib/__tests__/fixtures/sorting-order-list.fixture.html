@@ -1,0 +1,95 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:14px system-ui;background:#f9fafb}
+  /* px-4 lg:px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start */
+  .cols{padding:16px 24px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .panelCard{border:1px solid #e2e8f0;background:#fff;border-radius:12px}
+  .cardHead{padding:12px 16px;font-weight:600}
+  .cardBody{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
+  .order{border:1px solid #e2e8f0;border-radius:8px;padding:12px}
+  .garments{margin-top:8px;max-height:224px;overflow-y:auto;border:1px solid #f1f5f9;background:#f8fafc99;padding:6px}
+  .chip{display:inline-block;border:1px solid #e2e8f0;background:#fff;border-radius:6px;padding:2px 6px;margin:2px;font-size:11px}
+  .bagbanner{margin-top:8px;border:2px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:8px}
+  .assignRow{margin-top:8px;display:flex;justify-content:flex-end}
+  .assignPanel{margin-top:8px;border:1px solid #a5b4fc;background:#eef2ff;border-radius:12px;padding:10px 16px}
+  button{padding:4px 8px;border:1px solid #c7d2fe;border-radius:6px;background:#fff;cursor:pointer}
+  .strip{padding:0 24px;display:flex;flex-direction:column;gap:12px}
+  .stripBlock{border:1px solid #fcd34d;background:#fffbeb;border-radius:12px;padding:10px 16px}
+</style></head>
+<body>
+<div class="strip" id="strip"></div>
+<div class="cols">
+  <div class="panelCard">
+    <div class="cardHead">Orders at Sorting</div>
+    <div class="cardBody" id="list"></div>
+  </div>
+  <div class="panelCard">
+    <div class="cardHead">Complete Sorting</div>
+    <div class="cardBody" id="ready"><p style="color:#94a3b8">An order appears here once every garment has been scanned.</p></div>
+  </div>
+</div>
+<script>
+  const N = 12;
+  const list = document.getElementById('list');
+  for (let i = 1; i <= N; i++) {
+    const d = document.createElement('div');
+    d.className = 'order'; d.id = 'order' + i;
+    d.innerHTML = `<div style="font-family:monospace;font-weight:600">ORD-…-${String(i).padStart(6,'0')}</div>
+      <div style="color:#94a3b8;font-size:11px">Customer ${i}</div>
+      <div style="font-size:11px;font-weight:500;color:#475569">Wash &amp; Fold · 18 garments · 6 kg</div>
+      <div class="bagbanner" id="banner${i}">🟠 BAG REQUIRED<br><span style="font-size:12px">Attach a sorting bag before completing sorting.</span></div>
+      <div style="margin-top:8px;height:6px;background:#f1f5f9;border-radius:3px"></div>
+      <div class="garments">${Array.from({length:18},(_,k)=>`<span class="chip">GAR-${i}-${k}</span>`).join('')}</div>
+      <div class="assignRow"><button id="assign${i}">Assign First Bag</button></div>`;
+    list.appendChild(d);
+  }
+  // Opening the panel: banner swaps branch + panel appended INSIDE the card.
+  window.openPanel = function (i) {
+    document.getElementById('banner' + i).innerHTML =
+      '⏳ SCAN THE NEXT SORTING BAG<br><span style="font-size:12px">The following garments go into the bag you scan next.</span>';
+    const p = document.createElement('div');
+    p.className = 'assignPanel'; p.id = 'assignPanel';
+    p.innerHTML = `<div style="font-weight:600;font-size:11px">ASSIGN FIRST BAG</div>
+      <div style="font-family:monospace;font-size:12px">ORD-…-${String(i).padStart(6,'0')}</div>
+      <p style="font-size:11px;margin:6px 0">Scan the bag this order will use — it becomes this service's Sorting bag.</p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input placeholder="Scan or type bag no…" id="bagCode" style="height:36px">
+        <button id="addBag">Add bag</button>
+        <button id="scanBag">Scan Laundry Bag</button>
+        <button id="cancelBag">Cancel</button>
+      </div>
+      <p style="font-size:10px;margin-top:6px">No Sorting bag is assigned to this order for this service yet…</p>`;
+    document.getElementById('order' + i).appendChild(p);
+  };
+  // "Add New Bag": confirmation renders in the TOP STRIP (old) or INSIDE the
+  // originating order card (fixed), then confirming opens the scan panel.
+  window.openConfirm = function (i) {
+    const host = window.FIXED ? document.getElementById('order' + i) : document.getElementById('strip');
+    const d = document.createElement('div');
+    d.className = window.FIXED ? 'assignPanel' : 'stripBlock'; d.id = 'confirmBlock';
+    d.innerHTML = `<div style="font-size:11px;font-weight:600">IS THE FIRST BAG FULL?</div>
+      <div style="font-family:monospace;font-size:12px">ORD-…-${String(i).padStart(6,'0')}</div>
+      <p style="font-size:11px;margin:6px 0">You are moving this order to a second bag. Continue?</p>
+      <div><button id="cancelSecond">Cancel</button> <button id="yesSecond">Yes, Add Second Bag</button></div>`;
+    host.appendChild(d);
+    document.getElementById('yesSecond').addEventListener('click', () => {
+      d.remove(); window.openPanel(i);
+    });
+  };
+  for (let i = 1; i <= N; i++) {
+    document.getElementById('assign' + i).addEventListener('click', () => {
+      if (window.SECOND) window.openConfirm(i); else window.openPanel(i);
+    });
+  }
+  // Instrumentation.
+  window.__scrolls = 0;
+  addEventListener('scroll', () => { window.__scrolls++; }, { passive: true });
+  const origSIV = Element.prototype.scrollIntoView;
+  window.__siv = 0;
+  Element.prototype.scrollIntoView = function (...a) { window.__siv++; return origSIV.apply(this, a); };
+  const origFocus = HTMLElement.prototype.focus;
+  window.__focus = 0;
+  HTMLElement.prototype.focus = function (...a) { window.__focus++; return origFocus.apply(this, a); };
+</script>
+</body></html>

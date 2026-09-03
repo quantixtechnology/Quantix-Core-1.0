@@ -1052,33 +1052,13 @@ export function LaundrySortingWorkstation() {
         {/* SECOND BAG — the operator confirms the physical bag is full before
             the scan panel opens. Nothing here touches bag state: on Yes it does
             exactly what the button used to do, and on Cancel it does nothing. */}
-        {confirmSecondBag && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="min-w-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Is the first bag full?</span>
-              <div className="font-mono text-[12px] font-semibold text-slate-800">{confirmSecondBag.orderNumber}</div>
-              <div className="text-[11px] text-slate-600">{confirmSecondBag.serviceName || "—"}</div>
-            </div>
-            <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">You are moving this order to a second bag. Continue?</p>
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmSecondBag(null)}
-                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAddBagFor(confirmSecondBag); setConfirmSecondBag(null) }}
-                className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700"
-              >
-                Yes, Add Second Bag
-              </button>
-            </div>
-          </div>
-        )}
-
+        {/* The second-bag confirmation used to render HERE too, and for the same
+            reason it could not stay: it is triggered from an order card that may
+            be well down the list, and its "Yes, Add Second Bag" button appeared
+            at the top of the page. The operator had to leave the order they were
+            working, scroll up to confirm, and only then did the scan panel open
+            back down in the card. It now renders inside the originating card —
+            see the confirmation under the order's add-bag button below. */}
         {/* The assign-bag panel used to render HERE, in this strip above the
             order grid. Its "Scan Laundry Bag" control was therefore up to a
             screenful away from the card whose button opened it: with the
@@ -1363,6 +1343,37 @@ export function LaundrySortingWorkstation() {
                         else setAddBagFor(target)
                       }}
                     />
+
+                    {/* …AND HERE: the confirmation for THIS order, directly under
+                        the button that raised it. Same question, same two
+                        choices, same handlers — only its position changed, so
+                        confirming no longer means leaving the order. */}
+                    {confirmSecondBag?.orderId === o.orderId && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Is the first bag full?</span>
+                          <div className="font-mono text-[12px] font-semibold text-slate-800">{confirmSecondBag.orderNumber}</div>
+                          <div className="text-[11px] text-slate-600">{confirmSecondBag.serviceName || "—"}</div>
+                        </div>
+                        <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">You are moving this order to a second bag. Continue?</p>
+                        <div className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmSecondBag(null)}
+                            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setAddBagFor(confirmSecondBag); setConfirmSecondBag(null) }}
+                            className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700"
+                          >
+                            Yes, Add Second Bag
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* …AND HERE: directly under the button that opens it, so
                         the scan control appears where the operator is already
