@@ -249,6 +249,20 @@ const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
 const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/processing-dashboard").then(m => ({ default: m.ProcessingDashboard })), { loading: () => <PageLoader /> })
 const LaundryGarmentLookup = dynamic(() => import("@/components/laundry/views/laundry-garment-lookup").then(m => ({ default: m.LaundryGarmentLookup })), { loading: () => <PageLoader /> })
+// MODULE SCOPE, and it has to stay there. dynamic() returns a NEW component
+// type on every call, and React compares element types by reference — so a
+// dynamic() evaluated during render makes every re-render of this component a
+// full unmount and remount of the subtree below it, not a re-render. This one
+// declaration was inside AppContent, which reads ~25 fields from the admin and
+// auth stores; any of them changing (a background session sync is enough) threw
+// away the whole Laundry workspace. On a Sorting queue of 121 orders the
+// document collapsed from ~40,000px to the PageLoader's 60vh, so the browser
+// clamped scrollY to 0 and the operator lost their place mid-bag-assignment,
+// along with the open panel and every piece of local workstation state.
+const LaundryPageRouter = dynamic(
+  () => import("@/components/laundry/laundry-page-router").then((m) => ({ default: m.LaundryPageRouter })),
+  { loading: () => <PageLoader /> },
+)
 // Optional CRM module (feature-gated per tenant; CrmGate + server enforce entitlement)
 const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
 const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
@@ -763,11 +777,6 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       default: return <WorkflowEngineView />
     }
   }
-
-  const LaundryPageRouter = dynamic(
-    () => import("@/components/laundry/laundry-page-router").then((m) => ({ default: m.LaundryPageRouter })),
-    { loading: () => <PageLoader /> },
-  )
 
   const renderBusinessPage = () => {
     switch (businessPage) {

@@ -1,0 +1,138 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:14px system-ui;background:#f9fafb}
+  .hdr{padding:12px 24px;font-weight:600;background:#fff;border-bottom:1px solid #e2e8f0}
+  .scanbox{margin:12px 24px;padding:10px;border:1px solid #c7d2fe;border-radius:10px;background:#fff}
+  .cols{padding:16px 24px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .panelCard{border:1px solid #e2e8f0;background:#fff;border-radius:12px}
+  .cardBody{padding:12px;display:flex;flex-direction:column;gap:12px}
+  .order{border:1px solid #e2e8f0;border-radius:8px;padding:12px}
+  .garments{margin-top:8px;max-height:224px;overflow-y:auto;border:1px solid #f1f5f9;padding:6px}
+  .chip{display:inline-block;border:1px solid #e2e8f0;background:#fff;border-radius:6px;padding:2px 6px;margin:2px;font-size:11px}
+  .bagbanner{margin-top:8px;border:2px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:8px;font-size:12px}
+  .bagbanner.attached{border-color:#6ee7b7;background:#ecfdf5}
+  .assignPanel{margin-top:8px;border:1px solid #a5b4fc;background:#eef2ff;border-radius:12px;padding:10px}
+  .fb{margin-top:8px;border-radius:10px;padding:8px 12px;font-size:12px}
+  .fb.ok{border:1px solid #a5b4fc;background:#eef2ff}
+  .fb.bad{border:1px solid #fda4af;background:#fff1f2}
+  .loader{display:flex;align-items:center;justify-content:center;min-height:60vh;color:#94a3b8}
+  button{padding:4px 8px;border:1px solid #c7d2fe;border-radius:6px;background:#fff;cursor:pointer}
+</style></head>
+<body>
+<div id="root"></div>
+<script>
+  const N = 24;                       // long list, like production's 121
+  const bags = {};                    // orderId -> bag number
+  let addBagFor = null, assigned = null, wrong = null;
+  window.REMOUNT = true;              // true = dynamic() inside render (the bug)
+
+  const root = document.getElementById('root');
+
+  // Building the whole page from scratch models an UNMOUNT/REMOUNT: every node
+  // is new, so scroll position cannot survive and the document collapses to the
+  // loader height while data refetches.
+  function buildPage(withData) {
+    root.innerHTML = '';
+    const h = document.createElement('div');
+    h.className = 'hdr'; h.textContent = 'Sorting';
+    root.appendChild(h);
+    const s = document.createElement('div');
+    s.className = 'scanbox'; s.textContent = 'Scan Barcode for Sorting…';
+    root.appendChild(s);
+    if (!withData) {                  // PageLoader / skeleton: min-h-[60vh]
+      const l = document.createElement('div');
+      l.className = 'loader'; l.id = 'loader'; l.textContent = 'Loading…';
+      root.appendChild(l);
+      return;
+    }
+    const cols = document.createElement('div'); cols.className = 'cols';
+    const left = document.createElement('div'); left.className = 'panelCard';
+    const body = document.createElement('div'); body.className = 'cardBody'; body.id = 'list';
+    left.appendChild(body); cols.appendChild(left);
+    const right = document.createElement('div'); right.className = 'panelCard';
+    right.innerHTML = '<div class="cardBody">Complete Sorting</div>';
+    cols.appendChild(right); root.appendChild(cols);
+    for (let i = 1; i <= N; i++) body.appendChild(buildCard(i));
+  }
+
+  function buildCard(i) {
+    const d = document.createElement('div');
+    d.className = 'order'; d.id = 'order' + i;
+    d.dataset.node = 'node-' + Math.random().toString(36).slice(2);  // identity witness
+    d.innerHTML = `<div style="font-family:monospace;font-weight:600">ORD-…-${String(i).padStart(6,'0')}</div>
+      <div style="font-size:11px;color:#94a3b8">Customer ${i}</div>
+      <div style="font-size:11px;color:#475569">Wash &amp; Fold · 18 garments · 6 kg</div>
+      <div class="bagbanner" id="banner${i}"></div>
+      <div id="fb${i}"></div>
+      <div class="garments">${Array.from({length:18},(_,k)=>`<span class="chip">GAR-${i}-${k}</span>`).join('')}</div>
+      <div style="margin-top:8px;text-align:right"><button id="assign${i}"></button></div>
+      <div id="slot${i}"></div>`;
+    d.querySelector('#assign' + i).addEventListener('click', () => { addBagFor = { orderId: i }; paint(); });
+    return d;
+  }
+
+  // In-place update: the keyed-list path React takes when nothing remounts.
+  function paint() {
+    for (let i = 1; i <= N; i++) {
+      const banner = document.getElementById('banner' + i); if (!banner) continue;
+      const btn = document.getElementById('assign' + i);
+      const slot = document.getElementById('slot' + i);
+      const fb = document.getElementById('fb' + i);
+      if (bags[i]) {
+        banner.className = 'bagbanner attached';
+        banner.innerHTML = `🟢 SORTING BAG ATTACHED <span class="bagNo" style="font-family:monospace;font-weight:700">${bags[i]}</span>`;
+        btn.textContent = 'Add New Bag';
+      } else {
+        banner.className = 'bagbanner';
+        banner.innerHTML = '🟠 BAG REQUIRED Attach a sorting bag before completing sorting.';
+        btn.textContent = 'Assign First Bag';
+      }
+      const want = (addBagFor && addBagFor.orderId === i)
+        ? `<div class="assignPanel" data-panel data-order="${i}">ASSIGN FIRST BAG
+             <div><input class="bagCode" placeholder="Scan or type bag no…">
+             <button class="scanBag">Scan Laundry Bag</button>
+             <button class="scanBadBag">Scan Wrong Bag</button></div></div>` : '';
+      if (slot.innerHTML !== want) slot.innerHTML = want;
+      let f = '';
+      if (assigned && assigned.o === i) f += `<div class="fb ok" data-fb="assigned" data-order="${i}">BAG ASSIGNED ${assigned.bag}</div>`;
+      if (wrong && wrong.o === i) f += `<div class="fb bad" data-fb="wrong" data-order="${i}">WRONG BAG ${wrong.scanned}</div>`;
+      if (fb.innerHTML !== f) fb.innerHTML = f;
+      const p = slot.querySelector('[data-panel]');
+      if (p && !p.dataset.wired) {
+        p.dataset.wired = '1';
+        p.querySelector('.scanBag').addEventListener('click', () => window.doAssign('V8BAG' + (100 + i), i));
+        p.querySelector('.scanBadBag').addEventListener('click', () => window.doAssign('BADBAG' + (100 + i), i));
+      }
+    }
+  }
+
+  window.doAssign = function (code, i) {
+    if (code.startsWith('BAD')) { wrong = { o: i, scanned: code }; assigned = null; paint(); return false; }
+    bags[i] = code; assigned = { o: i, bag: code }; wrong = null;
+    if (addBagFor && addBagFor.orderId === i) addBagFor = null;
+    paint(); return true;
+  };
+
+  // An AppContent re-render. With dynamic() called during render the component
+  // type is new, so React throws the subtree away and mounts a fresh one; the
+  // loader is all that is left until the two fetches return.
+  window.storeChanged = function () {
+    if (!window.REMOUNT) { paint(); return Promise.resolve(); }
+    addBagFor = null; assigned = null; wrong = null;      // local state destroyed
+    for (const k of Object.keys(bags)) delete bags[k];    // refetched below
+    buildPage(false);                                     // PageLoader
+    return new Promise((res) => setTimeout(() => {
+      buildPage(true); paint(); res();                    // data returns
+    }, 300));
+  };
+
+  window.__siv = 0; window.__focus = 0;
+  const oS = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (...a) { window.__siv++; return oS.apply(this, a); };
+  const oF = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (...a) { window.__focus++; return oF.apply(this, a); };
+
+  buildPage(true); paint();
+</script>
+</body></html>
