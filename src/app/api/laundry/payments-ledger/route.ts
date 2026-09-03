@@ -8,6 +8,13 @@
 //
 // It is READ-ONLY and touches no status. The operational workflow is unchanged;
 // this is a different lens on the same rows.
+//
+// It answers for TWO kinds of money. An order's payments live on LaundryOrder /
+// LaundryPayment. A subscription sold on its own has no order to hang from —
+// LaundryPayment.orderId is required — and its money lives on
+// SubscriptionPurchase, which stays its source of truth. Rather than fabricate
+// an order to carry it, the ledger reads both and marks each row with its
+// `kind`. Nothing is written here and no LaundryPayment row is invented.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import type { Prisma } from "@prisma/client"
@@ -17,6 +24,8 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { financialSummary, matchesLedgerFilter, type LedgerFilter } from "@/lib/laundry-adjustment"
 
 export const runtime = "nodejs"
+
+const r2 = (n: number) => Math.round(n * 100) / 100
 
 export async function GET(request: Request) {
   try {
@@ -114,7 +123,59 @@ export async function GET(request: Request) {
       }
     }).filter((r) => matchesLedgerFilter(filter, r))
 
-    return NextResponse.json({ success: true, data: rows })
+    // ── Standalone subscription sales ──────────────────────────────────────
+    // Only those with no laundryOrderId: one bought alongside an order is
+    // already settled through that order's payment and would otherwise be
+    // counted twice. Cancelled requests never took money, so they are not
+    // financial rows.
+    const purchases = await prisma.subscriptionPurchase.findMany({
+      where: {
+        businessId: biz.platformBusinessId || biz.id,
+        laundryOrderId: null,
+        status: { notIn: ["CANCELLED", "INITIATED"] },
+        ...(customerIds ? { customerId: { in: customerIds } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    const subPlanIds = [...new Set(purchases.map((p) => p.planId))]
+    const subCustIds = [...new Set(purchases.map((p) => p.customerId))]
+    const [subPlans, subCusts] = await Promise.all([
+      subPlanIds.length ? prisma.subscriptionPlan.findMany({ where: { id: { in: subPlanIds } }, select: { id: true, name: true } }) : [],
+      subCustIds.length ? prisma.customer.findMany({ where: { id: { in: subCustIds } }, select: { id: true, name: true, phone: true } }) : [],
+    ])
+    const subPlanById = new Map<string, string>(subPlans.map((p) => [p.id, p.name] as [string, string]))
+    const subCustById = new Map<string, { id: string; name: string | null; phone: string | null }>(
+      subCusts.map((c) => [c.id, c] as [string, { id: string; name: string | null; phone: string | null }]),
+    )
+
+    const subRows = purchases.map((p) => {
+      const c = subCustById.get(p.customerId)
+      const paid = r2(p.amountPaid)
+      const balance = r2(Math.max(0, p.amount - p.amountPaid))
+      return {
+        id: p.id,
+        kind: "SUBSCRIPTION" as const,
+        // A subscription has no order number and one is never invented for it.
+        orderNumber: null,
+        planName: subPlanById.get(p.planId) || "Subscription",
+        invoiceNumber: null,
+        customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
+        services: [], totalWeightKg: null, itemCount: null,
+        orderDate: p.createdAt, paidAt: p.paidAt,
+        orderStatus: p.status, paymentStatus: p.paymentStatus,
+        paymentMethod: p.paymentMethod ?? p.gateway ?? null,
+        reference: p.paymentTransactionId || p.paymentReference || null,
+        orderTotal: r2(p.amount), subscriptionCovered: 0, discount: 0,
+        paid, refunded: 0, refundDue: 0, balance,
+      }
+    }).filter((r) => matchesLedgerFilter(filter, r))
+      .filter((r) => !q || (r.customerName || "").toLowerCase().includes(q.toLowerCase()) || (r.planName || "").toLowerCase().includes(q.toLowerCase()))
+
+    // Newest first across both kinds, so the ledger reads as one list.
+    const all = [...rows.map((r) => ({ ...r, kind: "ORDER" as const, planName: null, paidAt: null, paymentMethod: null, reference: null })), ...subRows]
+      .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())
+
+    return NextResponse.json({ success: true, data: all })
   } catch (e) {
     console.error("[payments-ledger] GET", e)
     return NextResponse.json({ success: false, error: "Failed" }, { status: 500 })

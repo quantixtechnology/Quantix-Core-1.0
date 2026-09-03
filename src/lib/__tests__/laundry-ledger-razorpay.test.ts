@@ -110,7 +110,10 @@ describe('Payment Details panel exposes the money actions', () => {
   const LEDGER2 = read('src/components/laundry/views/laundry-payments-ledger.tsx')
 
   it('a ledger row opens the panel, not the Order Details page', () => {
-    expect(LEDGER2).toContain('onClick={() => setOpenOrder(r)}')
+    // The ledger now also lists standalone subscription sales, which have no
+    // order to open — so the same handler is guarded by row kind rather than
+    // removed. An ORDER row still opens the panel and nothing else.
+    expect(LEDGER2).toContain('onClick={() => { if (r.kind !== "SUBSCRIPTION") setOpenOrder(r) }}')
     expect(LEDGER2).toContain('<LaundryPaymentDetailsPanel')
     expect(LEDGER2).not.toContain('setLaundryPage("order-detail")')
   })

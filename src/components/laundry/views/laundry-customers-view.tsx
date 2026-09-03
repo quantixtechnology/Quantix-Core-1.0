@@ -985,7 +985,7 @@ export function LaundryCustomersView() {
                   ))}
                 </div>}
 
-                {tab === "subscriptions" && <MembershipTab m={membership} businessId={currentBusinessId || ""} onCollected={() => { if (openId && currentBusinessId) fetch(`/api/laundry/customers/${openId}/membership?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setMembership(j.success ? j.data : null)).catch(() => {}) }} />}
+                {tab === "subscriptions" && <MembershipTab m={membership} businessId={currentBusinessId || ""} customerId={openId || ""} onCollected={() => { if (openId && currentBusinessId) fetch(`/api/laundry/customers/${openId}/membership?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setMembership(j.success ? j.data : null)).catch(() => {}) }} />}
 
                 {tab === "payments" && <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
@@ -1095,7 +1095,79 @@ const M_STATUS: Record<string, { label: string; cls: string }> = {
   EXPIRED: { label: "Expired", cls: "border-rose-300 text-rose-700 bg-rose-50" },
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function MembershipTab({ m, businessId, onCollected }: { m: any; businessId: string; onCollected: () => void }) {
+/**
+ * Sell a subscription at the counter.
+ *
+ * Module scope on purpose: defined inside its parent it would be a NEW
+ * component type on every render, so React would tear the panel down and
+ * rebuild it — the plan select would lose its selection as the parent
+ * re-rendered. It raises the SAME pending purchase the storefront raises and
+ * then steps aside; the money is collected by the collection path that was
+ * already on this tab.
+ */
+function AddSubscriptionPanel({ businessId, customerId, onAdded }: { businessId: string; customerId: string; onAdded: () => void }) {
+  const [plans, setPlans] = useState<{ id: string; name: string; price: number; billingCycle?: string; isActive?: boolean }[]>([])
+  const [picking, setPicking] = useState(false)
+  const [planId, setPlanId] = useState("")
+  const [starting, setStarting] = useState(false)
+
+  const openPicker = async () => {
+    setPicking(true)
+    try {
+      const j = await fetch(`/api/laundry/plans?businessId=${businessId}`).then((r) => r.json())
+      setPlans(j.success ? (j.data || []).filter((p: { isActive?: boolean }) => p.isActive !== false) : [])
+    } catch { setPlans([]) }
+  }
+
+  const startPurchase = async () => {
+    if (!planId) return
+    setStarting(true)
+    try {
+      const res = await fetch("/api/laundry/subscriptions/purchase", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, customerId, planId }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { sonnerToast.error(j.error || "Could not start the subscription"); return }
+      sonnerToast.success(`${j.data.planName} added — collect ${inr(j.data.outstandingDue)} to activate`)
+      setPicking(false); setPlanId("")
+      onAdded()
+    } catch { sonnerToast.error("Could not start the subscription") } finally { setStarting(false) }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+      {!picking ? (
+        <Button size="sm" variant="outline" onClick={openPicker} className="h-8 w-full gap-1.5 text-xs">
+          <Plus className="h-3.5 w-3.5" /> Add Subscription
+        </Button>
+      ) : (
+        <>
+          <p className="text-xs font-medium text-slate-600">Select a plan for this customer</p>
+          <select
+            value={planId}
+            onChange={(e) => setPlanId(e.target.value)}
+            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+          >
+            <option value="">Choose a plan…</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} · {inr(p.price)}{p.billingCycle ? ` / ${p.billingCycle.toLowerCase()}` : ""}</option>
+            ))}
+          </select>
+          {!plans.length && <p className="text-[11px] text-slate-400">No active plans configured.</p>}
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="outline" className="h-8 flex-1 text-xs" onClick={() => { setPicking(false); setPlanId("") }}>Cancel</Button>
+            <Button size="sm" disabled={!planId || starting} onClick={startPurchase} className="h-8 flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white">
+              {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add"}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function MembershipTab({ m, businessId, customerId, onCollected }: { m: any; businessId: string; customerId: string; onCollected: () => void }) {
   const [collecting, setCollecting] = useState<string | null>(null)
   const collect = async (method: string) => {
     if (!m?.pendingPurchaseId) return
@@ -1109,7 +1181,10 @@ function MembershipTab({ m, businessId, onCollected }: { m: any; businessId: str
     } catch { sonnerToast.error("Collection failed") } finally { setCollecting(null) }
   }
   if (!m || !m.hasMembership) return (
-    <div className="py-10 text-center text-sm text-slate-400"><Repeat className="h-6 w-6 mx-auto mb-2 text-slate-300" />No laundry subscription for this customer.</div>
+    <div className="space-y-3">
+      <div className="py-8 text-center text-sm text-slate-400"><Repeat className="h-6 w-6 mx-auto mb-2 text-slate-300" />No laundry subscription for this customer.</div>
+      <AddSubscriptionPanel businessId={businessId} customerId={customerId} onAdded={onCollected} />
+    </div>
   )
   const st = M_STATUS[m.status] || M_STATUS.EXPIRED
   const Bar = ({ label, used, total, tone }: { label: string; used: number; total: number; tone: string }) => {
@@ -1158,6 +1233,9 @@ function MembershipTab({ m, businessId, onCollected }: { m: any; businessId: str
           <button disabled className="w-full h-8 rounded-md border border-slate-200 bg-slate-50 text-xs font-medium text-slate-400 cursor-not-allowed">Pay Online (Razorpay) · Coming Soon</button>
         </div>
       )}
+      {/* Only when nothing is already awaiting payment — one open purchase at a
+          time is the rule createSubscriptionPurchase already enforces. */}
+      {!m.pendingPurchaseId && <AddSubscriptionPanel businessId={businessId} customerId={customerId} onAdded={onCollected} />}
     </div>
   )
 }

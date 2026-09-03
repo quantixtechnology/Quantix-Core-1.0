@@ -390,7 +390,9 @@ describe('Payments & Ledger shows Service + Items + Weight', () => {
   it('the count is _count.items — the same semantic source as Orders', () => {
     expect(LEDGER_API).toContain('_count: { select: { items: true } }')
     expect(LEDGER_API).toContain('itemCount: o._count.items')
-    expect(LEDGER).toContain('{r.itemCount ?? 0}')
+    // Unchanged for an order row; a subscription row has no garments to count
+    // and shows an em dash instead of a misleading 0.
+    expect(LEDGER).toContain('r.kind === "SUBSCRIPTION" ? <span className="text-slate-300">—</span> : (r.itemCount ?? 0)')
   })
 
   it('header, cell and colSpan all agree at twelve', () => {

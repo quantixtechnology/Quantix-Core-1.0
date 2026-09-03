@@ -20,7 +20,20 @@ import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
 
 interface Row {
-  id: string; orderNumber: string; invoiceNumber: string | null
+  /**
+   * WHICH KIND OF MONEY this row is. An order's payments live on LaundryOrder /
+   * LaundryPayment; a subscription sold on its own lives on
+   * SubscriptionPurchase, which stays its source of truth. A subscription has
+   * no order number and none is invented for it — the row shows the plan
+   * instead, and the fields an order carries (service, items, weight, invoice)
+   * are simply absent.
+   */
+  kind?: "ORDER" | "SUBSCRIPTION"
+  planName?: string | null
+  paidAt?: string | null
+  paymentMethod?: string | null
+  reference?: string | null
+  id: string; orderNumber: string | null; invoiceNumber: string | null
   customerName: string | null; customerPhone: string | null
   orderDate: string; orderStatus: string; paymentStatus: string
   // The order's booked services and its RECORDED weight (measured at Store
@@ -144,24 +157,40 @@ export function LaundryPaymentsLedger() {
             {loading ? (
               <tr><td colSpan={12} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={12} className="py-12 text-center text-slate-400">No orders match this view.</td></tr>
+              <tr><td colSpan={12} className="py-12 text-center text-slate-400">No transactions match this view.</td></tr>
             ) : rows.map((r) => (
-              <tr key={r.id} onClick={() => setOpenOrder(r)} className="cursor-pointer hover:bg-slate-50/60">
+              <tr key={r.id} onClick={() => { if (r.kind !== "SUBSCRIPTION") setOpenOrder(r) }} className={`${r.kind === "SUBSCRIPTION" ? "" : "cursor-pointer"} hover:bg-slate-50/60`}>
                 <td className="px-3 py-2.5">
-                  <div className="font-medium text-slate-800">{r.orderNumber}</div>
-                  <div className="text-[11px] text-slate-400">{day(r.orderDate)}</div>
+                  {r.kind === "SUBSCRIPTION" ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700">Subscription</span>
+                        <span className="font-medium text-slate-800">{r.planName || "Subscription"}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {day(r.orderDate)}
+                        {r.paymentMethod ? ` · ${r.paymentMethod}` : ""}
+                      </div>
+                      {r.reference && <div className="font-mono text-[10px] text-slate-400">{r.reference}</div>}
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-medium text-slate-800">{r.orderNumber}</div>
+                      <div className="text-[11px] text-slate-400">{day(r.orderDate)}</div>
+                    </>
+                  )}
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="text-slate-700">{r.customerName || "Walk-in"}</div>
                   {r.customerPhone && <div className="text-[11px] text-slate-400">{r.customerPhone}</div>}
                 </td>
-                <td className="px-3 py-2.5 text-slate-600">{orderServiceLabel(r.services)}</td>
+                <td className="px-3 py-2.5 text-slate-600">{r.kind === "SUBSCRIPTION" ? <span className="text-slate-300">—</span> : orderServiceLabel(r.services)}</td>
                 {/* Count and weight are independent readings of the same order:
                     the count is _count.items, the weight is what Store Audit
                     measured. Neither is derived from the other, and an unweighed
                     order shows an em dash rather than 0 kg. */}
-                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.itemCount ?? 0}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{orderWeightLabel(r.totalWeightKg)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.kind === "SUBSCRIPTION" ? <span className="text-slate-300">—</span> : (r.itemCount ?? 0)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.kind === "SUBSCRIPTION" ? <span className="text-slate-300">—</span> : orderWeightLabel(r.totalWeightKg)}</td>
                 <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{r.invoiceNumber || "—"}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{inr(r.orderTotal)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{r.discount > 0 ? <span className="text-amber-700">-{inr(r.discount)}</span> : <span className="text-slate-300">—</span>}</td>
@@ -175,6 +204,7 @@ export function LaundryPaymentsLedger() {
                 <td className="px-3 py-2.5">
                   <div className="text-[11px] font-semibold text-slate-600">{r.paymentStatus}</div>
                   <div className="text-[11px] text-slate-400">{r.orderStatus.replace(/_/g, " ")}</div>
+                  {r.kind === "SUBSCRIPTION" && r.paidAt && <div className="text-[10px] text-slate-400">{day(r.paidAt)}</div>}
                 </td>
               </tr>
             ))}
