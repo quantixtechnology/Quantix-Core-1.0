@@ -25,7 +25,12 @@
 </div>
 <script>
   // ── State, mirroring the workstation ────────────────────────────────────────
-  const N = 20;
+  // Queue length. Defaults to 20; `?n=50` asks for a deep queue, so a test can
+  // reach an order far below the fold without a second fixture. A QUERY param,
+  // not a hash: page.goto() to a URL differing only by #fragment is a
+  // same-document navigation, so the page would not reload and state would
+  // leak between tests.
+  const N = Number(new URLSearchParams(location.search).get('n')) || 20;
   const bagsByOrder = {};      // orderId -> bag number  (the per-order status)
   let addBagFor = null;        // { orderId } — ONE order owns the panel
   let bagNeededFor = null;     // { orderId } — scan-driven prompt
