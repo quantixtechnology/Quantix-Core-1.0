@@ -1079,53 +1079,14 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
-        {addBagFor && (
-          <div className="rounded-xl border border-indigo-300 bg-indigo-50/70 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="min-w-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-800">{bagPanelExisting ? "Add new bag" : "Assign first bag"}</span>
-              <div className="font-mono text-[12px] font-semibold text-slate-800">{addBagFor.orderNumber}</div>
-              <div className="text-[11px] text-slate-600">{addBagFor.serviceName || "—"}</div>
-            </div>
-            <p className="text-[11px] text-indigo-900 basis-full sm:basis-auto">{bagPanelExisting
-              ? "Scan the next physical bag — the current one becomes FULL and every later garment of this service goes into the new bag."
-              : "Scan the bag this order will use — it becomes this service's Sorting bag."}</p>
-            <div className="ml-auto flex items-center gap-2">
-              <input
-                value={bagCode}
-                onChange={(e) => setBagCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return
-                  e.preventDefault()
-                  const c = bagCode.trim()
-                  if (c) assignOrderBag(c, { ...addBagFor, customer: null })
-                }}
-                placeholder="Scan or type bag no…"
-                aria-label="New bag number"
-                className="h-9 w-40 rounded-lg border border-indigo-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <Button
-                size="sm"
-                disabled={!bagCode.trim() || busy}
-                onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, { ...addBagFor, customer: null }) }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-              >
-                Add bag
-              </Button>
-              <BagScanButton
-                label={bagTarget?.label || "Scan Bag QR"}
-                size="sm"
-                closeOnScan
-                disabled={busy}
-                onScan={(code) => assignOrderBag(code, { ...addBagFor, customer: null })}
-              />
-              <button type="button" onClick={() => setAddBagFor(null)} className="text-[11px] text-slate-500 underline">Cancel</button>
-            </div>
-            <p className="w-full text-[10px] text-indigo-800">{bagPanelExisting
-              ? "The existing bag keeps the garments already sorted into it — scanning continues normally."
-              : "No Sorting bag is assigned to this order for this service yet — the bag you scan becomes Bag 1."}</p>
-          </div>
-        )}
-
+        {/* The assign-bag panel used to render HERE, in this strip above the
+            order grid. Its "Scan Laundry Bag" control was therefore up to a
+            screenful away from the card whose button opened it: with the
+            operator scrolled down to an order, clicking Assign put the control
+            they needed off the top of the viewport (measured at −352px on a
+            900px viewport), and inserting the strip shifted the document by its
+            own height. It now renders inside the order card that opened it —
+            see the panel rendered under the order's add-bag button below. */}
         {/* BAG REQUIRED — only for an order that has no bag for THIS service.
             Advisory: the scanner is never gated on this, so a garment from any
             other order scans straight through while this one waits. */}
@@ -1402,6 +1363,59 @@ export function LaundrySortingWorkstation() {
                         else setAddBagFor(target)
                       }}
                     />
+
+                    {/* …AND HERE: directly under the button that opens it, so
+                        the scan control appears where the operator is already
+                        looking and already clicking. Same panel, same handlers,
+                        same endpoint — only its position in the document
+                        changed. */}
+                    {addBagFor?.orderId === o.orderId && (
+                <div className="rounded-xl border border-indigo-300 bg-indigo-50/70 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-800">{bagPanelExisting ? "Add new bag" : "Assign first bag"}</span>
+                    <div className="font-mono text-[12px] font-semibold text-slate-800">{addBagFor.orderNumber}</div>
+                    <div className="text-[11px] text-slate-600">{addBagFor.serviceName || "—"}</div>
+                  </div>
+                  <p className="text-[11px] text-indigo-900 basis-full sm:basis-auto">{bagPanelExisting
+                    ? "Scan the next physical bag — the current one becomes FULL and every later garment of this service goes into the new bag."
+                    : "Scan the bag this order will use — it becomes this service's Sorting bag."}</p>
+                  <div className="ml-auto flex items-center gap-2">
+                    <input
+                      value={bagCode}
+                      onChange={(e) => setBagCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return
+                        e.preventDefault()
+                        const c = bagCode.trim()
+                        if (c) assignOrderBag(c, { ...addBagFor, customer: null })
+                      }}
+                      placeholder="Scan or type bag no…"
+                      aria-label="New bag number"
+                      className="h-9 w-40 rounded-lg border border-indigo-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!bagCode.trim() || busy}
+                      onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, { ...addBagFor, customer: null }) }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      Add bag
+                    </Button>
+                    <BagScanButton
+                      label={bagTarget?.label || "Scan Bag QR"}
+                      size="sm"
+                      closeOnScan
+                      disabled={busy}
+                      onScan={(code) => assignOrderBag(code, { ...addBagFor, customer: null })}
+                    />
+                    <button type="button" onClick={() => setAddBagFor(null)} className="text-[11px] text-slate-500 underline">Cancel</button>
+                  </div>
+                  <p className="w-full text-[10px] text-indigo-800">{bagPanelExisting
+                    ? "The existing bag keeps the garments already sorted into it — scanning continues normally."
+                    : "No Sorting bag is assigned to this order for this service yet — the bag you scan becomes Bag 1."}</p>
+                </div>
+        
+                    )}
                   </div>
                 )
               })}

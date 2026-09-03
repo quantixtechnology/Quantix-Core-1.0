@@ -188,7 +188,10 @@ describe('Bug 2 — bag sequencing is driven by real assignments, not the button
     const assign = src.slice(src.indexOf('const assignOrderBag'), src.indexOf('const scannedFor'))
     expect(assign).toContain('await fetch(`/api/laundry/orders/${rec.orderId}/bags`')
     // the add-bag panel's button / scanner both call the same single writer
-    const panel = src.slice(src.indexOf('{addBagFor && ('), src.indexOf('{/* BAG REQUIRED'))
+    const pAt = src.indexOf('{addBagFor?.orderId === o.orderId && (')
+    expect(pAt).toBeGreaterThan(-1)
+    const panel = src.slice(pAt, src.indexOf('</CardContent>', pAt))
+    expect(panel.length).toBeGreaterThan(200)
     expect(panel).toContain('assignOrderBag')
   })
 })

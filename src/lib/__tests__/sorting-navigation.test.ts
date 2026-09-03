@@ -912,7 +912,12 @@ describe('multiple bags per order and service', () => {
 
   it('the add-bag prompt is an inline card the operator can cancel', () => {
     const raw = read(SORT)
-    const card = raw.slice(raw.indexOf('{addBagFor && ('), raw.indexOf('{/* BAG REQUIRED'))
+    // The panel now renders INSIDE the order card that opened it, so it is
+    // anchored on that guard and on the card's own closing.
+    const at = raw.indexOf('{addBagFor?.orderId === o.orderId && (')
+    expect(at).toBeGreaterThan(-1)
+    const card = raw.slice(at, raw.indexOf('</CardContent>', at))
+    expect(card.length).toBeGreaterThan(200)
     expect(card).not.toContain('Dialog')
     expect(card).toContain('Cancel')
     expect(card).toContain('scanning continues normally')
