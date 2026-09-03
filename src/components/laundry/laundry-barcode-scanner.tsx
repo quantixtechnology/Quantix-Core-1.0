@@ -42,6 +42,27 @@ export function isEditableTarget(el: EventTarget | null, self?: HTMLElement | nu
  * Otherwise yes — a click on empty page area still returns the caret to the
  * scanner, which is what keeps wedge scanning working hands-free.
  */
+/**
+ * KEEPING THE SCANNER FOCUSED MUST NOT MOVE THE PAGE.
+ *
+ * This field lives at the top of every workstation and reclaims focus whenever
+ * it is lost, so a keyboard-wedge scanner always types into it. focus() also
+ * scrolls its element into view by default, and the app sets scroll-behavior:
+ * smooth — so on a long queue every reclaim smoothly dragged the operator back
+ * to the top of the page.
+ *
+ * Measured against a 60-order Sorting queue: clicking "Assign First Bag" gives
+ * the button focus, this field takes it back 10ms later, and the viewport
+ * travelled from 1223, 2757, 4647, 5997 and 11397 to 0. The bag panel had
+ * opened correctly inside the order card the whole time — the page had simply
+ * scrolled away from it, which is why it read as "the panel jumped to the top".
+ *
+ * preventScroll keeps every bit of the focus behaviour and drops only the
+ * scrolling, which was never wanted: this field is reclaiming focus it already
+ * had, so there is nothing to scroll to.
+ */
+const FOCUS_OPTS: FocusOptions = { preventScroll: true }
+
 export function shouldReclaimFocus(o: {
   busyElsewhere: boolean
   cameraOpen?: boolean
@@ -81,7 +102,7 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
     Promise.resolve(onDetect(code)).finally(() => {
       handlingRef.current = false
       setHandling(false)
-      if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus() }
+      if (inputRef.current) { inputRef.current.value = ""; inputRef.current.focus(FOCUS_OPTS) }
     })
   }, { inputRef })
 
@@ -116,7 +137,7 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
         // Re-checked on the timer: a dialog may have opened, or focus may have
         // landed on an input by a path that carried no relatedTarget.
         if (shouldReclaimFocus({ busyElsewhere: scannerBusyElsewhere(), cameraOpen, activeElement: document.activeElement, self: inputRef.current })) {
-          inputRef.current?.focus()
+          inputRef.current?.focus(FOCUS_OPTS)
         }
       }, 10)
     }
@@ -125,18 +146,18 @@ export function LaundryBarcodeScanner({ onDetect, departmentLabel }: { onDetect:
       if (cameraOpen || scannerBusyElsewhere()) return
       // Same rule, one implementation.
       if (isEditableTarget(e.target, inputRef.current)) return
-      inputRef.current?.focus()
+      inputRef.current?.focus(FOCUS_OPTS)
     }
     const onClickDoc = (e: MouseEvent) => {
       if (cameraOpen || scannerBusyElsewhere()) return
       const target = e.target as HTMLElement
       if (target.closest("button, a, input, textarea, select, [role='dialog'], [role='button']")) return
-      setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus() }, 20)
+      setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus(FOCUS_OPTS) }, 20)
     }
     document.addEventListener("focusout", onFocusOut)
     document.addEventListener("keydown", onKeyDoc)
     document.addEventListener("mousedown", onClickDoc)
-    const initFocus = setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus() }, 100)
+    const initFocus = setTimeout(() => { if (!scannerBusyElsewhere()) inputRef.current?.focus(FOCUS_OPTS) }, 100)
     return () => {
       clearTimeout(focusTimer); clearTimeout(initFocus)
       document.removeEventListener("focusout", onFocusOut)

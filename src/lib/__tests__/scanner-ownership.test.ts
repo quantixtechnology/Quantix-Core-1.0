@@ -207,7 +207,9 @@ describe('the fix is wired into the real components', () => {
     expect(WS).toContain('ScanEngine.hasOwner()')
     expect(WS).toContain("document.querySelector(\"[role='dialog']\")")
     // Every re-focus path is guarded, including the deferred ones.
-    expect(WS).toContain('if (!scannerBusyElsewhere()) inputRef.current?.focus()')
+    // FOCUS_OPTS is { preventScroll: true } — the guard on WHEN focus is
+    // reclaimed is unchanged; only the scrolling side effect was dropped.
+    expect(WS).toContain('if (!scannerBusyElsewhere()) inputRef.current?.focus(FOCUS_OPTS)')
   })
 
   it('the dialog closes on a successful assignment, not on detection', () => {
