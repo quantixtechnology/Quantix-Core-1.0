@@ -701,6 +701,13 @@ export function LaundrySortingWorkstation() {
 
   const readyOrders = visibleOrders.filter((o) => scannedFor(o.orderId).length >= o.expected)
 
+  // The BAG REQUIRED prompt is answered inside the card of the order it names.
+  // `locate` clears the order filter before the prompt is raised, so that card
+  // is on screen every time in normal use and this is false. It guards the one
+  // case that would otherwise strand the operator: a prompt for an order no
+  // rendered card owns, with no way left to attach a bag.
+  const bagNeededOrphan = !!bagNeededFor && !visibleOrders.some((o) => o.orderId === bagNeededFor.orderId)
+
   const handleGarmentScan = useCallback(async (code: string) => {
     setScanErr(null)
     if (scanErrTimer.current) clearTimeout(scanErrTimer.current)
@@ -984,62 +991,17 @@ export function LaundrySortingWorkstation() {
           </div>
         )}
 
-        {/* ✓ BAG ASSIGNED — the bag scan landed and is now in the database. */}
-        {bagAssigned && (
-          <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-indigo-800">
-              <Check className="h-4 w-4" /> Bag assigned
-            </span>
-            <span className="font-mono text-base font-bold text-indigo-800">{bagAssigned.bagNumber}</span>
-            <span className="font-mono text-[12px] text-slate-700">{bagAssigned.orderNumber}</span>
-            <span className="text-[11px] text-slate-600">{bagAssigned.customer || "—"} · {bagAssigned.serviceName || "—"}</span>
-            <button type="button" onClick={() => setBagAssigned(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
-          </div>
-        )}
-
-        {/* TWO DIFFERENT REFUSALS, said differently.
-            WRONG BAG — the operator is holding the wrong physical bag.
-            SERVICE REQUIRED — the bag is fine; the order cannot attribute the
-            service, which the operator resolves by choosing one, not by
-            fetching another bag. Neither changes any assignment. */}
-        {wrongBag && wrongBag.kind === "SERVICE" && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">⚠ Service required</span>
-              <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
-            </div>
-            <p className="text-[12px] text-slate-700">{wrongBag.message}</p>
-            <p className="text-[12px] text-slate-700">
-              This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
-            </p>
-            <p className="text-[10px] text-amber-800">
-              The bag <span className="font-mono font-semibold">{wrongBag.scanned}</span> was not changed — choose the service this bag is for and scan it again.
-            </p>
-          </div>
-        )}
-        {wrongBag && wrongBag.kind === "BAG" && (
-          <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">✗ Wrong bag</span>
-              <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
-            </div>
-            <p className="text-[12px] text-slate-700">
-              <span className="font-mono font-semibold">{wrongBag.scanned}</span>{" "}
-              {wrongBag.heldBy
-                ? <>is assigned to <span className="font-mono font-semibold">{wrongBag.heldBy}</span>.</>
-                : <>cannot be used. {wrongBag.message}</>}
-            </p>
-            <p className="text-[12px] text-slate-700">
-              This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
-            </p>
-            {wrongBag.expected && (
-              <p className="text-[12px] text-slate-700">
-                Expected bag: <span className="font-mono font-semibold text-indigo-800">{wrongBag.expected}</span>
-              </p>
-            )}
-            <p className="text-[10px] text-rose-800">Nothing was changed — both bags keep their orders, and the garment count is unaffected.</p>
-          </div>
-        )}
+        {/* BAG ASSIGNED and the two refusals used to render HERE, at page
+            level, while every surface that produces them is order-scoped. A bag
+            scanned for an order deep in the list was answered — accepted or
+            refused — at the top of the page, so the operator watching that card
+            saw the panel close, or not close, with no stated reason. Both
+            states already name their order (`orderNumber`, set from the same
+            `rec` the assignment used), so both are now rendered in that order's
+            card, directly under its bag status. Wording, fields, dismiss
+            buttons and the 10s/12s timers are unchanged — only the mount point
+            moved. LAST SCANNED, search and workstation status stay here: they
+            are not about one order's bag. */}
 
         {/* + ADD NEW BAG / ASSIGN FIRST BAG — context-sensitive on the order's
             actual assignments (`bagPanelExisting`), never on the button being
@@ -1067,53 +1029,26 @@ export function LaundrySortingWorkstation() {
             900px viewport), and inserting the strip shifted the document by its
             own height. It now renders inside the order card that opened it —
             see the panel rendered under the order's add-bag button below. */}
-        {/* BAG REQUIRED — only for an order that has no bag for THIS service.
-            Advisory: the scanner is never gated on this, so a garment from any
-            other order scans straight through while this one waits. */}
-        {bagNeededFor && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="min-w-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Bag required</span>
-              <div className="font-mono text-[12px] font-semibold text-slate-800">{bagNeededFor.orderNumber}</div>
-              <div className="text-[11px] text-slate-600">{bagNeededFor.customer || "—"} · {bagNeededFor.serviceName || "—"} · <span className="tabular-nums">{bagNeededFor.scannedCount} / {bagNeededFor.expected} scanned</span></div>
-            </div>
-            <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">Scan the bag that this order will use.</p>
-            <div className="ml-auto flex items-center gap-2">
-              {/* A plain field, NOT auto-focused: a keyboard-wedge scanner types
-                  into it once the operator clicks it, and until then every scan
-                  still reaches the garment scanner above. Auto-focusing here
-                  would silently hijack the next garment scan. */}
-              <input
-                value={bagCode}
-                onChange={(e) => setBagCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return
-                  e.preventDefault()
-                  const c = bagCode.trim()
-                  if (c) assignOrderBag(c, bagNeededFor)
-                }}
-                placeholder="Scan or type bag no…"
-                aria-label="Bag number"
-                className="h-9 w-40 rounded-lg border border-amber-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
-              />
-              <Button
-                size="sm"
-                disabled={!bagCode.trim() || busy}
-                onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, bagNeededFor) }}
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                Assign
-              </Button>
-              <BagScanButton
-                label={bagTarget?.label || "Scan Bag QR"}
-                size="sm"
-                closeOnScan
-                disabled={busy}
-                onScan={(code) => assignOrderBag(code, bagNeededFor)}
-              />
-              <button type="button" onClick={() => setBagNeededFor(null)} className="text-[11px] text-slate-500 underline">Later</button>
-            </div>
-            <p className="w-full text-[10px] text-amber-800">Scanning continues normally — other orders are not blocked.</p>
+        {/* The bag-required prompt used to render HERE as well, and it was
+            the last interactive bag surface left at page level. It is raised
+            by a GARMENT
+            scan, and the line right before it (`locate`) scrolls the queue to
+            that order's card — so the operator was moved to the order while the
+            input and Scan Bag QR button for it stayed at the top of the page,
+            out of view. Working an order deep in the list, the bag scanner
+            appeared to belong to nothing on screen. The panel is order-owned
+            (`bagNeededFor.orderId`), so it now renders in that order's card.
+            The trigger, the guard and the scanner are untouched — only where
+            the panel is mounted changed. */}
+        {bagNeededOrphan && (
+          /* …unless no rendered card owns it. `locate` clears the order filter
+             first, so in normal operation the card is always on screen and this
+             never renders. It exists so a prompt can never be stranded: losing
+             the only way to attach a bag would be worse than a page-level one. */
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-[11px] text-amber-900">
+            <span className="font-semibold uppercase tracking-wider">Bag required</span>{" "}
+            <span className="font-mono font-semibold text-slate-800">{bagNeededFor?.orderNumber}</span> — this order is not in the list below.{" "}
+            <button type="button" onClick={() => setBagNeededFor(null)} className="underline">Dismiss</button>
           </div>
         )}
 
@@ -1343,6 +1278,116 @@ export function LaundrySortingWorkstation() {
                         else setAddBagFor(target)
                       }}
                     />
+
+                    {/* ✓ BAG ASSIGNED — the bag scan landed and is now in the
+                        database, said on the order that received it. The
+                        persistent status above it does not move. */}
+                    {bagAssigned?.orderNumber === o.orderNumber && (
+                      <div className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-indigo-800">
+                          <Check className="h-4 w-4" /> Bag assigned
+                        </span>
+                        <span className="font-mono text-base font-bold text-indigo-800">{bagAssigned.bagNumber}</span>
+                        <span className="font-mono text-[12px] text-slate-700">{bagAssigned.orderNumber}</span>
+                        <span className="text-[11px] text-slate-600">{bagAssigned.customer || "—"} · {bagAssigned.serviceName || "—"}</span>
+                        <button type="button" onClick={() => setBagAssigned(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+                      </div>
+                    )}
+
+                    {/* TWO DIFFERENT REFUSALS, said differently.
+                        WRONG BAG — the operator is holding the wrong physical bag.
+                        SERVICE REQUIRED — the bag is fine; the order cannot attribute the
+                        service, which the operator resolves by choosing one, not by
+                        fetching another bag. Neither changes any assignment. */}
+                    {wrongBag?.orderNumber === o.orderNumber && wrongBag.kind === "SERVICE" && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">⚠ Service required</span>
+                          <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+                        </div>
+                        <p className="text-[12px] text-slate-700">{wrongBag.message}</p>
+                        <p className="text-[12px] text-slate-700">
+                          This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
+                        </p>
+                        <p className="text-[10px] text-amber-800">
+                          The bag <span className="font-mono font-semibold">{wrongBag.scanned}</span> was not changed — choose the service this bag is for and scan it again.
+                        </p>
+                      </div>
+                    )}
+                    {wrongBag?.orderNumber === o.orderNumber && wrongBag.kind === "BAG" && (
+                      <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800">✗ Wrong bag</span>
+                          <button type="button" onClick={() => setWrongBag(null)} className="ml-auto text-[11px] text-slate-500 underline">Dismiss</button>
+                        </div>
+                        <p className="text-[12px] text-slate-700">
+                          <span className="font-mono font-semibold">{wrongBag.scanned}</span>{" "}
+                          {wrongBag.heldBy
+                            ? <>is assigned to <span className="font-mono font-semibold">{wrongBag.heldBy}</span>.</>
+                            : <>cannot be used. {wrongBag.message}</>}
+                        </p>
+                        <p className="text-[12px] text-slate-700">
+                          This garment belongs to <span className="font-mono font-semibold">{wrongBag.orderNumber}</span>.
+                        </p>
+                        {wrongBag.expected && (
+                          <p className="text-[12px] text-slate-700">
+                            Expected bag: <span className="font-mono font-semibold text-indigo-800">{wrongBag.expected}</span>
+                          </p>
+                        )}
+                        <p className="text-[10px] text-rose-800">Nothing was changed — both bags keep their orders, and the garment count is unaffected.</p>
+                      </div>
+                    )}
+
+                    {/* BAG REQUIRED, raised by a garment scan of THIS order and
+                        answered on the order it names. Advisory: the scanner is
+                        never gated on it, so a garment from any other order
+                        scans straight through while this one waits. */}
+                    {bagNeededFor?.orderId === o.orderId && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">Bag required</span>
+                          <div className="font-mono text-[12px] font-semibold text-slate-800">{bagNeededFor.orderNumber}</div>
+                          <div className="text-[11px] text-slate-600">{bagNeededFor.customer || "—"} · {bagNeededFor.serviceName || "—"} · <span className="tabular-nums">{bagNeededFor.scannedCount} / {bagNeededFor.expected} scanned</span></div>
+                        </div>
+                        <p className="text-[11px] text-amber-900 basis-full sm:basis-auto">Scan the bag that this order will use.</p>
+                        <div className="ml-auto flex items-center gap-2">
+                          {/* A plain field, NOT auto-focused: a keyboard-wedge scanner types
+                              into it once the operator clicks it, and until then every scan
+                              still reaches the garment scanner above. Auto-focusing here
+                              would silently hijack the next garment scan. */}
+                          <input
+                            value={bagCode}
+                            onChange={(e) => setBagCode(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return
+                              e.preventDefault()
+                              const c = bagCode.trim()
+                              if (c) assignOrderBag(c, bagNeededFor)
+                            }}
+                            placeholder="Scan or type bag no…"
+                            aria-label="Bag number"
+                            className="h-9 w-40 rounded-lg border border-amber-300 bg-white px-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                          />
+                          <Button
+                            size="sm"
+                            disabled={!bagCode.trim() || busy}
+                            onClick={() => { const c = bagCode.trim(); if (c) assignOrderBag(c, bagNeededFor) }}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            Assign
+                          </Button>
+                          <BagScanButton
+                            label={bagTarget?.label || "Scan Bag QR"}
+                            size="sm"
+                            closeOnScan
+                            disabled={busy}
+                            onScan={(code) => assignOrderBag(code, bagNeededFor)}
+                          />
+                          <button type="button" onClick={() => setBagNeededFor(null)} className="text-[11px] text-slate-500 underline">Later</button>
+                        </div>
+                        <p className="w-full text-[10px] text-amber-800">Scanning continues normally — other orders are not blocked.</p>
+                      </div>
+                    )}
 
                     {/* …AND HERE: the confirmation for THIS order, directly under
                         the button that raised it. Same question, same two

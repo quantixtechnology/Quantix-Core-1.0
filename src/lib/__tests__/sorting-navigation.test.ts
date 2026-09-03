@@ -393,16 +393,20 @@ describe('the bag is resolved for the GARMENT’s service, not the order', () =>
 describe('the bag state is visible where the operator is looking', () => {
   const src = read(SORT)
 
-  it('BAG REQUIRED sits directly under LAST SCANNED, not in the order list', () => {
-    const lastScanned = src.indexOf('Last scanned')
-    const bagRequired = src.indexOf('Bag required')
+  it('BAG REQUIRED is answered in the order list, on the order it names', () => {
+    // This used to require the opposite — the prompt directly under LAST
+    // SCANNED, above the list. That placement was the bug: the scan that raises
+    // it also centres the queue on the order's card, so the operator was
+    // carried to the order while its bag input stayed at the top of the page.
+    // The prompt is order-owned, so it is now rendered in that order's card.
     const orderList = src.indexOf('Orders at Sorting')
-    expect(bagRequired).toBeGreaterThan(lastScanned)
-    expect(bagRequired).toBeLessThan(orderList)
+    const prompt = src.indexOf('{bagNeededFor?.orderId === o.orderId && (')
+    expect(prompt).toBeGreaterThan(-1)
+    expect(prompt).toBeGreaterThan(orderList)
   })
 
   it('it is an inline card, not a modal that traps the operator', () => {
-    const card = src.slice(src.indexOf('{bagNeededFor && ('), src.indexOf('{/* Find any garment'))
+    const card = src.slice(src.indexOf('{bagNeededFor?.orderId === o.orderId && ('), src.indexOf('{confirmSecondBag?.orderId === o.orderId && ('))
     expect(card).not.toContain('Dialog')
     expect(card).toContain('Later')          // dismissable
     expect(card).toContain('other orders are not blocked')
@@ -584,7 +588,7 @@ describe('a late response cannot overwrite a newer scan', () => {
 
 describe('the operator is never trapped or blocked', () => {
   const raw = read(SORT)
-  const card = raw.slice(raw.indexOf('{bagNeededFor && ('), raw.indexOf('{/* Find any garment'))
+  const card = raw.slice(raw.indexOf('{bagNeededFor?.orderId === o.orderId && ('), raw.indexOf('{confirmSecondBag?.orderId === o.orderId && ('))
 
   it('the bag prompt offers a typed/wedge field as well as the camera', () => {
     expect(card).toContain('placeholder="Scan or type bag no…"')
@@ -621,7 +625,7 @@ describe('a wrong bag is refused in three facts, and changes nothing', () => {
   const raw = read(SORT)
   // Anchored on the GENUINE wrong-bag panel. A service-resolution refusal is a
   // different message now, so this slice must name the one it is asserting.
-  const panel = raw.slice(raw.indexOf('{wrongBag && wrongBag.kind === "BAG" && ('), raw.indexOf('{/* BAG REQUIRED'))
+  const panel = raw.slice(raw.indexOf('{wrongBag?.orderNumber === o.orderNumber && wrongBag.kind === "BAG" && ('), raw.indexOf('{bagNeededFor?.orderId === o.orderId && ('))
   expect(panel.length).toBeGreaterThan(0)
 
   it('it names what was scanned, who holds it, and what this order needs', () => {

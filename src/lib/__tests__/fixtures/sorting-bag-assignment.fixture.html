@@ -1,0 +1,189 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:14px system-ui;background:#f9fafb}
+  .strip{padding:0 24px;display:flex;flex-direction:column;gap:12px}
+  .stripBlock{border:1px solid #fcd34d;background:#fffbeb;border-radius:12px;padding:10px 16px}
+  .cols{padding:16px 24px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .panelCard{border:1px solid #e2e8f0;background:#fff;border-radius:12px}
+  .cardHead{padding:12px 16px;font-weight:600}
+  .cardBody{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
+  .order{border:1px solid #e2e8f0;border-radius:8px;padding:12px}
+  .garments{margin-top:8px;max-height:224px;overflow-y:auto;border:1px solid #f1f5f9;background:#f8fafc99;padding:6px}
+  .chip{display:inline-block;border:1px solid #e2e8f0;background:#fff;border-radius:6px;padding:2px 6px;margin:2px;font-size:11px}
+  .bagbanner{margin-top:8px;border:2px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:8px;font-size:12px}
+  .bagbanner.attached{border-color:#6ee7b7;background:#ecfdf5}
+  .assignRow{margin-top:8px;display:flex;justify-content:flex-end}
+  .assignPanel{margin-top:8px;border:1px solid #a5b4fc;background:#eef2ff;border-radius:12px;padding:10px 16px}
+  button{padding:4px 8px;border:1px solid #c7d2fe;border-radius:6px;background:#fff;cursor:pointer}
+</style></head>
+<body>
+<div class="strip" id="strip"></div>
+<div class="cols">
+  <div class="panelCard"><div class="cardHead">Orders at Sorting</div><div class="cardBody" id="list"></div></div>
+  <div class="panelCard"><div class="cardHead">Complete Sorting</div><div class="cardBody" id="ready"></div></div>
+</div>
+<script>
+  // ── State, mirroring the workstation ────────────────────────────────────────
+  const N = 20;
+  const bagsByOrder = {};      // orderId -> bag number  (the per-order status)
+  let addBagFor = null;        // { orderId } — ONE order owns the panel
+  let bagNeededFor = null;     // { orderId } — scan-driven prompt
+  let bagAssigned = null;      // { orderNumber, bag } — transient success
+  let wrongBag = null;         // { orderNumber, scanned, heldBy } — refusal
+  window.FIXED = true;          // true = panels mount in the owning card
+  window.FIXED_FEEDBACK = true; // true = BAG ASSIGNED / WRONG BAG mount there too
+
+  const list = document.getElementById('list');
+  const strip = document.getElementById('strip');
+
+  // Cards are built once and mutated in place, the way React reconciles a
+  // keyed list — so a re-render never destroys a card node or its scroll.
+  for (let i = 1; i <= N; i++) {
+    const d = document.createElement('div');
+    d.className = 'order'; d.id = 'order' + i;
+    d.innerHTML = `<div style="font-family:monospace;font-weight:600">ORD-…-${String(i).padStart(6,'0')}</div>
+      <div style="color:#94a3b8;font-size:11px">Customer ${i}</div>
+      <div style="font-size:11px;color:#475569">Wash &amp; Fold · 18 garments · 6 kg</div>
+      <div class="bagbanner" id="banner${i}"></div>
+      <div id="fb${i}"></div>
+      <div class="garments">${Array.from({length:18},(_,k)=>`<span class="chip">GAR-${i}-${k}</span>`).join('')}</div>
+      <div class="assignRow"><button id="assign${i}"></button></div>
+      <div id="slot${i}"></div>`;
+    list.appendChild(d);
+    d.querySelector('#assign' + i).addEventListener('click', () => {
+      addBagFor = { orderId: i };
+      render();
+    });
+  }
+
+  function panelHTML(kind, i) {
+    const title = kind === 'needed' ? 'BAG REQUIRED' : (bagsByOrder[i] ? 'ASSIGN NEXT BAG' : 'ASSIGN FIRST BAG');
+    return `<div class="assignPanel" data-panel="${kind}" data-order="${i}">
+      <div style="font-weight:600;font-size:11px">${title}</div>
+      <div style="font-family:monospace;font-size:12px">ORD-…-${String(i).padStart(6,'0')}</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <input placeholder="Scan or type bag no…" class="bagCode" style="height:36px">
+        <button class="addBag">Add bag</button>
+        <button class="scanBag">Scan Laundry Bag</button>
+        <button class="scanBadBag">Scan Wrong Bag</button>
+        <button class="cancelBag">${kind === 'needed' ? 'Later' : 'Cancel'}</button>
+      </div></div>`;
+  }
+
+  function feedbackHTML(i) {
+    let h = '';
+    if (bagAssigned && bagAssigned.orderNumber === i) {
+      h += `<div class="fb" data-fb="assigned" data-order="${i}" style="margin-top:8px;border:1px solid #a5b4fc;background:#eef2ff;border-radius:12px;padding:8px 12px">
+        <span style="font-weight:700;font-size:11px">BAG ASSIGNED</span>
+        <span class="fbBag" style="font-family:monospace;font-weight:700">${bagAssigned.bag}</span>
+        <span class="fbOrder" style="font-family:monospace">ORD-…-${String(i).padStart(6,'0')}</span></div>`;
+    }
+    if (wrongBag && wrongBag.orderNumber === i) {
+      h += `<div class="fb" data-fb="wrong" data-order="${i}" style="margin-top:8px;border:1px solid #fda4af;background:#fff1f2;border-radius:12px;padding:8px 12px">
+        <span style="font-weight:700;font-size:11px">WRONG BAG</span>
+        <span class="fbScanned" style="font-family:monospace;font-weight:700">${wrongBag.scanned}</span>
+        is assigned to <span class="fbHeldBy" style="font-family:monospace">${wrongBag.heldBy}</span>.
+        This garment belongs to <span class="fbOrder" style="font-family:monospace">ORD-…-${String(i).padStart(6,'0')}</span>.</div>`;
+    }
+    return h;
+  }
+
+  function render() {
+    for (let i = 1; i <= N; i++) {
+      const banner = document.getElementById('banner' + i);
+      const btn = document.getElementById('assign' + i);
+      const slot = document.getElementById('slot' + i);
+      if (bagsByOrder[i]) {
+        banner.className = 'bagbanner attached';
+        banner.innerHTML = `🟢 SORTING BAG ATTACHED<br><span class="bagNo" style="font-family:monospace;font-weight:600">${bagsByOrder[i]}</span>`;
+        btn.textContent = 'Add New Bag';
+      } else {
+        banner.className = 'bagbanner';
+        banner.innerHTML = '🟠 BAG REQUIRED<br><span>Attach a sorting bag before completing sorting.</span>';
+        btn.textContent = 'Assign First Bag';
+      }
+      // Panels mount in the card that owns the state — or nowhere.
+      let html = '';
+      if (window.FIXED) {
+        if (addBagFor && addBagFor.orderId === i) html = panelHTML('assign', i);
+        else if (bagNeededFor && bagNeededFor.orderId === i) html = panelHTML('needed', i);
+      }
+      if (slot.innerHTML !== html) slot.innerHTML = html;
+      const fb = document.getElementById('fb' + i);
+      const fbHtml = window.FIXED_FEEDBACK ? feedbackHTML(i) : '';
+      if (fb.innerHTML !== fbHtml) fb.innerHTML = fbHtml;
+    }
+    // The legacy placement: one shared panel at page level.
+    let s = '';
+    if (!window.FIXED) {
+      if (addBagFor) s += panelHTML('assign', addBagFor.orderId);
+      if (bagNeededFor) s += panelHTML('needed', bagNeededFor.orderId);
+    }
+    if (!window.FIXED_FEEDBACK) {
+      if (bagAssigned) s += feedbackHTML(bagAssigned.orderNumber);
+      if (wrongBag) s += feedbackHTML(wrongBag.orderNumber);
+    }
+    if (strip.innerHTML !== s) strip.innerHTML = s;
+    wire();
+  }
+
+  function wire() {
+    document.querySelectorAll('[data-panel]').forEach((p) => {
+      if (p.dataset.wired) return;
+      p.dataset.wired = '1';
+      const i = Number(p.dataset.order);
+      const input = p.querySelector('.bagCode');
+      p.querySelector('.addBag').addEventListener('click', () => assign(input.value.trim(), i));
+      p.querySelector('.scanBag').addEventListener('click', () => assign('V8BAG' + (100 + i), i));
+      p.querySelector('.scanBadBag').addEventListener('click', () => assign('BADBAG' + (100 + i), i));
+      p.querySelector('.cancelBag').addEventListener('click', () => {
+        if (p.dataset.panel === 'needed') bagNeededFor = null; else addBagFor = null;
+        render();
+      });
+    });
+  }
+
+  // assignOrderBag: the bag lands on the order the PANEL named, the panel
+  // closes, and only that order's status changes.
+  window.assign = function (code, orderId) {
+    if (!code) return false;
+    if (String(code).toUpperCase().startsWith('BAD')) {
+      // Refused: no bag is attached, the panel stays open, nothing else moves.
+      wrongBag = { orderNumber: orderId, scanned: String(code).toUpperCase(), heldBy: 'ORD-…-000009' };
+      bagAssigned = null;
+      render();
+      return false;
+    }
+    bagsByOrder[orderId] = code.toUpperCase();
+    bagAssigned = { orderNumber: orderId, bag: code.toUpperCase() };
+    wrongBag = null;
+    if (addBagFor && addBagFor.orderId === orderId) addBagFor = null;
+    if (bagNeededFor && bagNeededFor.orderId === orderId) bagNeededFor = null;
+    render();
+    return true;
+  };
+
+  // A garment scan for an order with no bag: locate() centres that card, then
+  // the prompt is raised for it.
+  window.garmentScan = function (orderId) {
+    document.getElementById('order' + orderId).scrollIntoView({ block: 'center' });
+    bagNeededFor = bagsByOrder[orderId] ? null : { orderId };
+    render();
+  };
+
+  window.stateOwner = () => (addBagFor ? addBagFor.orderId : null);
+  window.assignedOwner = () => (bagAssigned ? bagAssigned.orderNumber : null);
+  window.wrongOwner = () => (wrongBag ? wrongBag.orderNumber : null);
+  window.neededOwner = () => (bagNeededFor ? bagNeededFor.orderId : null);
+
+  // Instrumentation.
+  window.__siv = 0; window.__focus = 0;
+  const oSIV = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (...a) { window.__siv++; return oSIV.apply(this, a); };
+  const oF = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (...a) { window.__focus++; return oF.apply(this, a); };
+
+  render();
+</script>
+</body></html>

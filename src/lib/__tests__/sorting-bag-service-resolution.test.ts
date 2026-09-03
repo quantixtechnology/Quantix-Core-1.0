@@ -201,7 +201,9 @@ describe('I · the screen names the right problem', () => {
   it('a SERVICE_REQUIRED refusal is not called a wrong bag', () => {
     expect(UI).toContain(`kind: j?.code === "SERVICE_REQUIRED" ? "SERVICE" : "BAG"`)
     expect(UI).toContain('⚠ Service required')
-    expect(UI).toContain('{wrongBag && wrongBag.kind === "SERVICE" && (')
+    // Now rendered on the order the refusal names, but still its OWN branch:
+    // a service problem must not be dressed up as a wrong bag.
+    expect(UI).toContain('{wrongBag?.orderNumber === o.orderNumber && wrongBag.kind === "SERVICE" && (')
   })
 
   it('and says the bag itself was fine', () => {
@@ -209,7 +211,7 @@ describe('I · the screen names the right problem', () => {
   })
 
   it('a genuine wrong bag keeps its own warning, unchanged', () => {
-    expect(UI).toContain('{wrongBag && wrongBag.kind === "BAG" && (')
+    expect(UI).toContain('{wrongBag?.orderNumber === o.orderNumber && wrongBag.kind === "BAG" && (')
     expect(UI).toContain('✗ Wrong bag')
     expect(UI).toContain('Nothing was changed — both bags keep their orders, and the garment count is unaffected.')
   })

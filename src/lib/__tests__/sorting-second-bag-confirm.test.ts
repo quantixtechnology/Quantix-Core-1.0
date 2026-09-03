@@ -88,8 +88,8 @@ describe('6 · the post-scan BAG REQUIRED prompt is untouched', () => {
     expect(code).toContain('if (c) assignOrderBag(c, bagNeededFor)')
     // Bounded to the panel itself — an unbounded slice ran to EOF and swept in
     // the order card, which legitimately does reference the confirmation.
-    const start = code.indexOf('{bagNeededFor && (')
-    const prompt = code.slice(start, code.indexOf('Find any garment', start))
+    const start = code.indexOf('{bagNeededFor?.orderId === o.orderId && (')
+    const prompt = code.slice(start, code.indexOf('{confirmSecondBag?.orderId === o.orderId && (', start))
     expect(prompt.length).toBeGreaterThan(0)
     expect(prompt).not.toContain('setConfirmSecondBag')
     expect(prompt).not.toContain('confirmSecondBag')
