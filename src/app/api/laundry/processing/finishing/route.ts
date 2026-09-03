@@ -252,12 +252,14 @@ export async function GET(request: Request) {
       // REUSE_BAG → bag QR only, BOTH → either). A wrong-kind scan is rejected
       // with operator guidance — a bag QR is never accepted where the workspace
       // is configured for the Processing Package and vice versa.
-      const modeError = scanModeAcceptance(c, mode)
-      if (modeError) return NextResponse.json({ success: false, error: modeError }, { status: 409 })
-
       let pkg: Pkg | null = null
       let orderId = ""
 
+      // The container is resolved BEFORE the scan-mode gate so the gate can see
+      // which container the code names. It has to: a REUSE_BAG workspace
+      // rightly refuses a Processing Packet, but a container that never had a
+      // bag has no bag QR to offer, and only the container itself knows that.
+      // Nothing else moved — the lookup is the same query, one step earlier.
       const byPackage = await prisma.laundryProcessingPackage.findFirst({
         where: { businessId: biz.id, OR: [{ code: c }, { qrValue: c }] },
         select: {
@@ -265,6 +267,10 @@ export async function GET(request: Request) {
           serviceId: true, serviceName: true, garmentCount: true, reusedBagQr: true, updatedAt: true,
         },
       })
+
+      const modeError = scanModeAcceptance(c, mode, byPackage ? { reusedBagQr: byPackage.reusedBagQr } : null)
+      if (modeError) return NextResponse.json({ success: false, error: modeError }, { status: 409 })
+
       if (byPackage) { pkg = byPackage; orderId = byPackage.orderId }
       else {
         const bag = await prisma.laundryBag.findFirst({

@@ -64,13 +64,29 @@ export function isBagCode(code: string): boolean {
 // Pure scan-mode acceptance check for the finishing stations: does this code
 // belong to the configured scan target? Returns an error string when the code
 // is the WRONG kind for this workspace (operator guidance), null when allowed.
-export function scanModeAcceptance(code: string, mode: string | null | undefined): string | null {
+export function scanModeAcceptance(
+  code: string,
+  mode: string | null | undefined,
+  /**
+   * The container the code actually resolves to, when one was found. A
+   * REUSE_BAG workspace expects the bag, and a container built FROM a pickup
+   * bag carries that bag's code, so the rule holds for it. A container built
+   * without one never had a bag: its PKG code is the only identifier it will
+   * ever have, and refusing that left walk-in orders listed at the finishing
+   * station with no way to open them — the operator was told to scan a bag
+   * that does not exist. Resolved from the package's own reusedBagQr, so the
+   * exception is per container and cannot widen to bag-backed ones.
+   */
+  container?: { reusedBagQr: boolean } | null,
+): string | null {
   const c = code.toUpperCase()
   const target = finishingScanTarget(mode)
   const isPkg = isProcessingPackageCode(c)
   const isBag = isBagCode(c)
-  if (isPkg && !target.isPackage)
+  if (isPkg && !target.isPackage) {
+    if (container && container.reusedBagQr === false) return null
     return "This workspace scans the laundry bag, not a Processing Packet — scan the bag instead."
+  }
   if (isBag && !target.isBag)
     return "This workspace scans the Processing Packet — scan the packet QR instead of the bag."
   return null
