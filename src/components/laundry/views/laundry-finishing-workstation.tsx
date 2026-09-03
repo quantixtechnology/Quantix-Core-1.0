@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Loader2, Play, Pause, Check, Undo2, Factory, QrCode, RefreshCw, ScanLine, Package, Shirt, ShieldCheck } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
+import { orderWeightLabel, garmentCountLabel } from "@/lib/laundry-order-display"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
@@ -31,11 +32,15 @@ import { useScanSink } from "@/lib/hardware"
  * here to match it against the container in front of them.
  */
 type BagRef = { bagNumber: string; purpose: string | null; serviceName: string | null }
+/** The delivery promise, already resolved by the server's shared helper. */
+type DeliveryRef = { line: string; shortLabel: string; tone: string; breached: boolean }
 
 type ContainerSummary = {
   id: string; code: string; status: string; orderId: string; orderNumber: string | null
   serviceName: string | null; garmentCount: number; atStage: number
-  customer: string | null; bags: BagRef[]; updatedAt: string
+  customer: string | null; bags: BagRef[]
+  weightKg: number | null; delivery: DeliveryRef | null
+  updatedAt: string
 }
 type Garment = {
   id: string; itemNumber: string | null; barcode: string | null; garmentScanCode: string | null
@@ -48,6 +53,8 @@ type ContainerDetail = {
   order: { id: string; orderNumber: string; status: string }
   customer: string | null; store: string | null
   bags: BagRef[]
+  weightKg: number | null
+  delivery: DeliveryRef
   garments: Garment[]
   summary: { atStage: number; awaitingQc: number; finished: number }
 }
@@ -58,6 +65,45 @@ type ContainerDetail = {
  * when the order carries no open assignment — an absent bag is stated by its
  * absence, never invented.
  */
+/**
+ * WHAT THE OPERATOR NEEDS TO IDENTIFY AN ORDER ON THE FLOOR.
+ *
+ * The container's own code led this card, and in a workspace that never issues
+ * Processing Packets that meant a PKG-… number no one holds, prints or asks
+ * for. The order number leads now, with the bags beside it, and the packet code
+ * appears only where the workspace actually uses one. Nothing here decides
+ * anything — every value is already on the payload.
+ */
+function OrderIdentity({ orderNumber, bags, customer, count, weightKg, delivery, dense = false }: {
+  orderNumber: string | null; bags: BagRef[]; customer: string | null
+  count: number; weightKg: number | null; delivery: DeliveryRef | null; dense?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`font-mono font-bold text-slate-900 ${dense ? "text-[13px]" : "text-[15px]"}`}>
+          {orderNumber || "—"}
+        </span>
+        <BagNumbers bags={bags} />
+      </div>
+      {customer && <p className={`truncate text-slate-600 ${dense ? "text-[11px]" : "text-[12px]"}`}>{customer}</p>}
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500 ${dense ? "text-[10px]" : "text-[11px]"}`}>
+        <span>{garmentCountLabel(count)}</span>
+        <span aria-hidden>·</span>
+        <span>{orderWeightLabel(weightKg)}</span>
+        {delivery && (
+          <>
+            <span aria-hidden>·</span>
+            <span className={delivery.breached ? "font-semibold text-rose-600" : undefined}>
+              Delivery {delivery.line}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function BagNumbers({ bags, className = "" }: { bags: BagRef[]; className?: string }) {
   if (!bags.length) return null
   return (
@@ -195,6 +241,10 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
   const [mode, setMode] = useState("GENERATE_NEW")
   const [scanTarget, setScanTarget] = useState("Scan Processing Packet")
   const [scanHint, setScanHint] = useState("PKG-…")
+  // GENERATE_NEW / BOTH issue a Processing Packet, so its code is a real thing
+  // the operator handles. REUSE_BAG never does — showing PKG there put an
+  // identifier on the card that exists only inside the database.
+  const usesPacket = mode !== "REUSE_BAG"
   const [soundEnabled, setSoundEnabled] = useState(true)
   // Same workstation permission as Start/Complete — see laundry-workstation.tsx.
   const hasReturnPerm = level(`processing.${stage === "FOLD" ? "folding" : "ironing"}`) >= Level.CREATE
@@ -436,11 +486,20 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
-                      <Package className="h-[18px] w-[18px] text-blue-600" />
-                      <span className="font-mono">{active.package.code}</span>
-                      {/* The bag(s) this order is carrying — what the operator
-                          is physically holding, next to the container code. */}
-                      <BagNumbers bags={active.bags} />
+                      <Package className="h-[18px] w-[18px] text-blue-600 shrink-0" />
+                      <OrderIdentity
+                        orderNumber={active.order.orderNumber}
+                        bags={active.bags}
+                        customer={active.customer}
+                        count={active.package.garmentCount}
+                        weightKg={active.weightKg}
+                        delivery={active.delivery}
+                      />
+                      {/* The packet code is secondary, and only where the
+                          workspace issues one. */}
+                      {usesPacket && (
+                        <span className="font-mono text-[11px] text-slate-400">{active.package.code}</span>
+                      )}
                       <Badge variant="outline" className={active.package.status === "READY_FOR_FINISHING" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-500"}>
                         {active.package.status.replace(/_/g, " ")}
                       </Badge>
@@ -527,14 +586,21 @@ export function LaundryFinishingWorkstation({ stage, icon: Icon = Shirt }: { sta
                 <div key={c.id} className={`rounded-lg border p-3 transition-colors ${active?.package.id === c.id ? "border-blue-400 bg-blue-50/50" : "border-slate-200 hover:border-blue-200"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-slate-800 font-mono">{c.code}</p>
-                      <BagNumbers bags={c.bags} className="mt-0.5" />
-                      <p className="text-[11px] text-slate-400 truncate"><span className="font-mono">{c.orderNumber}</span>{c.customer ? ` · ${c.customer}` : ""}</p>
+                      <OrderIdentity
+                        dense
+                        orderNumber={c.orderNumber}
+                        bags={c.bags}
+                        customer={c.customer}
+                        count={c.garmentCount}
+                        weightKg={c.weightKg}
+                        delivery={c.delivery}
+                      />
+                      {usesPacket && <p className="text-[10px] text-slate-400 font-mono mt-0.5">{c.code}</p>}
                     </div>
                     <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 text-[10px] shrink-0">{c.atStage} at {stageLabel(stage)}</Badge>
                   </div>
                   <div className="flex items-center justify-between mt-2 gap-2">
-                    <p className="text-[10px] text-slate-400">{c.serviceName || `${c.garmentCount} garment(s)`} · {fmt(c.updatedAt)}</p>
+                    <p className="text-[10px] text-slate-400">{c.serviceName || "—"} · {fmt(c.updatedAt)}</p>
                     <Button size="sm" variant="outline" className="h-7 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50" disabled={busy} onClick={() => resolve(undefined, c.id)}>
                       <ScanLine className="h-3.5 w-3.5" /> Load
                     </Button>

@@ -22,6 +22,7 @@ import { stageLabel, hasPassedQc, isProcessingTerminal } from "@/lib/laundry-pro
 import { packageGarmentsWhere, PACKAGE_STATUS_FINISHING_READY, finishingScanTarget, scanModeAcceptance, syncPackageLifecycle } from "@/lib/laundry-finishing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { orderBags, orderBagsForOrders } from "@/lib/laundry-order-bags"
+import { deliveryPromise, formatPromiseLine } from "@/lib/laundry-delivery-promise"
 
 export const runtime = "nodejs"
 
@@ -44,6 +45,29 @@ type Garment = {
 /** A bag as the finishing stations need to name it — number and role only. */
 type BagRef = { bagNumber: string; purpose: string | null; serviceName: string | null }
 
+/**
+ * What the operator needs to identify an order on the floor: what was promised
+ * to the customer, and how much is in front of them. Both come off the order
+ * row the route already reads — these are extra columns on the existing
+ * queries, not another round trip.
+ */
+const ORDER_CARD_SELECT = {
+  totalWeightKg: true,
+  promisedDeliveryDate: true, promisedDeliveryTimeSlot: true,
+  promisedBackupDeliveryDate: true, promisedBackupDeliveryTimeSlot: true,
+  deliveryDate: true, deliveryTimeSlot: true,
+  deliveryRescheduledAt: true, deliveryRescheduleReason: true, deliveredAt: true,
+} as const
+
+type DeliveryRef = { line: string; shortLabel: string; tone: string; breached: boolean }
+
+/** One definition of the delivery promise, shared with every other screen. */
+function deliveryRef(o: Record<string, unknown>): DeliveryRef {
+  const p = deliveryPromise(o as never)
+  const shown = p.rescheduled?.date ? p.rescheduled : p.primary
+  return { line: formatPromiseLine(shown.date, shown.slot), shortLabel: p.shortLabel, tone: p.tone, breached: p.breached }
+}
+
 type Batch = {
   package: Pkg; order: { id: string; orderNumber: string; status: string }
   customer: string | null; store: string | null
@@ -55,13 +79,16 @@ type Batch = {
    * only: nothing here assigns, moves or releases a bag.
    */
   bags: BagRef[]
+  /** Total weight on the order, or null when it was never weighed. */
+  weightKg: number | null
+  delivery: DeliveryRef
   garments: Garment[]; summary: { atStage: number; awaitingQc: number; finished: number }
 }
 
 async function loadBatch(pkg: Pkg, businessId: string, stage: string): Promise<Batch | null> {
   const order = await prisma.laundryOrder.findUnique({
     where: { id: pkg.orderId },
-    select: { id: true, orderNumber: true, status: true, customerId: true, storeId: true },
+    select: { id: true, orderNumber: true, status: true, customerId: true, storeId: true, ...ORDER_CARD_SELECT },
   })
   if (!order) return null
   const [customer, store] = await Promise.all([
@@ -96,6 +123,8 @@ async function loadBatch(pkg: Pkg, businessId: string, stage: string): Promise<B
     bags: (await orderBags(businessId, pkg.orderId))
       .filter((b) => b.open)
       .map((b) => ({ bagNumber: b.bagNumber, purpose: b.purpose, serviceName: b.serviceName })),
+    weightKg: order.totalWeightKg ?? null,
+    delivery: deliveryRef(order),
     garments, summary: { atStage, awaitingQc, finished },
   }
 }
@@ -393,7 +422,7 @@ export async function GET(request: Request) {
     const allOrderIds = [...orderIdsWith]
     const custIds: string[] = []
     const ords = allOrderIds.length
-      ? await prisma.laundryOrder.findMany({ where: { id: { in: allOrderIds } }, select: { id: true, orderNumber: true, customerId: true, storeId: true } })
+      ? await prisma.laundryOrder.findMany({ where: { id: { in: allOrderIds } }, select: { id: true, orderNumber: true, customerId: true, storeId: true, ...ORDER_CARD_SELECT } })
       : []
     const orderInfo = new Map(ords.map((o) => [o.id, o]))
     orderInfo.forEach((o) => { if (o.customerId) custIds.push(o.customerId) })
@@ -416,6 +445,8 @@ export async function GET(request: Request) {
         bags: (bagsByOrder.get(pkg.orderId) || [])
           .filter((b) => b.open)
           .map((b) => ({ bagNumber: b.bagNumber, purpose: b.purpose, serviceName: b.serviceName })),
+        weightKg: o?.totalWeightKg ?? null,
+        delivery: o ? deliveryRef(o) : null,
         updatedAt: pkg.updatedAt,
       }
     }))

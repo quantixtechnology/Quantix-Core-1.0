@@ -64,8 +64,12 @@ describe('2 · both stations show it — they are one component and one route', 
   })
 
   it('the workstation renders them in the loaded card and in the list', () => {
-    expect(WS).toContain('<BagNumbers bags={active.bags} />')
-    expect(WS).toContain('<BagNumbers bags={c.bags} className="mt-0.5" />')
+    // Both sites now hand their bags to the shared OrderIdentity block, which
+    // renders BagNumbers — one layout for the card and the header, so the two
+    // cannot describe the same order differently.
+    expect(WS).toContain('bags={active.bags}')      // loaded header
+    expect(WS).toContain('bags={c.bags}')           // waiting row
+    expect(WS).toContain('<BagNumbers bags={bags} />')
   })
 
   it('one renderer, so the two places cannot disagree', () => {
