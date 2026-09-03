@@ -121,7 +121,17 @@ export async function confirmSubscriptionPurchase({ purchaseId, customerId, paym
     }
     const updated = await tx.subscriptionPurchase.update({
       where: { id: purchase.id },
-      data: { status: "ACTIVATED", paymentStatus: "COMPLETED", paidAt: start, gateway: payment?.gateway || purchase.gateway, paymentTransactionId: payment?.paymentId, paymentReference: payment?.orderId || purchase.paymentReference, customerSubscriptionId: sub.id },
+      // amountPaid is the money actually received, and it has to be recorded
+      // here. This path verified a Razorpay signature over the whole purchase —
+      // it has no partial concept, and it refuses to activate anything without
+      // that verification — so a confirmation IS the full amount. Leaving the
+      // field at 0 said a paid, activated membership had been paid nothing:
+      // Payments & Ledger read it as fully outstanding and filed it under
+      // PENDING, and subscription revenue counted every online sale as zero.
+      // Recorded at the source rather than inferred downstream, so the ledger,
+      // the filters and the revenue aggregate all agree without any of them
+      // guessing from paymentStatus.
+      data: { amountPaid: purchase.amount, paymentMethod: "RAZORPAY", status: "ACTIVATED", paymentStatus: "COMPLETED", paidAt: start, gateway: payment?.gateway || purchase.gateway, paymentTransactionId: payment?.paymentId, paymentReference: payment?.orderId || purchase.paymentReference, customerSubscriptionId: sub.id },
     })
     return { sub, purchase: updated }
   })
