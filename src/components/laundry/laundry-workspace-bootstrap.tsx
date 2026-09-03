@@ -25,7 +25,7 @@
 // providers remain the single source of truth.
 // ============================================================================
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Loader2, AlertTriangle, LogIn, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAuthStore } from "@/stores/auth-store"
@@ -92,6 +92,18 @@ export function LaundryWorkspaceBootstrap({
 
   const [status, setStatus] = useState<BootstrapStatus>("loading")
   const [attempt, setAttempt] = useState(0)
+  // Has the workspace ever been handed to the operator? The ordered gate below
+  // is right the FIRST time — nothing may render before the session is known
+  // good. It is wrong every time after: re-running it tore the mounted
+  // workspace down and rebuilt it, because "loading" renders a full-screen
+  // loader INSTEAD of children. The effect depends on `token`, which the
+  // 20-minute refresh in auth-provider rotates, so this fired mid-shift: an
+  // operator scanning a bag into an order lost the open panel and every other
+  // local state, the document collapsed from a 120-order queue to one screen so
+  // the browser clamped the scroll to the top, and the page came back at the
+  // scan box a fetch later. Re-validation still runs — it just no longer
+  // unmounts the workspace to do it.
+  const everReady = useRef(false)
 
   // Ordered init: Auth → Tenant/Business → RBAC → Render. Navigation + view
   // loads happen inside the shell once the shell is allowed to render.
@@ -99,7 +111,8 @@ export function LaundryWorkspaceBootstrap({
     let cancelled = false
 
     async function run() {
-      setStatus("loading")
+      // Gate only before the workspace exists; afterwards, verify in place.
+      if (!everReady.current) setStatus("loading")
 
       // 1. Auth — wait for hydration + server-side validation to settle.
       if (!_isHydrated || !_isSynced || !isAuthenticated) return
@@ -139,6 +152,7 @@ export function LaundryWorkspaceBootstrap({
           clearRuntimeAuthCache()
           setActiveBusinessId(authoritative)
         }
+        everReady.current = true
         setStatus("ready")
       } catch {
         if (!cancelled) setStatus("failed")
