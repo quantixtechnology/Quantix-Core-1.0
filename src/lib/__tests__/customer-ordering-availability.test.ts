@@ -103,8 +103,16 @@ describe('24/7 relaxes the hours and nothing else', () => {
     // it runs in EVERY mode. It goes through laundrySlotsForDate(), which
     // returns nothing at all for a closed day — so a slot can never be booked
     // outside the schedule, whatever the ordering mode says.
+    //
+    // The day's schedule and closure are now read into `schedule` / `closedUntil`
+    // before the loop, because a tenant with no platform Store row has neither
+    // and must still be put through these same checks rather than refused
+    // outright. The call, its arguments and the rule are otherwise unchanged —
+    // only the two names moved.
     const guard = AVAIL.slice(AVAIL.indexOf('export async function assertLaundryBookingOpen'))
-    expect(guard).toContain('laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil, {')
+    expect(guard).toContain('laundrySlotsForDate([c.slot], schedule, c.date, closedUntil, {')
+    expect(guard).toContain('const schedule = store?.storeTimings ?? []')
+    expect(guard).toContain('const closedUntil = store?.closedUntil ?? null')
     // …and with the SAME flag the public slots API uses, so the server can
     // never reject a slot the website just offered.
     expect(guard).toContain('ignoreWorkingHours: bypassesStoreHours(ordering),')

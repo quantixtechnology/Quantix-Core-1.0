@@ -16,7 +16,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { updateStoreTimings, getStandardStoreSchedule } from "@/lib/core/store"
 import { getLaundryAvailability, resolvePlatformStore, parseBranchHoursOverride, serializeBranchHoursOverride } from "@/lib/laundry-availability"
 import { logActivity } from "@/lib/core/audit"
-import { readCustomerOrderingMode, writeCustomerOrderingMode, isCustomerOrderingMode } from "@/lib/customer-ordering"
+import { readCustomerOrderingMode, writeCustomerOrderingMode, isCustomerOrderingMode, writeBusinessClosure } from "@/lib/customer-ordering"
 
 export const runtime = "nodejs"
 
@@ -95,8 +95,12 @@ export async function GET(request: Request) {
         stores,
         standard: { timings: standard.timings, updatedAt: standard.updatedAt },
         store: storeId ? { id: storeId } : null,
-        closedReason: platformStore?.closedReason || null,
-        closedUntil: platformStore?.closedUntil ? platformStore.closedUntil.toISOString() : null,
+        // Falls back to the business-level closure for a tenant with no platform
+        // Store row, so the screen shows the state the owner actually set.
+        closedReason: platformStore?.closedReason || availability.closedReason || null,
+        closedUntil: platformStore?.closedUntil
+          ? platformStore.closedUntil.toISOString()
+          : (availability.closedUntil || null),
         statusOverride: branch?.statusOverride || platformStore?.statusOverride || "AUTOMATIC",
         overrideExpiresAt: branch?.overrideExpiresAt
           ? branch.overrideExpiresAt.toISOString()
@@ -141,7 +145,35 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: true, customerOrderingMode: b.customerOrderingMode })
     }
     const { storeId } = await resolvePlatformStore(biz.id, b.storeId)
-    if (!storeId) return NextResponse.json({ success: false, error: "No online store configured for this business" }, { status: 404 })
+    // ── Open Store / Temporarily Closed with no platform Store row ──────────
+    // The closure columns live on that row, so without one the owner had no
+    // way to close the shop at all — the control simply 404'd. The business
+    // already owns a deliberate-offline switch, `isOnline`, which every
+    // availability path honours ahead of the clock, so the same control drives
+    // that instead. Same one mechanism, same customer message, no new state.
+    //
+    // Only the availability status is handled here: working hours, branch
+    // schedules and standard-schedule application all genuinely need a store
+    // to write to, and still say so.
+    if (!storeId) {
+      const availability = (b.availability || {}) as { status?: string; reason?: string | null; closedUntil?: string | null }
+      if (availability.status !== "open" && availability.status !== "closed") {
+        return NextResponse.json({ success: false, error: "No online store configured for this business" }, { status: 404 })
+      }
+      const target = biz.platformBusinessId || biz.id
+      const current = await prisma.business.findUnique({ where: { id: target }, select: { settings: true } })
+      const closing = availability.status === "closed"
+      await prisma.business.update({
+        where: { id: target },
+        data: {
+          isOnline: !closing,
+          settings: writeBusinessClosure(current?.settings, closing
+            ? { reason: availability.reason ?? null, until: istLocalToUtc(availability.closedUntil) }
+            : null),
+        },
+      })
+      return NextResponse.json({ success: true, availability: { status: availability.status } })
+    }
     const businessIdEff = biz.platformBusinessId || biz.id
 
     // ── 1. Working Hours (weekly schedule) on the platform store ────────────

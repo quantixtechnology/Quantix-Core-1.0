@@ -207,7 +207,17 @@ function OrderView({ api, onPlaced, businessId }: { api: (p: string, o?: Request
       .then((j) => {
         if (j.success && j.availability) {
           const a = j.availability
-          const closed = a.status !== "OPEN"
+          // `isOpen` is the server's own answer, already resolved through
+          // checkStoreOpen with the tenant's Customer Ordering Availability
+          // applied — under 24/7 Ordering the clock does not close it, while
+          // offline, Temporarily Closed and the operator override still do.
+          //
+          // Re-deriving it here from `status` compared "open" against "OPEN"
+          // and so was true at every hour of every day, which shut this screen
+          // to customers the server was perfectly willing to serve. Reading the
+          // boolean keeps the screen and the guard that accepts the order from
+          // ever disagreeing. Missing/absent reads as closed, never as open.
+          const closed = !a.isOpen
           setStoreClosed(closed)
           if (closed) setStoreClosedMsg(a.reason || (a.closedReason ? `Temporarily closed — ${a.closedReason}` : a.opensAt ? `Closed — opens ${a.opensAt}` : "Store is closed"))
         }

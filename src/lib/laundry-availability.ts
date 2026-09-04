@@ -31,7 +31,7 @@ import {
 } from "@/lib/core/store"
 import type { StoreDayTiming, StoreOpenResult } from "@/lib/core/store"
 import { PRINT_TIMEZONE as BUSINESS_TIMEZONE } from "@/lib/print-timestamp"
-import { readCustomerOrderingMode, bypassesStoreHours } from "@/lib/customer-ordering"
+import { readCustomerOrderingMode, bypassesStoreHours, readBusinessClosure } from "@/lib/customer-ordering"
 
 export interface LaundryAvailability {
   storeId: string | null
@@ -79,6 +79,51 @@ export async function resolvePlatformStore(
   return { storeId: store?.id ?? null, platformBusinessId: platformId }
 }
 
+/**
+ * Availability for a business that has no platform Store row.
+ *
+ * Store status, the weekly StoreTiming schedule and the "Temporarily Closed"
+ * window (closedReason / closedUntil) all live ON that row. When the row does
+ * not exist none of them has been set: there is no schedule to be outside of,
+ * and no closure to be under — the owner cannot even declare one, because the
+ * settings endpoint refuses without a store. What does exist at business level
+ * is the online flag, and that still closes the shop.
+ *
+ * So the answer here is the SAME one checkStoreOpen() already gives for a store
+ * that exists and has no StoreTiming rows: open unless the business is offline.
+ * That is why this adds no availability concept — it reuses the hierarchy's
+ * existing bottom rung for a business whose store row simply is not there.
+ *
+ * It is reached only once the BUSINESS itself has resolved. A business that
+ * cannot be identified stays unavailable, because that is a question about
+ * identity rather than about opening hours.
+ */
+async function businessLevelAvailability(
+  platformBusinessId: string,
+): Promise<{ isOnline: boolean; result: StoreOpenResult; closedReason: string | null; closedUntil: Date | null }> {
+  const biz = await prisma.business.findUnique({
+    where: { id: platformBusinessId },
+    select: { isOnline: true, settings: true },
+  }).catch(() => null)
+  const isOnline = biz?.isOnline ?? false
+  // The owner's wording for the closure they declared, when they declared one.
+  // isOnline is still the whole of the decision — this is the text that goes
+  // with it, so the customer reads "Closed for Diwali" rather than a generic
+  // line the owner never wrote.
+  const { closedReason, closedUntil } = readBusinessClosure(biz?.settings)
+  if (isOnline) return { isOnline, result: { isOpen: true }, closedReason: null, closedUntil: null }
+  return {
+    isOnline,
+    result: {
+      isOpen: false,
+      reason: closedReason || "Store is currently offline",
+      opensAt: closedUntil ? formatReopenAt(closedUntil) : undefined,
+    },
+    closedReason,
+    closedUntil,
+  }
+}
+
 export async function getLaundryAvailability(
   input: string | null | undefined,
   storeId?: string | null,
@@ -89,7 +134,23 @@ export async function getLaundryAvailability(
     storeId: null, isOnline: false, isOpen: false, reason: "Store unavailable", opensAt: null,
     closedReason: null, closedUntil: null, timings: [], businessHours: null, todayDay: -1, dayName: "", status: "offline",
   }
-  if (!sid || !platformBusinessId) return empty
+  // No business at all is an identity failure and stays unavailable.
+  if (!platformBusinessId) return empty
+  // A business with no platform Store row still has an answer — see
+  // businessLevelAvailability. It is not "unavailable" to its customers.
+  if (!sid) {
+    const { isOnline, result, closedReason, closedUntil } = await businessLevelAvailability(platformBusinessId)
+    return {
+      ...empty,
+      isOnline,
+      isOpen: result.isOpen,
+      reason: result.isOpen ? null : (result.reason || null),
+      opensAt: result.opensAt || null,
+      closedReason,
+      closedUntil: closedUntil ? closedUntil.toISOString() : null,
+      status: result.isOpen ? "open" : "closed",
+    }
+  }
 
   const [store, biz, openResult] = await Promise.all([
     prisma.store.findUnique({
@@ -319,8 +380,15 @@ export async function assertLaundryStoreOpen(
   storeId?: string | null,
   opts: { ignoreWorkingHours?: boolean } = {},
 ): Promise<BookingOpenResult> {
-  const { storeId: sid } = await resolvePlatformStore(input, storeId)
-  if (!sid) return { ok: false, error: "Store is currently unavailable", opensAt: null }
+  const { storeId: sid, platformBusinessId } = await resolvePlatformStore(input, storeId)
+  // Only an unidentifiable business is "unavailable". A missing store row is
+  // answered at business level instead of refused.
+  if (!sid) {
+    if (!platformBusinessId) return { ok: false, error: "Store is currently unavailable", opensAt: null }
+    const { result } = await businessLevelAvailability(platformBusinessId)
+    if (!result.isOpen) return { ok: false, error: result.reason || "Store is currently closed", opensAt: result.opensAt ?? null, reason: result.reason || null }
+    return { ok: true }
+  }
   const r = await checkStoreOpen(sid, opts)
   if (!r.isOpen) return { ok: false, error: r.reason || "Store is currently closed", opensAt: r.opensAt ?? null, reason: r.reason || null }
   return { ok: true }
@@ -375,7 +443,7 @@ export async function resolveCustomerOrderingMode(
 export async function assertLaundryBookingOpen(
   input: string | null | undefined,
   opts: BookingGuardOptions = {},
-): Promise<{ ok: true; storeId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; storeId: string | null } | { ok: false; error: string }> {
   // Is the tenant on 24/7 Customer Ordering? Read from the business's own
   // settings — absent means FOLLOW_STORE_HOURS, so every tenant that has never
   // touched this behaves exactly as before.
@@ -391,13 +459,20 @@ export async function assertLaundryBookingOpen(
   // and then has to pick a pickup and delivery slot the shop can actually
   // work — which is the existing slot logic, unchanged.
 
-  const { storeId } = await resolvePlatformStore(input, opts.storeId)
-  if (!storeId) return { ok: false, error: "Store is currently unavailable" }
-  const store = await prisma.store.findUnique({
-    where: { id: storeId },
-    select: { closedUntil: true, storeTimings: { orderBy: { day: "asc" } } },
-  })
-  if (!store) return { ok: false, error: "Store is currently unavailable" }
+  const { storeId, platformBusinessId } = await resolvePlatformStore(input, opts.storeId)
+  if (!storeId && !platformBusinessId) return { ok: false, error: "Store is currently unavailable" }
+  const store = storeId
+    ? await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { closedUntil: true, storeTimings: { orderBy: { day: "asc" } } },
+      })
+    : null
+  // With no store row there is no weekly schedule and no declared closure, so
+  // the date and slot checks below run against exactly that: an empty schedule
+  // and no closure. They are still RUN — a past date is still refused, and the
+  // rules themselves are untouched.
+  const schedule = store?.storeTimings ?? []
+  const closedUntil = store?.closedUntil ?? null
 
   const checks: { date?: string | null; slot?: string | null; label: string }[] = [
     { date: opts.pickupDate, slot: opts.pickupSlot, label: "Pickup" },
@@ -411,7 +486,7 @@ export async function assertLaundryBookingOpen(
     // customer may order, and answering it here is what produced a
     // store-flavoured "Closed on Friday" the moment a date was picked. The
     // schedule is enforced a few lines below, on the SLOT, where it belongs.
-    const a = assertLaundryDateAvailable(store.storeTimings, c.date, c.label, store.closedUntil, {
+    const a = assertLaundryDateAvailable(schedule, c.date, c.label, closedUntil, {
       ignoreWorkingHours: bypassesStoreHours(ordering),
     })
     if (!a.ok) return a
@@ -424,12 +499,15 @@ export async function assertLaundryBookingOpen(
     if (c.slot) {
       // Same interpretation as the public slots API — otherwise the website
       // offers a slot the server then refuses.
-      if (laundrySlotsForDate([c.slot], store.storeTimings, c.date, store.closedUntil, {
+      if (laundrySlotsForDate([c.slot], schedule, c.date, closedUntil, {
         ignoreWorkingHours: bypassesStoreHours(ordering),
       }).length === 0) {
         return { ok: false, error: `${c.label} time ${c.slot} is outside business hours on ${c.date}. Please choose another slot.` }
       }
     }
   }
+  // Null when the business has no platform Store row. No caller reads it — the
+  // order routes resolve their own LaundryStore for branch and serviceability —
+  // and reporting "" would claim a store that does not exist.
   return { ok: true, storeId }
 }
