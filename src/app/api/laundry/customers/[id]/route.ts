@@ -79,6 +79,29 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     if (b.pincode && !isValidPincode(b.pincode)) return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })
 
+    // A mobile number identifies one customer within a business — that is the
+    // @@unique([businessId, phone]) rule, and it stands. What did not stand was
+    // how it was reported: Prisma raised P2002, the catch below turned it into
+    // "Internal server error", and the whole save was lost. Staff correcting a
+    // wrong number saw an edit that simply refused, with nothing naming the
+    // record already holding it, so the field read as uneditable.
+    //
+    // Checked here so the answer is a plain 409 naming that customer, and the
+    // constraint is still enforced by the database underneath.
+    if (b.mobile !== undefined && b.mobile && b.mobile !== customer.phone) {
+      const clash = await prisma.customer.findFirst({
+        where: { businessId: customer.businessId, phone: b.mobile, id: { not: id } },
+        select: { id: true, name: true, customerCode: true },
+      })
+      if (clash) {
+        return NextResponse.json({
+          error: `${b.mobile} already belongs to ${clash.name || "another customer"}${clash.customerCode ? ` (${clash.customerCode})` : ""}. Correct that record or merge the two.`,
+          code: "PHONE_TAKEN",
+          conflictCustomerId: clash.id,
+        }, { status: 409 })
+      }
+    }
+
     // Metadata patch (alternate mobile, anniversary, company, reference, comm).
     const metaPatch: Record<string, unknown> = {}
     if (b.alternateMobile !== undefined) metaPatch.alternateMobile = b.alternateMobile || ""
@@ -117,7 +140,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     })
 
     // Optional inline default-address upsert (backward compatible).
-    const hasAddr = [b.addressLine1, b.addressLine2, b.area, b.landmark, b.city, b.state, b.pincode].some((v) => v)
+    //
+    // Presence, not truthiness. Asking whether any field held a VALUE meant a
+    // form submitted with every address box emptied looked identical to a
+    // request that never mentioned an address at all, so the block was skipped
+    // and the old address stayed — staff could write an address but never clear
+    // one. Callers that genuinely say nothing about the address (the restore
+    // button sends only a status) still send no keys, so they still skip it.
+    const ADDRESS_KEYS = ["addressLine1", "addressLine2", "area", "landmark", "city", "state", "pincode", "address"] as const
+    const hasAddr = ADDRESS_KEYS.some((k) => b[k] !== undefined)
     if (hasAddr) {
       const existing = customer.addresses.find((a) => a.isDefault) || customer.addresses[0]
       const data = { addressLine1: b.addressLine1 ?? b.address ?? "", addressLine2: b.addressLine2 || null, area: b.area || null, landmark: b.landmark || null, city: b.city || "", state: b.state || "", pincode: b.pincode || "", country: b.country || "India", isDefault: true }
@@ -128,6 +159,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const updated = await scopedCustomer(b.businessId, id)
     return NextResponse.json({ success: true, data: shape(updated) })
   } catch (e) {
+    // The pre-check above answers the ordinary case; this catches the race
+    // where two edits claim the same number at once. Same rule, same wording,
+    // never a 500 for something the operator can actually fix.
+    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "That mobile number already belongs to another customer in this business.", code: "PHONE_TAKEN" }, { status: 409 })
+    }
     console.error("[laundry-customers] PUT[id]", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

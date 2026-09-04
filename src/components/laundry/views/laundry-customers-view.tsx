@@ -8,7 +8,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
-import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -107,7 +106,18 @@ export function LaundryCustomersView() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const canArchive = can("laundry.customers.delete") || isSuperAdmin
   const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
-  const { toast } = useToast()
+  // Every message this screen raises went to useToast(), whose <Toaster /> is
+  // mounted nowhere — the app renders sonner's. So a save that succeeded said
+  // nothing and, worse, a save the server REFUSED also said nothing: staff
+  // corrected a mobile number, pressed Save, saw no change and no error, and
+  // reasonably concluded the field could not be edited. Routed to the toaster
+  // that is actually on screen, keeping the existing call shape so all the
+  // messages this screen already writes simply become visible.
+  const toast = useCallback((o: { title: string; description?: string; variant?: string }) => {
+    const body = o.description ? `${o.title} — ${o.description}` : o.title
+    if (o.variant === "destructive") sonnerToast.error(body)
+    else sonnerToast.success(body)
+  }, [])
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0 })
