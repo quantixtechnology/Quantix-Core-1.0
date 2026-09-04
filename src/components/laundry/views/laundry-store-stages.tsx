@@ -33,6 +33,7 @@ import { OrderBagList, useOrderBags } from "@/components/laundry/order-bag-list"
 import { useScanSink } from "@/lib/hardware"
 import { generateSlots, slotIsPast, DEFAULT_DELIVERY_SLOT } from "@/lib/laundry-slots"
 import { statusLabel, type LaundryOrderStatus } from "@/lib/laundry-workflow"
+import { orderWeightLabel, garmentCountLabel } from "@/lib/laundry-order-display"
 import { printHtmlDocument } from "@/lib/print-utils"
 import { useTransportModes } from "@/hooks/use-transport-modes"
 import { NO_EXECUTIVES_FOR_STORE } from "@/lib/laundry-eligible-executives"
@@ -60,6 +61,12 @@ interface OrderRow {
   id: string; orderNumber: string; status: string; orderType: string; createdAt: string
   grandTotal: number; amountPaid: number; balanceDue: number; paymentStatus: string
   expectedDeliveryDate: string | null; itemCount: number; customerId?: string | null
+  /**
+   * The weight measured at Store Audit. Already returned by /api/laundry/orders
+   * — the query uses `include`, so every scalar column travels with the row and
+   * only `items` is stripped. Declared here, not fetched again.
+   */
+  totalWeightKg?: number | null
   // The promise frozen at booking — what the customer was actually told.
   promisedDeliveryDate?: string | null; promisedDeliveryTimeSlot?: string | null
   promisedBackupDeliveryDate?: string | null; promisedBackupDeliveryTimeSlot?: string | null
@@ -103,7 +110,7 @@ function useQueue(status: LaundryOrderStatus, filter?: (o: OrderRow) => boolean)
 // array identity is stable and the history does not refetch on every render.
 const DELIVERY_HISTORY_STATUSES = ["DELIVERED", "OUT_FOR_DELIVERY"]
 
-function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, children, queue, history }: {
+function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, children, queue, history, showQuantity }: {
   status: LaundryOrderStatus; title: string; subtitle: string
   icon: React.ComponentType<{ className?: string }>
   selected: OrderRow | null
@@ -112,6 +119,11 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
   queue: ReturnType<typeof useQueue>
   /** Optional "what already went through" pane. Stages without one are unchanged. */
   history?: React.ReactNode
+  /**
+   * Show garments and weight on each queue card. Opt-in so the stages that did
+   * not ask for it look exactly as they did.
+   */
+  showQuantity?: boolean
 }) {
   const { orders, loading, search, setSearch, load } = queue
   const [showHistory, setShowHistory] = useState(false)
@@ -160,6 +172,11 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
                       <span>{inr(o.grandTotal)}</span>
                       <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(o.createdAt).toLocaleDateString("en-IN")}</span>
                     </div>
+                    {showQuantity && (
+                      <div className="mt-1 text-[11px] font-medium text-slate-600">
+                        <OrderQuantity o={o} />
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -175,6 +192,34 @@ function QueueShell({ status, title, subtitle, icon: Icon, selected, onSelect, c
       </>
       )}
     </div>
+  )
+}
+
+/**
+ * What is physically in the order: how many garments, and how heavy.
+ *
+ * A delivery operator handing over a bag needs both before they accept it, and
+ * one component renders them in the queue card and in the selected-order panel
+ * so the two can never disagree. Count is the order's own item count and weight
+ * is LaundryOrder.totalWeightKg, both already on the row — neither is derived
+ * from item weights, packet or bag. An unweighed order shows the em dash the
+ * rest of the app uses, never "0 kg".
+ */
+/**
+ * The garment count on its own, for a tile that already carries a "Garments"
+ * heading. Derived from the same helper rather than read off the row directly,
+ * so the tile and the card can never round or guard a count differently.
+ */
+function garmentCountValue(count: number | null | undefined): string {
+  return garmentCountLabel(count).replace(/\s+garments?$/, "")
+}
+
+function OrderQuantity({ o, className = "" }: { o: OrderRow; className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 ${className}`}>
+      <Shirt className="h-3 w-3" />
+      {garmentCountLabel(o.itemCount)} · {orderWeightLabel(o.totalWeightKg)}
+    </span>
   )
 }
 
@@ -916,13 +961,27 @@ export function LaundryReadyForDelivery() {
 
   return (
     <QueueShell status="READY_FOR_DELIVERY" title="Ready for Delivery" subtitle="Final payment and customer handover / delivery"
-      icon={CheckCircle2} selected={selected} onSelect={openOrder} queue={queue}
+      icon={CheckCircle2} selected={selected} onSelect={openOrder} queue={queue} showQuantity
       // Record only. Dispatch Center remains the assignment/inbox screen; this
       // answers "what happened to that order", nothing more.
       history={<DeliveryStageHistory businessId={currentBusinessId} statuses={DELIVERY_HISTORY_STATUSES} />}>
       {selected && (
         <Card><CardContent className="p-5 space-y-4">
           <OrderHeader o={selected} />
+          {/* What is being handed over. The operator confirms the physical
+              contents before the money, so it sits above the totals. Both
+              values come from the same two helpers the queue card uses, off the
+              same order row, so panel and card cannot disagree. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] uppercase text-slate-400">Garments</p>
+              <p className="text-lg font-bold">{garmentCountValue(selected.itemCount)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] uppercase text-slate-400">Weight</p>
+              <p className="text-lg font-bold">{orderWeightLabel(selected.totalWeightKg)}</p>
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Total</p><p className="text-lg font-bold">{inr(selected.grandTotal)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Paid</p><p className="text-lg font-bold text-emerald-600">{inr(selected.amountPaid)}</p></div>
