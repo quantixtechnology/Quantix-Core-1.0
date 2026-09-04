@@ -14,6 +14,8 @@ import { guardStatusWrite } from "@/lib/laundry-order-state"
 import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { checkAuditComplete } from "@/lib/laundry-audit"
+import { advanceAfterPayment } from "@/lib/laundry-payment-advance"
+import { financialSummary } from "@/lib/laundry-adjustment"
 import { ensureDeliveryVerification } from "@/lib/laundry-verification"
 import { notifyDeliveryOtpGenerated } from "@/lib/laundry-notify"
 
@@ -143,6 +145,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     }
 
+    // NOTHING LEFT TO COLLECT MEANS NOTHING TO WAIT FOR.
+    //
+    // Store Audit hands the order to Payment Collection, and that is right while
+    // money is owed. When the balance is already nil — a subscription covered
+    // the whole order, it was paid up front, or the two together settled it —
+    // the queue has nothing to ask for, and leaving the order there made staff
+    // "collect" ₹0 before the work could start.
+    //
+    // This is the same transition the payment endpoint performs, called from
+    // the same shared function: the same financial guard, the same conditional
+    // update, the same COLLECT_PAYMENT event. No new status, no new action, and
+    // Store Audit is still required to get here — the audit gate above has
+    // already run and refused an incomplete order.
+    //
+    // Balance comes from financialSummary, the definition Payments & Ledger
+    // uses, so "settled" means the same thing on both screens. Anything still
+    // owed is left exactly where it was, for staff to collect.
+    let autoAdvanced = false
+    if (toStatus === "PAYMENT_PENDING") {
+      try {
+        const money = await prisma.laundryOrder.findUnique({
+          where: { id },
+          select: {
+            // balanceDue is the field summarise() reads as the balance. Omitting
+            // it does not fail loudly — round2(undefined) is 0 — so every order
+            // would look settled and an unpaid one would advance. It is required.
+            grandTotal: true, amountPaid: true, balanceDue: true, discount: true,
+            subscriptionCoveredAmount: true,
+            adjustments: true,
+          },
+        })
+        if (money) {
+          const f = financialSummary(money as never, (money.adjustments as never) ?? [])
+          if (f.balance <= 0) {
+            autoAdvanced = await advanceAfterPayment(
+              id, order.businessId, "COLLECT_PAYMENT", body.actorName ?? null,
+              `Nothing to collect — balance ₹0 after audit (invoice ₹${f.invoiceTotal}, subscription ₹${f.subscriptionCovered}, paid ₹${f.paid})`,
+            )
+          }
+        }
+      } catch (e) {
+        // Never block the audit transition on this: the order is already safely
+        // at Payment Collection and staff can advance it by hand.
+        console.error("[laundry-order-transition] zero-balance auto-advance failed:", e)
+      }
+    }
+
     // ... then record the audit event (best-effort: never block the workflow if
     // the LaundryOrderEvent table hasn't been migrated on this environment yet).
     await prisma.laundryOrderEvent.create({
@@ -164,8 +213,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         id: updated.id,
         orderNumber: order.orderNumber,
         fromStatus,
-        toStatus,
+        // Where the order ACTUALLY ended up. A settled order does not stop at
+        // Payment Collection, and a caller told otherwise would refresh onto a
+        // queue the order has already left.
+        toStatus: autoAdvanced ? "READY_FOR_PROCESSING" : toStatus,
         action: transition.action,
+        autoAdvanced,
       },
     })
   } catch (error) {

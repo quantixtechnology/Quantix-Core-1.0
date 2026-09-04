@@ -6,6 +6,11 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const API = read('src/app/api/laundry/orders/[id]/payment/route.ts')
 const PANEL = read('src/components/laundry/views/laundry-payment-details-panel.tsx')
 const LEDGER = read('src/app/api/laundry/payments-ledger/route.ts')
+// advanceAfterPayment moved out of the route into its own module so the Store
+// Audit path could reuse the SAME transition instead of copying it. The move
+// changed nothing about it — the guard, the conditional update and the event
+// are as they were — so the assertions below simply follow it here.
+const ADVANCE = read('src/lib/laundry-payment-advance.ts')
 
 // The whole PAY_LATER branch, up to where the money path begins.
 const PAY_LATER_BRANCH = API.slice(
@@ -29,13 +34,15 @@ describe('Pay Later posts no money and advances the order', () => {
   })
 
   it('advances PAYMENT_PENDING → READY_FOR_PROCESSING', () => {
-    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+    expect(ADVANCE).toContain('data: { status: "READY_FOR_PROCESSING" }')
     expect(API).toContain('advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER"')
   })
 
   it('records an auditable event with the actor', () => {
-    expect(API).toContain('action, actorName: actor || null')
-    expect(API).toContain('fromStatus: "PAYMENT_PENDING", toStatus: "READY_FOR_PROCESSING"')
+    expect(ADVANCE).toContain('action, actorName: actor || null')
+    expect(ADVANCE).toContain('fromStatus: "PAYMENT_PENDING", toStatus: "READY_FOR_PROCESSING"')
+    // The route still supplies the actor and the action to it.
+    expect(API).toContain('advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER"')
   })
 
   it('leaves the balance outstanding in the note', () => {
@@ -174,7 +181,7 @@ import { TRANSITIONS, getTransitions } from '@/lib/laundry-workflow'
 describe('PAY_LATER advances the order at Payment Collection', () => {
   it('PAYMENT_PENDING advances to READY_FOR_PROCESSING, exactly as collecting does', () => {
     expect(PAY_LATER_BRANCH).toContain('await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)')
-    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+    expect(ADVANCE).toContain('data: { status: "READY_FOR_PROCESSING" }')
     // The SAME helper both decisions use — no duplicated transition logic.
     expect(API).toContain('advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT"')
   })
@@ -221,7 +228,7 @@ describe('PAY_LATER advances the order', () => {
 
   it('still uses the existing COLLECT_PAYMENT edge at Payment Collection', () => {
     expect(PAY_LATER_BRANCH).toContain('await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, note)')
-    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+    expect(ADVANCE).toContain('data: { status: "READY_FOR_PROCESSING" }')
   })
 
   it('records the arrangement and the move ATOMICALLY', () => {
@@ -277,9 +284,8 @@ describe('PAY_LATER advances the order', () => {
   })
 
   it('PAY NOW is untouched — still PAYMENT_PENDING-only', () => {
-    const fn = API.slice(API.indexOf('// Advance PAYMENT_PENDING'), API.indexOf('export async function POST'))
-    expect(fn).toContain('where: { id: orderId, status: "PAYMENT_PENDING" },')
-    expect(fn).toContain('data: { status: "READY_FOR_PROCESSING" },')
+    expect(ADVANCE).toContain('where: { id: orderId, status: "PAYMENT_PENDING" },')
+    expect(ADVANCE).toContain('data: { status: "READY_FOR_PROCESSING" },')
     expect(API).toContain('advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT"')
   })
 
@@ -330,7 +336,7 @@ describe('PAY LATER lands the order in the Packing & QR queue', () => {
   it('…which is the state the Payment Collection edge advances to', () => {
     const edge = TRANSITIONS.PAYMENT_PENDING.find((t) => t.action === 'COLLECT_PAYMENT')
     expect(edge?.to).toBe('READY_FOR_PROCESSING')
-    expect(API).toContain('data: { status: "READY_FOR_PROCESSING" }')
+    expect(ADVANCE).toContain('data: { status: "READY_FOR_PROCESSING" }')
   })
 
   it('the queue no longer hides orders it actually holds', () => {

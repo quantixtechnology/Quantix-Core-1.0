@@ -46,11 +46,20 @@ describe('the approval targets the real workflow edge', () => {
 
 // ── CASE A · Pay Later must not block the approval ─────────────────────────
 describe('CASE A · Pay Later does not block Store Audit approval', () => {
-  it('the transition route has NO payment guard at all', () => {
-    expect(ROUTE).not.toContain('balanceDue')
-    expect(ROUTE).not.toContain('paymentStatus')
-    expect(ROUTE).not.toContain('amountPaid')
+  it('no payment condition can block the approval', () => {
+    // The route now reads the balance — but only AFTER the status has been
+    // written, to decide whether a settled order should carry on past Payment
+    // Collection instead of waiting there for a ₹0 collection. Approval itself
+    // is never conditional on money, which is what this case protects, so the
+    // invariant is the ORDER of the two: the write first, the money after.
+    const write = ROUTE.indexOf('const updated = await prisma.laundryOrder.update({')
+    const readsMoney = ROUTE.indexOf('balanceDue: true')
+    expect(write).toBeGreaterThan(-1)
+    expect(readsMoney).toBeGreaterThan(write)
+    // And nothing about Pay Later reaches this route.
     expect(ROUTE).not.toContain('PAY_LATER')
+    // No refusal on this route mentions payment.
+    expect(ROUTE).not.toMatch(/status:\s*409[^}]*payment/i)
   })
 
   it('the only gate on approval is the audit gate', () => {

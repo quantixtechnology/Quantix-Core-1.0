@@ -12,6 +12,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 import { checkAuditComplete } from "@/lib/laundry-audit"
 import { guardFinancialAdvance } from "@/lib/laundry-order-state"
+import { advanceAfterPayment } from "@/lib/laundry-payment-advance"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -131,25 +132,6 @@ async function advanceOnPayLater(orderId: string, businessId: string, actor?: st
 
 // Advance PAYMENT_PENDING → READY_FOR_PROCESSING with an audit event. Fires
 // when payment completes. PAY NOW behaviour is deliberately unchanged.
-async function advanceAfterPayment(orderId: string, businessId: string, action: "COLLECT_PAYMENT" | "PAY_LATER", actor?: string | null, note?: string | null) {
-  // The payment edge still answers to the state invariants: an order whose
-  // garments were never identified cannot be pushed into the Packing queue.
-  // COLLECT_PAYMENT is `internal` (only this endpoint records money) but is NOT
-  // a custody edge — no garment moves — so the financial entry point grants it.
-  // The evidence invariants still apply on top.
-  const verdict = await guardFinancialAdvance({ orderId, businessId, from: "PAYMENT_PENDING", to: "READY_FOR_PROCESSING" })
-  if (!verdict.ok) return false
-  const advanced = await prisma.laundryOrder.updateMany({
-    where: { id: orderId, status: "PAYMENT_PENDING" },
-    data: { status: "READY_FOR_PROCESSING" },
-  })
-  if (advanced.count > 0) {
-    await prisma.laundryOrderEvent.create({
-      data: { orderId, businessId, fromStatus: "PAYMENT_PENDING", toStatus: "READY_FOR_PROCESSING", action, actorName: actor || null, note: note || null },
-    }).catch(() => null)
-  }
-  return advanced.count > 0
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
