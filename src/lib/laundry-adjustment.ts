@@ -210,7 +210,16 @@ export function matchesLedgerFilter(f: LedgerFilter, row: { paid: number; balanc
   switch (f) {
     case "PENDING": return row.balance > 0 && row.paid <= 0
     case "PARTIAL": return row.balance > 0 && row.paid > 0
-    case "PAID": return row.balance <= 0
+    // Money has to have MOVED. Asking only whether the balance is clear put
+    // every order that never owed anything into Paid — an order booked at ₹0
+    // has nothing outstanding, which is not the same as having been paid, and
+    // the list filled with rows reading Total ₹0 / Paid ₹0 / Balance ₹0 whose
+    // own payment status said UNPAID. Paid is the third of three states the
+    // balance and the receipt decide together: nothing paid and something owed
+    // is Pending, something paid and something owed is Partial, something paid
+    // and nothing owed is Paid. An order that owes nothing and paid nothing is
+    // none of them, and stays in All where it belongs.
+    case "PAID": return row.paid > 0 && row.balance <= 0
     case "DISCOUNTED": return row.discount > 0
     case "REFUNDED": return row.refunded > 0 || row.refundDue > 0
     default: return true
