@@ -22,6 +22,10 @@ import { requireLaundryLevel } from "@/lib/laundry-rbac"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { financialSummary, matchesLedgerFilter, type LedgerFilter } from "@/lib/laundry-adjustment"
+import {
+  businessDayBounds, summariseToday, isOnlinePayment,
+  SUBSCRIPTION_COVERAGE, REFUND, isMoneyTransaction, type TodayTransaction,
+} from "@/lib/laundry-today-transactions"
 
 export const runtime = "nodejs"
 
@@ -35,6 +39,96 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
+
+    // ── TODAY'S TRANSACTIONS ───────────────────────────────────────────────
+    //
+    // A different question from the rest of this route: not "what is owed on
+    // each order?" but "what money moved today?". It is keyed on the moment a
+    // payment was recorded, so an order raised yesterday and paid today belongs
+    // here and an order raised today and unpaid does not. Nothing is inferred
+    // from order status or balance — a row exists only where a payment record
+    // does. Every other filter below is untouched.
+    if ((u.searchParams.get("filter") || "") === "TODAY") {
+      const { start, end, dayKey } = businessDayBounds()
+      const platformId = biz.platformBusinessId || biz.id
+
+      const [payments, purchases] = await Promise.all([
+        // Order-side money: counter, delivery COD, delivery QR, storefront
+        // Razorpay, subscription coverage and refunds all land here.
+        prisma.laundryPayment.findMany({
+          where: { businessId: biz.id, status: "SUCCESS", createdAt: { gte: start, lt: end } },
+          orderBy: { createdAt: "desc" },
+        }),
+        // A subscription settled on its own. One bought with an order is left
+        // out: its money is already a LaundryPayment above, and counting the
+        // purchase too would double it.
+        prisma.subscriptionPurchase.findMany({
+          where: { businessId: platformId, laundryOrderId: null, paidAt: { gte: start, lt: end } },
+          orderBy: { paidAt: "desc" },
+        }),
+      ])
+
+      const ordIds = [...new Set(payments.map((p) => p.orderId))]
+      const orders = ordIds.length
+        ? await prisma.laundryOrder.findMany({ where: { id: { in: ordIds } }, select: { id: true, orderNumber: true, customerId: true } })
+        : []
+      const planIds = [...new Set(purchases.map((p) => p.planId))]
+      const plans = planIds.length
+        ? await prisma.subscriptionPlan.findMany({ where: { id: { in: planIds } }, select: { id: true, name: true } })
+        : []
+      const custIds = [...new Set([...orders.map((o) => o.customerId).filter(Boolean) as string[], ...purchases.map((p) => p.customerId)])]
+      const custs = custIds.length
+        ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } })
+        : []
+      const orderById = new Map(orders.map((o) => [o.id, o]))
+      const planById = new Map(plans.map((p) => [p.id, p.name]))
+      const custById = new Map(custs.map((c) => [c.id, c.name]))
+
+      const rows: TodayTransaction[] = [
+        ...payments.map((p) => {
+          const o = orderById.get(p.orderId)
+          const online = isOnlinePayment(p)
+          return {
+            id: p.id,
+            at: p.createdAt.toISOString(),
+            // Allowance consumption is a ledger entry, not money in the till,
+            // and is classified so it can never be summed as collection.
+            kind: p.method === SUBSCRIPTION_COVERAGE ? "SUBSCRIPTION_COVERED" as const
+                : p.method === REFUND ? "REFUND" as const
+                : "LAUNDRY" as const,
+            customerName: o?.customerId ? custById.get(o.customerId) ?? null : null,
+            reference: o?.orderNumber ?? null,
+            transactionRef: p.reference ?? null,
+            method: p.method,
+            online,
+            amount: p.amount,          // refunds are already negative on the row
+            status: p.status,
+          }
+        }),
+        ...purchases.map((p) => ({
+          id: p.id,
+          at: (p.paidAt as Date).toISOString(),
+          kind: "SUBSCRIPTION" as const,
+          customerName: custById.get(p.customerId) ?? null,
+          reference: planById.get(p.planId) ?? "Subscription",
+          transactionRef: p.paymentTransactionId || p.paymentReference || null,
+          method: p.paymentMethod || p.gateway || "OTHER",
+          online: (p.paymentMethod || "").toUpperCase() === "RAZORPAY" || !!p.gateway,
+          amount: p.amountPaid,
+          status: p.paymentStatus,
+        })),
+      ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+
+      // The list is the money: allowance coverage is summarised separately
+      // rather than sitting among the payments, so the count and the list both
+      // mean "what was actually taken today".
+      return NextResponse.json({
+        success: true,
+        data: rows.filter(isMoneyTransaction),
+        summary: summariseToday(rows),
+        dayKey,
+      })
+    }
 
     const q = (u.searchParams.get("search") || "").trim()
     const filter = (u.searchParams.get("filter") || "ALL") as LedgerFilter

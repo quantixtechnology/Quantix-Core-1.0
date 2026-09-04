@@ -16,6 +16,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { Loader2, Search, IndianRupee } from "lucide-react"
 import type { LedgerFilter } from "@/lib/laundry-adjustment"
+import { LEDGER_TIMEZONE } from "@/lib/laundry-today-transactions"
 import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
 
@@ -49,8 +50,41 @@ interface Row {
 
 const inr = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const day = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+/** Business clock, so a till reading is the same wherever it is opened. */
+const clock = (d: string) => new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: LEDGER_TIMEZONE })
 
-const FILTERS: { key: LedgerFilter; label: string }[] = [
+const TXN_TYPE: Record<string, { label: string; cls: string }> = {
+  LAUNDRY: { label: "Laundry", cls: "border-blue-200 bg-blue-50 text-blue-700" },
+  SUBSCRIPTION: { label: "Subscription", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  SUBSCRIPTION_COVERED: { label: "Subscription Covered", cls: "border-violet-200 bg-violet-50 text-violet-700" },
+  REFUND: { label: "Refund", cls: "border-rose-200 bg-rose-50 text-rose-700" },
+}
+function TxnType({ kind }: { kind: string }) {
+  const t = TXN_TYPE[kind] ?? TXN_TYPE.LAUNDRY
+  return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${t.cls}`}>{t.label}</span>
+}
+
+/**
+ * TODAY is a different question from the rest of these: not "what is owed on
+ * each order?" but "what money moved today?". It is an additional view — every
+ * other filter keeps its existing behaviour and its existing server path.
+ */
+type LedgerView = LedgerFilter | "TODAY"
+
+interface TodayRow {
+  id: string; at: string
+  kind: "LAUNDRY" | "SUBSCRIPTION" | "SUBSCRIPTION_COVERED" | "REFUND"
+  customerName: string | null; reference: string | null; transactionRef: string | null
+  method: string; online: boolean; amount: number; status: string
+}
+interface TodaySummaryData {
+  transactions: number; collected: number; refunds: number; net: number
+  subscriptionCovered: number; subscriptionCoveredOrders: number
+  byMethod: Record<string, number>
+}
+
+const FILTERS: { key: LedgerView; label: string }[] = [
+  { key: "TODAY", label: "Today" },
   { key: "ALL", label: "All" },
   { key: "PENDING", label: "Pending" },
   { key: "PAID", label: "Paid" },
@@ -67,7 +101,9 @@ export function LaundryPaymentsLedger() {
   const [openOrder, setOpenOrder] = useState<Row | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<LedgerFilter>("ALL")
+  const [filter, setFilter] = useState<LedgerView>("ALL")
+  const [today, setToday] = useState<TodayRow[]>([])
+  const [todaySummary, setTodaySummary] = useState<TodaySummaryData | null>(null)
   const [search, setSearch] = useState("")
   const [q, setQ] = useState("")
 
@@ -81,7 +117,11 @@ export function LaundryPaymentsLedger() {
     if (q) p.set("search", q)
     fetch(`/api/laundry/payments-ledger?${p}`)
       .then((r) => r.json())
-      .then((j) => { if (j.success) setRows(j.data || []) })
+      .then((j) => {
+        if (!j.success) return
+        if (filter === "TODAY") { setToday(j.data || []); setTodaySummary(j.summary ?? null) }
+        else setRows(j.data || [])
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [currentBusinessId, filter, q])
@@ -127,7 +167,7 @@ export function LaundryPaymentsLedger() {
         </div>
       </div>
 
-      {!loading && rows.length > 0 && (
+      {filter !== "TODAY" && !loading && rows.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-3">
           <Tile label="Collected" value={inr(totals.paid)} />
           <Tile label="Outstanding" value={inr(totals.balance)} tone="text-amber-700" />
@@ -135,7 +175,82 @@ export function LaundryPaymentsLedger() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      {/* ── TODAY ────────────────────────────────────────────────────────────
+          The day's takings, read from the payment records themselves. Collected
+          counts only money that arrived: subscription allowance is shown
+          separately because nothing was paid for it, and refunds are netted off
+          rather than hidden. */}
+      {filter === "TODAY" && (
+        <>
+          {todaySummary && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <Tile label="Transactions" value={String(todaySummary.transactions)} />
+                <Tile label="Collected" value={inr(todaySummary.collected)} tone="text-emerald-700" />
+                <Tile label="Refunds" value={inr(todaySummary.refunds)} tone="text-rose-700" />
+                <Tile label="Net Collected" value={inr(todaySummary.net)} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {Object.entries(todaySummary.byMethod).sort((a, b) => b[1] - a[1]).map(([m, v]) => (
+                  <span key={m} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                    {m === "ONLINE" ? "Online / Razorpay" : m}
+                    <span className="ml-1.5 font-semibold text-slate-800">{inr(v)}</span>
+                  </span>
+                ))}
+              </div>
+              {/* Reported, never counted. No money arrived and no instrument was
+                  used, so it is neither a transaction nor a collection — it sits
+                  apart so the day's takings still reconcile against a till. */}
+              {todaySummary.subscriptionCovered > 0 && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Subscription Covered</p>
+                  <p className="mt-0.5 text-lg font-bold text-violet-800">{inr(todaySummary.subscriptionCovered)}</p>
+                  <p className="text-[11px] text-violet-700/80">
+                    {todaySummary.subscriptionCoveredOrders} order{todaySummary.subscriptionCoveredOrders === 1 ? "" : "s"} covered ·
+                    allowance consumed, not money received
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  {["Time", "Customer", "Order / Subscription", "Type", "Method", "Amount", "Status"].map((h, i) => (
+                    <th key={h} className={`px-3 py-2.5 font-semibold ${i === 5 ? "text-right" : "text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr><td colSpan={7} className="py-12 text-center text-slate-400"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
+                ) : today.length === 0 ? (
+                  <tr><td colSpan={7} className="py-12 text-center text-slate-400">No payments received yet today.</td></tr>
+                ) : today.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50/60">
+                    <td className="px-3 py-2.5 tabular-nums text-slate-600">{clock(t.at)}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{t.customerName || "Walk-in"}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-mono text-[12px] text-slate-700">{t.reference || "—"}</div>
+                      {t.transactionRef && <div className="font-mono text-[10px] text-slate-400">{t.transactionRef}</div>}
+                    </td>
+                    <td className="px-3 py-2.5"><TxnType kind={t.kind} /></td>
+                    <td className="px-3 py-2.5 text-slate-600">
+                      {t.method}
+                      {t.online && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">Online / Razorpay</span>}
+                    </td>
+                    <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${t.amount < 0 ? "text-rose-700" : "text-slate-800"}`}>{inr(t.amount)}</td>
+                    <td className="px-3 py-2.5 text-[11px] font-semibold text-slate-600">{t.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className={`overflow-x-auto rounded-xl border border-slate-200 bg-white ${filter === "TODAY" ? "hidden" : ""}`}>
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
