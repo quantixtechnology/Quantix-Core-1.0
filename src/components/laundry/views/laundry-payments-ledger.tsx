@@ -14,9 +14,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
-import { Loader2, Search, IndianRupee } from "lucide-react"
+import { Loader2, Search, IndianRupee, Download } from "lucide-react"
 import type { LedgerFilter } from "@/lib/laundry-adjustment"
-import { LEDGER_TIMEZONE } from "@/lib/laundry-today-transactions"
+import * as XLSX from "xlsx"
+import {
+  LEDGER_TIMEZONE, TXN_LABEL, toCsv, toWorkbookAoa, exportFilename, AMOUNT_COLUMN, EXPORT_COLUMNS,
+} from "@/lib/laundry-today-transactions"
 import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
 
@@ -53,15 +56,16 @@ const day = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-dig
 /** Business clock, so a till reading is the same wherever it is opened. */
 const clock = (d: string) => new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: LEDGER_TIMEZONE })
 
-const TXN_TYPE: Record<string, { label: string; cls: string }> = {
-  LAUNDRY: { label: "Laundry", cls: "border-blue-200 bg-blue-50 text-blue-700" },
-  SUBSCRIPTION: { label: "Subscription", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  SUBSCRIPTION_COVERED: { label: "Subscription Covered", cls: "border-violet-200 bg-violet-50 text-violet-700" },
-  REFUND: { label: "Refund", cls: "border-rose-200 bg-rose-50 text-rose-700" },
+/** Colour only — the wording comes from TXN_LABEL, which the export also uses. */
+const TXN_TONE: Record<string, string> = {
+  LAUNDRY: "border-blue-200 bg-blue-50 text-blue-700",
+  SUBSCRIPTION: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  SUBSCRIPTION_COVERED: "border-violet-200 bg-violet-50 text-violet-700",
+  REFUND: "border-rose-200 bg-rose-50 text-rose-700",
 }
 function TxnType({ kind }: { kind: string }) {
-  const t = TXN_TYPE[kind] ?? TXN_TYPE.LAUNDRY
-  return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${t.cls}`}>{t.label}</span>
+  const cls = TXN_TONE[kind] ?? TXN_TONE.LAUNDRY
+  return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{TXN_LABEL[kind as keyof typeof TXN_LABEL] ?? kind}</span>
 }
 
 /**
@@ -104,6 +108,37 @@ export function LaundryPaymentsLedger() {
   const [filter, setFilter] = useState<LedgerView>("ALL")
   const [today, setToday] = useState<TodayRow[]>([])
   const [todaySummary, setTodaySummary] = useState<TodaySummaryData | null>(null)
+  const [todayKey, setTodayKey] = useState("")
+
+  const save = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url; a.download = name; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Both exports take the rows and totals already on screen. Nothing is
+  // recomputed and no second request is made, so a file cannot disagree with
+  // the view it came from.
+  const downloadCsv = () => {
+    save(new Blob([toCsv(today)], { type: "text/csv;charset=utf-8" }), exportFilename(todayKey, "csv"))
+  }
+
+  const downloadExcel = () => {
+    if (!todaySummary) return
+    const ws = XLSX.utils.aoa_to_sheet(toWorkbookAoa(today, todaySummary, todayKey))
+    ws["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 20 }, { wch: 22 }, { wch: 12 }, { wch: 12 }]
+    // Amounts as numbers with two decimals, negatives kept negative so a refund
+    // still reads as money out in a spreadsheet.
+    const range = XLSX.utils.decode_range(ws["!ref"] as string)
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: AMOUNT_COLUMN })]
+      if (cell && typeof cell.v === "number") { cell.t = "n"; cell.z = "#,##0.00" }
+    }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Today's Transactions")
+    XLSX.writeFile(wb, exportFilename(todayKey, "xlsx"))
+  }
   const [search, setSearch] = useState("")
   const [q, setQ] = useState("")
 
@@ -119,7 +154,7 @@ export function LaundryPaymentsLedger() {
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) return
-        if (filter === "TODAY") { setToday(j.data || []); setTodaySummary(j.summary ?? null) }
+        if (filter === "TODAY") { setToday(j.data || []); setTodaySummary(j.summary ?? null); setTodayKey(j.dayKey || "") }
         else setRows(j.data || [])
       })
       .catch(() => {})
@@ -184,6 +219,19 @@ export function LaundryPaymentsLedger() {
         <>
           {todaySummary && (
             <>
+              {/* Only in this view, and only once there is something to export —
+                  the file is the day's takings, not an empty sheet. */}
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={downloadCsv} disabled={today.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Download className="h-3.5 w-3.5" /> Download CSV
+                </button>
+                <button onClick={downloadExcel} disabled={today.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Download className="h-3.5 w-3.5" /> Download Excel
+                </button>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-4">
                 <Tile label="Transactions" value={String(todaySummary.transactions)} />
                 <Tile label="Collected" value={inr(todaySummary.collected)} tone="text-emerald-700" />
@@ -217,7 +265,9 @@ export function LaundryPaymentsLedger() {
             <table className="w-full min-w-[900px] text-sm">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
-                  {["Time", "Customer", "Order / Subscription", "Type", "Method", "Amount", "Status"].map((h, i) => (
+                  {/* The same column list the export writes, so the file and
+                      the screen can never show different columns. */}
+                  {EXPORT_COLUMNS.map((h, i) => (
                     <th key={h} className={`px-3 py-2.5 font-semibold ${i === 5 ? "text-right" : "text-left"}`}>{h}</th>
                   ))}
                 </tr>

@@ -151,3 +151,86 @@ export function summariseToday(rows: TodayTransaction[]): TodaySummary {
     byMethod,
   }
 }
+
+// ── Export ──────────────────────────────────────────────────────────────────
+//
+// The day's takings as a file, for a book-keeper or an accountant. It exports
+// exactly what the screen shows — the same rows the Today API already returned
+// and the same summary it already computed. Nothing is recomputed here, no
+// second query is made, and allowance coverage stays out of the rows because
+// the API never put it in them.
+
+/** The one label per type, so the screen and the export cannot drift apart. */
+export const TXN_LABEL: Record<TxnKind, string> = {
+  LAUNDRY: "Laundry",
+  SUBSCRIPTION: "Subscription",
+  SUBSCRIPTION_COVERED: "Subscription Covered",
+  REFUND: "Refund",
+}
+
+export const EXPORT_COLUMNS = ["Time", "Customer", "Order / Subscription", "Type", "Method", "Amount", "Status"] as const
+
+/** Business-local clock, matching the screen — never the exporter's timezone. */
+export function exportTime(iso: string, timeZone: string = LEDGER_TIMEZONE): string {
+  return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone })
+}
+
+/** Method as the screen presents it, online marker included. */
+export function exportMethod(t: Pick<TodayTransaction, "method" | "online">): string {
+  return t.online ? `${t.method} (Online / Razorpay)` : t.method
+}
+
+/** One export row, in column order. Amount stays negative for a refund. */
+export function exportRow(t: TodayTransaction): (string | number)[] {
+  return [
+    exportTime(t.at),
+    t.customerName || "Walk-in",
+    t.reference || "—",
+    TXN_LABEL[t.kind] ?? t.kind,
+    exportMethod(t),
+    t.amount,
+    t.status,
+  ]
+}
+
+/**
+ * CSV. Every field is quoted and inner quotes doubled — the same escaping the
+ * hardware event log uses — so a customer name with a comma, a quote or a
+ * newline in it cannot break the column alignment.
+ */
+export function toCsv(rows: TodayTransaction[]): string {
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+  return [
+    EXPORT_COLUMNS.map(esc).join(","),
+    ...rows.map((t) => exportRow(t).map(esc).join(",")),
+  ].join("\n")
+}
+
+/**
+ * The worksheet, as rows of cells: the day's summary first, then the
+ * transactions. Every figure is taken from the summary the API returned, so an
+ * export can never disagree with the screen it was taken from.
+ */
+export function toWorkbookAoa(rows: TodayTransaction[], summary: TodaySummary, dayKey: string): (string | number)[][] {
+  return [
+    ["Today's Transactions", dayKey],
+    [],
+    ["Transactions", summary.transactions],
+    ["Collected", summary.collected],
+    ["Refunds", summary.refunds],
+    ["Net Collected", summary.net],
+    ["Subscription Covered", summary.subscriptionCovered],
+    ["Subscription Covered Orders", summary.subscriptionCoveredOrders],
+    [],
+    [...EXPORT_COLUMNS],
+    ...rows.map(exportRow),
+  ]
+}
+
+/** Row index (0-based) of the Amount column, for number formatting. */
+export const AMOUNT_COLUMN = EXPORT_COLUMNS.indexOf("Amount" as never)
+
+/** payments-today-2026-09-04.csv — the business day, not the browser's. */
+export function exportFilename(dayKey: string, ext: "csv" | "xlsx"): string {
+  return `payments-today-${dayKey}.${ext}`
+}
