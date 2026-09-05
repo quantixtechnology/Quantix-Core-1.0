@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveSession, bearerToken } from "@/lib/laundry-app-auth"
+import { LIVE_PAYMENT_WHERE } from "@/lib/laundry-payment-correction"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   const orderIds = orders.map((o) => o.id)
   const orderNo = new Map(orders.map((o) => [o.id, o.orderNumber]))
   const [payments, subs] = await Promise.all([
-    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds } }, select: { orderId: true, method: true, amount: true, createdAt: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
+    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds }, ...LIVE_PAYMENT_WHERE }, select: { orderId: true, method: true, amount: true, createdAt: true }, orderBy: { createdAt: "desc" } }) : Promise.resolve([]),
     prisma.customerSubscription.findMany({ where: { customerId: sess.customerId }, include: { plan: { select: { name: true } }, usages: { orderBy: { createdAt: "desc" }, take: 50 } } }),
   ])
 

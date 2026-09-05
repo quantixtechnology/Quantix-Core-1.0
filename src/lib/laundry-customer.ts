@@ -5,6 +5,7 @@
 // engines — it never mutates their logic.
 // ============================================================================
 import { prisma } from "@/lib/prisma"
+import { LIVE_PAYMENT_WHERE } from "@/lib/laundry-payment-correction"
 import { getTransportModes, transportRefsForOrders } from "@/lib/laundry-transport-server"
 import type { TransportRef } from "@/lib/laundry-transport"
 
@@ -88,7 +89,7 @@ export async function customerTimeline(customerId: string, limit = 100): Promise
   const orders = await prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, subscriptionCoveredAmount: true, businessId: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: limit })
   const orderIds = orders.map((o) => o.id)
   const [payments, subs, activities, events] = await Promise.all([
-    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds } }, select: { amount: true, method: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { amount: number; method: string; createdAt: Date; orderId: string }[]),
+    orderIds.length ? prisma.laundryPayment.findMany({ where: { orderId: { in: orderIds }, ...LIVE_PAYMENT_WHERE }, select: { amount: true, method: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { amount: number; method: string; createdAt: Date; orderId: string }[]),
     prisma.customerSubscription.findMany({ where: { customerId }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.customerActivity.findMany({ where: { customerId }, orderBy: { createdAt: "desc" }, take: limit }),
     orderIds.length ? prisma.laundryOrderEvent.findMany({ where: { orderId: { in: orderIds } }, select: { action: true, actorName: true, note: true, createdAt: true, orderId: true }, orderBy: { createdAt: "desc" }, take: limit }) : Promise.resolve([] as { action: string; actorName: string | null; note: string | null; createdAt: Date; orderId: string }[]),

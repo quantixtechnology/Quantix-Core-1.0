@@ -16,6 +16,7 @@ import {
   validateCompensation, canRefund, discountAmount, KIND_LABEL, discountHint,
   type RefundStatus, type AdjustmentKind,
 } from "@/lib/laundry-adjustment"
+import { isCorrectedPayment, UNCORRECTABLE_METHODS } from "@/lib/laundry-payment-correction"
 
 const inr = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const when = (d: string) => new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -27,7 +28,12 @@ interface Adj {
   /** Set once the adjustment has been voided; it then counts for nothing. */
   voidedAt: string | null; voidedByName: string | null; voidReason: string | null
 }
-interface Pay { id: string; method: string; amount: number; reference: string | null; status: string; gatewayPaymentId: string | null; createdAt: string; createdBy: string | null }
+interface Pay {
+  id: string; method: string; amount: number; reference: string | null; status: string
+  gatewayPaymentId: string | null; createdAt: string; createdBy: string | null
+  /** Set once the entry was corrected as never-received; it then counts as nothing. */
+  correctedAt: string | null; correctedByName: string | null; correctionReason: string | null
+}
 /** One past correction, exactly as the endpoint returns it. */
 type DvRow = { at: string; user: string; role: string; previousDv: number; newDv: number; comment: string }
 
@@ -68,6 +74,10 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
   const [showDv, setShowDv] = useState(false)
   const [dvValue, setDvValue] = useState("")
   const [dvComment, setDvComment] = useState("")
+  // ── Erroneous payment correction (same three roles as a DV correction) ───
+  // Which payment entry is open for correction, and the reason typed for it.
+  const [correctPayId, setCorrectPayId] = useState<string | null>(null)
+  const [correctReason, setCorrectReason] = useState("")
   const [payMethod, setPayMethod] = useState<string>("CASH")
   const [payAmount, setPayAmount] = useState("")
 
@@ -141,6 +151,28 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       toast.success(`${inr(a.amount)} adjustment voided`)
       load(); onChanged?.()
     } catch { toast.error("Could not void this adjustment") } finally { setBusy(null) }
+  }
+
+  /**
+   * Correct a payment that was recorded but never actually received.
+   *
+   * Deliberately NOT a refund: no money goes back, because none came in. The
+   * entry stays on the record and stops counting as paid.
+   */
+  const correctPayment = async (pay: Pay) => {
+    const r = correctReason.trim()
+    if (!r) { toast.error("A reason is required to correct a payment"); return }
+    setBusy(pay.id)
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/payments/${pay.id}/correct`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: r }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast.error(j.error || "Could not correct this payment"); return }
+      toast.success(`${inr(pay.amount)} payment corrected — it no longer counts as paid`)
+      setCorrectPayId(null); setCorrectReason("")
+      load(); onChanged?.()
+    } catch { toast.error("Could not correct this payment") } finally { setBusy(null) }
   }
 
   const applyDiscount = async () => {
@@ -522,17 +554,71 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
             </div>
 
             <Section title="Payment History">
-              {payments.length === 0 ? <Empty>No payments recorded yet.</Empty> : payments.map((p) => (
-                <div key={p.id} className="flex items-start justify-between gap-2 border-b border-slate-50 py-1.5 last:border-0">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800">{inr(p.amount)} · {p.method}</p>
-                    <p className="text-[11px] text-slate-400">
-                      {when(p.createdAt)}{p.gatewayPaymentId ? ` · Payment ID: ${p.gatewayPaymentId}` : p.reference ? ` · Ref ${p.reference}` : ""}
-                    </p>
+              {payments.length === 0 ? <Empty>No payments recorded yet.</Empty> : payments.map((p) => {
+                const corrected = isCorrectedPayment(p)
+                // Correctable only if it is a real staff-entered receipt that
+                // still counts. Subscription coverage and refunds are somebody
+                // else's row; the endpoint refuses them too.
+                const correctable = !corrected && canCorrectDv
+                  && !(UNCORRECTABLE_METHODS as readonly string[]).includes((p.method || "").toUpperCase())
+                return (
+                  <div key={p.id} className="border-b border-slate-50 py-1.5 last:border-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* A corrected entry is kept and shown, struck through, so the
+                            record of what was entered stays visible while the money
+                            it once claimed no longer counts. */}
+                        <p className={`text-xs font-semibold ${corrected ? "text-slate-400 line-through" : "text-slate-800"}`}>
+                          {inr(p.amount)} · {p.method}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {when(p.createdAt)}{p.gatewayPaymentId ? ` · Payment ID: ${p.gatewayPaymentId}` : p.reference ? ` · Ref ${p.reference}` : ""}
+                        </p>
+                        {corrected && (
+                          <p className="text-[11px] italic text-slate-400">
+                            Corrected by {p.correctedByName || "—"}{p.correctedAt ? ` · ${when(p.correctedAt)}` : ""}
+                            {p.correctionReason ? ` · ${p.correctionReason}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+                        {corrected ? "Corrected / Invalid" : (p.status || "SUCCESS")}
+                      </span>
+                    </div>
+
+                    {correctable && correctPayId !== p.id && (
+                      <button onClick={() => { setCorrectPayId(p.id); setCorrectReason("") }}
+                        className="mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
+                        <PencilLine className="h-3 w-3" /> Correct Erroneous Payment
+                      </button>
+                    )}
+
+                    {correctPayId === p.id && (
+                      <div className="mt-2 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                        <p className="text-[11px] text-amber-800">
+                          This records that {inr(p.amount)} was never actually received. It is not a refund —
+                          no money is paid back and no new payment is created. The entry stays in this history,
+                          marked corrected, and stops counting as paid.
+                        </p>
+                        <div>
+                          <Label>Reason</Label>
+                          <textarea value={correctReason} onChange={(e) => setCorrectReason(e.target.value)} rows={2}
+                            placeholder="Payment was incorrectly marked as paid; customer did not pay for this order."
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-blue-500" />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => { setCorrectPayId(null); setCorrectReason("") }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+                          <button onClick={() => correctPayment(p)} disabled={busy === p.id || !correctReason.trim()}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                            {busy === p.id && <Loader2 className="h-3 w-3 animate-spin" />} Confirm Correction
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <span className="shrink-0 text-[10px] font-semibold text-slate-500">{p.status || "SUCCESS"}</span>
-                </div>
-              ))}
+                )
+              })}
             </Section>
 
             <Section title="Discounts & Refunds">

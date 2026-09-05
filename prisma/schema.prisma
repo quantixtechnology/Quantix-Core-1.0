@@ -5262,13 +5262,23 @@ model LaundryPayment {
   // Gateway identifiers, so a Razorpay refund can find the payment it belongs
   // to. Empty until Razorpay is configured — never populated with a placeholder,
   // because a fake id is worse than none when a real refund is attempted.
-  status           String   @default("SUCCESS") // SUCCESS | PENDING | FAILED
+  status           String   @default("SUCCESS") // SUCCESS | PENDING | FAILED | CORRECTED (entered in error — never counts as money)
   gateway          String? // razorpay | ...  (matches PlatformPaymentPlugin.gateway)
   gatewayOrderId   String?
   gatewayPaymentId String?
   note             String?
   createdBy        String?
   createdAt        DateTime @default(now())
+  // ── Erroneous-entry correction ───────────────────────────────────────────
+  // Staff can record a payment that never actually happened. The row is never
+  // edited or deleted — amount, method, author and time stay exactly as they
+  // were entered — but status becomes CORRECTED, which the money queries
+  // already exclude, and these columns say who corrected it and why. All
+  // nullable and additive, so every existing payment is untouched.
+  correctedAt      DateTime?
+  correctedBy      String?
+  correctedByName  String?
+  correctionReason String?
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 

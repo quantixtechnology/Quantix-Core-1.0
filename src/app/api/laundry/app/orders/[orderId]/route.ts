@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveSession, bearerToken } from "@/lib/laundry-app-auth"
+import { LIVE_PAYMENT_WHERE } from "@/lib/laundry-payment-correction"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -41,7 +42,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
 
   const [events, payments] = await Promise.all([
     prisma.laundryOrderEvent.findMany({ where: { orderId: order.id }, orderBy: { createdAt: "asc" }, select: { toStatus: true, action: true, note: true, createdAt: true } }),
-    prisma.laundryPayment.findMany({ where: { orderId: order.id }, orderBy: { createdAt: "asc" }, select: { method: true, amount: true, reference: true, createdAt: true } }),
+    prisma.laundryPayment.findMany({ where: { orderId: order.id, ...LIVE_PAYMENT_WHERE }, orderBy: { createdAt: "asc" }, select: { method: true, amount: true, reference: true, createdAt: true } }),
   ])
 
   const idx = TRACK.findIndex((t) => t.status === order.status)
