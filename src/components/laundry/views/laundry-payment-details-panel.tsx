@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { statusLabel } from "@/lib/laundry-workflow"
-import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck, Clock } from "lucide-react"
+import { Loader2, X, Plus, Undo2, IndianRupee, ClipboardCheck, Clock, PencilLine } from "lucide-react"
 import {
   ADJUSTMENT_REASONS, REFUND_LABEL, reasonLabel, financialSummary, maxCompensation,
   validateCompensation, canRefund, discountAmount, KIND_LABEL, discountHint,
@@ -26,6 +26,9 @@ interface Adj {
   refundStatus: string; refundReference: string | null; gatewayRefundId: string | null; createdByName: string | null; createdAt: string
 }
 interface Pay { id: string; method: string; amount: number; reference: string | null; status: string; gatewayPaymentId: string | null; createdAt: string; createdBy: string | null }
+/** One past correction, exactly as the endpoint returns it. */
+type DvRow = { at: string; user: string; role: string; previousDv: number; newDv: number; comment: string }
+
 interface Scheme { id: string; title: string; code: string | null; discountType: string; discountValue: number; maxDiscount: number | null; refusal: string | null; amount: number }
 interface Money { id: string; orderNumber: string; grandTotal: number; amountPaid: number; balanceDue: number; discount: number; subscriptionCoveredAmount: number }
 
@@ -55,11 +58,23 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
   const [schemeId, setSchemeId] = useState("")
 
   const [showCollect, setShowCollect] = useState(false)
+  // ── Deal Value correction (Super Admin / Owner / Accountant) ─────────────
+  // `canCorrect` comes from the server: the button is hidden for everyone else,
+  // and the endpoint refuses them regardless of what the client shows.
+  const [canCorrectDv, setCanCorrectDv] = useState(false)
+  const [dvHistory, setDvHistory] = useState<DvRow[]>([])
+  const [showDv, setShowDv] = useState(false)
+  const [dvValue, setDvValue] = useState("")
+  const [dvComment, setDvComment] = useState("")
   const [payMethod, setPayMethod] = useState<string>("CASH")
   const [payAmount, setPayAmount] = useState("")
 
   const load = useCallback(() => {
     setLoading(true)
+    fetch(`/api/laundry/orders/${orderId}/dv-correction`)
+      .then((r) => r.json())
+      .then((j) => { if (j.success) { setCanCorrectDv(!!j.data.canCorrect); setDvHistory(j.data.history || []) } })
+      .catch(() => {})
     fetch(`/api/laundry/orders/${orderId}/adjustments?businessId=${encodeURIComponent(businessId)}`)
       .then((r) => r.json())
       .then((j) => {
@@ -86,6 +101,26 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
     const v = Number(value) || 0
     return mode === "PERCENT" ? discountAmount("PERCENT", v, money.grandTotal, null) : Math.round(v * 100) / 100
   }, [money, kind, mode, value, schemeId, schemes])
+
+  const saveDvCorrection = async () => {
+    // Mirrors the server rule so the desk is told before a round trip; the
+    // server enforces it again either way.
+    if (!dvComment.trim()) { toast.error("A comment is required for a Deal Value correction"); return }
+    const n = Number(dvValue)
+    if (!Number.isFinite(n) || n < 0) { toast.error("Enter a valid Deal Value"); return }
+    setBusy("dv")
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/dv-correction`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newDv: n, comment: dvComment.trim() }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast.error(j.error || "Deal Value correction failed"); return }
+      toast.success(`Deal Value corrected to ${inr(j.data.newDv)}`)
+      setDvHistory(j.data.history || []); setShowDv(false); setDvValue(""); setDvComment("")
+      load(); onChanged?.()
+    } catch { toast.error("Deal Value correction failed") } finally { setBusy(null) }
+  }
 
   const applyDiscount = async () => {
     if (!money || preview == null) return
@@ -248,6 +283,12 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
                 <Plus className="h-3 w-3" /> Add Discount
               </button>
+              {canCorrectDv && (
+                <button onClick={() => { const n = !showDv; setShowDv(n); setShowDiscount(false); setShowCollect(false); if (n) setDvValue(String(f.invoiceTotal ?? "")) }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">
+                  <PencilLine className="h-3 w-3" /> Correct DV
+                </button>
+              )}
               <button onClick={() => { setShowCollect((v) => !v); setShowDiscount(false); setShowPayLater(false); setPayAmount(String(f.balance || "")) }} disabled={f.balance <= 0}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
                 <Plus className="h-3 w-3" /> Collect Payment
@@ -259,6 +300,49 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
                 <Clock className="h-3 w-3" /> Pay Later
               </button>
             </div>
+
+            {showDv && canCorrectDv && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                <p className="text-xs font-semibold text-indigo-800">Correct Deal Value</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                  <Row k="Current Deal Value" v={inr(f.invoiceTotal)} />
+                  <Row k="New Deal Value" v={dvValue === "" ? "—" : inr(Number(dvValue) || 0)} bold />
+                </div>
+                <input type="number" min="0" step="0.01" value={dvValue} onChange={(e) => setDvValue(e.target.value)}
+                  placeholder="New Deal Value"
+                  className="w-full h-8 rounded-md border border-input px-2 text-xs bg-background" />
+                <textarea value={dvComment} onChange={(e) => setDvComment(e.target.value)} rows={2}
+                  placeholder="Comment (required) — why is this being corrected?"
+                  className="w-full rounded-md border border-input px-2 py-1.5 text-xs bg-background" />
+                <p className="text-[10px] text-slate-500">This changes the order&apos;s Deal Value. It is not a discount, and no payment or refund is created.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowDv(false); setDvValue(""); setDvComment("") }}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+                  <button onClick={saveDvCorrection} disabled={busy === "dv" || !dvComment.trim() || dvValue === ""}
+                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">
+                    {busy === "dv" && <Loader2 className="h-3 w-3 animate-spin" />} Save DV Correction
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {dvHistory.length > 0 && (
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs font-semibold text-slate-700 mb-1.5">Deal Value corrections</p>
+                {/* Append-only: a later correction never replaces an earlier one. */}
+                <div className="space-y-1">
+                  {dvHistory.map((h, i) => (
+                    <div key={i} className="text-[11px] text-slate-600 flex flex-wrap gap-x-2">
+                      <span className="text-slate-400">{new Date(h.at).toLocaleString("en-IN")}</span>
+                      <span className="font-medium">{h.user}</span>
+                      <span className="text-slate-400">({h.role})</span>
+                      <span>{inr(h.previousDv)} → <span className="font-semibold">{inr(h.newDv)}</span></span>
+                      <span className="text-slate-500 italic">{h.comment}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {showDiscount && (
               <div className="space-y-3 rounded-lg border border-slate-200 p-3">
