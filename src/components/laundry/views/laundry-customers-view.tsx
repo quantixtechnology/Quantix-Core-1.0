@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
+import type { MembershipState } from "@/lib/laundry-subscription"
 import { toast as sonnerToast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -34,6 +35,8 @@ interface Row {
   id: string; name: string; phone: string | null; email: string | null; customerCode: string | null
   loyaltyTier: string; walletBalance: number; totalOrders: number; totalSpent: number
   status: string; isActive: boolean; lastOrderAt: string | null
+  /** Decided by the API through membershipState() — never from loyaltyTier. */
+  membershipState?: MembershipState; membershipPlanName?: string | null
 }
 interface Addr { id: string; addressType?: string; label?: string | null; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; country: string; isDefault?: boolean; isPickupDefault?: boolean; isDeliveryDefault?: boolean }
 interface CustStats { totalOrders: number; completed: number; cancelled: number; grossValue: number; collected: number; outstanding: number; subsidised?: number; avgOrderValue: number; lastOrderAt: string | null; activeOrders?: number; memberSince?: string | null; subscription?: { planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string } | null }
@@ -539,7 +542,18 @@ export function LaundryCustomersView() {
                   <TableRow key={c.id} className={c.isActive ? "" : "opacity-60 bg-slate-50/50"}>
                     <TableCell><div className="flex items-center gap-2.5"><Avatar className="h-9 w-9"><AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">{initials(c.name)}</AvatarFallback></Avatar><div><p className="text-sm font-medium text-slate-800">{c.name}</p><p className="text-[11px] text-slate-400 font-mono">{c.customerCode || "—"}</p></div></div></TableCell>
                     <TableCell><p className="text-sm text-slate-600">{c.phone || "—"}</p><p className="text-[11px] text-slate-400">{c.email || ""}</p></TableCell>
-                    <TableCell><Badge variant="outline" className={`text-[11px] ${tierStyle(c.loyaltyTier)}`}>{c.loyaltyTier || "Bronze"}</Badge></TableCell>
+                    <TableCell>
+                      {/* Tier and subscription are different facts and are shown
+                          as two: the tier only when the customer holds one, the
+                          subscription state always. A customer who never
+                          subscribed reads "Not Subscribed" on its own. */}
+                      {c.membershipState !== "NONE" && (
+                        <Badge variant="outline" className={`text-[11px] ${tierStyle(c.loyaltyTier)}`}>{c.loyaltyTier || "Bronze"}</Badge>
+                      )}
+                      <p className={`text-[10px] font-semibold uppercase tracking-wide ${c.membershipState !== "NONE" ? "mt-0.5" : ""} ${M_ROW_STATE[c.membershipState || "NONE"].cls.split(" ").find((x) => x.startsWith("text-")) || "text-slate-400"}`}>
+                        {M_ROW_STATE[c.membershipState || "NONE"].label}
+                      </p>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{inr(c.walletBalance)}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{inr(c.totalSpent)}</TableCell>
                     <TableCell><Badge variant="outline" className={c.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-amber-300 text-amber-600 bg-amber-50"}>{c.isActive ? "Active" : c.status === "MERGED" ? "Archived · Merged" : "Archived"}</Badge></TableCell>
@@ -1094,6 +1108,25 @@ export function LaundryCustomersView() {
       </Dialog>
     </div>
   )
+}
+
+/**
+ * The subscription line under the loyalty tier.
+ *
+ * Same words and same colours the Customer 360 membership panel already uses
+ * for these states, so one screen does not call "In Grace" something the other
+ * calls Active. Every state the enum can hold has an entry: a subscription that
+ * was cancelled or paused says so rather than being rounded to Expired, which
+ * would tell staff something untrue about why it stopped.
+ */
+const M_ROW_STATE: Record<MembershipState, { label: string; cls: string }> = {
+  ACTIVE: { label: "Active", cls: "border-emerald-300 text-emerald-700 bg-emerald-50" },
+  GRACE: { label: "In Grace", cls: "border-amber-300 text-amber-700 bg-amber-50" },
+  EXPIRED: { label: "Expired", cls: "border-rose-300 text-rose-700 bg-rose-50" },
+  CANCELLED: { label: "Cancelled", cls: "border-slate-300 text-slate-500 bg-slate-50" },
+  PAUSED: { label: "Paused", cls: "border-slate-300 text-slate-500 bg-slate-50" },
+  SUSPENDED: { label: "Suspended", cls: "border-slate-300 text-slate-500 bg-slate-50" },
+  NONE: { label: "Not Subscribed", cls: "border-slate-200 text-slate-400 bg-white" },
 }
 
 // Membership Hub — the customer's full laundry subscription at a glance.

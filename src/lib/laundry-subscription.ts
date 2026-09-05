@@ -116,3 +116,67 @@ export function computeSubscriptionAllocation(sub: SubscriptionState, items: Sub
     extraLines,
   }
 }
+
+// ============================================================================
+// MEMBERSHIP STATE FOR DISPLAY.
+//
+// "BRONZE" is a loyalty tier. It says nothing about whether the customer holds
+// a subscription, so the Customers list could not tell a paying member from
+// someone who has never subscribed. This answers that, and only that — it
+// decides no money, grants no allowance and writes nothing.
+//
+// The rule is not a new one. It mirrors processExpiry() in
+// laundry-subscription-renewal.ts branch for branch, because that is what the
+// system actually does to a lapsed cycle:
+//
+//   CANCELLED / SUSPENDED      settled states, reported as they are
+//   within cycle               now <= currentPeriodEnd  -> the stored status
+//   lapsed, plan auto-renews   the sweep renews it, so it reads ACTIVE
+//   lapsed, inside grace       graceDays > 0 && now < graceEnd -> GRACE
+//   lapsed, grace done         EXPIRED
+//
+// The boundary is `now <= currentPeriodEnd`, inclusive of the end instant, and
+// it compares instants rather than calendar days — exactly as processExpiry
+// does. A cycle ending later today is therefore still ACTIVE.
+//
+// Status alone is not enough: processExpiry runs as a sweep, so a row can still
+// read ACTIVE with its period already past. Reading the clock too is what keeps
+// the list honest between sweeps. It is deliberately never derived from the
+// loyalty tier.
+// ============================================================================
+
+/** ACTIVE and GRACE are the two the rest of the system treats as usable. */
+export type MembershipState = "ACTIVE" | "GRACE" | "EXPIRED" | "CANCELLED" | "PAUSED" | "SUSPENDED" | "NONE"
+
+export interface MembershipSubscription {
+  status: string
+  currentPeriodEnd: Date | string
+  graceEndsAt?: Date | string | null
+  /** From the plan; both govern what a lapsed cycle becomes. */
+  autoRenew?: boolean | null
+  graceDays?: number | null
+}
+
+export function membershipState(sub: MembershipSubscription | null | undefined, now: Date = new Date()): MembershipState {
+  if (!sub) return "NONE"
+  // Someone decided to stop. Neither is about the clock, so neither is re-judged
+  // by it — the same two processExpiry() returns untouched.
+  if (sub.status === "CANCELLED") return "CANCELLED"
+  if (sub.status === "SUSPENDED") return "SUSPENDED"
+  if (sub.status === "PAUSED") return "PAUSED"
+
+  const end = new Date(sub.currentPeriodEnd)
+  if (isNaN(end.getTime())) return sub.status === "EXPIRED" ? "EXPIRED" : "NONE"
+
+  // Still inside the paid cycle — the stored status stands.
+  if (now <= end) return sub.status === "GRACE" ? "GRACE" : sub.status === "EXPIRED" ? "EXPIRED" : "ACTIVE"
+
+  // The cycle has lapsed. An auto-renewing plan is renewed by the sweep rather
+  // than expired, so it is still a live membership.
+  if (sub.autoRenew) return "ACTIVE"
+
+  const graceDays = sub.graceDays || 0
+  const graceEnd = sub.graceEndsAt ? new Date(sub.graceEndsAt) : new Date(end.getTime() + graceDays * 86400000)
+  if (graceDays > 0 && now < graceEnd) return "GRACE"
+  return "EXPIRED"
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { membershipState } from "@/lib/laundry-subscription"
 import { isValidPincode } from "@/lib/india"
 import { createLaundryCustomer, findCustomerByMobile } from "@/lib/laundry-customer-create"
 
@@ -53,7 +54,43 @@ export async function GET(request: Request) {
       // not fabricated. Read-only; does not touch subscription logic.
       prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "ACTIVE" } }),
     ])
-    return NextResponse.json({ success: true, data: rows, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships } })
+    // ── Membership state for the rows on THIS page ──────────────────────────
+    // The list showed loyaltyTier ("BRONZE"), which says nothing about whether
+    // the customer holds a subscription. One query for the page's customers —
+    // not one per row — and the state is decided by membershipState(), the same
+    // branches processExpiry() applies. Read-only: nothing here renews, expires
+    // or cancels anything.
+    const pageIds = rows.map((r) => r.id)
+    const subs = pageIds.length
+      ? await prisma.customerSubscription.findMany({
+          where: { businessId: biz.platformBusinessId, customerId: { in: pageIds } },
+          select: {
+            customerId: true, status: true, currentPeriodEnd: true, graceEndsAt: true,
+            plan: { select: { name: true, autoRenew: true, graceDays: true } },
+          },
+          orderBy: { currentPeriodEnd: "desc" },
+        })
+      : []
+    // A customer may hold more than one row over time. Prefer the one the rest
+    // of the system treats as live (ACTIVE/GRACE); otherwise the most recent,
+    // which is what "has/had a subscription" means on this screen.
+    const subByCustomer = new Map<string, (typeof subs)[number]>()
+    for (const s of subs) {
+      const held = subByCustomer.get(s.customerId)
+      const live = (x: (typeof subs)[number]) => x.status === "ACTIVE" || x.status === "GRACE"
+      if (!held || (live(s) && !live(held))) subByCustomer.set(s.customerId, s)
+    }
+    const now = new Date()
+    const data = rows.map((r) => {
+      const s = subByCustomer.get(r.id)
+      return {
+        ...r,
+        membershipState: membershipState(s ? { ...s, autoRenew: s.plan?.autoRenew, graceDays: s.plan?.graceDays } : null, now),
+        membershipPlanName: s?.plan?.name ?? null,
+      }
+    })
+
+    return NextResponse.json({ success: true, data, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships } })
   } catch (e) {
     console.error("[laundry-customers] GET list", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
