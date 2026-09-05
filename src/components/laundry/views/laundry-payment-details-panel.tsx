@@ -24,6 +24,8 @@ interface Adj {
   id: string; amount: number; reason: string; note: string | null; kind: string
   promotionCode: string | null; appliedToDue: number; refundable: number
   refundStatus: string; refundReference: string | null; gatewayRefundId: string | null; createdByName: string | null; createdAt: string
+  /** Set once the adjustment has been voided; it then counts for nothing. */
+  voidedAt: string | null; voidedByName: string | null; voidReason: string | null
 }
 interface Pay { id: string; method: string; amount: number; reference: string | null; status: string; gatewayPaymentId: string | null; createdAt: string; createdBy: string | null }
 /** One past correction, exactly as the endpoint returns it. */
@@ -120,6 +122,25 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
       setDvHistory(j.data.history || []); setShowDv(false); setDvValue(""); setDvComment("")
       load(); onChanged?.()
     } catch { toast.error("Deal Value correction failed") } finally { setBusy(null) }
+  }
+
+  const voidAdjustment = async (a: Adj) => {
+    const reason = window.prompt(
+      "Why is this being voided? It stays on the record but stops counting toward what is owed.",
+      "Removed previous manual discount; DV corrected.",
+    )
+    if (reason === null) return                    // cancelled
+    if (!reason.trim()) { toast.error("A reason is required to void an adjustment"); return }
+    setBusy(a.id)
+    try {
+      const res = await fetch(`/api/laundry/orders/${orderId}/adjustments/${a.id}/void`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: reason.trim() }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast.error(j.error || "Could not void this adjustment"); return }
+      toast.success(`${inr(a.amount)} adjustment voided`)
+      load(); onChanged?.()
+    } catch { toast.error("Could not void this adjustment") } finally { setBusy(null) }
   }
 
   const applyDiscount = async () => {
@@ -518,17 +539,34 @@ export function LaundryPaymentDetailsPanel({ orderId, businessId, onClose, onCha
               {adjustments.length === 0 ? <Empty>No discounts or compensation on this order.</Empty> : adjustments.map((a) => (
                 <div key={a.id} className="border-b border-slate-50 py-1.5 last:border-0">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-slate-800">
+                    {/* A voided row is kept and shown, struck through, so the
+                        record of what was done stays visible while the money
+                        it once moved no longer counts. */}
+                    <p className={`text-xs font-semibold ${a.voidedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
                       - {inr(a.amount)} · {KIND_LABEL[a.kind as AdjustmentKind] || a.kind}
                       {a.promotionCode ? ` (${a.promotionCode})` : ""}
                     </p>
-                    <span className="shrink-0 text-[10px] font-semibold text-slate-500">{REFUND_LABEL[a.refundStatus as RefundStatus] || a.refundStatus}</span>
+                    <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+                      {a.voidedAt ? "Voided" : (REFUND_LABEL[a.refundStatus as RefundStatus] || a.refundStatus)}
+                    </span>
                   </div>
                   <p className="text-[11px] text-slate-400">
                     {reasonLabel(a.reason)}{a.note ? ` · ${a.note}` : ""} · {a.createdByName || "—"} · {when(a.createdAt)}
                     {a.gatewayRefundId ? ` · Refund ID: ${a.gatewayRefundId}` : a.refundReference ? ` · Ref ${a.refundReference}` : ""}
                   </p>
-                  {canRefund(a.refundStatus) && a.refundable > 0 && (
+                  {a.voidedAt && (
+                    <p className="text-[11px] text-slate-400 italic">
+                      Voided by {a.voidedByName || "—"} · {when(a.voidedAt)}{a.voidReason ? ` · ${a.voidReason}` : ""}
+                    </p>
+                  )}
+                  {/* Same audience as Correct DV; the endpoint enforces it too. */}
+                  {!a.voidedAt && canCorrectDv && canRefund(a.refundStatus) && (
+                    <button onClick={() => voidAdjustment(a)} disabled={busy === a.id}
+                      className="mt-1 mr-2 inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+                      {busy === a.id && <Loader2 className="h-3 w-3 animate-spin" />} Void
+                    </button>
+                  )}
+                  {!a.voidedAt && canRefund(a.refundStatus) && a.refundable > 0 && (
                     <button onClick={() => refund(a)} disabled={busy === a.id}
                       className="mt-1 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
                       {busy === a.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />} Refund {inr(a.refundable)}

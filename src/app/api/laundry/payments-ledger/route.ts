@@ -176,7 +176,7 @@ export async function GET(request: Request) {
         // run — no extra round trip, and never inferred from the weight.
         _count: { select: { items: true } },
         invoice: { select: { invoiceNumber: true } },
-        adjustments: { select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true } },
+        adjustments: { select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true, voidedAt: true } },
       },
     })
 

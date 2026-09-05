@@ -27,6 +27,8 @@ interface Adj {
   appliedToDue: number; refundable: number
   refundStatus: string; refundReference: string | null; refundedAt: string | null
   createdByName: string | null; createdAt: string
+  /** Set once the adjustment has been voided; it then counts for nothing. */
+  voidedAt: string | null; voidedByName: string | null; voidReason: string | null
 }
 interface Money { grandTotal: number; amountPaid: number; balanceDue: number }
 

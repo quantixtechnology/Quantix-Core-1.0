@@ -5313,6 +5313,17 @@ model LaundryOrderAdjustment {
   createdByName   String?
   createdAt       DateTime  @default(now())
 
+  // ── Void ────────────────────────────────────────────────────────────────
+  // An adjustment given in error. The row itself is never edited or deleted —
+  // its amount, reason, author and time stay exactly as recorded — but once
+  // voidedAt is set it stops counting toward what is owed. All four columns
+  // are nullable and additive, so every existing adjustment is untouched and
+  // no backfill is required.
+  voidedAt        DateTime?
+  voidedBy        String?
+  voidedByName    String?
+  voidReason      String?
+
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])

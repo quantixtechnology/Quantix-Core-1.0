@@ -49,7 +49,18 @@ export interface AdjustmentRow {
   appliedToDue: number
   refundable: number
   refundStatus: string
+  /**
+   * Set when the adjustment was given in error and has been voided.
+   *
+   * Required, not optional, on purpose: every caller that loads adjustments
+   * has to select it, so a query that forgets fails to compile rather than
+   * quietly counting a voided row toward what is owed.
+   */
+  voidedAt: Date | string | null
 }
+
+/** A voided adjustment stays on the record and stops affecting the money. */
+export const isVoided = (a: { voidedAt?: Date | string | null }): boolean => a.voidedAt != null
 
 /**
  * How a NEW adjustment splits.
@@ -87,9 +98,14 @@ export interface CompensationSummary {
 
 /** The five figures the Payment & Adjustments panel shows. */
 export function summarise(money: OrderMoney, adjustments: AdjustmentRow[]): CompensationSummary {
-  const compensation = round2(adjustments.reduce((s, a) => s + (a.amount || 0), 0))
-  const refunded = round2(adjustments.filter((a) => isSettled(a.refundStatus)).reduce((s, a) => s + (a.refundable || 0), 0))
-  const refundDue = round2(adjustments.filter((a) => !isSettled(a.refundStatus)).reduce((s, a) => s + (a.refundable || 0), 0))
+  // A voided adjustment is history, not arithmetic. It was given in error, the
+  // row is kept exactly as it was written, and from here on it contributes
+  // nothing — not to the discount, not to a refund owed, not to one paid.
+  // Filtered once, here, because this is the only place the money is added up.
+  const live = adjustments.filter((a) => !isVoided(a))
+  const compensation = round2(live.reduce((s, a) => s + (a.amount || 0), 0))
+  const refunded = round2(live.filter((a) => isSettled(a.refundStatus)).reduce((s, a) => s + (a.refundable || 0), 0))
+  const refundDue = round2(live.filter((a) => !isSettled(a.refundStatus)).reduce((s, a) => s + (a.refundable || 0), 0))
   return {
     // Unchanged, always. The invoice is what it was.
     invoiceTotal: round2(money.grandTotal),

@@ -116,7 +116,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const created = await prisma.$transaction(async (tx) => {
       const existing = await tx.laundryOrderAdjustment.findMany({
         where: { orderId: id },
-        select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true },
+        select: { amount: true, appliedToDue: true, refundable: true, refundStatus: true, voidedAt: true },
       })
       const err = validateCompensation(order, existing, amount)
       if (err) throw new Error(err)

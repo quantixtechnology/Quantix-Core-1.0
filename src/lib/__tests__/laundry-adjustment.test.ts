@@ -9,7 +9,7 @@ const UNPAID = { grandTotal: 500, amountPaid: 0, balanceDue: 500 }
 
 describe('acceptance: paid order — compensation becomes a refund', () => {
   const split = splitAdjustment(PAID, [], 100)
-  const rows = [{ amount: 100, ...split, refundStatus: 'PENDING' }]
+  const rows = [{ amount: 100, ...split, refundStatus: 'PENDING', voidedAt: null }]
   const s = summarise(PAID, rows)
 
   it('the whole amount is refundable, none applied to a balance', () => {
@@ -35,7 +35,7 @@ describe('acceptance: unpaid order — compensation reduces what is owed', () =>
   })
 
   it('the invoice still reads ₹500 while ₹400 is payable', () => {
-    const s = summarise({ ...UNPAID, balanceDue: 400 }, [{ amount: 100, ...split, refundStatus: 'NOT_REQUIRED' }])
+    const s = summarise({ ...UNPAID, balanceDue: 400 }, [{ amount: 100, ...split, refundStatus: 'NOT_REQUIRED', voidedAt: null }])
     expect(s.invoiceTotal).toBe(500)
     expect(s.balance).toBe(400)
     expect(s.refundDue).toBe(0)
@@ -56,7 +56,7 @@ describe('partly paid orders split correctly', () => {
 
 describe('multiple adjustments cannot over-refund', () => {
   it('a second adjustment cannot claim paid money the first already took', () => {
-    const first = { amount: 100, ...splitAdjustment(PAID, [], 100), refundStatus: 'PENDING' }
+    const first = { amount: 100, ...splitAdjustment(PAID, [], 100), refundStatus: 'PENDING', voidedAt: null }
     // Only ₹400 of the ₹500 payment is still unclaimed.
     const second = splitAdjustment({ ...PAID, balanceDue: 0 }, [first], 450)
     expect(second.refundable).toBe(400)
@@ -69,14 +69,14 @@ describe('multiple adjustments cannot over-refund', () => {
   })
 
   it('counts what was already given when capping', () => {
-    const rows = [{ amount: 400, refundable: 400, appliedToDue: 0, refundStatus: 'PENDING' }]
+    const rows = [{ amount: 400, refundable: 400, appliedToDue: 0, refundStatus: 'PENDING', voidedAt: null }]
     expect(maxCompensation(PAID, rows)).toBe(100)
     expect(validateCompensation(PAID, rows, 150)).toContain('cannot exceed')
     expect(validateCompensation(PAID, rows, 100)).toBeNull()
   })
 
   it('refuses a fully compensated order outright', () => {
-    const rows = [{ amount: 500, refundable: 500, appliedToDue: 0, refundStatus: 'PENDING' }]
+    const rows = [{ amount: 500, refundable: 500, appliedToDue: 0, refundStatus: 'PENDING', voidedAt: null }]
     expect(validateCompensation(PAID, rows, 1)).toContain('already been fully compensated')
   })
 
@@ -89,19 +89,19 @@ describe('multiple adjustments cannot over-refund', () => {
 
 describe('money is never described as returned before it is', () => {
   it('a pending refund counts as due, not refunded', () => {
-    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'PENDING' }])
+    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'PENDING', voidedAt: null }])
     expect(s.refundDue).toBe(100)
     expect(s.refunded).toBe(0)
   })
 
   it('processing is still not refunded', () => {
-    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'PROCESSING' }])
+    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'PROCESSING', voidedAt: null }])
     expect(s.refunded).toBe(0)
     expect(s.refundDue).toBe(100)
   })
 
   it('a failed refund is still owed', () => {
-    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'FAILED' }])
+    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'FAILED', voidedAt: null }])
     expect(s.refundDue).toBe(100)
     expect(s.refunded).toBe(0)
   })
@@ -112,7 +112,7 @@ describe('money is never described as returned before it is', () => {
   })
 
   it('a completed refund moves from due to refunded', () => {
-    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'REFUNDED' }])
+    const s = summarise(PAID, [{ amount: 100, refundable: 100, appliedToDue: 0, refundStatus: 'REFUNDED', voidedAt: null }])
     expect(s.refunded).toBe(100)
     expect(s.refundDue).toBe(0)
   })
@@ -134,8 +134,8 @@ describe('presentation', () => {
 
   it('rounds to paise rather than accumulating float error', () => {
     const s = summarise(PAID, [
-      { amount: 33.33, refundable: 33.33, appliedToDue: 0, refundStatus: 'PENDING' },
-      { amount: 33.33, refundable: 33.33, appliedToDue: 0, refundStatus: 'PENDING' },
+      { amount: 33.33, refundable: 33.33, appliedToDue: 0, refundStatus: 'PENDING', voidedAt: null },
+      { amount: 33.33, refundable: 33.33, appliedToDue: 0, refundStatus: 'PENDING', voidedAt: null },
     ])
     expect(s.compensation).toBe(66.66)
   })
@@ -147,7 +147,7 @@ import { discountAmount, schemeRefusal, financialSummary, matchesLedgerFilter, d
 describe('acceptance: discount arithmetic', () => {
   it('TEST 1 — ₹500 invoice, ₹100 discount → ₹400 payable', () => {
     const f = financialSummary({ grandTotal: 500, amountPaid: 0, balanceDue: 400 },
-      [{ amount: 100, appliedToDue: 100, refundable: 0, refundStatus: 'NOT_REQUIRED' }])
+      [{ amount: 100, appliedToDue: 100, refundable: 0, refundStatus: 'NOT_REQUIRED', voidedAt: null }])
     expect(f.invoiceTotal).toBe(500)
     expect(f.discount).toBe(100)
     expect(f.netPayable).toBe(400)
@@ -156,7 +156,7 @@ describe('acceptance: discount arithmetic', () => {
   it('TEST 2 — subscription ₹300 + ₹50 discount on ₹500 → ₹150 payable', () => {
     const f = financialSummary(
       { grandTotal: 500, amountPaid: 0, balanceDue: 150, subscriptionCoveredAmount: 300 },
-      [{ amount: 50, appliedToDue: 50, refundable: 0, refundStatus: 'NOT_REQUIRED' }])
+      [{ amount: 50, appliedToDue: 50, refundable: 0, refundStatus: 'NOT_REQUIRED', voidedAt: null }])
     expect(f.subscriptionCovered).toBe(300)
     expect(f.discount).toBe(50)
     expect(f.netPayable).toBe(150)
@@ -166,7 +166,7 @@ describe('acceptance: discount arithmetic', () => {
 
   it('TEST 3 — paid ₹500, later ₹100 discount → ₹100 refund due, payment intact', () => {
     const f = financialSummary({ grandTotal: 500, amountPaid: 500, balanceDue: 0 },
-      [{ amount: 100, appliedToDue: 0, refundable: 100, refundStatus: 'PENDING' }])
+      [{ amount: 100, appliedToDue: 0, refundable: 100, refundStatus: 'PENDING', voidedAt: null }])
     expect(f.paid).toBe(500)
     expect(f.refundDue).toBe(100)
     expect(f.invoiceTotal).toBe(500)
@@ -239,7 +239,7 @@ describe('ledger filters', () => {
 describe('discount guidance is plain language', () => {
   it('a fully paid order says what was paid and what a discount will do', () => {
     const h = discountHint({ grandTotal: 42, amountPaid: 42, balanceDue: 0 },
-      [{ amount: 10, appliedToDue: 0, refundable: 10, refundStatus: 'PENDING' }])
+      [{ amount: 10, appliedToDue: 0, refundable: 10, refundStatus: 'PENDING', voidedAt: null }])
     expect(h.status).toBe('Already paid: ₹42.00')
     expect(h.effect).toBe('A discount now will create a refund due to the customer.')
     // ₹42 taken minus the ₹10 already claimed.
@@ -262,7 +262,7 @@ describe('discount guidance is plain language', () => {
 
   it('drops the refund line once nothing more can come back', () => {
     const h = discountHint({ grandTotal: 500, amountPaid: 500, balanceDue: 0 },
-      [{ amount: 500, appliedToDue: 0, refundable: 500, refundStatus: 'PENDING' }])
+      [{ amount: 500, appliedToDue: 0, refundable: 500, refundStatus: 'PENDING', voidedAt: null }])
     expect(h.refundLimit).toBeNull()
   })
 
