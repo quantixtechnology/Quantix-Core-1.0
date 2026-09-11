@@ -156,7 +156,11 @@ export function BagChecklist({
         <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
           <Package className="h-4 w-4 text-blue-600" /> {copy.title}
         </p>
-        <p className="text-xs text-slate-400 mt-1">{view ? copy.empty : "Loading…"}</p>
+        {/* An order with no open delivery bag still tells the truth: the note
+            is the SERVER's message (e.g. the required delivery bag has not been
+            assigned), falling back to the generic copy only when the server has
+            nothing to add — never a local guess. */}
+        <p className="text-xs text-slate-400 mt-1">{view ? (view.message ?? copy.empty) : "Loading…"}</p>
       </div>
     )
   }

@@ -156,9 +156,13 @@ describe('offline / store orders and other zero cases', () => {
   })
 
   it('the delivery gate keeps a bagless order deliverable', () => {
-    // total === 0 short-circuits before the requirement is consulted.
+    // NO assignment history short-circuits before the requirement is consulted
+    // — a delivery that never had a bag is a legitimate delivery. (An order
+    // WITH history but no OPEN bag is different: it has not been given its
+    // delivery bag, and its own accounting decides.)
     const src = read('src/lib/laundry-delivery-bags.ts')
-    expect(src).toContain('const complete = total === 0 ? true : allBagsAccounted && requirementMet')
+    expect(src).toContain('const complete = all.length === 0 ? true : allBagsAccounted && requirementMet')
+    expect(src).toContain('const bags = all.filter((b) => b.open)')
   })
 
   it('an order with bags but NO booked services is not blocked by a requirement it never had', () => {

@@ -120,7 +120,15 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * there is no bag to account for.
  */
 export async function deliveryBags(lbId: string, orderId: string): Promise<DeliveryBagsView> {
-  const bags = await orderBags(lbId, orderId)
+  // Scope to THIS order's DELIVERY set. An assignment row is closed (RETURNED)
+  // when the bag is released, so pickup/sorting rows an order has closed are
+  // HISTORY — they are not bags being handed over today. Nothing in the
+  // codebase writes purpose "DELIVERY" (Packing leaves purpose null and keeps
+  // its row open), so the only faithful signal of a real delivery bag is an
+  // OPEN assignment. The accounting below compares against the order's own
+  // requiredBags, never a count of history rows.
+  const all = await orderBags(lbId, orderId)
+  const bags = all.filter((b) => b.open)
   const events = bags.length
     ? await prisma.laundryBagEvent.findMany({
         where: { businessId: lbId, orderId, action: { in: [DELIVERY_BAG_CONFIRMED, DELIVERY_BAG_EXCEPTION] } },
@@ -176,8 +184,13 @@ export async function deliveryBags(lbId: string, orderId: string): Promise<Deliv
   // no requirement is not a failed requirement, so the existing every-bag rule
   // stands on its own there. Only a real requirement can add to the gate.
   const requirementMet = accounting.applicable ? accounting.complete : true
-  const complete = total === 0 ? true : allBagsAccounted && requirementMet
+  // `all.length === 0` (not `total === 0`): an order whose assignment HISTORY
+  // has rows but whose CURRENT delivery set is empty is a real order that has
+  // not been given its delivery bag — that must block when a service requires
+  // one, while an order that never had a row stays deliverable.
+  const complete = all.length === 0 ? true : allBagsAccounted && requirementMet
 
+  const noDeliverySet = total === 0 && all.length > 0
   return {
     bags: rows,
     total,
@@ -186,12 +199,16 @@ export async function deliveryBags(lbId: string, orderId: string): Promise<Deliv
     accounted,
     complete,
     accounting,
-    summary: `${confirmed} of ${total} bags scanned${exceptions ? ` · ${plural(exceptions, "exception")}` : ""}`,
+    summary: noDeliverySet
+      ? accounting.summary
+      : `${confirmed} of ${total} bags scanned${exceptions ? ` · ${plural(exceptions, "exception")}` : ""}`,
     message: complete
       ? null
       : !allBagsAccounted
         ? `${confirmed} of ${total} bags scanned. Scan the remaining ${plural(total - accounted, "bag")}, or record a scan exception, before completing delivery.`
-        : `${accounting.summary} accounted for — ${accounting.message}`,
+        : noDeliverySet
+          ? `No delivery bag assigned yet — ${accounting.summary}. ${accounting.message}`
+          : `${accounting.summary} accounted for — ${accounting.message}`,
   }
 }
 
