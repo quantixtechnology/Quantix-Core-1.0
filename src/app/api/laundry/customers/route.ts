@@ -4,7 +4,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { membershipState } from "@/lib/laundry-subscription"
 import { isValidPincode } from "@/lib/india"
-import { createLaundryCustomer, findCustomerByMobile } from "@/lib/laundry-customer-create"
+import { createLaundryCustomer, findCustomerByMobile, findCustomerByEmail, validateIndianMobile } from "@/lib/laundry-customer-create"
 
 export const runtime = "nodejs"
 
@@ -109,6 +109,10 @@ export async function POST(request: Request) {
     if (!businessId || !name || !mobile) {
       return NextResponse.json({ error: "Missing required fields: businessId, name, mobile" }, { status: 400 })
     }
+    const invalidMobile = validateIndianMobile(mobile)
+    if (invalidMobile) {
+      return NextResponse.json({ error: invalidMobile }, { status: 400 })
+    }
     const guard = await requireLaundryPermission(request, businessId, "laundry.customers.create")
     if (!guard.ok) return guard.res
     if (pincode && !isValidPincode(pincode)) {
@@ -132,6 +136,11 @@ export async function POST(request: Request) {
     const existing = await findCustomerByMobile(laundryBusiness.platformBusinessId, mobile)
     if (existing) {
       return NextResponse.json({ error: "Customer with this mobile number already exists", data: existing }, { status: 409 })
+    }
+
+    const emailClash = email ? await findCustomerByEmail(laundryBusiness.platformBusinessId, email) : null
+    if (emailClash) {
+      return NextResponse.json({ error: "Customer with this email address already exists", data: emailClash }, { status: 409 })
     }
 
     // The shared creator — the same one the bulk importer uses, so a customer

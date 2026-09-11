@@ -7,6 +7,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode, formatFullAddress } from "@/lib/india"
 import { parseMeta, parseTags, mergeMeta, customerStats, type CommPrefs } from "@/lib/laundry-customer"
+import { findCustomerByEmail, validateIndianMobile } from "@/lib/laundry-customer-create"
 
 export const runtime = "nodejs"
 
@@ -88,6 +89,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     //
     // Checked here so the answer is a plain 409 naming that customer, and the
     // constraint is still enforced by the database underneath.
+    if (b.mobile !== undefined && b.mobile !== null && b.mobile !== "") {
+      const invalidMobile = validateIndianMobile(String(b.mobile))
+      if (invalidMobile) {
+        return NextResponse.json({ error: invalidMobile }, { status: 400 })
+      }
+    }
     if (b.mobile !== undefined && b.mobile && b.mobile !== customer.phone) {
       const clash = await prisma.customer.findFirst({
         where: { businessId: customer.businessId, phone: b.mobile, id: { not: id } },
@@ -98,6 +105,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           error: `${b.mobile} already belongs to ${clash.name || "another customer"}${clash.customerCode ? ` (${clash.customerCode})` : ""}. Correct that record or merge the two.`,
           code: "PHONE_TAKEN",
           conflictCustomerId: clash.id,
+        }, { status: 409 })
+      }
+    }
+
+    // Email is a secondary identifier — within a business, one per customer.
+    // Same wording pattern as the mobile clash above, so staff see the owning
+    // record instead of a silent failure.
+    if (b.email !== undefined && b.email && b.email.toLowerCase() !== (customer.email || "").toLowerCase()) {
+      const emailClash = await findCustomerByEmail(customer.businessId, b.email)
+      if (emailClash) {
+        return NextResponse.json({
+          error: `${b.email} already belongs to ${emailClash.name || "another customer"}${emailClash.customerCode ? ` (${emailClash.customerCode})` : ""}. Correct that record or merge the two.`,
+          code: "EMAIL_TAKEN",
+          conflictCustomerId: emailClash.id,
         }, { status: 409 })
       }
     }

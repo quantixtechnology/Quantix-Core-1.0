@@ -121,7 +121,7 @@ export async function customerTimeline(customerId: string, limit = 100): Promise
 // activities, documents), recomputes the primary's cached stats from the real
 // orders, records a MERGE timeline entry, and retires the duplicate (status
 // MERGED, inactive). History is preserved on the primary; nothing is deleted.
-export async function mergeCustomers(platformBusinessId: string, primaryId: string, duplicateId: string, actorName?: string | null) {
+export async function mergeCustomers(platformBusinessId: string, primaryId: string, duplicateId: string, actorName?: string | null, reason?: string | null) {
   if (primaryId === duplicateId) return { ok: false as const, error: "Cannot merge a customer into itself" }
   const [primary, dup] = await Promise.all([
     prisma.customer.findFirst({ where: { id: primaryId, businessId: platformBusinessId } }),
@@ -146,8 +146,8 @@ export async function mergeCustomers(platformBusinessId: string, primaryId: stri
     totalOrders: agg._count._all, totalSpent: r2(agg._sum.grandTotal || 0),
     walletBalance: { increment: dup.walletBalance }, outstandingBalance: { increment: dup.outstandingBalance }, loyaltyPoints: { increment: dup.loyaltyPoints },
   } })
-  await prisma.customerActivity.create({ data: { businessId: platformBusinessId, customerId: primaryId, type: "MERGE", title: `Merged ${dup.customerCode || dup.name}`, body: `${dup.name}${dup.phone ? ` (${dup.phone})` : ""} was merged into this profile`, actorName: actorName || null } })
-  await prisma.customer.update({ where: { id: duplicateId }, data: { isActive: false, status: "MERGED" } })
+  await prisma.customerActivity.create({ data: { businessId: platformBusinessId, customerId: primaryId, type: "MERGE", title: `Merged ${dup.customerCode || dup.name}`, body: `${dup.name}${dup.phone ? ` (${dup.phone})` : ""} was merged into this profile${reason ? ` — ${reason}` : ""}`, actorName: actorName || null } })
+  await prisma.customer.update({ where: { id: duplicateId }, data: { isActive: false, status: "MERGED", mergedIntoId: primaryId, mergedAt: new Date(), mergedBy: actorName || null } })
 
   return { ok: true as const, primaryId, mergedId: duplicateId }
 }

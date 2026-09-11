@@ -4,6 +4,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { logFieldEvent } from "@/lib/laundry-field-ops"
 import { generateOrderNumber } from "@/lib/laundry-codes"
+import { validateIndianMobile } from "@/lib/laundry-customer-create"
 
 export const runtime = "nodejs"
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
     if (!custId) {
       const phone = customerData.phone || null
       if (phone) {
+        const invalidMobile = validateIndianMobile(phone)
+        if (invalidMobile) return NextResponse.json({ error: invalidMobile }, { status: 400 })
         const existing = await prisma.customer.findFirst({
           where: { phone, businessId: biz.id },
           select: { id: true },

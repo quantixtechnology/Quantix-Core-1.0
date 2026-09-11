@@ -3,7 +3,7 @@
 // documents and timeline; recomputes stats; retires the duplicate. Nothing is
 // deleted — history is preserved on the primary.
 //
-// Body: { businessId, primaryId, duplicateId, actorName? }
+// Body: { businessId, primaryId, duplicateId, actorName?, reason }
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
@@ -15,11 +15,13 @@ export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId || !b.primaryId || !b.duplicateId) return NextResponse.json({ error: "businessId, primaryId and duplicateId are required" }, { status: 400 })
+    const reason = typeof b.reason === "string" ? b.reason.trim() : ""
+    if (!reason) return NextResponse.json({ error: "A reason/comment is required before merging customers" }, { status: 400 })
     const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.merge")
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
-    const res = await mergeCustomers(biz.platformBusinessId, b.primaryId, b.duplicateId, b.actorName || null)
+    const res = await mergeCustomers(biz.platformBusinessId, b.primaryId, b.duplicateId, b.actorName || null, reason)
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: 409 })
     return NextResponse.json({ success: true, data: res })
   } catch (e) {

@@ -160,6 +160,9 @@ export function LaundryCustomersView() {
   const [mergeQuery, setMergeQuery] = useState("")
   const [mergeResults, setMergeResults] = useState<Row[]>([])
   const [merging, setMerging] = useState(false)
+  const [mergeConfirmTarget, setMergeConfirmTarget] = useState<Row | null>(null)
+  const [mergeReason, setMergeReason] = useState("")
+  const [mergeConfirmed, setMergeConfirmed] = useState(false)
   // Customer 360 lazy tab data
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [ordersTotal, setOrdersTotal] = useState(0)
@@ -349,15 +352,16 @@ export function LaundryCustomersView() {
       toast({ title: "Invitation sent", description: j.data?.sent ? `App invite emailed to ${detail.email}` : `Invite prepared for ${detail.email} (email delivery pending SMTP config)` })
     } catch (e) { toast({ title: "Invite failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) }
   }
-  const doMerge = async (duplicateId: string) => {
-    if (!detail) return
+  const doMerge = async () => {
+    if (!detail || !mergeConfirmTarget) return
+    if (!mergeReason.trim()) { toast({ title: "Reason required", description: "Enter a short comment before merging.", variant: "destructive" }); return }
     setMerging(true)
     try {
-      const res = await fetch(`/api/laundry/customers/merge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, primaryId: detail.id, duplicateId, actorName: user?.name || "admin" }) })
+      const res = await fetch(`/api/laundry/customers/merge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, primaryId: detail.id, duplicateId: mergeConfirmTarget.id, actorName: user?.name || "admin", reason: mergeReason.trim() }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Merge failed")
       toast({ title: "Customers merged", description: "Orders, subscriptions, addresses and history moved to this profile." })
-      setMergeOpen(false); setMergeQuery(""); setMergeResults([]); load(); openCustomer(detail.id, false)
+      setMergeOpen(false); setMergeQuery(""); setMergeResults([]); setMergeConfirmTarget(null); setMergeReason(""); setMergeConfirmed(false); load(); openCustomer(detail.id, false)
     } catch (e) { toast({ title: "Merge failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setMerging(false) }
   }
 
@@ -671,6 +675,9 @@ export function LaundryCustomersView() {
                       <div className="flex items-center gap-1">
                         <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
                         <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-3.5 w-3.5" /> New Order</Button>
+                        {can("laundry.customers.merge") && (
+                          <Button size="sm" variant="outline" className="h-8 gap-1 border-violet-200 text-violet-700" onClick={() => { setMergeQuery(""); setMergeResults([]); setMergeConfirmTarget(null); setMergeReason(""); setMergeConfirmed(false); setMergeOpen(true) }} title="Merge a duplicate customer into this profile"><Repeat className="h-3.5 w-3.5" /> Merge Duplicate</Button>
+                        )}
                         {telLink && <a href={telLink}><Button size="sm" variant="outline" className="h-8 gap-1" title="Call"><PhoneCall className="h-3.5 w-3.5" /> Call</Button></a>}
                         {waLink && <a href={waLink} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="h-8 gap-1" title="WhatsApp"><MessageCircle className="h-3.5 w-3.5" /> WhatsApp</Button></a>}
                         <SheetClose asChild><Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Close"><X className="h-4 w-4" /></Button></SheetClose>
@@ -1070,22 +1077,48 @@ export function LaundryCustomersView() {
       </Sheet>
 
       {/* Merge duplicate customers (Part 10) */}
-      <Dialog open={mergeOpen} onOpenChange={(o) => { if (!o) { setMergeOpen(false); setMergeQuery(""); setMergeResults([]) } }}>
+      <Dialog open={mergeOpen} onOpenChange={(o) => { if (!o) { setMergeOpen(false); setMergeQuery(""); setMergeResults([]); setMergeConfirmTarget(null); setMergeReason(""); setMergeConfirmed(false) } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-blue-600" /> Merge Duplicate Into {detail?.name}</DialogTitle>
             <DialogDescription>Search the duplicate customer. Its orders, subscriptions, payments, addresses and history move to <span className="font-medium text-slate-700">{detail?.name}</span>; the duplicate is retired. This cannot be undone.</DialogDescription>
           </DialogHeader>
-          <Input value={mergeQuery} onChange={(e) => searchMerge(e.target.value)} placeholder="Search by name, mobile or code…" autoFocus />
-          <div className="space-y-1 max-h-60 overflow-y-auto">
-            {mergeResults.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
-                <div className="min-w-0"><p className="text-sm font-medium text-slate-800 truncate">{c.name}</p><p className="text-[11px] text-slate-400">{c.phone} {c.customerCode ? `· ${c.customerCode}` : ""} · {c.totalOrders} orders</p></div>
-                <Button size="sm" variant="outline" className="h-8 shrink-0" disabled={merging} onClick={() => doMerge(c.id)}>{merging ? <Loader2 className="h-4 w-4 animate-spin" /> : "Merge in"}</Button>
+          {!mergeConfirmTarget ? (
+            <>
+              <Input value={mergeQuery} onChange={(e) => searchMerge(e.target.value)} placeholder="Search by name, mobile or code…" autoFocus />
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {mergeResults.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
+                    <div className="min-w-0"><p className="text-sm font-medium text-slate-800 truncate">{c.name}</p><p className="text-[11px] text-slate-400">{c.phone} {c.customerCode ? `· ${c.customerCode}` : ""} · {c.totalOrders} orders</p></div>
+                    <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setMergeConfirmTarget(c)}>Select</Button>
+                  </div>
+                ))}
+                {mergeQuery.trim().length >= 2 && mergeResults.length === 0 && <p className="text-xs text-slate-400 text-center py-3">No other customers found.</p>}
               </div>
-            ))}
-            {mergeQuery.trim().length >= 2 && mergeResults.length === 0 && <p className="text-xs text-slate-400 text-center py-3">No other customers found.</p>}
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-slate-700 space-y-1">
+                <p><span className="font-semibold text-slate-800">{mergeConfirmTarget.name}</span> ({mergeConfirmTarget.phone || "no phone"} · {mergeConfirmTarget.totalOrders} orders) will be merged into <span className="font-semibold text-slate-800">{detail?.name}</span>.</p>
+                <p className="text-amber-800">This moves all history and retires the duplicate. It cannot be undone.</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Reason / comment *</Label>
+                <Input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="e.g. Phone number changed, duplicate from storefront signup" autoFocus />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                  <input type="checkbox" checked={mergeConfirmed} onChange={(e) => setMergeConfirmed(e.target.checked)} /> I understand this cannot be undone.
+                </label>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMergeConfirmTarget(null)}>Back</Button>
+                <Button className="gap-1 bg-violet-600 hover:bg-violet-700 text-white" disabled={merging || !mergeReason.trim() || !mergeConfirmed} onClick={doMerge}>
+                  {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Repeat className="h-4 w-4" />} Merge into {detail?.name}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

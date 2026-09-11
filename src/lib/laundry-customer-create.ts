@@ -45,12 +45,33 @@ export interface CustomerCreateInput {
 }
 
 /**
+ * Strict Indian mobile validation: exactly 10 digits, starts with 6-9.
+ * No prefix stripping — the caller must pass the raw 10-digit number.
+ * Returns null on success, or a human-readable error string on failure.
+ */
+export function validateIndianMobile(mobile: string): string | null {
+  if (!mobile || typeof mobile !== "string") return "Mobile number is required"
+  if (!/^\d{10}$/.test(mobile)) return "Mobile must be exactly 10 digits"
+  if (!/^[6-9]/.test(mobile)) return "Mobile must start with 6, 7, 8 or 9"
+  return null
+}
+
+/**
  * THE duplicate rule: one customer per mobile number, per platform business.
  * Exactly what the single-create route has always used — exported so the
  * importer asks the same question rather than inventing its own.
  */
 export async function findCustomerByMobile(platformBusinessId: string, mobile: string) {
   return prisma.customer.findFirst({ where: { businessId: platformBusinessId, phone: mobile } })
+}
+
+/**
+ * Email duplicate check: one customer per email, per platform business.
+ * Returns the first conflicting customer, or null if the email is available.
+ */
+export async function findCustomerByEmail(platformBusinessId: string, email: string) {
+  if (!email) return null
+  return prisma.customer.findFirst({ where: { businessId: platformBusinessId, email } })
 }
 
 /**

@@ -2005,6 +2005,10 @@ model Customer {
   failedLoginAttempts      Int                    @default(0)
   accountLockedUntil       DateTime?
   isLoginDisabled          Boolean                @default(false)
+  // ── Merge audit trail ──────────────────────────────────────────────────
+  mergedIntoId             String?
+  mergedAt                 DateTime?
+  mergedBy                 String?
   createdAt                DateTime               @default(now())
   updatedAt                DateTime               @updatedAt
   addresses                Address[]

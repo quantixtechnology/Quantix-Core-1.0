@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { validateIndianMobile } from '@/lib/laundry-customer-create';
 
 export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
@@ -81,11 +82,23 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
     if (!existing) return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
 
     if (body.phone && body.phone !== existing.phone) {
+      const invalidMobile = validateIndianMobile(body.phone);
+      if (invalidMobile) return NextResponse.json({ success: false, error: invalidMobile }, { status: 400 });
       const phoneExists = await db.customer.findUnique({
         where: { businessId_phone: { businessId, phone: body.phone } },
       });
       if (phoneExists && phoneExists.id !== customerId) {
         return NextResponse.json({ success: false, error: 'Another customer with this phone number already exists' }, { status: 409 });
+      }
+    }
+
+    if (body.email && body.email !== existing.email) {
+      const emailExists = await db.customer.findFirst({
+        where: { businessId, email: body.email, id: { not: customerId } },
+        select: { id: true, name: true },
+      });
+      if (emailExists) {
+        return NextResponse.json({ success: false, error: 'Another customer with this email already exists' }, { status: 409 });
       }
     }
 
