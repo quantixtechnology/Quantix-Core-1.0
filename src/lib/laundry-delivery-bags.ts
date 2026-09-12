@@ -25,8 +25,10 @@
 // that pre-date the assignment rows (legacy compatibility) and is never written
 // with more than one code.
 import { prisma } from "@/lib/prisma"
-import { orderBags, type OrderBag } from "@/lib/laundry-order-bags"
-import { accountBagsByService, type ServiceBagAccounting, type ServiceRequirement } from "@/lib/laundry-service-bags"
+import { orderBags, addBagToOrder, type OrderBag } from "@/lib/laundry-order-bags"
+import { accountBagsByService, pickServiceForBag, type ServiceBagAccounting, type ServiceRequirement } from "@/lib/laundry-service-bags"
+import { CUSTODIAN } from "@/lib/laundry-bag-lifecycle"
+import type { BagConflict } from "@/lib/laundry-bag-assign"
 
 /** The event action that records "this bag was scanned onto the delivery". */
 export const DELIVERY_BAG_CONFIRMED = "DELIVERY_BAG_CONFIRMED"
@@ -346,6 +348,86 @@ export async function recordDeliveryBagException(opts: {
 
   const after = await deliveryBags(opts.lbId, opts.orderId)
   return { ok: true, bagNumber: bag.bagNumber, reason, note, accounted: after.accounted, total: after.total, complete: after.complete, alreadyExcepted: false }
+}
+
+export type AssignDeliveryBagResult =
+  | {
+      ok: true
+      bag: OrderBag
+      view: DeliveryBagsView
+      alreadyOnOrder: boolean
+      alreadyConfirmed: boolean
+    }
+  | { ok: false; status: number; error: string; conflict?: BagConflict }
+
+/**
+ * Assign a bag to the order's DELIVERY set, from the counter.
+ *
+ * This is the missing half of the Ready for Delivery screen: an order whose bag
+ * set is empty shows "No delivery bag assigned yet" but, until now, had NO way
+ * to put the physical bag the customer will take onto the order. It reuses the
+ * exact building blocks every other stage uses, in the exact order, so no new
+ * rule is invented here:
+ *
+ *   1. pickServiceForBag — one-service orders pick automatically; a multi-
+ *      service order must say which service this bag belongs to.
+ *   2. addBagToOrder — the guarded front door on assignBagToOrder(), which
+ *      already refuses members of another tenant, bags held by another order,
+ *      and damaged/lost/cleaning bags, and is idempotent on re-assign.
+ *   3. confirmDeliveryBag — records the DELIVERY_BAG_CONFIRMED event the gate
+ *      re-reads, so the same action a scan performs closes the gate here.
+ *
+ * The bag becomes a plain OPEN assignment (purpose null, exactly like Packing's
+ * growth rows) and moves to the customer with every other bag when delivery
+ * completes through the existing applyDeliveryDisposition(). The executive flow
+ * does not call this helper and is unchanged.
+ */
+export async function assignDeliveryBagToOrder(opts: {
+  lbId: string
+  orderId: string
+  code: string
+  serviceId?: string | null
+  actor?: { id?: string | null; name?: string | null; role?: string | null }
+}): Promise<AssignDeliveryBagResult> {
+  const code = String(opts.code || "").trim()
+  if (!code) return { ok: false, status: 400, error: "Scan or enter the delivery bag to assign it." }
+
+  const order = await orderHeader(opts.lbId, opts.orderId)
+  if (!order) return { ok: false, status: 404, error: "Order not found" }
+
+  const services = await prisma.laundryOrderService.findMany({
+    where: { orderId: opts.orderId },
+    select: { serviceId: true, serviceName: true, requiredBags: true },
+    orderBy: { createdAt: "asc" },
+  })
+  const pick = pickServiceForBag(services as ServiceRequirement[], opts.serviceId)
+  if (!pick.ok) return { ok: false, status: 400, error: pick.error }
+
+  const alreadyOnOrder = !!(await orderBags(opts.lbId, opts.orderId))
+    .find((b) => b.bagNumber.toUpperCase() === code.toUpperCase() || b.qrValue.toUpperCase() === code.toUpperCase())
+
+  const res = await addBagToOrder({
+    lbId: opts.lbId,
+    orderId: opts.orderId,
+    code,
+    serviceId: pick.service.serviceId,
+    serviceName: pick.service.serviceName,
+    custodian: CUSTODIAN.STORE,
+  })
+  if (!res.ok) return { ok: false, status: res.status, error: res.error, conflict: res.conflict }
+
+  // The bag is ON the order now, so the same confirmation a scan performs also
+  // applies here — the gate reads the same event either way.
+  const confirm = await confirmDeliveryBag({ lbId: opts.lbId, orderId: opts.orderId, code, actor: opts.actor })
+  if (!confirm.ok) return { ok: false, status: confirm.status, error: confirm.error }
+
+  return {
+    ok: true,
+    bag: res.bag,
+    view: await deliveryBags(opts.lbId, opts.orderId),
+    alreadyOnOrder,
+    alreadyConfirmed: confirm.alreadyConfirmed,
+  }
 }
 
 /**

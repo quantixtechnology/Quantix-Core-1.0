@@ -1104,6 +1104,7 @@ export function LaundryReadyForDelivery() {
             endpoint={`/api/laundry/orders/${selected.id}/delivery-bags?businessId=${currentBusinessId}`}
             body={{ businessId: currentBusinessId, actorId: user?.id, actorName: user?.name }}
             onProgress={setBagsComplete}
+            allowAssign
           />
 
           {/* Customer verification — mandatory before handover/delivery. The

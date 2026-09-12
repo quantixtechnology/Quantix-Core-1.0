@@ -3,6 +3,10 @@
 // POST /api/laundry/orders/[id]/delivery-bags { businessId, code } — scan one.
 // POST … { businessId, action: "exception", code, reason, note? } — record that
 //      one bag could not physically be scanned.
+// POST … { businessId, action: "assign", code } — put ONE bag onto the order's
+//      delivery set, when the order has none yet. Reuses the assignment +
+//      confirmation chain in one action so the bag gate can be satisfied at the
+//      counter instead of stranding the order.
 //
 // The COUNTER equivalent of the executive route. Ready for Delivery completes
 // hand-overs through /orders/[id]/deliver, which is gated by deliveryBagGate();
@@ -12,12 +16,14 @@
 //
 // Thin transport over the already-tested domain layer: tenant, order membership,
 // duplicate handling, reason validation and the N-of-M gate all live in
-// deliveryBags()/confirmDeliveryBag()/recordDeliveryBagException(). Guarded with
-// the SAME permission as the delivery it unblocks — no new authority.
+// deliveryBags()/confirmDeliveryBag()/recordDeliveryBagException()/
+// assignDeliveryBagToOrder(). Guarded with the SAME permission as the delivery it
+// unblocks — no new authority.
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { deliveryBags, confirmDeliveryBag, recordDeliveryBagException } from "@/lib/laundry-delivery-bags"
+import { deliveryBags, confirmDeliveryBag, recordDeliveryBagException, assignDeliveryBagToOrder, type DeliveryBagsView } from "@/lib/laundry-delivery-bags"
+import type { BagConflict } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -53,21 +59,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const code = String(b.code || b.bagNumber || b.qrValue || "")
     const actor = { id: b.actorId ?? null, name: b.actorName ?? null, role: "STORE" }
+    const action = String(b.action || "")
 
-    const res = String(b.action || "") === "exception"
-      ? await recordDeliveryBagException({ lbId: g.biz.id, orderId: id, code, reason: b.reason, note: b.note, actor })
-      : await confirmDeliveryBag({ lbId: g.biz.id, orderId: id, code, actor })
+    type Outcome =
+      | { ok: false; status: number; error: string; conflict?: BagConflict }
+      | { ok: true; scanned: string; alreadyConfirmed?: boolean; alreadyExcepted?: boolean; view: DeliveryBagsView }
 
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
+    let outcome: Outcome
+    if (action === "exception") {
+      const res = await recordDeliveryBagException({ lbId: g.biz.id, orderId: id, code, reason: b.reason, note: b.note, actor })
+      if (!res.ok) outcome = { ok: false, status: res.status, error: res.error }
+      else outcome = { ok: true, scanned: res.bagNumber, alreadyExcepted: res.alreadyExcepted, view: await deliveryBags(g.biz.id, id) }
+    } else if (action === "assign") {
+      const res = await assignDeliveryBagToOrder({ lbId: g.biz.id, orderId: id, code, serviceId: b.serviceId ?? null, actor })
+      if (!res.ok) outcome = { ok: false, status: res.status, error: res.error, conflict: res.conflict }
+      else outcome = { ok: true, scanned: res.bag.bagNumber, alreadyConfirmed: res.alreadyConfirmed, view: res.view }
+    } else {
+      const res = await confirmDeliveryBag({ lbId: g.biz.id, orderId: id, code, actor })
+      if (!res.ok) outcome = { ok: false, status: res.status, error: res.error }
+      else outcome = { ok: true, scanned: res.bagNumber, alreadyConfirmed: res.alreadyConfirmed, view: await deliveryBags(g.biz.id, id) }
+    }
+
+    if (!outcome.ok) {
+      const body: { error: string; conflict?: BagConflict } = { error: outcome.error }
+      if (outcome.conflict) body.conflict = outcome.conflict
+      return NextResponse.json(body, { status: outcome.status })
+    }
 
     // Always answer with the server's own view — the client never computes progress.
     return NextResponse.json({
       success: true,
       data: {
-        ...await deliveryBags(g.biz.id, id),
-        scanned: res.bagNumber,
-        alreadyConfirmed: "alreadyConfirmed" in res ? res.alreadyConfirmed : false,
-        alreadyExcepted: "alreadyExcepted" in res ? res.alreadyExcepted : false,
+        ...outcome.view,
+        scanned: outcome.scanned,
+        alreadyConfirmed: outcome.alreadyConfirmed ?? false,
+        alreadyExcepted: outcome.alreadyExcepted ?? false,
       },
     })
   } catch (e) {

@@ -50,6 +50,8 @@ interface ChecklistView {
   allReturned?: boolean
   /** Delivery only — "2 of 3 bags scanned · 1 exception". */
   summary?: string
+  /** Delivery only — accounted (scanned + excepted) out of total. */
+  accounted?: number
   message: string | null
 }
 
@@ -75,7 +77,7 @@ const isAccounted = (b: ChecklistBag) => isDone(b) || !!b.exception
  *                   stops the operator being sent to a customer to be refused.
  */
 export function BagChecklist({
-  endpoint, kind, token, body, onProgress,
+  endpoint, kind, token, body, onProgress, allowAssign = false,
 }: {
   endpoint: string
   kind: ChecklistKind
@@ -83,12 +85,20 @@ export function BagChecklist({
   /** Extra fields every POST carries — the admin routes need businessId/actor. */
   body?: Record<string, unknown>
   onProgress?: (complete: boolean) => void
+  /**
+   * Store-only. When the order's delivery bag set is EMPTY there is nothing to
+   * scan yet — this lets the counter ASSIGN the physical bag (one action: add
+   * to the order + confirm). The executive flow never passes it, so it is
+   * unchanged. The server (assignDeliveryBagToOrder) remains the authority.
+   */
+  allowAssign?: boolean
 }) {
   const [view, setView] = useState<ChecklistView | null>(null)
   const [busy, setBusy] = useState(false)
   const [exceptFor, setExceptFor] = useState<string | null>(null)
   const [reason, setReason] = useState<string>(REASONS[0].code)
   const [note, setNote] = useState("")
+  const [manualCode, setManualCode] = useState("")
   const copy = COPY[kind]
   const extra = JSON.stringify(body ?? {})
 
@@ -150,17 +160,62 @@ export function BagChecklist({
     if (ok) { setExceptFor(null); setNote(""); setReason(REASONS[0].code) }
   }
 
+  const assignBag = async (v: string) => {
+    const val = v.trim()
+    if (!val) return
+    const ok = await post({ action: "assign", code: val }, (d) =>
+      d.alreadyConfirmed
+        ? `Bag ${d.scanned} is already assigned`
+        : `Delivery bag ${d.scanned} assigned — ${d.accounted ?? doneCount(d)} of ${d.total} accounted`)
+    if (ok) setManualCode("")
+  }
+
   if (!view || view.total === 0) {
+    // STORE-ONLY: an order whose delivery bag set is EMPTY has nothing to scan
+    // yet, so the counter must be able to PUT the physical bag onto the order —
+    // the exact gap that left "Hand Over to Customer" permanently disabled on a
+    // real order. When the server says a required bag is outstanding
+    // (complete === false), offer scan + manual entry; everything else stays as
+    // before and the note is still the server's own words.
+    const canAssign = kind === "delivery" && !!allowAssign && !!view && view.complete === false
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-          <Package className="h-4 w-4 text-blue-600" /> {copy.title}
+      <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+            <Package className="h-4 w-4 text-blue-600" /> {copy.title}
+          </p>
+          {view && (
+            <span className={`text-xs font-bold ${view.complete ? "text-emerald-700" : "text-amber-700"}`}>
+              {view.summary ?? `${doneCount(view)} / ${view.total} ${copy.verb}`}
+            </span>
+          )}
+        </div>
+        <p className={`text-xs mt-0.5 ${view && !view.complete ? "text-amber-700" : "text-slate-400"}`}>
+          {view ? (view.message ?? copy.empty) : "Loading…"}
         </p>
-        {/* An order with no open delivery bag still tells the truth: the note
-            is the SERVER's message (e.g. the required delivery bag has not been
-            assigned), falling back to the generic copy only when the server has
-            nothing to add — never a local guess. */}
-        <p className="text-xs text-slate-400 mt-1">{view ? (view.message ?? copy.empty) : "Loading…"}</p>
+        {canAssign && (
+          <>
+            <BagScanButton
+              label={busy ? "Assigning…" : "Scan Delivery Bag"}
+              onScan={(c) => { void assignBag(c) }}
+              disabled={busy}
+              closeOnScan
+              className="w-full h-11 justify-center"
+            />
+            <div className="flex items-center gap-2">
+              <input
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void assignBag(manualCode) }}
+                disabled={busy}
+                placeholder="Enter bag code manually"
+                className="flex-1 h-10 rounded-lg border border-slate-200 px-3 text-sm font-mono disabled:opacity-50"
+              />
+              <button type="button" onClick={() => void assignBag(manualCode)} disabled={busy || !manualCode.trim()} className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium disabled:opacity-50">Set</button>
+            </div>
+            {busy && <p className="text-[11px] text-slate-400 flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Assigning…</p>}
+          </>
+        )}
       </div>
     )
   }
