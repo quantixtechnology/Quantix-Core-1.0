@@ -6,7 +6,7 @@
 // presentation only. Cached per business so multiple components share one fetch.
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
-import { Level } from "@/lib/laundry-rbac-registry"
+import { Level, permKeyToScreenLevel } from "@/lib/laundry-rbac-registry"
 
 type Snapshot = { isOwner: boolean; perms: Set<string>; levels: Record<string, number>; roleCode: string }
 const cache = new Map<string, Snapshot>()
@@ -41,6 +41,24 @@ export function refreshLaundryPermissions(businessId?: string | null) {
   listeners.forEach((l) => l())
 }
 
+// Pure client-side resolver — used by the hook below AND directly by parity tests.
+// Resolves action keys ("laundry.customers.merge") through the SAME registry
+// the server uses (permKeyToScreenLevel → screen + required level), so a role
+// holding the screen at the required level sees the action. Plain screen keys
+// ("laundry.customers") fall through to the precomputed Set, preserving the
+// existing behaviour for the many surfaces that gate on screen keys directly.
+// The server still enforces at every call — this is presentation only.
+export function resolveClientLaundryAction(
+  snap: Snapshot | null,
+  isOwner: boolean,
+  key: string,
+): boolean {
+  if (snap === null || isOwner) return true
+  const mapped = permKeyToScreenLevel(key)
+  if (mapped) return (snap.levels[mapped.screenKey] ?? 0) >= mapped.level
+  return snap.perms.has(key)
+}
+
 export function useLaundryPermissions() {
   const { currentBusinessId } = useAuthStore()
   const [, force] = useState(0)
@@ -62,7 +80,7 @@ export function useLaundryPermissions() {
   const isPlatformSuperAdmin = snap?.roleCode === "QUANTIX_SUPER_ADMIN"
   // While permissions are still loading (snap === null) we allow, so the UI never
   // flashes "no access" for a legitimately-permitted user; the server enforces.
-  const can = (key: string) => snap === null || isOwner || snap.perms.has(key)
+  const can = (key: string) => resolveClientLaundryAction(snap, isOwner, key)
   /**
    * The caller's LEVEL on a screen (HIDE/VIEW/CREATE/EDIT) — for actions that
    * need more than "can see it". `can` only answers VIEW-or-better, which is
