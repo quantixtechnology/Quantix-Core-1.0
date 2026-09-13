@@ -47,6 +47,13 @@ public class MainActivity extends AppCompatActivity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
 
+        // Mark this WebView so the web app can tell the shell from a browser
+        // tab. The token is PURELY a presentation switch: the storefront's
+        // usePwaMode() recognises it to wear its installed-app shell (compact
+        // app bar, bottom navigation, floating cart). No authorization, no
+        // account data, no pricing/order/business logic ever reads it.
+        s.setUserAgentString(s.getUserAgentString() + " QuantixApp/1");
+
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
