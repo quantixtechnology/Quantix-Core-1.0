@@ -28,7 +28,7 @@
 // ============================================================================
 
 /** The stages that offer the order-level fast track. Nothing else does. */
-export const MOVE_BY_ORDER_STAGES = ["WASH", "DRYCLEAN"] as const
+export const MOVE_BY_ORDER_STAGES = ["WASH", "DRYCLEAN", "DRYQC"] as const
 export type MoveByOrderStage = (typeof MOVE_BY_ORDER_STAGES)[number]
 
 export interface MoveByOrderConfig {
@@ -55,6 +55,12 @@ const CONFIG: Record<MoveByOrderStage, MoveByOrderConfig> = {
     prompt: "Do you want to move this order to the Dry Clean process?",
     notFound: "Order not found in the Dry Cleaning queue.",
   },
+  DRYQC: {
+    pushLabel: "Push Order to Dry & Quality Check",
+    modalTitle: "Push Order to Dry & Quality Check?",
+    prompt: "Do you want to move this order to the Dry & Quality Check process?",
+    notFound: "Order not found in the Dry & Quality Check queue.",
+  },
 }
 
 /** The question the operator must answer before anything moves. */
@@ -79,6 +85,7 @@ export interface QueueGarment {
   serviceId?: string | null
   serviceName: string | null
   processingStatus: string | null
+  processingStage?: string | null
   orderTotalWeightKg?: number | null
 }
 
@@ -359,4 +366,17 @@ export function displayOrderPrefix(
   }
   if (seen.size === 1) return [...seen][0]
   return orderNumberPrefix(canonicalBusinessCode)
+}
+
+/**
+ * The action that moves a garment out of a given processing stage.
+ *
+ * At Washing / Dry Cleaning the action is always COMPLETE — one stage, one exit.
+ * Dry & Quality Check owns TWO stages (DRY → QC → SORTING) and the exit action
+ * differs: DRY garments are advanced with COMPLETE (→ QC), QC garments with
+ * QC_PASS (→ SORTING). This helper encodes that single rule so the workstation
+ * does not special-case it inline.
+ */
+export function completionActionForStage(processingStage: string): string {
+  return processingStage === "QC" ? "QC_PASS" : "COMPLETE"
 }

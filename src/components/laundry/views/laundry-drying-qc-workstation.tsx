@@ -7,7 +7,8 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -21,12 +22,15 @@ import { GarmentSearchResults } from "@/components/laundry/garment-search-result
 import { Level } from "@/lib/laundry-rbac-registry"
 import { LaundryBarcodeScanner } from "@/components/laundry/laundry-barcode-scanner"
 import { playScanOk, playScanError } from "@/lib/laundry-scan-sound"
+import { moveByOrderConfig, findOrderInQueue, planOrderMove, moveByOrderNote, moveProgressLabel, moveOutcome, displayOrderPrefix, composeOrderNumber, completionActionForStage, ORDER_SUFFIX_PLACEHOLDER, MOVE_BY_ORDER_PROMPT, MOVE_WAIT_NOTICE, type QueueGarment, type QueueOrder, type MoveProgress } from "@/lib/laundry-move-by-order"
+import { sortingOrderSummary } from "@/lib/laundry-order-display"
 
 interface Item {
   id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null
   garmentName: string; serviceName: string | null; quantity: number
   orderNumber: string | null; customer: string | null
   processingStage: string | null; processingStatus: string | null; processFlow?: string | null
+  orderId: string; orderTotalWeightKg?: number | null
 }
 
 interface Completed {
@@ -72,6 +76,20 @@ export function LaundryDryingQcWorkstation() {
   const [qcReason, setQcReason] = useState("")
   const [qcStage, setQcStage] = useState("")
 
+  // ── MOVE BY ORDER — the additional order-level fast track (DRY & QC).
+  //    The scanner above is untouched; this is a second way to reach the same
+  //    canonical transition, never a replacement for it.
+  const moveCfg = moveByOrderConfig("DRYQC")
+  const canProcess = level("processing.quality_check") >= Level.CREATE
+  const [moveQuery, setMoveQuery] = useState("")
+  const [movePicked, setMovePicked] = useState<QueueOrder | null>(null)
+  const [moveErr, setMoveErr] = useState<string | null>(null)
+  const [moveConfirm, setMoveConfirm] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null)
+  const [businessCode, setBusinessCode] = useState<string | null>(null)
+  const movePrefix = displayOrderPrefix(items as QueueGarment[], businessCode)
+
   const scanErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScan = useRef<{ code: string; at: number }>({ code: "", at: 0 })
   const snapshot = useRef("")
@@ -104,6 +122,8 @@ export function LaundryDryingQcWorkstation() {
       // Both responses carry the SAME two-stage aggregate — take one, never add.
       const wl = results.find((r) => r && r.workload)?.workload
       if (wl) setWorkload(wl)
+      const canonicalCode = results.find((r) => r && r.businessCode)?.businessCode
+      if (canonicalCode !== undefined) setBusinessCode(canonicalCode)
       const mergedItems: Item[] = []
       const mergedCompleted: Completed[] = []
       for (const res of results) {
@@ -244,6 +264,62 @@ export function LaundryDryingQcWorkstation() {
     load(true)
   }
 
+  // ── MOVE BY ORDER ──────────────────────────────────────────────────────────
+  // The operator types an order number, verifies the summary, then confirms.
+  // Every garment goes through the SAME canonical endpoint the scanner uses.
+  const findMoveOrder = () => {
+    setMoveErr(null); setMovePicked(null)
+    const r = findOrderInQueue(items as QueueGarment[], composeOrderNumber(movePrefix, moveQuery), "DRYQC")
+    if (!r.ok) { setMoveErr(r.error); return }
+    setMovePicked(r.order)
+  }
+
+  const clearMove = () => { setMoveQuery(""); setMovePicked(null); setMoveErr(null); setMoveConfirm(false) }
+
+  // Runs ONLY from the confirmation dialog. DRY garments use COMPLETE (→ QC),
+  // QC garments use QC_PASS (→ SORTING). Each goes through the same server-
+  // guarded endpoint with expectedStage, so the SERVER decides eligibility.
+  const runMoveByOrder = async () => {
+    if (!movePicked || moving) return
+    const plan = planOrderMove(movePicked)
+    setMoving(true); setOffline(false)
+    setMoveProgress({ done: 0, failed: 0, total: plan.length })
+    const note = moveByOrderNote(movePicked.orderNumber, user?.name)
+    let ok = 0, fail = 0
+    for (const step of plan) {
+      let advanced = true
+      // Find the garment's current stage to determine the correct action and
+      // expectedStage. DRY garments → COMPLETE; QC garments → QC_PASS.
+      const garment = items.find((it) => it.id === step.itemId)
+      const garmentStage = garment?.processingStage || "DRY"
+      const expectedStage = garmentStage
+      for (const action of step.actions) {
+        // At DQC the final action depends on which sub-stage the garment is at.
+        const resolvedAction = action === "COMPLETE" ? completionActionForStage(garmentStage) : action
+        try {
+          const res = await fetch(`/api/laundry/items/${step.itemId}/process`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: resolvedAction, actorName: user?.name || "operator", expectedStage, note }),
+          })
+          const j = await res.json()
+          if (!res.ok || !j.success) { advanced = false; break }
+        } catch { advanced = false; break }
+      }
+      if (advanced) ok++; else fail++
+      setMoveProgress({ done: ok, failed: fail, total: plan.length })
+    }
+    const outcome = moveOutcome({ done: ok, failed: fail, total: plan.length })
+    setMoving(false); setMoveProgress(null); setMoveConfirm(false)
+    clearMove()
+    if (outcome.complete) playScanOk(soundEnabled)
+    toast({
+      title: outcome.title,
+      description: outcome.complete ? "Dry & Quality Check → next process" : outcome.description,
+      variant: outcome.complete ? undefined : "destructive",
+    })
+    load(true)
+  }
+
   const StageChip = ({ stage }: { stage: string | null }) => (
     <Badge variant="outline" className={stage === "QC" ? "border-emerald-300 text-emerald-700 bg-emerald-50 text-[10px]" : "border-blue-300 text-blue-700 bg-blue-50 text-[10px]"}>
       {stage === "QC" ? "QC" : "Drying"}
@@ -319,6 +395,62 @@ export function LaundryDryingQcWorkstation() {
             <LaundryBarcodeScanner onDetect={handleBarcode} departmentLabel="Dry & Quality Check" />
             {offline && <div className="mt-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">Unable to process garment. Server unavailable.</div>}
             {scanErr && !offline && <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{scanErr}</div>}
+
+            {/* ── MOVE BY ORDER ────────────────────────────────────────────
+                An ADDITIONAL route through this station, mirroring the
+                identical feature at Washing / Dry Cleaning. The scanner above
+                keeps its place and all of its behaviour; this is for the order
+                whose garments are all physically here and scanning them one by
+                one adds nothing.
+
+                Nothing moves from this panel. Finding an order only selects it
+                — the operator reads the summary and confirms in the dialog
+                before a single garment is touched. */}
+            {moveCfg && canProcess && (
+              <div className="mt-3 border-t border-blue-200/70 pt-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">or move by order</span>
+                  <span className="text-[11px] text-slate-400">— when every garment is already here</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-stretch w-full sm:w-auto">
+                    {movePrefix && (
+                      <span aria-hidden="true" className="inline-flex items-center rounded-l-md border border-r-0 border-input bg-slate-100 px-2 font-mono text-[11px] text-slate-500 select-none whitespace-nowrap">{movePrefix}</span>
+                    )}
+                    <Input
+                      value={moveQuery}
+                      onChange={(e) => { setMoveQuery(e.target.value); setMoveErr(null); setMovePicked(null) }}
+                      onKeyDown={(e) => { if (e.key === "Enter") findMoveOrder() }}
+                      placeholder={movePrefix ? ORDER_SUFFIX_PLACEHOLDER : "Full order number"}
+                      className={`h-9 w-full sm:w-[170px] bg-white font-mono ${movePrefix ? "rounded-l-none" : ""}`}
+                      aria-label={movePrefix ? `Store number and order digits, after ${movePrefix}` : "Order number"}
+                    />
+                  </div>
+                  <Button size="sm" variant="outline" className="h-9" onClick={findMoveOrder} disabled={!moveQuery.trim()}>
+                    <Search className="h-3.5 w-3.5 mr-1.5" /> Find Order
+                  </Button>
+                  {(movePicked || moveErr) && (
+                    <Button size="sm" variant="ghost" className="h-9 px-2 text-slate-500" onClick={clearMove}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+                {moveErr && <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{moveErr}</div>}
+                {movePicked && (
+                  <div className="mt-2 rounded-lg border border-blue-200 bg-white p-3">
+                    <p className="font-mono text-[12px] font-semibold text-slate-800 break-all">{movePicked.orderNumber}</p>
+                    <p className="text-[12px] text-slate-500">{movePicked.customer || "—"}</p>
+                    <p className="text-[12px] font-medium text-slate-600 tabular-nums">
+                      {sortingOrderSummary({ garments: movePicked.garments, garmentCount: movePicked.garments.length, totalWeightKg: movePicked.totalWeightKg })}
+                    </p>
+                    <Button size="sm" className="mt-2 h-9" onClick={() => setMoveConfirm(true)} disabled={moving}>
+                      {moveCfg.pushLabel}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <p className="mt-2 text-[11px] text-slate-500">Drying is completed here; every garment is checked for cleaning, stains, damage and customer instructions, then <span className="font-semibold">Pass / Fail / Reprocess</span>. On Pass the garment moves to <span className="font-semibold">Sorting</span>, where the order's bag is assigned — no bag is assigned at this station.</p>
           </CardContent>
         </Card>
@@ -433,6 +565,55 @@ export function LaundryDryingQcWorkstation() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MOVE BY ORDER CONFIRMATION ─────────────────────────────────────
+          The whole point of the feature. Move by Order asserts that every
+          garment is present, so the operator says so explicitly before
+          anything happens. Nothing has mutated at this point. */}
+      <Dialog open={moveConfirm} onOpenChange={(o) => { if (!moving) setMoveConfirm(o) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{moveCfg?.modalTitle}</DialogTitle></DialogHeader>
+          {movePicked && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="font-mono text-[12px] font-semibold text-slate-800 break-all">{movePicked.orderNumber}</p>
+              <p className="text-[12px] text-slate-500">{movePicked.customer || "—"}</p>
+              <p className="text-[12px] font-medium text-slate-600 tabular-nums">
+                {sortingOrderSummary({ garments: movePicked.garments, garmentCount: movePicked.garments.length, totalWeightKg: movePicked.totalWeightKg })}
+              </p>
+            </div>
+          )}
+          {moving && moveProgress ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+              <p className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Moving Order
+              </p>
+              <p className="mt-1 text-sm tabular-nums text-slate-700">{moveProgressLabel(moveProgress)}</p>
+              <div className="mt-2 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${moveProgress.total ? Math.round(((moveProgress.done + moveProgress.failed) / moveProgress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[12px] font-medium text-slate-600">{MOVE_WAIT_NOTICE}</p>
+              {moveProgress.failed > 0 && (
+                <p className="mt-1 text-[12px] text-rose-700">{moveProgress.failed} item{moveProgress.failed === 1 ? "" : "s"} could not be moved so far — the order will not be reported as fully moved.</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-slate-800">{moveCfg?.prompt}</p>
+              <p className="mt-1 text-sm text-slate-600">{MOVE_BY_ORDER_PROMPT}</p>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setMoveConfirm(false)} disabled={moving}>No, Cancel</Button>
+            <Button onClick={runMoveByOrder} disabled={moving}>
+              {moving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {moving ? "Moving…" : "Yes, Move Order"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

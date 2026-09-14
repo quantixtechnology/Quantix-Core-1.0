@@ -18,6 +18,7 @@ import {
   prefixOfOrderNumber,
   displayOrderPrefix,
   composeOrderNumber,
+  completionActionForStage,
   ORDER_SUFFIX_PLACEHOLDER,
   type QueueGarment,
 } from '@/lib/laundry-move-by-order'
@@ -45,10 +46,11 @@ const g = (over: Partial<QueueGarment> & { id: string }): QueueGarment => ({
 const queue18 = Array.from({ length: 18 }, (_, i) => g({ id: `i${i}` }))
 
 describe('stage scoping', () => {
-  it('offers the fast track at Washing and Dry Cleaning only', () => {
-    expect([...MOVE_BY_ORDER_STAGES]).toEqual(['WASH', 'DRYCLEAN'])
+  it('offers the fast track at Washing, Dry Cleaning, and Dry & Quality Check only', () => {
+    expect([...MOVE_BY_ORDER_STAGES]).toEqual(['WASH', 'DRYCLEAN', 'DRYQC'])
     expect(supportsMoveByOrder('WASH')).toBe(true)
     expect(supportsMoveByOrder('DRYCLEAN')).toBe(true)
+    expect(supportsMoveByOrder('DRYQC')).toBe(true)
     for (const s of ['QC', 'SORTING', 'IRON', 'FOLD', 'PACKED', 'DISPATCHED', '']) {
       expect(supportsMoveByOrder(s), s).toBe(false)
       expect(moveByOrderConfig(s)).toBeNull()
@@ -67,6 +69,12 @@ describe('stage scoping', () => {
       modalTitle: 'Push Order to Dry Cleaning?',
       prompt: 'Do you want to move this order to the Dry Clean process?',
       notFound: 'Order not found in the Dry Cleaning queue.',
+    })
+    expect(moveByOrderConfig('DRYQC')).toMatchObject({
+      pushLabel: 'Push Order to Dry & Quality Check',
+      modalTitle: 'Push Order to Dry & Quality Check?',
+      prompt: 'Do you want to move this order to the Dry & Quality Check process?',
+      notFound: 'Order not found in the Dry & Quality Check queue.',
     })
   })
 })
@@ -610,5 +618,143 @@ describe('REGRESSION · displayed prefix matches the queue’s order numbers', (
     expect(API).toContain('businessCode: canonicalBusinessCode')
     // The laundry row is no longer asked for a business code.
     expect(API).not.toMatch(/laundryBusiness\.findUnique[\s\S]{0,120}businessCode:\s*true/)
+  })
+})
+
+// ── DRY & Quality Check: the order-level fast track at the merged station ──
+const DRY_QC = read('src/components/laundry/views/laundry-drying-qc-workstation.tsx')
+
+describe('Dry & Quality Check — completionActionForStage', () => {
+  it('a DRY garment uses COMPLETE to advance to QC', () => {
+    expect(completionActionForStage('DRY')).toBe('COMPLETE')
+  })
+
+  it('a QC garment uses QC_PASS to advance to SORTING', () => {
+    expect(completionActionForStage('QC')).toBe('QC_PASS')
+  })
+
+  it('an unknown stage defaults to COMPLETE (safe fallback)', () => {
+    expect(completionActionForStage('WASH')).toBe('COMPLETE')
+    expect(completionActionForStage('')).toBe('COMPLETE')
+  })
+})
+
+describe('Dry & Quality Check — lookup with mixed DRY and QC items', () => {
+  const dryItem: QueueGarment = {
+    id: 'd1', orderId: 'o1', orderNumber: 'ORD-STR-BUS-202608-0008-002-000070',
+    customer: 'Pravin', serviceName: 'Wash & Fold', processingStatus: 'WAITING',
+    processingStage: 'DRY', orderTotalWeightKg: 6,
+  }
+  const qcItem: QueueGarment = {
+    id: 'q1', orderId: 'o1', orderNumber: 'ORD-STR-BUS-202608-0008-002-000070',
+    customer: 'Pravin', serviceName: 'Wash & Fold', processingStatus: 'IN_PROGRESS',
+    processingStage: 'QC', orderTotalWeightKg: 6,
+  }
+
+  it('finds an order whose garments span DRY and QC stages', () => {
+    const r = findOrderInQueue([dryItem, qcItem], '000070', 'DRYQC')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.order.garments).toHaveLength(2)
+      expect(r.order.garments.map((g) => g.id).sort()).toEqual(['d1', 'q1'])
+    }
+  })
+
+  it('the not-found message references Dry & Quality Check', () => {
+    const r = findOrderInQueue([], '000070', 'DRYQC')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toBe('Order not found in the Dry & Quality Check queue.')
+  })
+
+  it('an order with only DRY items is found', () => {
+    const r = findOrderInQueue([dryItem], '000070', 'DRYQC')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.order.garments).toHaveLength(1)
+  })
+
+  it('an order with only QC items is found', () => {
+    const r = findOrderInQueue([qcItem], '000070', 'DRYQC')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.order.garments).toHaveLength(1)
+  })
+
+  it('only movable garments are included (DONE excluded)', () => {
+    const doneDry = { ...dryItem, id: 'd2', processingStatus: 'DONE' }
+    const r = findOrderInQueue([dryItem, doneDry, qcItem], '000070', 'DRYQC')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.order.garments.map((g) => g.id).sort()).toEqual(['d1', 'q1'])
+  })
+})
+
+describe('Dry & Quality Check — workstation wiring', () => {
+  it('renders the OR MOVE BY ORDER section', () => {
+    expect(DRY_QC).toContain('or move by order')
+    expect(DRY_QC).toContain('when every garment is already here')
+  })
+
+  it('gates on moveCfg and canProcess', () => {
+    expect(DRY_QC).toContain('moveByOrderConfig("DRYQC")')
+    expect(DRY_QC).toContain('{moveCfg && canProcess && (')
+  })
+
+  it('has the order input, Find Order button, and push button', () => {
+    expect(DRY_QC).toContain('Find Order')
+    expect(DRY_QC).toContain('{moveCfg.pushLabel}')
+  })
+
+  it('the push button label names Dry & Quality Check', () => {
+    expect(moveByOrderConfig('DRYQC')!.pushLabel).toBe('Push Order to Dry & Quality Check')
+  })
+
+  it('shows the order summary with customer, service, count and weight', () => {
+    expect(DRY_QC).toContain('sortingOrderSummary')
+    expect(DRY_QC).toContain('movePicked.orderNumber')
+    expect(DRY_QC).toContain('movePicked.customer')
+  })
+
+  it('has a confirmation dialog that prevents double-submit', () => {
+    expect(DRY_QC).toContain('onClick={runMoveByOrder}')
+    expect(DRY_QC).toContain('"Yes, Move Order"')
+    expect(DRY_QC).toContain('if (!movePicked || moving) return')
+    expect(DRY_QC).toContain('disabled={moving}')
+    expect(DRY_QC).toContain('onOpenChange={(o) => { if (!moving) setMoveConfirm(o) }}')
+  })
+
+  it('the runner uses completionActionForStage per garment, not a fixed action', () => {
+    expect(DRY_QC).toContain('completionActionForStage(garmentStage)')
+    expect(DRY_QC).toContain('garmentStage = garment?.processingStage')
+  })
+
+  it('each call carries expectedStage from the garment itself', () => {
+    expect(DRY_QC).toContain('const expectedStage = garmentStage')
+    expect(DRY_QC).toContain('expectedStage, note')
+  })
+
+  it('existing garment barcode scanning is untouched', () => {
+    expect(DRY_QC).toContain('<LaundryBarcodeScanner onDetect={handleBarcode} departmentLabel="Dry & Quality Check" />')
+    expect(DRY_QC).toContain('const handleBarcode')
+    expect(DRY_QC).toContain('/api/laundry/scan?barcode=')
+  })
+
+  it('the queue columns are unchanged', () => {
+    expect(DRY_QC).toContain('const waiting = items.filter((i) => i.processingStatus === "WAITING")')
+    expect(DRY_QC).toContain('const inProgress = active.filter((i) => i.processingStatus === "IN_PROGRESS")')
+  })
+
+  it('Move by Order reuses the canonical endpoint — no parallel state machine', () => {
+    const run = DRY_QC.slice(DRY_QC.indexOf('const runMoveByOrder'), DRY_QC.indexOf('const StageChip'))
+    expect(run).toContain('/api/laundry/items/${step.itemId}/process')
+    expect(run).not.toMatch(/processingStage\s*:/)
+    expect(run).not.toMatch(/prisma|laundryOrderItem\.update/)
+  })
+
+  it('the queue is reloaded from the server after the move', () => {
+    const run = DRY_QC.slice(DRY_QC.indexOf('const runMoveByOrder'), DRY_QC.indexOf('const StageChip'))
+    expect(run).toContain('load(true)')
+  })
+
+  it('the verdict comes from moveOutcome', () => {
+    const run = DRY_QC.slice(DRY_QC.indexOf('const runMoveByOrder'), DRY_QC.indexOf('const StageChip'))
+    expect(run).toContain('const outcome = moveOutcome(')
   })
 })
