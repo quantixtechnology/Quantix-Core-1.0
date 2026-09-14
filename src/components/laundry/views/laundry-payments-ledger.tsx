@@ -22,6 +22,7 @@ import {
 } from "@/lib/laundry-today-transactions"
 import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
+import { ListPagination } from "@/components/laundry/list-pagination"
 
 interface Row {
   /**
@@ -104,8 +105,11 @@ export function LaundryPaymentsLedger() {
   // keeps its own financial summary — this is not a second copy of it.
   const [openOrder, setOpenOrder] = useState<Row | null>(null)
   const [rows, setRows] = useState<Row[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<LedgerView>("ALL")
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
   const [today, setToday] = useState<TodayRow[]>([])
   const [todaySummary, setTodaySummary] = useState<TodaySummaryData | null>(null)
   const [todayKey, setTodayKey] = useState("")
@@ -149,17 +153,20 @@ export function LaundryPaymentsLedger() {
     if (!currentBusinessId) return
     setLoading(true)
     const p = new URLSearchParams({ businessId: currentBusinessId, filter })
+    // The ledger API pages server-side; TODAY answers a different question and
+    // never paginates, so it does not need the paging params.
+    if (filter !== "TODAY") p.set("limit", String(pageSize)); p.set("offset", String(page * pageSize))
     if (q) p.set("search", q)
     fetch(`/api/laundry/payments-ledger?${p}`)
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) return
         if (filter === "TODAY") { setToday(j.data || []); setTodaySummary(j.summary ?? null); setTodayKey(j.dayKey || "") }
-        else setRows(j.data || [])
+        else { setRows(j.data || []); setTotal(j.total || 0) }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [currentBusinessId, filter, q])
+  }, [currentBusinessId, filter, q, page, pageSize])
   useEffect(() => { load() }, [load])
 
   const totals = useMemo(() => rows.reduce((a, r) => ({
@@ -188,13 +195,13 @@ export function LaundryPaymentsLedger() {
         <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }}
             placeholder="Order #, invoice #, customer or mobile"
             className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" />
         </div>
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
+            <button key={f.key} onClick={() => { setFilter(f.key); setPage(0) }}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${filter === f.key ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
               {f.label}
             </button>
@@ -376,6 +383,16 @@ export function LaundryPaymentsLedger() {
           </tbody>
         </table>
       </div>
+      {filter !== "TODAY" && total > 0 && (
+        <ListPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          shown={rows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(0) }}
+        />
+      )}
       {openOrder && currentBusinessId && (
         <LaundryPaymentDetailsPanel
           orderId={openOrder.id} businessId={currentBusinessId}

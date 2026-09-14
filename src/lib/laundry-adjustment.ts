@@ -242,6 +242,30 @@ export function matchesLedgerFilter(f: LedgerFilter, row: { paid: number; balanc
   }
 }
 
+/**
+ * The WHERE equivalent of {@link matchesLedgerFilter}, applied to the order
+ * QUERY so filtered views page over the whole book instead of the newest slice.
+ *
+ * It mirrors the exact values `financialSummary()` reads from the order row —
+ * `paid` is `amountPaid`, `balance` is `balanceDue` — and its adjustment tests
+ * match `summarise()`'s live (non-voided) rows. Both the filter in JS and this
+ * SQL predicate decide the same thing, so a page fetched here still passes a
+ * `matchesLedgerFilter(filter, r)` check unchanged.
+ *
+ * The few sub-cent rounding cases (an adjustment of ₹0.004, say) differ by one
+ * decimal place and are irrelevant — ledger money is recorded in paise.
+ */
+export function ledgerFilterOrderWhere(f: LedgerFilter): Record<string, unknown> {
+  switch (f) {
+    case "PENDING": return { amountPaid: { lte: 0 }, balanceDue: { gt: 0 } }
+    case "PARTIAL": return { amountPaid: { gt: 0 }, balanceDue: { gt: 0 } }
+    case "PAID": return { amountPaid: { gt: 0 }, balanceDue: { lte: 0 } }
+    case "DISCOUNTED": return { OR: [{ discount: { gt: 0 } }, { adjustments: { some: { voidedAt: null, amount: { gt: 0 } } } }] }
+    case "REFUNDED": return { adjustments: { some: { voidedAt: null, refundable: { gt: 0 } } } }
+    default: return {}
+  }
+}
+
 // ── Plain-language guidance on the discount form ────────────────────────────
 // The form used to say "Up to ₹32.00 may still be given on this order." That
 // number was maxCompensation() — correct, and meaningless to someone at a

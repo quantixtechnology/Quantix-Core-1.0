@@ -12,6 +12,7 @@ import { getTransportModes, orderIdsByTransportSearch, transportRefsForOrders } 
 import { usesPacket } from "@/lib/laundry-transport"
 import { buildReportRow, type ReportOrder } from "@/lib/laundry-order-report"
 import { operationalStage, STATUS_QUEUES, PROCESSING_QUEUES, UNASSIGNED, TRANSIT_QUEUE, TERMINAL_STAGES, stagesForKey, stagesBefore } from "@/lib/laundry-operational-stage"
+import { resolvePageSize } from "@/lib/laundry-pagination"
 
 export const runtime = "nodejs"
 
@@ -215,7 +216,7 @@ export async function GET(request: Request) {
     const promise = searchParams.get("promise") // delivery-promise filter — see PROMISE_WHERE below
     const barcoded = searchParams.get("barcoded") // "1" → Barcode Generation completed (Moved to Processing)
     const packed = searchParams.get("packed")     // "1" → Packing & QR completed
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100)
+    const limit = resolvePageSize(searchParams.get("limit"))
     const offset = parseInt(searchParams.get("offset") || "0")
 
     if (!businessId) {

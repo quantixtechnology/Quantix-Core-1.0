@@ -5,6 +5,7 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { membershipState } from "@/lib/laundry-subscription"
 import { isValidPincode } from "@/lib/india"
 import { createLaundryCustomer, findCustomerByMobile, findCustomerByEmail, validateIndianMobile } from "@/lib/laundry-customer-create"
+import { resolvePageSize } from "@/lib/laundry-pagination"
 
 export const runtime = "nodejs"
 
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     const sp = new URL(request.url).searchParams
     const businessId = sp.get("businessId")
     const q = (sp.get("q") || "").trim()
-    const limit = Math.min(parseInt(sp.get("limit") || "10"), 100)
+    const limit = resolvePageSize(sp.get("limit"))
     const offset = parseInt(sp.get("offset") || "0")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const guard = await requireLaundryPermission(request, businessId, "laundry.customers.view")

@@ -29,6 +29,7 @@ import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { AcquisitionFields, useAcquisitionOptions, defaultSourceId } from "@/components/laundry/customers/acquisition-fields"
 import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
+import { ListPagination } from "@/components/laundry/list-pagination"
 import { LaundryCustomerImportDialog } from "./laundry-customer-import-dialog"
 
 interface Row {
@@ -61,7 +62,6 @@ interface OrderRow {
 
 type TabKey = "overview" | "orders" | "timeline" | "feedback" | "addresses" | "subscriptions" | "payments" | "garments" | "audit"
 
-const PAGE = 10
 const ORDERS_PAGE = 8
 const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`
 const tierStyle = (t: string) => ({ GOLD: "border-amber-300 text-amber-700 bg-amber-50", PLATINUM: "border-violet-300 text-violet-700 bg-violet-50", SILVER: "border-slate-300 text-slate-600 bg-slate-50" }[(t || "").toUpperCase()] || "border-orange-300 text-orange-700 bg-orange-50")
@@ -127,6 +127,7 @@ export function LaundryCustomersView() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
   const [showArchived, setShowArchived] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
 
@@ -213,14 +214,14 @@ export function LaundryCustomersView() {
     if (!currentBusinessId) return
     setLoading(true)
     try {
-      const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(PAGE), offset: String(page * PAGE) })
+      const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(pageSize), offset: String(page * pageSize) })
       if (search.trim()) params.set("q", search.trim())
       if (showArchived) params.set("includeArchived", "1")
       const json = await fetch(`/api/laundry/customers?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
       if (json.summary) setSummary(json.summary)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, search, showArchived])
+  }, [currentBusinessId, page, pageSize, search, showArchived])
   useEffect(() => { load() }, [load])
 
   // ── Customer 360 lazy loaders (first activation of a tab only) ─────────────
@@ -458,8 +459,6 @@ export function LaundryCustomersView() {
     return [...activities, ...events].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
   }, [notes, timeline])
 
-  const pages = Math.max(1, Math.ceil(total / PAGE))
-
   // Business-wide counts from the API (not page-scoped) — pagination belongs in
   // the pagination controls below, not the summary cards.
   const KPIS = [
@@ -581,15 +580,15 @@ export function LaundryCustomersView() {
         </CardContent>
       </Card>
 
-      {total > PAGE && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Showing {page * PAGE + 1}–{page * PAGE + rows.length} of {total}</span>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <span className="px-2 text-xs">Page {page + 1} / {pages}</span>
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
-          </div>
-        </div>
+      {total > 0 && (
+        <ListPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          shown={rows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(0) }}
+        />
       )}
 
       {/* ── Customer 360 slide-over (right, ~80% desktop width) ─────────────── */}

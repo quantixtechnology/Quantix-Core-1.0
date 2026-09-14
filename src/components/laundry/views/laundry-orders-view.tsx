@@ -20,6 +20,7 @@ import { RECONCILIATION_LABEL, type ReconciliationType } from "@/lib/laundry-rec
 import { operationalQueues } from "@/lib/laundry-operational-stage"
 import { DeliveryPromiseBadge } from "@/components/laundry/delivery-promise"
 import type { DeliveryPromiseInput } from "@/lib/laundry-delivery-promise"
+import { ListPagination } from "@/components/laundry/list-pagination"
 
 interface OrderRow {
   id: string; orderNumber: string; status: string; grandTotal: number; paymentStatus: string
@@ -79,7 +80,6 @@ const PAY_STYLE: Record<string, string> = {
 const OP_FILTERS = operationalQueues()
 /** Saved per staff member, server-side, under this key. */
 const FILTER_PREF_KEY = "orders.filter"
-const PAGE = 10
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
 const fmtDay = (s: string | null) => (s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
@@ -107,6 +107,7 @@ export function LaundryOrdersView() {
   const [search, setSearch] = useState("")
   const [opStage, setOpStage] = useState("ALL")
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
   // Saved filter — restored from the server on mount, so the operator does not
   // reselect their queue every visit. `prefLoaded` gates the first fetch so the
   // list is not loaded once with the default and again with the saved value.
@@ -130,14 +131,14 @@ export function LaundryOrdersView() {
     if (!currentBusinessId) return
     setLoading(true)
     try {
-      const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(PAGE), offset: String(page * PAGE) })
+      const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(pageSize), offset: String(page * pageSize) })
       if (opStage !== "ALL") params.set("opStage", opStage)
       if (search.trim()) params.set("search", search.trim())
       if (custFilter) params.set("customerId", custFilter)
       const json = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, opStage, search, custFilter])
+  }, [currentBusinessId, page, pageSize, opStage, search, custFilter])
   useEffect(() => { if (prefLoaded) load() }, [load, prefLoaded])
   useEffect(() => { setPage(0) }, [opStage])
 
@@ -190,7 +191,6 @@ export function LaundryOrdersView() {
 
   const custFilterName = custFilter ? (rows.find((r) => r.customer)?.customer?.name || "selected customer") : null
 
-  const pages = Math.max(1, Math.ceil(total / PAGE))
   const summary = useMemo(() => ({ shown: rows.length }), [rows])
 
   return (
@@ -335,15 +335,15 @@ export function LaundryOrdersView() {
         </CardContent>
       </Card>
 
-      {total > PAGE && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Showing {page * PAGE + 1}–{page * PAGE + summary.shown} of {total}</span>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <span className="px-2 text-xs">Page {page + 1} / {pages}</span>
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
-          </div>
-        </div>
+      {total > 0 && (
+        <ListPagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          shown={summary.shown}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(0) }}
+        />
       )}
     </div>
   )

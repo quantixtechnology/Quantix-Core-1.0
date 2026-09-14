@@ -21,11 +21,12 @@ import type { Prisma } from "@prisma/client"
 import { requireLaundryLevel } from "@/lib/laundry-rbac"
 import { Level } from "@/lib/laundry-rbac-registry"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { financialSummary, matchesLedgerFilter, type LedgerFilter } from "@/lib/laundry-adjustment"
+import { financialSummary, matchesLedgerFilter, ledgerFilterOrderWhere, type LedgerFilter } from "@/lib/laundry-adjustment"
 import {
   businessDayBounds, summariseToday, isOnlinePayment,
   SUBSCRIPTION_COVERAGE, REFUND, isMoneyTransaction, type TodayTransaction,
 } from "@/lib/laundry-today-transactions"
+import { resolvePageSize } from "@/lib/laundry-pagination"
 
 export const runtime = "nodejs"
 
@@ -132,7 +133,8 @@ export async function GET(request: Request) {
 
     const q = (u.searchParams.get("search") || "").trim()
     const filter = (u.searchParams.get("filter") || "ALL") as LedgerFilter
-    const take = Math.min(200, Math.max(1, Number(u.searchParams.get("limit")) || 100))
+    const limit = resolvePageSize(u.searchParams.get("limit"))
+    const offset = Math.max(0, parseInt(u.searchParams.get("offset") || "0", 10) || 0)
 
     // Order number, invoice number, customer name and mobile — the four things
     // a counter actually searches by.
@@ -148,6 +150,55 @@ export async function GET(request: Request) {
       customerIds = matches.map((c) => c.id)
     }
 
+    // ── Standalone subscription sales ──────────────────────────────────────
+    // Only those with no laundryOrderId: one bought alongside an order is
+    // already settled through that order's payment and would otherwise be
+    // counted twice. Cancelled requests never took money, so they are not
+    // financial rows. Resolved here, before the page is sliced, so a
+    // subscription row on a later page is just as real as one on page 1.
+    const purchases = await prisma.subscriptionPurchase.findMany({
+      where: {
+        businessId: biz.platformBusinessId || biz.id,
+        laundryOrderId: null,
+        status: { notIn: ["CANCELLED", "INITIATED"] },
+        ...(customerIds ? { customerId: { in: customerIds } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    const subPlanIds = [...new Set(purchases.map((p) => p.planId))]
+    const subCustIds = [...new Set(purchases.map((p) => p.customerId))]
+    const [subPlans, subCusts] = await Promise.all([
+      subPlanIds.length ? prisma.subscriptionPlan.findMany({ where: { id: { in: subPlanIds } }, select: { id: true, name: true } }) : [],
+      subCustIds.length ? prisma.customer.findMany({ where: { id: { in: subCustIds } }, select: { id: true, name: true, phone: true } }) : [],
+    ])
+    const subPlanById = new Map<string, string>(subPlans.map((p) => [p.id, p.name] as [string, string]))
+    const subCustById = new Map<string, { id: string; name: string | null; phone: string | null }>(
+      subCusts.map((c) => [c.id, c] as [string, { id: string; name: string | null; phone: string | null }]),
+    )
+
+    const subRows = purchases.map((p) => {
+      const c = subCustById.get(p.customerId)
+      const paid = r2(p.amountPaid)
+      const balance = r2(Math.max(0, p.amount - p.amountPaid))
+      return {
+        id: p.id,
+        kind: "SUBSCRIPTION" as const,
+        // A subscription has no order number and one is never invented for it.
+        orderNumber: null,
+        planName: subPlanById.get(p.planId) || "Subscription",
+        invoiceNumber: null,
+        customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
+        services: [], totalWeightKg: null, itemCount: null,
+        orderDate: p.createdAt, paidAt: p.paidAt,
+        orderStatus: p.status, paymentStatus: p.paymentStatus,
+        paymentMethod: p.paymentMethod ?? p.gateway ?? null,
+        reference: p.paymentTransactionId || p.paymentReference || null,
+        orderTotal: r2(p.amount), subscriptionCovered: 0, discount: 0,
+        paid, refunded: 0, refundDue: 0, balance,
+      }
+    }).filter((r) => matchesLedgerFilter(filter, r))
+      .filter((r) => !q || (r.customerName || "").toLowerCase().includes(q.toLowerCase()) || (r.planName || "").toLowerCase().includes(q.toLowerCase()))
+
     // Built as a typed array — an inline literal makes TS infer a union that
     // does not match Prisma's input type.
     const or: Prisma.LaundryOrderWhereInput[] = []
@@ -157,11 +208,37 @@ export async function GET(request: Request) {
       if (customerIds && customerIds.length) or.push({ customerId: { in: customerIds } })
     }
     const where: Prisma.LaundryOrderWhereInput = { businessId: biz.id, ...(or.length ? { OR: or } : {}) }
+    // The five buckets apply to the QUERY too, so a filtered page pages across
+    // the whole book rather than the newest slice. The JS matchesLedgerFilter
+    // below stays the exact authority; this SQL predicate mirrors it exactly.
+    if (filter !== "ALL") {
+      where.AND = [ledgerFilterOrderWhere(filter) as Prisma.LaundryOrderWhereInput]
+    }
+
+    // Two passes, so a page is served without ever shipping the whole book to
+    // the browser: a light finger-print (id + the moment it happened) and a
+    // count for every matching order, then a fat row fetch for this page only.
+    const [orderTotal, orderFingerprint] = await Promise.all([
+      prisma.laundryOrder.count({ where }),
+      prisma.laundryOrder.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        select: { id: true, createdAt: true },
+      }),
+    ])
+    const subTotal = subRows.length
+    // Newest first across both kinds — the same ordering the rendered list has
+    // always used, decided before any page boundary exists.
+    const ledgerOrder = [
+      ...orderFingerprint.map((o) => ({ id: o.id, kind: "ORDER" as const, at: o.createdAt.getTime() })),
+      ...subRows.map((r) => ({ id: r.id, kind: "SUBSCRIPTION" as const, at: new Date(r.orderDate).getTime() })),
+    ].sort((a, b) => b.at - a.at)
+    const pageIds = ledgerOrder.slice(offset, offset + limit)
+    const pageOrderIds = pageIds.filter((x) => x.kind === "ORDER").map((x) => x.id)
+    const pageSubIds = new Set(pageIds.filter((x) => x.kind === "SUBSCRIPTION").map((x) => x.id))
 
     const orders = await prisma.laundryOrder.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take,
+      where: { id: { in: pageOrderIds } },
       select: {
         id: true, orderNumber: true, status: true, paymentStatus: true, createdAt: true,
         grandTotal: true, amountPaid: true, balanceDue: true, discount: true, subscriptionCoveredAmount: true,
@@ -217,59 +294,14 @@ export async function GET(request: Request) {
       }
     }).filter((r) => matchesLedgerFilter(filter, r))
 
-    // ── Standalone subscription sales ──────────────────────────────────────
-    // Only those with no laundryOrderId: one bought alongside an order is
-    // already settled through that order's payment and would otherwise be
-    // counted twice. Cancelled requests never took money, so they are not
-    // financial rows.
-    const purchases = await prisma.subscriptionPurchase.findMany({
-      where: {
-        businessId: biz.platformBusinessId || biz.id,
-        laundryOrderId: null,
-        status: { notIn: ["CANCELLED", "INITIATED"] },
-        ...(customerIds ? { customerId: { in: customerIds } } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-    })
-    const subPlanIds = [...new Set(purchases.map((p) => p.planId))]
-    const subCustIds = [...new Set(purchases.map((p) => p.customerId))]
-    const [subPlans, subCusts] = await Promise.all([
-      subPlanIds.length ? prisma.subscriptionPlan.findMany({ where: { id: { in: subPlanIds } }, select: { id: true, name: true } }) : [],
-      subCustIds.length ? prisma.customer.findMany({ where: { id: { in: subCustIds } }, select: { id: true, name: true, phone: true } }) : [],
-    ])
-    const subPlanById = new Map<string, string>(subPlans.map((p) => [p.id, p.name] as [string, string]))
-    const subCustById = new Map<string, { id: string; name: string | null; phone: string | null }>(
-      subCusts.map((c) => [c.id, c] as [string, { id: string; name: string | null; phone: string | null }]),
-    )
-
-    const subRows = purchases.map((p) => {
-      const c = subCustById.get(p.customerId)
-      const paid = r2(p.amountPaid)
-      const balance = r2(Math.max(0, p.amount - p.amountPaid))
-      return {
-        id: p.id,
-        kind: "SUBSCRIPTION" as const,
-        // A subscription has no order number and one is never invented for it.
-        orderNumber: null,
-        planName: subPlanById.get(p.planId) || "Subscription",
-        invoiceNumber: null,
-        customerName: c?.name ?? null, customerPhone: c?.phone ?? null,
-        services: [], totalWeightKg: null, itemCount: null,
-        orderDate: p.createdAt, paidAt: p.paidAt,
-        orderStatus: p.status, paymentStatus: p.paymentStatus,
-        paymentMethod: p.paymentMethod ?? p.gateway ?? null,
-        reference: p.paymentTransactionId || p.paymentReference || null,
-        orderTotal: r2(p.amount), subscriptionCovered: 0, discount: 0,
-        paid, refunded: 0, refundDue: 0, balance,
-      }
-    }).filter((r) => matchesLedgerFilter(filter, r))
-      .filter((r) => !q || (r.customerName || "").toLowerCase().includes(q.toLowerCase()) || (r.planName || "").toLowerCase().includes(q.toLowerCase()))
+    // The subscription rows that landed on this page, in the merged order.
+    const subRowsOnPage = subRows.filter((r) => pageSubIds.has(r.id))
 
     // Newest first across both kinds, so the ledger reads as one list.
-    const all = [...rows.map((r) => ({ ...r, kind: "ORDER" as const, planName: null, paidAt: null, paymentMethod: null, reference: null })), ...subRows]
+    const all = [...rows.map((r) => ({ ...r, kind: "ORDER" as const, planName: null, paidAt: null, paymentMethod: null, reference: null })), ...subRowsOnPage]
       .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())
 
-    return NextResponse.json({ success: true, data: all })
+    return NextResponse.json({ success: true, data: all, total: orderTotal + subTotal, limit, offset })
   } catch (e) {
     console.error("[payments-ledger] GET", e)
     return NextResponse.json({ success: false, error: "Failed" }, { status: 500 })
