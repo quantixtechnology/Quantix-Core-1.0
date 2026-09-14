@@ -11,14 +11,14 @@
 // the existing financial section handles discounts and refunds. No second
 // order page, no second financial engine.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { Loader2, Search, IndianRupee, Download } from "lucide-react"
 import type { LedgerFilter } from "@/lib/laundry-adjustment"
 import * as XLSX from "xlsx"
 import {
-  LEDGER_TIMEZONE, TXN_LABEL, toCsv, toWorkbookAoa, exportFilename, AMOUNT_COLUMN, EXPORT_COLUMNS,
+  LEDGER_TIMEZONE, TXN_LABEL, toCsv, toWorkbookAoa, exportFilename, AMOUNT_COLUMN, EXPORT_COLUMNS, businessDayKey,
 } from "@/lib/laundry-today-transactions"
 import { orderServiceLabel, orderWeightLabel } from "@/lib/laundry-order-display"
 import { LaundryPaymentDetailsPanel } from "./laundry-payment-details-panel"
@@ -88,6 +88,11 @@ interface TodaySummaryData {
   byMethod: Record<string, number>
 }
 
+/** The three card figures, computed over the whole filtered ledger, server-side. */
+interface LedgerSummary {
+  collected: number; outstanding: number; refundDue: number
+}
+
 const FILTERS: { key: LedgerView; label: string }[] = [
   { key: "TODAY", label: "Today" },
   { key: "ALL", label: "All" },
@@ -97,6 +102,9 @@ const FILTERS: { key: LedgerView; label: string }[] = [
   { key: "DISCOUNTED", label: "Discounted" },
   { key: "REFUNDED", label: "Refunded" },
 ]
+
+/** Business-local today — the default end of the ledger's date range. */
+const END_DATE_TODAY = businessDayKey()
 
 export function LaundryPaymentsLedger() {
   const { currentBusinessId } = useAuthStore()
@@ -113,6 +121,12 @@ export function LaundryPaymentsLedger() {
   const [today, setToday] = useState<TodayRow[]>([])
   const [todaySummary, setTodaySummary] = useState<TodaySummaryData | null>(null)
   const [todayKey, setTodayKey] = useState("")
+  // The card figures for the non-TODAY view. They come from the server, which
+  // aggregates the COMPLETE filtered ledger — never from a reduce over the page
+  // on screen, so a page turn cannot change them.
+  const [summary, setSummary] = useState<LedgerSummary | null>(null)
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState(END_DATE_TODAY)
 
   const save = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob)
@@ -157,21 +171,21 @@ export function LaundryPaymentsLedger() {
     // never paginates, so it does not need the paging params.
     if (filter !== "TODAY") p.set("limit", String(pageSize)); p.set("offset", String(page * pageSize))
     if (q) p.set("search", q)
+    if (filter !== "TODAY") {
+      if (startDate) p.set("startDate", startDate)
+      if (endDate) p.set("endDate", endDate)
+    }
     fetch(`/api/laundry/payments-ledger?${p}`)
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) return
         if (filter === "TODAY") { setToday(j.data || []); setTodaySummary(j.summary ?? null); setTodayKey(j.dayKey || "") }
-        else { setRows(j.data || []); setTotal(j.total || 0) }
+        else { setRows(j.data || []); setTotal(j.total || 0); setSummary(j.summary ?? null) }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [currentBusinessId, filter, q, page, pageSize])
+  }, [currentBusinessId, filter, q, page, pageSize, startDate, endDate])
   useEffect(() => { load() }, [load])
-
-  const totals = useMemo(() => rows.reduce((a, r) => ({
-    paid: a.paid + r.paid, balance: a.balance + r.balance, refundDue: a.refundDue + r.refundDue,
-  }), { paid: 0, balance: 0, refundDue: 0 }), [rows])
 
 
 
@@ -199,6 +213,19 @@ export function LaundryPaymentsLedger() {
             placeholder="Order #, invoice #, customer or mobile"
             className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" />
         </div>
+        {/* The ledger's date range. TODAY answers "what moved today" and never
+            paginates or ranges — the controls stay in the row but are inert
+            there, so the layout does not jump between views. */}
+        <div className={`flex items-center gap-1.5 ${filter === "TODAY" ? "invisible" : ""}`}>
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Start</label>
+          <input type="date" value={startDate}
+            onChange={(e) => { setStartDate(e.target.value); setPage(0) }}
+            className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-500" />
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">End</label>
+          <input type="date" value={endDate}
+            onChange={(e) => { setEndDate(e.target.value); setPage(0) }}
+            className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-500" />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
             <button key={f.key} onClick={() => { setFilter(f.key); setPage(0) }}
@@ -209,11 +236,23 @@ export function LaundryPaymentsLedger() {
         </div>
       </div>
 
-      {filter !== "TODAY" && !loading && rows.length > 0 && (
+      {/* The active range, so a long look back is never ambiguous: the default
+          reads "All → today". */}
+      {filter !== "TODAY" && !loading && summary && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1">
+            <span className="font-semibold text-slate-800">{startDate || "All"}</span> →{" "}
+            <span className="font-semibold text-slate-800">{endDate || "today"}{endDate === END_DATE_TODAY ? " (today)" : ""}</span>
+          </span>
+          <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1">{FILTERS.find((f) => f.key === filter)?.label}</span>
+        </div>
+      )}
+
+      {filter !== "TODAY" && !loading && summary && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <Tile label="Collected" value={inr(totals.paid)} />
-          <Tile label="Outstanding" value={inr(totals.balance)} tone="text-amber-700" />
-          <Tile label="Refund Due" value={inr(totals.refundDue)} tone="text-rose-700" />
+          <Tile label="Collected" value={inr(summary.collected)} />
+          <Tile label="Outstanding" value={inr(summary.outstanding)} tone="text-amber-700" />
+          <Tile label="Refund Due" value={inr(summary.refundDue)} tone="text-rose-700" />
         </div>
       )}
 

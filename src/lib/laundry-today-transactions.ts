@@ -28,26 +28,44 @@ export const LEDGER_TIMEZONE = PLATFORM.DEFAULT_TIMEZONE // "Asia/Kolkata"
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
 /**
- * The instant a business day starts and ends, as UTC Dates for a query.
+ * The business-local day key (YYYY-MM-DD) for a moment, in a given zone.
+ * en-CA formats that way, so the parts need no reassembly.
+ */
+export function businessDayKey(now: Date = new Date(), timeZone: string = LEDGER_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
+}
+
+/**
+ * The UTC instants a whole business day spans, given its YYYY-MM-DD key.
  *
  * Derived with Intl in the business timezone rather than the server's local
  * getDate(), which is what the delivery-promise dayKey uses — on a VPS running
  * UTC that would roll the day over at 05:30 IST and file the evening's takings
- * under tomorrow.
+ * under tomorrow. `start` is the day's opening, `end` the first instant after
+ * it (exclusive), so a range query reads gte start, lt end.
  */
-export function businessDayBounds(now: Date = new Date(), timeZone: string = LEDGER_TIMEZONE): { start: Date; end: Date; dayKey: string } {
-  // en-CA gives YYYY-MM-DD, so the parts need no reassembly.
-  const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
-  // What UTC instant is local midnight? Measure the zone's offset at `now` by
-  // formatting it back, rather than hardcoding +05:30 — a fixed offset would be
-  // wrong the moment this runs for a tenant in another zone.
+export function dayBounds(dayKey: string, timeZone: string = LEDGER_TIMEZONE): { start: Date; end: Date } {
+  // What UTC instant is local midnight? Measure the zone's offset at the day's
+  // own UTC midnight by formatting it back, rather than hardcoding +05:30 — a
+  // fixed offset would be wrong the moment this runs for a tenant in another
+  // zone.
   const asUtc = new Date(`${dayKey}T00:00:00Z`)
   const offsetMs = asUtc.getTime() - new Date(new Intl.DateTimeFormat("en-US", {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
   }).format(asUtc).replace(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/, "$3-$1-$2T$4:$5:$6Z")).getTime()
   const start = new Date(asUtc.getTime() + offsetMs)
-  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000), dayKey }
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) }
+}
+
+/**
+ * The instant a business day starts and ends, as UTC Dates for a query.
+ *
+ * Same measurement as {@link dayBounds}, anchored to the moment now.
+ */
+export function businessDayBounds(now: Date = new Date(), timeZone: string = LEDGER_TIMEZONE): { start: Date; end: Date; dayKey: string } {
+  const dayKey = businessDayKey(now, timeZone)
+  return { ...dayBounds(dayKey, timeZone), dayKey }
 }
 
 /** Allowance consumed against an order — a ledger entry, but no money arrived. */

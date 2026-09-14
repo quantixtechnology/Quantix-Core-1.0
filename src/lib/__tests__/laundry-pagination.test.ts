@@ -146,6 +146,8 @@ const mocks = vi.hoisted(() => ({
   resolveLaundryBusiness: vi.fn().mockResolvedValue({ id: 'L1', platformBusinessId: 'P1' }),
   orderCount: vi.fn(),
   orderFindMany: vi.fn(),
+  orderAggregate: vi.fn(),
+  adjustmentAggregate: vi.fn(),
   orderEventFindMany: vi.fn().mockResolvedValue([]),
   subFindMany: vi.fn(),
   planFindMany: vi.fn(),
@@ -158,7 +160,8 @@ vi.mock('@/lib/prisma', () => ({
     customer: { findMany: mocks.custFindMany },
     subscriptionPlan: { findMany: mocks.planFindMany },
     subscriptionPurchase: { findMany: mocks.subFindMany },
-    laundryOrder: { count: mocks.orderCount, findMany: mocks.orderFindMany },
+    laundryOrder: { count: mocks.orderCount, findMany: mocks.orderFindMany, aggregate: mocks.orderAggregate },
+    laundryOrderAdjustment: { aggregate: mocks.adjustmentAggregate },
     laundryOrderEvent: { findMany: mocks.orderEventFindMany },
     laundryPayment: { findMany: mocks.paymentFindMany },
   },
@@ -170,12 +173,15 @@ import { GET } from '@/app/api/laundry/payments-ledger/route'
 
 const T0 = 1_700_000_000_000
 
-const order = (i: number, paid = 100, balance = 0) => ({
+/** One adjustment as the ledger route reads it: live vs voided, settled vs not. */
+type AdjRow = { amount: number; refundable: number; refundStatus: string; voidedAt: Date | null }
+
+const order = (i: number, paid = 100, balance = 0, adjustments: AdjRow[] = []) => ({
   id: `o${String(i).padStart(3, '0')}`, orderNumber: `ORD-${String(i).padStart(3, '0')}`,
   status: 'DELIVERED', paymentStatus: paid > 0 && balance <= 0 ? 'PAID' : 'UNPAID',
   createdAt: new Date(T0 + i * 1000),
   grandTotal: paid + balance, amountPaid: paid, balanceDue: balance, discount: 0, subscriptionCoveredAmount: 0,
-  customerId: null, totalWeightKg: null, services: [], _count: { items: 0 }, invoice: null, adjustments: [],
+  customerId: null, totalWeightKg: null, services: [], _count: { items: 0 }, invoice: null, adjustments,
 })
 
 const ALL_ORDERS = Array.from({ length: 150 }, (_, i) => order(i))
@@ -188,6 +194,94 @@ const sub = (id: string, at: number, paid = 100) => ({
   paymentMethod: 'CASH', gateway: null, paymentReference: null, paymentTransactionId: null,
   laundryOrderId: null, createdAt: new Date(at), paidAt: new Date(at),
 })
+
+type AnyOrder = ReturnType<typeof order> & {
+  businessId?: string
+  orderNumber: string
+  invoiceNumber?: string | null
+  customerId: string | null
+  createdAt: Date
+  amountPaid: number
+  balanceDue: number
+  discount: number
+  adjustments: AdjRow[]
+}
+
+/**
+ * Whether an order satisfies the `where` the route builds. Covers the clauses
+ * the route actually emits for the aggregate: businessId, createdAt range,
+ * search OR (order number / invoice number / customer ids), and the bucket AND.
+ * The bucket clauses fall through to the same tiny interpreter the section 2
+ * tests use, so this stays in lockstep with ledgerFilterOrderWhere.
+ */
+const orderWhereOk = (o: AnyOrder, where: Record<string, any>): boolean => {
+  if (where.businessId != null && o.businessId != null && where.businessId !== o.businessId) return false
+  if (where.createdAt) {
+    const c = where.createdAt
+    if (c.gte && o.createdAt.getTime() < c.gte.getTime()) return false
+    if (c.lt && o.createdAt.getTime() >= c.lt.getTime()) return false
+  }
+  if (where.customerId) {
+    const inIds = (where.customerId.in || []) as string[]
+    if (!inIds.length || !(o.customerId && inIds.includes(o.customerId))) return false
+  }
+  if (where.AND && !(where.AND as Record<string, unknown>[]).every((cl) =>
+    sqlRow({ amountPaid: o.amountPaid, balanceDue: o.balanceDue, discount: o.discount, adjustments: o.adjustments }, cl))) {
+    return false
+  }
+  if (where.OR) {
+    return (where.OR as Record<string, any>[]).some((cl) => {
+      if (cl.orderNumber) return !!o.orderNumber && o.orderNumber.includes(((cl.orderNumber as { contains: string }).contains || ''))
+      if (cl.invoice) return !!o.invoiceNumber && o.invoiceNumber.includes((((cl.invoice as any).is.invoiceNumber as { contains: string }).contains || ''))
+      if (cl.customerId) {
+        const inIds = (cl.customerId.in || []) as string[]
+        return !!o.customerId && inIds.includes(o.customerId)
+      }
+      return false
+    })
+  }
+  return true
+}
+
+/** The numbers `prisma.laundryOrder.aggregate` would return for a dataset. */
+const aggregateOrderSums = (dataset: AnyOrder[], where: Record<string, any>) => {
+  const rows = dataset.filter((o) => orderWhereOk(o, where))
+  return rows.reduce((s, o) => ({ amountPaid: s.amountPaid + o.amountPaid, balanceDue: s.balanceDue + o.balanceDue }), { amountPaid: 0, balanceDue: 0 })
+}
+
+/** The numbers `prisma.laundryOrderAdjustment.aggregate` would return. */
+const aggregateAdjSums = (dataset: AnyOrder[], where: Record<string, any>) => {
+  const orderWhere = where?.order?.is || {}
+  const rows = dataset.filter((o) => orderWhereOk(o, orderWhere))
+  const live = rows.flatMap((o) => o.adjustments).filter((a) => a.voidedAt == null)
+  const pick = where?.refundStatus === 'REFUNDED' ? live.filter((a) => a.refundStatus === 'REFUNDED') : live
+  return {
+    amount: pick.reduce((s, a) => s + (a.amount || 0), 0),
+    refundable: pick.reduce((s, a) => s + (a.refundable || 0), 0),
+  }
+}
+
+/** Point the whole ledger route at a single dataset, honouring its `where`. */
+const wireDataset = (dataset: AnyOrder[]) => {
+  mocks.orderFindMany.mockImplementation(async ({ select, where }: any) => {
+    const eligible = dataset.filter((o) => orderWhereOk(o, where))
+    if (select?.createdAt && !select?.status) {
+      return [...eligible].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).map((o) => ({ id: o.id, createdAt: o.createdAt }))
+    }
+    const ids = (where?.id?.in || []) as string[]
+    return eligible.filter((o) => ids.includes(o.id))
+  })
+  mocks.orderCount.mockImplementation(async ({ where }: any) => dataset.filter((o) => orderWhereOk(o, where)).length)
+  mocks.orderAggregate.mockImplementation(async ({ where }: any) => {
+    const s = aggregateOrderSums(dataset, where)
+    // Prisma returns null sums for an empty set; exercise that path here too.
+    return { _sum: { amountPaid: s.amountPaid || null, balanceDue: s.balanceDue || null } }
+  })
+  mocks.adjustmentAggregate.mockImplementation(async ({ where }: any) => {
+    const s = aggregateAdjSums(dataset, where)
+    return { _sum: { amount: s.amount || null, refundable: s.refundable || null } }
+  })
+}
 
 const wire = () => {
   mocks.planFindMany.mockResolvedValue([{ id: 'plan1', name: 'Gold' }])
@@ -205,6 +299,17 @@ const wire = () => {
     const ids = (where?.id?.in || []) as string[]
     return ALL_ORDERS.filter((o) => ids.includes(o.id))
   })
+  // The aggregation mocks reduce the dataset through the route's own `where`,
+  // so the card totals are honest sums of the complete matching set. Orders in
+  // the base fixtures carry no adjustments, so refunds are zero there.
+  mocks.orderAggregate.mockImplementation(async ({ where }: any) => {
+    const s = aggregateOrderSums(ALL_ORDERS, where)
+    return { _sum: { amountPaid: s.amountPaid || null, balanceDue: s.balanceDue || null } }
+  })
+  mocks.adjustmentAggregate.mockImplementation(async ({ where }: any) => {
+    const s = aggregateAdjSums(ALL_ORDERS, where)
+    return { _sum: { amount: s.amount || null, refundable: s.refundable || null } }
+  })
 }
 
 const call = (params: Record<string, string>) => {
@@ -212,7 +317,7 @@ const call = (params: Record<string, string>) => {
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
   return GET(new Request(url.toString())) as Promise<Response>
 }
-const json = async (r: Response) => r.json() as unknown as { success: boolean; data: any[]; total?: number; limit?: number; offset?: number; summary?: unknown; dayKey?: string }
+const json = async (r: Response) => r.json() as unknown as { success: boolean; data: any[]; total?: number; limit?: number; offset?: number; summary?: any; dayKey?: string }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -337,6 +442,259 @@ describe('TODAY is untouched — its own branch, never paginated', () => {
     expect(j.total).toBeUndefined() // pagination fields belong to the ledger only
     expect(j.summary).toBeDefined()
     expect(j.dayKey).toBeDefined()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE CARD TOTALS ARE AGGREGATES OF THE WHOLE FILTERED LEDGER.
+//
+// The Collected / Outstanding / Refund Due cards used to be a reduce over the
+// rows on the CURRENT page, so page 2's cards described page 2, not the book.
+// The API now returns an independently summed `summary` over the complete
+// matching set (business + date range + search + bucket), computed with the
+// exact same `where` every other query uses. These tests pin that contract:
+// a page turn never changes a card, and search / date range / bucket all do.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Orders laid out around one business day (IST, Asia/Kolkata): the 10th of
+// September 2026 runs 2026-09-09T18:30Z .. 2026-09-10T18:30Z.
+const RANGE_ORDERS: AnyOrder[] = [
+  { ...order(1, 100, 0), createdAt: new Date('2026-09-09T18:29:59.000Z') }, // 23:59:59 IST Sep 9 — before any 10-Sep range
+  { ...order(2, 200, 0), createdAt: new Date('2026-09-09T18:30:00.000Z') }, // 00:00:00 IST Sep 10 — the opening, inclusive
+  { ...order(3, 0, 300), createdAt: new Date('2026-09-10T18:29:59.000Z') }, // 23:59:59 IST Sep 10 — inside the day
+  { ...order(4, 50, 50), createdAt: new Date('2026-09-10T18:30:00.000Z') }, // 00:00:00 IST Sep 11 — the close, exclusive
+]
+
+// Orders carrying adjustments, to prove refund due is summed the way
+// summarise() would: live, unsettled refundable; settled refunds taken out;
+// voided adjustments contributing nothing.
+const ADJ_ORDERS: AnyOrder[] = [
+  order(1, 200, 0, [{ amount: 50, refundable: 50, refundStatus: 'PENDING', voidedAt: null }]),
+  order(2, 200, 0, [{ amount: 30, refundable: 30, refundStatus: 'REFUNDED', voidedAt: null }]),
+  order(3, 100, 0, [
+    { amount: 40, refundable: 0, refundStatus: 'NOT_REQUIRED', voidedAt: null },
+    { amount: 10, refundable: 10, refundStatus: 'PENDING', voidedAt: new Date('2026-09-01T00:00:00Z') },
+  ]),
+]
+
+describe('the header summaries are aggregates of the whole filtered ledger', () => {
+  it('A · the cards are identical on page 1 and page 2 — a page turn moves no rupee', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(150)
+    const p1 = await json(await call({ limit: '50', offset: '0' }))
+    const p2 = await json(await call({ limit: '50', offset: '50' }))
+    expect(p1.data).toHaveLength(50)
+    expect(p2.data).toHaveLength(50)
+    expect(p1.summary).toEqual({ collected: 15000, outstanding: 0, refundDue: 0 })
+    expect(p2.summary).toEqual(p1.summary)
+  })
+
+  it('B · even the last, nearly-empty page carries the same totals as the first', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(150)
+    const p3 = await json(await call({ offset: '100' }))
+    const p4 = await json(await call({ offset: '150' }))
+    expect(p3.data).toHaveLength(50)
+    expect(p4.data).toHaveLength(0)
+    expect(p4.total).toBe(150)
+    expect(p4.summary).toEqual({ collected: 15000, outstanding: 0, refundDue: 0 })
+  })
+
+  it('C · a page size of 100 reports the same cards as one of 50', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(150)
+    const a = await json(await call({ limit: '50' }))
+    const b = await json(await call({ limit: '100' }))
+    expect(b.data).toHaveLength(100)
+    expect(a.summary).toEqual(b.summary)
+  })
+
+  it('D · the default range is the whole book — no date bound reaches the queries', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(150)
+    const j = await json(await call({}))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.businessId).toBe('L1')
+    expect(whereArg.createdAt).toBeUndefined()
+    expect(j.summary).toEqual({ collected: 15000, outstanding: 0, refundDue: 0 })
+  })
+
+  it('E · a start date bounds the aggregates from that business day’s opening', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(RANGE_ORDERS)
+    const j = await json(await call({ startDate: '2026-09-10' }))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.createdAt.gte.toISOString()).toBe('2026-09-09T18:30:00.000Z')
+    expect(whereArg.createdAt.lt).toBeUndefined()
+    // The opening, the whole day and the next day’s opening all count (3 rows);
+    // everything before the opening is out.
+    expect(j.total).toBe(3)
+    expect(j.summary).toEqual({ collected: 250, outstanding: 350, refundDue: 0 })
+    // The subscription query carries the same bound, so the two halves of the
+    // ledger can never disagree about what a date means.
+    const subWhere = mocks.subFindMany.mock.calls[0][0].where
+    expect(subWhere.createdAt.gte.toISOString()).toBe('2026-09-09T18:30:00.000Z')
+  })
+
+  it('F · an end date (default today) stops the aggregates at that day’s close', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(RANGE_ORDERS)
+    const j = await json(await call({ endDate: '2026-09-10' }))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.createdAt.lt.toISOString()).toBe('2026-09-10T18:30:00.000Z')
+    expect(whereArg.createdAt.gte).toBeUndefined()
+    // The close is exclusive: the three rows strictly before it count.
+    expect(j.total).toBe(3)
+    expect(j.summary).toEqual({ collected: 300, outstanding: 300, refundDue: 0 })
+  })
+
+  it('G · a start and an end together bound the aggregates exactly', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(RANGE_ORDERS)
+    const j = await json(await call({ startDate: '2026-09-10', endDate: '2026-09-10' }))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.createdAt.gte.toISOString()).toBe('2026-09-09T18:30:00.000Z')
+    expect(whereArg.createdAt.lt.toISOString()).toBe('2026-09-10T18:30:00.000Z')
+    expect(j.total).toBe(2)
+    expect(j.summary).toEqual({ collected: 200, outstanding: 300, refundDue: 0 })
+  })
+
+  it('H · a search narrows the order-side cards to the matching set', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(1)
+    const j = await json(await call({ search: 'ORD-001' }))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.OR?.[0].orderNumber).toEqual({ contains: 'ORD-001' })
+    // ORD-001 is order index 1, paid ₹100 — none of its 149 siblings count.
+    expect(j.summary).toEqual({ collected: 100, outstanding: 0, refundDue: 0 })
+  })
+
+  it('H·sub · a plan-name search keeps only the matching subscriptions in the cards', async () => {
+    mocks.subFindMany.mockResolvedValue([sub('s1', T0 - 1000, 250), sub('s2', T0 - 2000, 250)])
+    mocks.orderCount.mockResolvedValue(0)
+    const j = await json(await call({ search: 'Gold' }))
+    // The order side matches nothing ('Gold' is nobody's order number) and the
+    // two ₹250 subscriptions survive the search via their plan name.
+    expect(j.summary).toEqual({ collected: 500, outstanding: 0, refundDue: 0 })
+  })
+
+  it('I · a status bucket narrows the aggregates, not just the page', async () => {
+    // The production query narrows the set; the mock applies the same
+    // predicate (a local copy of the bucket-suite helper, which lives inside
+    // that describe's scope).
+    mocks.orderFindMany.mockImplementation(async ({ select, where }: any) => {
+      const eligible = ALL_ORDERS_MIXED.filter((o) => o.amountPaid > 0 && o.balanceDue <= 0)
+      if (select?.createdAt && !select?.status) {
+        return [...eligible].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).map((o) => ({ id: o.id, createdAt: o.createdAt }))
+      }
+      const ids = (where?.id?.in || []) as string[]
+      return ALL_ORDERS_MIXED.filter((o) => ids.includes(o.id))
+    })
+    mocks.orderAggregate.mockImplementation(async ({ where }: any) => {
+      const s = aggregateOrderSums(ALL_ORDERS_MIXED, where)
+      return { _sum: { amountPaid: s.amountPaid || null, balanceDue: s.balanceDue || null } }
+    })
+    mocks.adjustmentAggregate.mockImplementation(async ({ where }: any) => {
+      const s = aggregateAdjSums(ALL_ORDERS_MIXED, where)
+      return { _sum: { amount: s.amount || null, refundable: s.refundable || null } }
+    })
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(100)
+    const j = await json(await call({ filter: 'PAID' }))
+    const whereArg = (mocks.orderAggregate.mock.calls[0][0] as { where: any }).where
+    expect(whereArg.AND?.[0]).toEqual({ amountPaid: { gt: 0 }, balanceDue: { lte: 0 } })
+    // The 100 paid orders, never all 150.
+    expect(j.summary).toEqual({ collected: 10000, outstanding: 0, refundDue: 0 })
+  })
+
+  it('J · standalone subscriptions are inside the card totals', async () => {
+    mocks.subFindMany.mockResolvedValue([sub('s1', T0 + 400_000), sub('s2', T0 + 300_000), sub('s3', T0 + 200_000)])
+    mocks.orderCount.mockResolvedValue(ALL_ORDERS.length)
+    const j = await json(await call({}))
+    // 150 orders × ₹100 + 3 subscriptions × ₹100.
+    expect(j.summary).toEqual({ collected: 15300, outstanding: 0, refundDue: 0 })
+  })
+
+  it('K · TODAY keeps its own payload and never calls the aggregators', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    mocks.paymentFindMany.mockResolvedValue([])
+    mocks.orderFindMany.mockResolvedValue([])
+    mocks.orderCount.mockResolvedValue(0)
+    const j = await json(await call({ filter: 'TODAY', limit: '100', offset: '999' }))
+    expect(j.total).toBeUndefined()
+    expect((j.summary as { outstanding?: number }).outstanding).toBeUndefined()
+    expect((j.summary as { net?: number }).net).toBeDefined() // TodaySummary shape, not the ledger's
+    expect(mocks.orderAggregate).not.toHaveBeenCalled()
+    expect(mocks.adjustmentAggregate).not.toHaveBeenCalled()
+  })
+
+  it('M · a range with nothing in it reports zeros, not the newest slice', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(RANGE_ORDERS)
+    const j = await json(await call({ startDate: '2000-01-01', endDate: '2000-01-02' }))
+    expect(j.total).toBe(0)
+    // The aggregate mocks return null sums (as Prisma does) and the route reads
+    // them as zero.
+    expect(j.summary).toEqual({ collected: 0, outstanding: 0, refundDue: 0 })
+  })
+
+  it('N · a day’s boundary: the opening is inclusive, the close is exclusive', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(RANGE_ORDERS)
+    const j = await json(await call({ startDate: '2026-09-10', endDate: '2026-09-10' }))
+    // The row at exactly 00:00:00 IST on the 10th is in; the row at exactly
+    // 00:00:00 IST on the 11th is out.
+    expect(j.total).toBe(2)
+    expect(j.summary).toEqual({ collected: 200, outstanding: 300, refundDue: 0 })
+  })
+
+  it('O · refund due is live, unsettled refundable — settled and voided stay out', async () => {
+    mocks.subFindMany.mockResolvedValue([])
+    wireDataset(ADJ_ORDERS)
+    const j = await json(await call({}))
+    expect(j.summary?.collected).toBe(500)
+    expect(j.summary?.outstanding).toBe(0)
+    // Live refundable is 50+30+10; the 10 is voided so it is 50+30=80; the
+    // settled ₹30 refund is subtracted, leaving ₹50 still due.
+    expect(j.summary?.refundDue).toBe(50)
+  })
+})
+
+describe('the ledger view sends the date range and renders the server summary', () => {
+  const LEDGER = read('src/components/laundry/views/laundry-payments-ledger.tsx')
+
+  it('it defaults Start to All and End to today (business-local)', () => {
+    expect(LEDGER).toContain('const [startDate, setStartDate] = useState("")')
+    expect(LEDGER).toContain('const [endDate, setEndDate] = useState(END_DATE_TODAY)')
+  })
+
+  it('both controls reset the page to 1, like the other filters', () => {
+    expect(LEDGER).toContain('setStartDate(e.target.value); setPage(0)')
+    expect(LEDGER).toContain('setEndDate(e.target.value); setPage(0)')
+  })
+
+  it('the request carries the range to the server', () => {
+    expect(LEDGER).toContain('p.set("startDate", startDate)')
+    expect(LEDGER).toContain('p.set("endDate", endDate)')
+  })
+
+  it('the cards read the server aggregate, never a reduce over the current page', () => {
+    expect(LEDGER).toContain('setSummary(j.summary ?? null)')
+    expect(LEDGER).toContain('value={inr(summary.collected)}')
+    expect(LEDGER).toContain('value={inr(summary.outstanding)}')
+    expect(LEDGER).toContain('value={inr(summary.refundDue)}')
+    expect(LEDGER).not.toContain('rows.reduce((a, r) => ({')
+  })
+
+  it('the route replies with the same fields and adds the aggregate summary', () => {
+    const api = read('src/app/api/laundry/payments-ledger/route.ts')
+    expect(api).toContain('financialSummary(o, o.adjustments)')
+    expect(api).toContain('const summary = {')
+    expect(api).toContain('prisma.laundryOrder.aggregate')
+    expect(api).toContain('prisma.laundryOrderAdjustment.aggregate')
+    // The ledger still derives its rows and filters through exactly the two
+    // authoritative call sites — formulas were moved, never duplicated.
+    expect((api.match(/matchesLedgerFilter\(filter, r\)/g) || []).length).toBe(2)
   })
 })
 

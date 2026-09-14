@@ -23,7 +23,7 @@ import { Level } from "@/lib/laundry-rbac-registry"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { financialSummary, matchesLedgerFilter, ledgerFilterOrderWhere, type LedgerFilter } from "@/lib/laundry-adjustment"
 import {
-  businessDayBounds, summariseToday, isOnlinePayment,
+  businessDayBounds, dayBounds, summariseToday, isOnlinePayment,
   SUBSCRIPTION_COVERAGE, REFUND, isMoneyTransaction, type TodayTransaction,
 } from "@/lib/laundry-today-transactions"
 import { resolvePageSize } from "@/lib/laundry-pagination"
@@ -136,6 +136,23 @@ export async function GET(request: Request) {
     const limit = resolvePageSize(u.searchParams.get("limit"))
     const offset = Math.max(0, parseInt(u.searchParams.get("offset") || "0", 10) || 0)
 
+    // ── Date range ──────────────────────────────────────────────────────────
+    // The ledger is dated by when each row was created — an order by when it
+    // was raised, a standalone subscription by when it was bought. Ranges are
+    // whole business days: startDate counts from that day's opening, endDate
+    // runs through that day's close. Both are optional; start absent means all
+    // history, end absent means no upper bound (the screen sends today's key by
+    // default). The bounds are the SAME business-day instants the Today branch
+    // uses, so an operator's reading of a date cannot drift between the two.
+    const parseDay = /^\d{4}-\d{2}-\d{2}$/
+    const startDateRaw = (u.searchParams.get("startDate") || "").trim()
+    const endDateRaw = (u.searchParams.get("endDate") || "").trim()
+    const dateFrom = startDateRaw && parseDay.test(startDateRaw) ? dayBounds(startDateRaw).start : undefined
+    const dateTo = endDateRaw && parseDay.test(endDateRaw) ? dayBounds(endDateRaw).end : undefined
+    const dateRange = dateFrom || dateTo
+      ? { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lt: dateTo } : {}) }
+      : undefined
+
     // Order number, invoice number, customer name and mobile — the four things
     // a counter actually searches by.
     // LaundryOrder has no customer relation — it stores customerId against the
@@ -162,6 +179,7 @@ export async function GET(request: Request) {
         laundryOrderId: null,
         status: { notIn: ["CANCELLED", "INITIATED"] },
         ...(customerIds ? { customerId: { in: customerIds } } : {}),
+        ...(dateRange ? { createdAt: dateRange } : {}),
       },
       orderBy: { createdAt: "desc" },
     })
@@ -214,17 +232,45 @@ export async function GET(request: Request) {
     if (filter !== "ALL") {
       where.AND = [ledgerFilterOrderWhere(filter) as Prisma.LaundryOrderWhereInput]
     }
+    if (dateRange) where.createdAt = dateRange
+
+    // The card totals come from the COMPLETE matching set, computed while the
+    // page itself is being prepared. They are aggregates of exactly the same
+    // `where` the count and the finger-print use (business, search, bucket,
+    // date range) — never a reduce over the page that is being served, so a
+    // page turn cannot move a single rupee on the cards.
+    //
+    //   collected   → amountPaid, exactly as each row's `paid` reads it
+    //   outstanding → balanceDue, exactly as each row's `balance` reads it,
+    //                 including the negative balances an overpaid order carries
+    //   refundDue   → live, unsettled refundable, exactly as summarise() splits
+    //                 it (settled refunds are summed separately and taken out)
+    const orderAgg = prisma.laundryOrder.aggregate({
+      where,
+      _sum: { amountPaid: true, balanceDue: true },
+    })
+    const adjAgg = prisma.laundryOrderAdjustment.aggregate({
+      where: { voidedAt: null, order: { is: where } },
+      _sum: { amount: true, refundable: true },
+    })
+    const adjSettledAgg = prisma.laundryOrderAdjustment.aggregate({
+      where: { voidedAt: null, refundStatus: "REFUNDED", order: { is: where } },
+      _sum: { refundable: true },
+    })
 
     // Two passes, so a page is served without ever shipping the whole book to
     // the browser: a light finger-print (id + the moment it happened) and a
     // count for every matching order, then a fat row fetch for this page only.
-    const [orderTotal, orderFingerprint] = await Promise.all([
+    const [orderTotal, orderFingerprint, orderAggRes, adjAggRes, adjSettledRes] = await Promise.all([
       prisma.laundryOrder.count({ where }),
       prisma.laundryOrder.findMany({
         where,
         orderBy: { createdAt: "desc" },
         select: { id: true, createdAt: true },
       }),
+      orderAgg,
+      adjAgg,
+      adjSettledAgg,
     ])
     const subTotal = subRows.length
     // Newest first across both kinds — the same ordering the rendered list has
@@ -301,7 +347,22 @@ export async function GET(request: Request) {
     const all = [...rows.map((r) => ({ ...r, kind: "ORDER" as const, planName: null, paidAt: null, paymentMethod: null, reference: null })), ...subRowsOnPage]
       .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())
 
-    return NextResponse.json({ success: true, data: all, total: orderTotal + subTotal, limit, offset })
+    // The card totals. Orders come from the aggregate queries above; standalone
+    // subscriptions from `subRows`, which already carries the complete
+    // matching set (search and bucket applied, never sliced to a page). Both
+    // halve read the same fields the rows themselves read, so the cards sum to
+    // what the whole filtered ledger would display.
+    const subPaid = subRows.reduce((s, r) => s + r.paid, 0)
+    const subBalance = subRows.reduce((s, r) => s + r.balance, 0)
+    const refundable = r2(adjAggRes._sum.refundable ?? 0)
+    const refundedSettled = r2(adjSettledRes._sum.refundable ?? 0)
+    const summary = {
+      collected: r2((orderAggRes._sum.amountPaid ?? 0) + subPaid),
+      outstanding: r2((orderAggRes._sum.balanceDue ?? 0) + subBalance),
+      refundDue: r2(refundable - refundedSettled),
+    }
+
+    return NextResponse.json({ success: true, data: all, total: orderTotal + subTotal, limit, offset, summary })
   } catch (e) {
     console.error("[payments-ledger] GET", e)
     return NextResponse.json({ success: false, error: "Failed" }, { status: 500 })
