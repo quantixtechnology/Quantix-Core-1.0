@@ -650,8 +650,10 @@ export function BusinessManagementWizard({ businessId }: Props) {
               {/* Per-tenant licence — the hierarchical module/screen selector.
                   Replaces the old CRM/Marketing switches; writes through the
                   licensing engine the sidebar, Navigation Manager, RBAC and the
-                  API guards all read. Self-hides for non-Laundry businesses. */}
-              <LaundryLicensingCard businessId={bizId} />
+                  API guards all read. Only mounted for LAUNDRY product. */}
+              {biz?.productCode === 'LAUNDRY' && (
+                <LaundryLicensingCard businessId={bizId} />
+              )}
               {/* Commerce storefront template — self-hides unless product=COMMERCE.
                   Resolves the category default and allows a compatible override. */}
               <CommerceTemplateAssignCard businessId={bizId} productCode={biz?.productCode} />

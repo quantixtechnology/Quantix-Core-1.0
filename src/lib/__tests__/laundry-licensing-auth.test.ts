@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   resolveLaundryBusiness: vi.fn(),
   licenceSnapshot: vi.fn(),
   saveLicence: vi.fn(),
+  findBusiness: vi.fn(),
 }))
 
 vi.mock('@/lib/laundry-rbac', () => ({ requireLaundryPermission: mocks.requireLaundryPermission }))
@@ -23,6 +24,7 @@ vi.mock('@/lib/laundry-licensing-server', () => ({
   licenceSnapshot: mocks.licenceSnapshot,
   saveLicence: mocks.saveLicence,
 }))
+vi.mock('@/lib/db', () => ({ db: { business: { findUnique: mocks.findBusiness } } }))
 
 import { GET, PUT } from '@/app/api/laundry/licensing/route'
 
@@ -34,6 +36,7 @@ const putReq = (body: unknown) => new Request('http://x/api/laundry/licensing', 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.findBusiness.mockResolvedValue({ productCode: 'LAUNDRY' })
   mocks.resolveLaundryBusiness.mockResolvedValue({ id: 'lb-1' })
   mocks.licenceSnapshot.mockResolvedValue({ modules: [], enabledScreens: ['marketing.coupons'] })
   mocks.saveLicence.mockResolvedValue(undefined)

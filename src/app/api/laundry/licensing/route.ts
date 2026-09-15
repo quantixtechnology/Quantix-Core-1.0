@@ -5,15 +5,30 @@
 // Roles & Permissions and the API guards all resolve through the same engine,
 // so there is no second switch to keep in step.
 import { NextResponse } from "next/server"
+import { db } from "@/lib/db"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { licenceSnapshot, saveLicence } from "@/lib/laundry-licensing-server"
 
 export const runtime = "nodejs"
 
+async function assertLaundryBusiness(businessId: string) {
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    select: { productCode: true },
+  })
+  if (!business || business.productCode !== "LAUNDRY") {
+    return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+  }
+  return null
+}
+
 export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
   if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
+
+  const notLaundry = await assertLaundryBusiness(businessId)
+  if (notLaundry) return notLaundry
 
   // Read is guarded too. It shipped without a guard, which meant a tenant's
   // commercial entitlements were readable by anyone who knew the id — and it
@@ -34,6 +49,9 @@ export async function PUT(request: Request) {
   const { businessId, screenKeys } = body as { businessId?: string; screenKeys?: string[] }
   if (!businessId) return NextResponse.json({ error: "businessId required" }, { status: 400 })
   if (!Array.isArray(screenKeys)) return NextResponse.json({ error: "screenKeys array required" }, { status: 400 })
+
+  const notLaundry = await assertLaundryBusiness(businessId)
+  if (notLaundry) return notLaundry
 
   // Licensing decides what a tenant may reach at all, so it is an owner-level
   // change — not something a store role can grant itself.
