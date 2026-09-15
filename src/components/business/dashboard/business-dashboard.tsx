@@ -30,6 +30,10 @@ import {
   useOrders,
   queryKeys,
 } from "@/hooks/use-api"
+import {
+  productApi,
+  customerApi,
+} from "@/lib/api-client"
 import { useOrderUpdates } from "@/hooks/use-realtime"
 import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
@@ -107,19 +111,23 @@ export function BusinessDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
 
-  // ---- Fetch real dashboard stats from API ----
-  const { data: dashboardData, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery({
-    queryKey: ["business-dashboard", businessId],
-    queryFn: async () => {
-      if (!businessId) return null
-      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/dashboard`)
-      const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to fetch dashboard')
-      return data.data
-    },
-    enabled: !!businessId,
-    refetchInterval: 30000,
-  })
+  // ---- Fetch real dashboard stats from API (authenticated via businessApi) ----
+  const { data: statsApiResponse, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useBusinessStats(
+    businessId,
+    {
+      refetchInterval: 30000,
+    }
+  )
+  const dashboardData = statsApiResponse?.data as unknown as {
+    orders?: { total: number; pending: number; active: number; delivered: number; today: number }
+    revenue?: { total: number; today: number }
+    customers?: { total: number; active: number }
+    products?: { total: number }
+    stores?: { total: number }
+    recentOrders?: unknown[]
+    businessName?: string
+    businessStatus?: string
+  } | undefined
 
   // ---- Fetch orders from API — STORE_MANAGER sees only their store ----
   const orderFilters = (
@@ -136,25 +144,25 @@ export function BusinessDashboard() {
     }
   )
 
-  // ---- Fetch products from API ----
+  // ---- Fetch products from API (authenticated via productApi) ----
   const { data: productsData } = useQuery({
     queryKey: ["dashboard-products", businessId],
     queryFn: async () => {
       if (!businessId) return { data: [] }
-      const response = await fetch(`/api/core/storefront/products?businessId=${encodeURIComponent(businessId)}&status=ALL&limit=10`)
-      const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to fetch products')
-      return data
+      return productApi.list({ businessId, status: "ALL", limit: 10 } as unknown as Parameters<typeof productApi.list>[0])
     },
     enabled: !!businessId,
   })
 
-  // ---- Fetch categories from API ----
+  // ---- Fetch categories from API (authenticated) ----
   const { data: categoriesData } = useQuery({
     queryKey: ["dashboard-categories", businessId],
     queryFn: async () => {
       if (!businessId) return { data: [] }
-      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}&includeInactive=true&productStatus=ALL`)
+      const token = typeof window !== 'undefined' ? localStorage.getItem('quantix_auth_token') : null
+      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}&includeInactive=true&productStatus=ALL`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
       const data = await response.json()
       if (!data.success) throw new Error(data.error || 'Failed to fetch categories')
       return data
@@ -162,15 +170,12 @@ export function BusinessDashboard() {
     enabled: !!businessId,
   })
 
-  // ---- Fetch customers from API ----
+  // ---- Fetch customers from API (authenticated via customerApi) ----
   const { data: customersData } = useQuery({
     queryKey: ["dashboard-customers", businessId],
     queryFn: async () => {
       if (!businessId) return { data: [] }
-      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers?limit=10`)
-      const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to fetch customers')
-      return data
+      return customerApi.list({ limit: 10 })
     },
     enabled: !!businessId,
   })

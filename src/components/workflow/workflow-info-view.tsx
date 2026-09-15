@@ -12,7 +12,7 @@ const workflowIconMap: Record<string, React.ComponentType<{ className?: string }
 export function WorkflowInfoView() {
   const { currentBusinessType, currentBusinessName } = useAdminStore()
 
-  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["COMMERCE"]
   const activeWorkflows: WorkflowType[] = (BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]) as WorkflowType[]
   const displayName = currentBusinessName || typeUI?.label || "This Business"
 

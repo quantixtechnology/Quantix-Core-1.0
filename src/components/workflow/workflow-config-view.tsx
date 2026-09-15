@@ -213,7 +213,7 @@ function WorkflowStatusCard({
 export function WorkflowConfigView() {
   const { currentBusinessType, currentBusinessName } = useAdminStore()
   const activeWorkflows: WorkflowType[] = (BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]) as WorkflowType[]
-  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["COMMERCE"]
   const displayName = currentBusinessName || typeUI?.label || "Business"
   const businessCategories = BUSINESS_CATEGORIES[currentBusinessType] || BUSINESS_CATEGORIES["standard_grocery"] || []
 

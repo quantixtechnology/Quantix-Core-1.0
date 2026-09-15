@@ -281,6 +281,7 @@ export const BUSINESS_TYPE_UI: Record<string, BusinessTypeUI> = {
   FURNITURE:     { icon: "Sofa",         color: "bg-yellow-700 text-white",  label: "Furniture",        description: "Furniture & home decor" },
   DIRECTORY:     { icon: "MapPin",       color: "bg-cyan-600 text-white",    label: "Directory",        description: "Local business directory" },
   PLATFORM:      { icon: "Zap",          color: "bg-primary text-primary-foreground", label: "Platform Admin", description: "Quantix platform control" },
+  COMMERCE:      { icon: "Store",        color: "bg-blue-600 text-white",    label: "Commerce",         description: "Commerce & online retail" },
 }
 
 // ============================================================================

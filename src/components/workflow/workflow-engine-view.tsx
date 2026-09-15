@@ -214,8 +214,8 @@ export function WorkflowEngineView() {
   const { currentBusinessType, currentBusinessName } = useAdminStore()
   const [activeTab, setActiveTab] = useState("workflows")
 
-  const businessType = currentBusinessType || "GROCERY"
-  const typeUI = BUSINESS_TYPE_UI[businessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const businessType = currentBusinessType || "COMMERCE"
+  const typeUI = BUSINESS_TYPE_UI[businessType] || BUSINESS_TYPE_UI["COMMERCE"]
   const activeWorkflows = (BUSINESS_TYPE_WORKFLOWS[businessType] || ["ECOMMERCE"]) as WorkflowType[]
   const displayName = currentBusinessName || typeUI.label
 

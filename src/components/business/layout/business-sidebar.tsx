@@ -179,7 +179,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType, currentBusinessId } = useAdminStore()
   const { isMobile } = useResponsive()
 
-  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["COMMERCE"]
   const activeWorkflows = BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
 
   // Business logo — fetched from the branding API whenever the business context changes
