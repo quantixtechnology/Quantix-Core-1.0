@@ -251,6 +251,96 @@ export function AuthProvider({
     };
   }, [isAuthenticated, clearSession, syncTokensFromStorage, initialize, onSessionExpired]);
 
+  // ─── Customer Auth lifecycle handlers ──────────────────────────────────
+  const {
+    isAuthenticated: customerIsAuthenticated,
+    refreshToken: customerRefreshToken,
+    refreshAuthToken: customerRefreshAuthToken,
+    syncTokensFromStorage: customerSyncTokensFromStorage,
+  } = useCustomerAuthStore();
+
+  const customerRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const customerPrevAuthRef = useRef(customerIsAuthenticated);
+
+  // Track customer auth state changes
+  useEffect(() => {
+    if (customerPrevAuthRef.current !== customerIsAuthenticated) {
+      customerPrevAuthRef.current = customerIsAuthenticated;
+    }
+  }, [customerIsAuthenticated]);
+
+  // Customer token refresh handler
+  const handleCustomerTokenRefresh = useCallback(async () => {
+    if (!customerRefreshToken || !customerIsAuthenticated) return;
+    try {
+      await customerRefreshAuthToken();
+    } catch {
+      // If refresh fails, the customer auth store will handle logout
+    }
+  }, [customerRefreshToken, customerIsAuthenticated, customerRefreshAuthToken]);
+
+  // Periodic customer token refresh (every 20 minutes)
+  useEffect(() => {
+    if (customerRefreshIntervalRef.current) {
+      clearInterval(customerRefreshIntervalRef.current);
+      customerRefreshIntervalRef.current = null;
+    }
+    if (customerIsAuthenticated && customerRefreshToken) {
+      customerRefreshIntervalRef.current = setInterval(() => {
+        handleCustomerTokenRefresh();
+      }, TOKEN_REFRESH_INTERVAL_MS);
+    }
+    return () => {
+      if (customerRefreshIntervalRef.current) {
+        clearInterval(customerRefreshIntervalRef.current);
+        customerRefreshIntervalRef.current = null;
+      }
+    };
+  }, [customerIsAuthenticated, customerRefreshToken, handleCustomerTokenRefresh]);
+
+  // Customer visibility change handler
+  useEffect(() => {
+    const handleCustomerVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        customerIsAuthenticated &&
+        customerRefreshToken
+      ) {
+        handleCustomerTokenRefresh();
+      }
+    };
+    document.addEventListener("visibilitychange", handleCustomerVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleCustomerVisibilityChange);
+    };
+  }, [customerIsAuthenticated, customerRefreshToken, handleCustomerTokenRefresh]);
+
+  // Customer storage event handler (cross-tab sync)
+  useEffect(() => {
+    const handleCustomerStorageChange = (e: StorageEvent) => {
+      // Another tab signed out (customer token removed)
+      if (e.key === "quantix_customer_token" && !e.newValue && customerIsAuthenticated) {
+        useCustomerAuthStore.getState().logout();
+      }
+      // Another tab logged in
+      if (e.key === "quantix_customer_token" && e.newValue && !customerIsAuthenticated) {
+        useCustomerAuthStore.getState().initialize();
+      }
+      // Another tab rotated token
+      if (
+        (e.key === "quantix_customer_token" || e.key === "quantix_customer_refresh_token") &&
+        e.newValue &&
+        customerIsAuthenticated
+      ) {
+        customerSyncTokensFromStorage();
+      }
+    };
+    window.addEventListener("storage", handleCustomerStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleCustomerStorageChange);
+    };
+  }, [customerIsAuthenticated, customerSyncTokensFromStorage]);
+
   // ─── Not yet hydrated OR token not yet validated — show loading only ──
   // SECURITY: no protected UI may render while the cached session is being
   // validated server-side. During bootstrap the store keeps `isAuthenticated`

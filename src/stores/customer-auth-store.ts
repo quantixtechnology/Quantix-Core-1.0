@@ -77,10 +77,23 @@ interface CustomerAuthState {
   setSession: (input: CustomerSessionInput) => void;
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => void;
+  refreshAuthToken: () => Promise<void>;
+  syncTokensFromStorage: () => void;
 }
 
 function ls(): Storage | null {
   return typeof window !== "undefined" ? window.localStorage : null;
+}
+
+// Token expiry check (24 hours for access token)
+const ACCESS_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+// Check if access token is likely expired (we don't have exact expiry, so check if token exists and is old)
+function isTokenLikelyExpired(token: string | null): boolean {
+  if (!token) return true;
+  // Since we can't decode JWT client-side without a library, we rely on the server 401 response
+  // This is a fallback - actual expiry is validated by the server
+  return false;
 }
 
 // One-time migration: adopt a legacy CUSTOMER session into the customer
@@ -134,6 +147,42 @@ function persistSession(input: CustomerSessionInput): void {
   if (u?.businessType) store.setItem(K.BUSINESS_TYPE, u.businessType as string);
   if (input.businesses) store.setItem(K.BUSINESSES, JSON.stringify(input.businesses));
 }
+
+// Refresh access token using the customer refresh endpoint
+type RefreshResult =
+  | { token: string; refreshToken: string }
+  | { error: "auth" | "network" | "server" | "malformed"; status?: number }
+  | null;
+
+export async function refreshCustomerAccessToken(refreshToken: string): Promise<RefreshResult> {
+  try {
+    const res = await fetch("/api/customer/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.token) {
+      // The customer refresh endpoint returns the same token for both access and refresh
+      // (it rotates the refresh token and uses it as the new access token)
+      return { token: data.token, refreshToken: data.refreshToken || data.token };
+    }
+    // Classify auth failures vs server errors
+    if (res.status === 401 || res.status === 403) {
+      return { error: "auth", status: res.status };
+    }
+    if (res.status >= 500) {
+      return { error: "server", status: res.status };
+    }
+    // Other 4xx or unexpected response
+    return { error: "malformed", status: res.status };
+  } catch {
+    return { error: "network" };
+  }
+}
+
+// Single-flight refresh promise (module-level to survive Zustand re-renders)
+let refreshPromise: Promise<RefreshResult> | null = null;
 
 export const useCustomerAuthStore = create<CustomerAuthState>((set, get) => ({
   user: null,
@@ -201,5 +250,66 @@ export const useCustomerAuthStore = create<CustomerAuthState>((set, get) => ({
     const store = ls();
     if (store) for (const k of Object.values(K)) store.removeItem(k);
     set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
+  },
+
+  // Refresh access token using the customer refresh endpoint
+  refreshAuthToken: async () => {
+    const { refreshToken, user } = get();
+    if (!refreshToken || !user) return;
+
+    // Single-flight: if a refresh is already in progress, wait for it
+    if (refreshPromise) {
+      const result = await refreshPromise;
+      if (result && "token" in result) {
+        // Another caller already succeeded, update our state
+        const store = ls();
+        if (store) {
+          store.setItem(K.TOKEN, result.token);
+          store.setItem(K.REFRESH, result.refreshToken);
+        }
+        set({ token: result.token, refreshToken: result.refreshToken });
+      }
+      return;
+    }
+
+    // Start new refresh
+    refreshPromise = refreshCustomerAccessToken(refreshToken);
+
+    try {
+      const newTokens = await refreshPromise;
+      if (newTokens && "token" in newTokens) {
+        // Update localStorage
+        const store = ls();
+        if (store) {
+          store.setItem(K.TOKEN, newTokens.token);
+          store.setItem(K.REFRESH, newTokens.refreshToken);
+        }
+        // Update store state
+        set({
+          token: newTokens.token,
+          refreshToken: newTokens.refreshToken,
+        });
+      } else if (newTokens && newTokens.error === "auth") {
+        // Genuine authentication failure — force logout
+        get().logout();
+      } else {
+        // Network, server error, or malformed response — preserve session, report failure
+        // Do NOT logout, do NOT clear tokens
+        return;
+      }
+    } finally {
+      refreshPromise = null;
+    }
+  },
+
+  // Sync tokens from localStorage (for cross-tab sync)
+  syncTokensFromStorage: () => {
+    const store = ls();
+    if (!store) return;
+    const token = store.getItem(K.TOKEN);
+    const refreshToken = store.getItem(K.REFRESH);
+    if (token && refreshToken) {
+      set({ token, refreshToken });
+    }
   },
 }));

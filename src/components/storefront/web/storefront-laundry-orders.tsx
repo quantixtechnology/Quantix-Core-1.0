@@ -37,7 +37,7 @@ interface Detail {
 const payStyle = (s: string) => s === "PAID" || s === "SUBSCRIPTION" ? "text-emerald-600" : s === "PARTIAL" ? "text-amber-600" : "text-rose-600"
 
 export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: string; nav: WebNav }) {
-  const { isAuthenticated, token } = useAuthStore()
+  const { isAuthenticated, token, refreshAuthToken } = useAuthStore()
   const { currentBusinessId } = useAdminStore()
   const [list, setList] = useState<ListItem[]>([])
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -50,6 +50,7 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
   const [comment, setComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [submitErr, setSubmitErr] = useState("")
+  const [listError, setListError] = useState<string | null>(null)
   const accent = { color: brandColor }
 
   const headers = useMemo(() => {
@@ -59,17 +60,54 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
     return h
   }, [token, currentBusinessId])
 
-  const loadList = useCallback(() => {
+  const loadList = useCallback(async () => {
     if (!isAuthenticated || !token) { setLoadingList(false); return }
     setLoadingList(true)
-    fetch("/api/core/storefront/laundry-orders", { headers }).then((r) => r.json())
-      .then((j) => { if (j.success) setList(j.data || []) }).catch(() => {}).finally(() => setLoadingList(false))
-  }, [isAuthenticated, token, headers])
+    setListError(null)
+    try {
+      const r = await fetch("/api/core/storefront/laundry-orders", { headers })
+      const j = await r.json()
+      if (!r.ok) {
+        if (r.status === 401 && isAuthenticated) {
+          // Attempt token refresh and retry once
+          await refreshAuthToken()
+          const newToken = useAuthStore.getState().token
+          if (newToken) {
+            const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` }
+            const retryR = await fetch("/api/core/storefront/laundry-orders", { headers: retryHeaders })
+            const retryJ = await retryR.json()
+            if (retryJ.success) {
+              setList(retryJ.data || [])
+              return
+            }
+          }
+          setListError("Session expired. Please sign in again.")
+        } else {
+          setListError(j.error || "Failed to load orders")
+        }
+      } else if (j.success) {
+        setList(j.data || [])
+      } else {
+        setListError(j.error || "Failed to load orders")
+      }
+    } catch {
+      setListError("Network error. Please check your connection.")
+    } finally {
+      setLoadingList(false)
+    }
+  }, [isAuthenticated, token, headers, refreshAuthToken])
 
-  const openDetail = useCallback((id: string) => {
+  const openDetail = useCallback(async (id: string) => {
     setLoadingDetail(true); setDetail(null)
-    fetch(`/api/core/storefront/laundry-orders/${id}`, { headers }).then((r) => r.json())
-      .then((j) => { if (j.success) setDetail(j.data) }).catch(() => {}).finally(() => setLoadingDetail(false))
+    try {
+      const r = await fetch(`/api/core/storefront/laundry-orders/${id}`, { headers })
+      const j = await r.json()
+      if (j.success) setDetail(j.data)
+    } catch {
+      // Detail fetch failed silently - list view will show error if needed
+    } finally {
+      setLoadingDetail(false)
+    }
   }, [headers])
 
   // Deep-link: open a specific order if the nav carries one (Track from home).
@@ -80,8 +118,12 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
     setInvoiceOpen(true); setInvoice(null)
     try {
       const r = await fetch(`/api/core/storefront/orders/${id}/laundry-invoice`, { headers })
-      const j = await r.json(); if (j.success) setInvoice(j.data)
-    } catch { /* noop */ }
+      const j = await r.json()
+      if (j.success) setInvoice(j.data)
+      // Invoice fetch failure doesn't affect order list - handled independently
+    } catch {
+      // Invoice fetch failed silently
+    }
   }
 
   const submitFeedback = async () => {
@@ -254,6 +296,19 @@ export function StorefrontLaundryOrders({ brandColor, nav }: { brandColor: strin
       <h1 className="text-lg font-bold text-gray-900">My Orders</h1>
       {loadingList ? (
         <div className="flex items-center justify-center gap-2 py-20 text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+      ) : listError ? (
+        <div className="py-16 text-center">
+          <p className="text-sm text-rose-600 mb-3">{listError}</p>
+          {listError.includes("Session expired") ? (
+            <button onClick={loadList} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: brandColor }}>
+              Retry
+            </button>
+          ) : (
+            <button onClick={loadList} className="mt-3 rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: brandColor }}>
+              Try Again
+            </button>
+          )}
+        </div>
       ) : list.length === 0 ? (
         <p className="py-16 text-center text-sm text-gray-400">You have no laundry orders yet.</p>
       ) : (
