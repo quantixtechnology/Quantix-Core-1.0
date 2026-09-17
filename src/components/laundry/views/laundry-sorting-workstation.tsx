@@ -1109,52 +1109,61 @@ export function LaundrySortingWorkstation() {
       {loading && !orders.length ? (
         <div className="py-16 text-center text-slate-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>
       ) : (
-        <div className="px-4 lg:px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div className="px-4 lg:px-6 py-4 space-y-4">
+          {/* SORTING ORDERS SEARCH — applies to both sections below */}
           <Card className="rounded-xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
-                <ScanLine className="h-[18px] w-[18px] text-blue-600" /> Orders at Sorting
-                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{visibleOrders.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* FILTER, not search. The global Garment Lookup above asks the
-                  server about any garment anywhere; this only narrows the
-                  orders already on screen, and requests nothing. */}
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  value={orderFilter}
-                  onChange={(e) => setOrderFilter(e.target.value)}
-                  placeholder="Search customer name, order number, GAR or bag…"
-                  className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 py-2 text-[13px] outline-none focus:border-indigo-300"
-                />
-                {orderFilter && (
-                  <button
-                    type="button"
-                    onClick={() => setOrderFilter("")}
-                    aria-label="Clear filter"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 shrink-0">Sorting Orders Search</span>
+                <div className="relative flex-1 max-w-xl">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    value={orderFilter}
+                    onChange={(e) => setOrderFilter(e.target.value)}
+                    placeholder="Search customer name, order number, GAR or bag…"
+                    className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 py-2 text-[13px] outline-none focus:border-indigo-300"
+                  />
+                  {orderFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderFilter("")}
+                      aria-label="Clear filter"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-              {visibleOrders.length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">
-                  {orderFilter ? "No loaded order matches that filter." : "No orders are ready for Sorting."}
-                </p>
-              ) : visibleOrders.map((o) => {
-                // ONE COLLECTION ANSWERS "WHAT HAS BEEN SCANNED FOR THIS ORDER".
-                // The badge, the garment list and Copy All all read it, so the
-                // count and the list cannot be computed two different ways and
-                // drift apart — which is exactly how "3 / 25 scanned" came to
-                // render fewer than three rows.
-                const scannedIds = new Set(scannedFor(o.orderId))
-                const scannedGarments = o.garments.filter((g) => scannedIds.has(g.id))
-                const done = scannedGarments.length
-                const complete = done >= o.expected
-                return (
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <Card className="rounded-xl border-slate-200 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2">
+                  <ScanLine className="h-[18px] w-[18px] text-blue-600" /> Orders at Sorting
+                  <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{visibleOrders.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {visibleOrders.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-6 text-center">
+                    {orderFilter
+                      ? "No loaded order matches that filter."
+                      : "No orders are ready for Sorting."}
+                  </p>
+                ) : visibleOrders.map((o) => {
+                  // ONE COLLECTION ANSWERS "WHAT HAS BEEN SCANNED FOR THIS ORDER".
+                  // The badge, the garment list and Copy All all read it, so the
+                  // count and the list cannot be computed two different ways and
+                  // drift apart — which is exactly how "3 / 25 scanned" came to
+                  // render fewer than three rows.
+                  const scannedIds = new Set(scannedFor(o.orderId))
+                  const scannedGarments = o.garments.filter((g) => scannedIds.has(g.id))
+                  const done = scannedGarments.length
+                  const complete = done >= o.expected
+                  return (
                   <div
                     key={o.orderId}
                     // Registered so a located order can be scrolled to. The list
@@ -1487,7 +1496,11 @@ export function LaundrySortingWorkstation() {
             </CardHeader>
             <CardContent className="space-y-3">
               {readyOrders.length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">An order appears here once every one of its garments has been scanned — that is when Sorting can be completed and the order moved on. Sorting bags are assigned on the order card, whenever one is needed.</p>
+                <p className="text-sm text-slate-400 py-6 text-center">
+                  {orderFilter
+                    ? "No completed Sorting orders match your search."
+                    : "An order appears here once every one of its garments has been scanned — that is when Sorting can be completed and the order moved on. Sorting bags are assigned on the order card, whenever one is needed."}
+                </p>
               ) : readyOrders.map((o) => (
                 <div key={o.orderId} className="rounded-lg border border-emerald-200 bg-white p-3">
                   <p className="text-sm font-semibold text-slate-800 font-mono">{o.orderNumber}</p>
@@ -1521,6 +1534,7 @@ export function LaundrySortingWorkstation() {
               ))}
             </CardContent>
           </Card>
+        </div>
         </div>
       )}
 
