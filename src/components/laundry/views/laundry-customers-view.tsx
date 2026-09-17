@@ -35,7 +35,7 @@ import { LaundryCustomerImportDialog } from "./laundry-customer-import-dialog"
 interface Row {
   id: string; name: string; phone: string | null; email: string | null; customerCode: string | null
   loyaltyTier: string; walletBalance: number; totalOrders: number; totalSpent: number
-  status: string; isActive: boolean; lastOrderAt: string | null
+  status: string; isActive: boolean; lastOrderAt: string | null; createdAt: string
   /** Decided by the API through membershipState() — never from loyaltyTier. */
   membershipState?: MembershipState; membershipPlanName?: string | null
 }
@@ -536,7 +536,7 @@ export function LaundryCustomersView() {
           ) : (
             <Table>
               <TableHeader><TableRow className="text-[11px] uppercase tracking-wide">
-                <TableHead className="w-[26%]">Customer</TableHead><TableHead className="w-[22%]">Contact</TableHead><TableHead>Membership</TableHead>
+                <TableHead className="w-[26%]">Customer</TableHead><TableHead className="w-[22%]">Contact</TableHead><TableHead className="hidden md:table-cell">Created Date</TableHead><TableHead>Membership</TableHead>
                 <TableHead className="text-right">Wallet</TableHead>
                 <TableHead className="text-right">Lifetime Value</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
@@ -545,6 +545,7 @@ export function LaundryCustomersView() {
                   <TableRow key={c.id} className={c.isActive ? "" : "opacity-60 bg-slate-50/50"}>
                     <TableCell><div className="flex items-center gap-2.5"><Avatar className="h-9 w-9"><AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">{initials(c.name)}</AvatarFallback></Avatar><div><p className="text-sm font-medium text-slate-800">{c.name}</p><p className="text-[11px] text-slate-400 font-mono">{c.customerCode || "—"}</p></div></div></TableCell>
                     <TableCell><p className="text-sm text-slate-600">{c.phone || "—"}</p><p className="text-[11px] text-slate-400">{c.email || ""}</p></TableCell>
+                    <TableCell className="hidden md:table-cell"><p className="text-sm text-slate-600">{fmtD(c.createdAt)}</p></TableCell>
                     <TableCell>
                       {/* Tier and subscription are different facts and are shown
                           as two: the tier only when the customer holds one, the
