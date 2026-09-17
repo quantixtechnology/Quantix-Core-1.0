@@ -100,7 +100,7 @@ describe('FILTER · wired to BOTH sections, and requests nothing', () => {
   it('the global Garment Lookup is untouched and separate', () => {
     expect(code).toContain('useGarmentSearch(currentBusinessId)')
     expect(code).toContain('<GarmentSearchResults')
-    expect(code).toContain('Filter these orders — number, customer, GAR or bag')
+    expect(code).toContain('Search customer name, order number, GAR or bag')
   })
 
   it('a scan clears the filter so the located order is always reachable', () => {

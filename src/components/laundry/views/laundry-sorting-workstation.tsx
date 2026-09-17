@@ -1126,7 +1126,7 @@ export function LaundrySortingWorkstation() {
                 <input
                   value={orderFilter}
                   onChange={(e) => setOrderFilter(e.target.value)}
-                  placeholder="Filter these orders — number, customer, GAR or bag"
+                  placeholder="Search customer name, order number, GAR or bag…"
                   className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 py-2 text-[13px] outline-none focus:border-indigo-300"
                 />
                 {orderFilter && (

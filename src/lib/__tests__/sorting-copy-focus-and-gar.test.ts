@@ -197,7 +197,7 @@ describe('REGRESSION · bag, scan and completion untouched', () => {
     expect(code).toContain('action: "assign_bag"')
     expect(code).toContain('<SortingHistory businessId=')
     expect(code).toContain('const RECENT_LIMIT = 5')
-    expect(code).toContain('Filter these orders — number, customer, GAR or bag')
+    expect(code).toContain('Search customer name, order number, GAR or bag')
     expect(code).toContain('const readyOrders = visibleOrders.filter')
   })
 
