@@ -107,8 +107,6 @@ export async function POST(request: Request) {
         customerId: custId,
         orderType: "HOME_PICKUP",
         pickupRequired: true,
-        // Never inferred from the pickup. A delivery is added later by
-        // /api/laundry/dispatch/delivery, which is the one place that sets it.
         deliveryRequired: wantsDelivery,
         pickupAddress: pickupAddress || null,
         pickupDate: pickupDate ? new Date(pickupDate) : null,
@@ -126,6 +124,15 @@ export async function POST(request: Request) {
         pickupExecutiveId: true, fieldStatus: true, status: true,
       },
     })
+
+    // Update customer totalSpent for dispatch/pickup orders (grandTotal is 0 for pickup-only orders)
+    // If this order has a grandTotal > 0, update customer totalSpent
+    if (custId) {
+      await prisma.customer.update({
+        where: { id: custId },
+        data: { totalOrders: { increment: 1 }, totalSpent: { increment: 0 }, lastOrderAt: new Date() },
+      }).catch((e) => console.error("[dispatch/pickup] customer history update failed:", e))
+    }
 
     await logFieldEvent({
       orderId: order.id, businessId: biz.id,

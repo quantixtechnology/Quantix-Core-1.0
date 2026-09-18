@@ -259,13 +259,12 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
     include: input.include ?? DEFAULT_INCLUDE,
   })
 
-  if (input.customerId && input.updateCustomerSpend !== false) {
+if (input.customerId && input.updateCustomerSpend !== false) {
     await prisma.customer
       .update({
         where: { id: input.customerId },
         data: { totalOrders: { increment: 1 }, totalSpent: { increment: grandTotal || 0 }, lastOrderAt: new Date() },
       })
-      .catch((e) => console.error("[laundry-order-engine] customer history update failed:", e))
   }
 
   // Pickup verification (Workflow Settings): snapshot the method and generate the

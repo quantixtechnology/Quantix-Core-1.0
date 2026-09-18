@@ -84,6 +84,7 @@ export async function GET(request: Request) {
       ? await prisma.customerSubscription.findMany({
           where: { businessId: biz.platformBusinessId, customerId: { in: pageIds } },
           select: {
+            id: true,
             customerId: true, status: true, currentPeriodEnd: true, graceEndsAt: true,
             plan: { select: { name: true, autoRenew: true, graceDays: true, allowanceKg: true, allowancePieces: true } },
             usedKg: true, usedPieces: true, remainingKg: true, remainingPieces: true,
