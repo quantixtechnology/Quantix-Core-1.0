@@ -7,7 +7,9 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode, formatFullAddress } from "@/lib/india"
 import { parseMeta, parseTags, mergeMeta, customerStats, type CommPrefs } from "@/lib/laundry-customer"
+import { membershipState } from "@/lib/laundry-subscription"
 import { findCustomerByEmail, validateIndianMobile } from "@/lib/laundry-customer-create"
+import { resolvePageSize } from "@/lib/laundry-pagination"
 
 export const runtime = "nodejs"
 
@@ -51,16 +53,34 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           where: { id: customer.customerSourceId }, select: { name: true, active: true },
         })
       : null
+
+    // Calculate Lifetime Value = actual money collected (normal orders + activated subscriptions)
+    const subPurchases = await prisma.subscriptionPurchase.findMany({
+      where: { customerId: customer.id, status: "ACTIVATED" },
+      select: { amountPaid: true },
+    })
+    const subSpent = subPurchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0)
+    const lifetimeValue = (stats.collected || 0) + subSpent
+
+    // The profile shows a NAME, so resolve it here rather than making every
+    // caller fetch the master. There is no Prisma relation to join through —
+    // the master is laundry-scoped while Customer is platform-scoped.
+    const sourceInfo = customer.customerSourceId
+      ? await prisma.laundryCustomerSource.findUnique({
+          where: { id: customer.customerSourceId }, select: { name: true, active: true },
+        })
+      : null
     return NextResponse.json({
       success: true,
       data: {
         ...shape(customer),
         stats,
+        lifetimeValue,
         // Null source reads as the default rather than blank: a customer
         // created before this existed was still won somehow, and Direct is the
         // honest assumption. Nothing is written until the record is next saved.
-        customerSourceName: src?.name ?? "Direct",
-        customerSourceActive: src?.active ?? true,
+        customerSourceName: sourceInfo?.name ?? "Direct",
+        customerSourceActive: sourceInfo?.active ?? true,
       },
     })
   } catch (e) {

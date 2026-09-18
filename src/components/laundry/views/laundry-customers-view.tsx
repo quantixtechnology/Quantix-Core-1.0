@@ -485,7 +485,7 @@ export function LaundryCustomersView() {
   const memberSince = stats?.memberSince || null
   const headerKPIs = [
     { label: "Wallet", value: inr(detail?.walletBalance || 0), icon: Wallet },
-    { label: "Lifetime", value: inr(detail?.totalSpent || 0), icon: CreditCard },
+    { label: "Lifetime", value: inr(detail?.lifetimeValue ?? 0), icon: CreditCard },
     { label: "Active Orders", value: stats?.activeOrders ?? 0, icon: Truck },
     { label: "Total Orders", value: stats?.totalOrders ?? detail?.totalOrders ?? 0, icon: ShoppingBag },
     { label: "Customer Since", value: fmtD(memberSince), icon: Calendar },
