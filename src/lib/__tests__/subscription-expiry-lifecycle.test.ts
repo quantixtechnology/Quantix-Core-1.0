@@ -99,7 +99,7 @@ describe("Subscription Expiry Lifecycle", () => {
   })
 
   const setupTransactionMock = () => {
-    prisma.$transaction.mockImplementation(async (cb) => {
+    ;(prisma.$transaction as any).mockImplementation(async (cb: any) => {
       const tx = {
         customerSubscription: {
           findUnique: vi.fn(),
@@ -121,10 +121,10 @@ describe("Subscription Expiry Lifecycle", () => {
       }
       return cb(tx)
     })
-    prisma.customerSubscription.update.mockResolvedValue({})
-    prisma.subscriptionLedgerEntry.create.mockResolvedValue({})
-    prisma.subscriptionPlan.update.mockResolvedValue({})
-    prisma.subscriptionPlan.findUnique.mockResolvedValue(basePlan)
+    ;(prisma.customerSubscription.update as any).mockResolvedValue({})
+    ;(prisma.subscriptionLedgerEntry.create as any).mockResolvedValue({})
+    ;(prisma.subscriptionPlan.update as any).mockResolvedValue({})
+    ;(prisma.subscriptionPlan.findUnique as any).mockResolvedValue(basePlan)
   }
 
   describe("processExpiry", () => {
@@ -136,7 +136,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-15T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         { ...mockSub(), currentPeriodEnd: new Date("2026-09-20T12:00:00Z") }
       )
 
@@ -151,7 +151,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-20T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ currentPeriodEnd: now })
       )
 
@@ -166,7 +166,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ currentPeriodEnd: new Date("2026-09-20T12:00:00Z"), remainingPieces: 25 })
       )
 
@@ -182,7 +182,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ currentPeriodEnd: new Date("2026-09-20T12:00:00Z"), plan: { ...basePlan, graceDays: 7 } })
       )
 
@@ -198,7 +198,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-28T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "GRACE", graceEndsAt: new Date("2026-09-27T12:00:00Z") })
       )
 
@@ -214,10 +214,10 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ plan: { ...basePlan, autoRenew: true } })
       )
-      prisma.subscriptionPlan.findUnique.mockResolvedValue({ ...basePlan, autoRenew: true })
+      ;(prisma.subscriptionPlan.findUnique as any).mockResolvedValue({ ...basePlan, autoRenew: true })
 
       const result = await processExpiry("sub-1", { now })
 
@@ -231,7 +231,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "CANCELLED" })
       )
 
@@ -246,7 +246,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "SUSPENDED" })
       )
 
@@ -261,7 +261,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "EXPIRED", remainingKg: 0, remainingPieces: 0 })
       )
 
@@ -275,7 +275,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingPieces: 0, usedPieces: 70, plan: { ...basePlan, allowancePieces: 70 } })
       )
 
@@ -291,7 +291,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue(
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue(
         mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingKg: 0, remainingPieces: 25, usedKg: 10, plan: { ...basePlan, allowanceKg: 10, allowancePieces: 70 } })
       )
 
@@ -306,7 +306,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique
+      ;(prisma.customerSubscription.findUnique as any)
         .mockResolvedValueOnce(
           mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingPieces: 0, usedPieces: 70, plan: { ...basePlan, allowancePieces: 70 } })
         )
@@ -330,13 +330,13 @@ describe("Subscription Expiry Lifecycle", () => {
     beforeEach(() => {
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findMany.mockResolvedValue([
+      ;(prisma.customerSubscription.findMany as any).mockResolvedValue([
         { id: "sub-1" },
         { id: "sub-2" },
         { id: "sub-3" },
       ])
 
-      prisma.customerSubscription.findUnique
+      ;(prisma.customerSubscription.findUnique as any)
         .mockResolvedValueOnce({
           id: "sub-1",
           status: "ACTIVE",
@@ -378,8 +378,8 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-15T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findMany.mockResolvedValue([{ id: "sub-1" }])
-      prisma.customerSubscription.findUnique.mockResolvedValue({
+      ;(prisma.customerSubscription.findMany as any).mockResolvedValue([{ id: "sub-1" }])
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue({
         id: "sub-1",
         status: "ACTIVE",
         currentPeriodEnd: new Date("2026-09-20T12:00:00Z"),
@@ -393,7 +393,7 @@ describe("Subscription Expiry Lifecycle", () => {
     })
 
     it("throws error if one subscription fails (current implementation)", async () => {
-      prisma.$transaction.mockImplementation(async () => {
+      ;(prisma.$transaction as any).mockImplementation(async () => {
         throw new Error("DB error")
       })
 
@@ -405,11 +405,11 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findMany
+      ;(prisma.customerSubscription.findMany as any)
         .mockResolvedValueOnce([]) // no date-due subscriptions
         .mockResolvedValueOnce([{ id: "sub-exhausted" }]) // exhausted subscription
 
-      prisma.customerSubscription.findUnique.mockResolvedValue({
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue({
         id: "sub-exhausted",
         status: "ACTIVE",
         currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), // still in the future
@@ -433,11 +433,11 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findMany
+      ;(prisma.customerSubscription.findMany as any)
         .mockResolvedValueOnce([]) // no date-due
         .mockResolvedValueOnce([]) // no exhausted (piece plan not exhausted)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue({
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue({
         id: "sub-1",
         status: "ACTIVE",
         currentPeriodEnd: new Date("2026-09-25T12:00:00Z"),
@@ -456,7 +456,7 @@ describe("Subscription Expiry Lifecycle", () => {
 
   describe("70-clothes subscription expiry", () => {
     beforeEach(() => {
-      prisma.customerSubscription.findUnique.mockReset()
+      ;(prisma.customerSubscription.findUnique as any).mockReset()
       setupTransactionMock()
     })
 
@@ -464,7 +464,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue({
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue({
         id: "sub-1",
         status: "ACTIVE",
         currentPeriodEnd: new Date("2026-09-20T12:00:00Z"),
@@ -487,7 +487,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique.mockResolvedValue({
+      ;(prisma.customerSubscription.findUnique as any).mockResolvedValue({
         id: "sub-1",
         status: "ACTIVE",
         currentPeriodEnd: new Date("2026-09-20T12:00:00Z"),
@@ -499,7 +499,7 @@ describe("Subscription Expiry Lifecycle", () => {
         plan: { autoRenew: true, graceDays: 0, allowanceKg: null, allowancePieces: 70, billingCycle: "MONTHLY" },
       })
 
-      prisma.subscriptionPlan.findUnique.mockResolvedValue({ allowancePieces: 70, autoRenew: true })
+      ;(prisma.subscriptionPlan.findUnique as any).mockResolvedValue({ allowancePieces: 70, autoRenew: true })
 
       const result = await processExpiry("sub-1", { now: new Date("2026-09-21T12:00:00Z") })
 
@@ -511,8 +511,8 @@ describe("Subscription Expiry Lifecycle", () => {
 
   describe("Idempotency", () => {
     beforeEach(() => {
-      prisma.customerSubscription.findUnique.mockReset()
-      prisma.customerSubscription.findMany.mockReset()
+      ;(prisma.customerSubscription.findUnique as any).mockReset()
+      ;(prisma.customerSubscription.findMany as any).mockReset()
       setupTransactionMock()
     })
 
@@ -520,7 +520,7 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
-      prisma.customerSubscription.findUnique
+      ;(prisma.customerSubscription.findUnique as any)
         .mockResolvedValueOnce({
           id: "sub-1",
           status: "ACTIVE",
@@ -553,13 +553,13 @@ describe("Subscription Expiry Lifecycle", () => {
 
       // First call: date-due returns sub-1, exhausted returns empty
       // Second call: both return empty (sub-1 already expired)
-      prisma.customerSubscription.findMany
+      ;(prisma.customerSubscription.findMany as any)
         .mockResolvedValueOnce([{ id: "sub-1" }]) // call 1: date-due
         .mockResolvedValueOnce([])                 // call 1: exhausted
         .mockResolvedValueOnce([])                 // call 2: date-due
         .mockResolvedValueOnce([])                 // call 2: exhausted
 
-      prisma.customerSubscription.findUnique
+      ;(prisma.customerSubscription.findUnique as any)
         .mockResolvedValueOnce({
           id: "sub-1",
           status: "ACTIVE",

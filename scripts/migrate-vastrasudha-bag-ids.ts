@@ -166,12 +166,12 @@ async function resolvePrefix(): Promise<string | null> {
   // 3. If Business has no code yet, try LaundryBusiness for name
   const lb = await prisma.laundryBusiness.findUnique({
     where: { id: LAUNDRY_BIZ_ID },
-    select: { name: true },
+    select: { businessName: true },
   })
-  if (lb?.name) {
+  if (lb?.businessName) {
     // No code available — derive from name only (first letter + 0)
     // This is a fallback; the Business record should have a code.
-    const prefix = deriveTenantPrefix(null, lb.name)
+    const prefix = deriveTenantPrefix(null, lb.businessName)
     return prefix
   }
 

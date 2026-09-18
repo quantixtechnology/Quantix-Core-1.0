@@ -167,7 +167,7 @@ describe("Customer Auth Lifecycle", () => {
 
       // Set initial state
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER", phone: "9999999999" },
+        user: { id: "user-1", role: "CUSTOMER", phone: "9999999999" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -193,7 +193,7 @@ describe("Customer Auth Lifecycle", () => {
         .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -218,7 +218,7 @@ describe("Customer Auth Lifecycle", () => {
         .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -237,7 +237,7 @@ describe("Customer Auth Lifecycle", () => {
       fetchMock.mockRejectedValueOnce(new Error("Network error"))
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -260,7 +260,7 @@ describe("Customer Auth Lifecycle", () => {
       })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -283,7 +283,7 @@ describe("Customer Auth Lifecycle", () => {
       })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -305,7 +305,7 @@ describe("Customer Auth Lifecycle", () => {
       })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -326,7 +326,7 @@ describe("Customer Auth Lifecycle", () => {
       fetchMock.mockReturnValueOnce(refreshPromise)
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -359,7 +359,7 @@ describe("Customer Auth Lifecycle", () => {
       fetchMock.mockReturnValueOnce(refreshPromise)
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -392,7 +392,7 @@ describe("Customer Auth Lifecycle", () => {
         })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1", role: "CUSTOMER" },
+        user: { id: "user-1", role: "CUSTOMER" } as any,
         token: "old-token",
         refreshToken: "old-refresh-token",
         isAuthenticated: true,
@@ -463,7 +463,7 @@ describe("Customer Auth Lifecycle", () => {
       fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) })
 
       useCustomerAuthStore.setState({
-        user: { id: "user-1" },
+        user: { id: "user-1" } as any,
         token: "token",
         refreshToken: "refresh-token",
         isAuthenticated: true,

@@ -191,7 +191,7 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
       const touched = result.lines.some((l) => l.subscriptionId === subId)
       if (!touched) continue
       // Check if this subscription is piece-based and has exhausted its allowance
-      const sub = subs.find((s) => s.id === subId)
+      const sub = subInputs.find((s) => s.id === subId)
       const isPiecePlan = sub?.coverageUnit === "PER_PIECE"
       const exhausted = isPiecePlan && b.pieces <= 0
       await tx.customerSubscription.update({ where: { id: subId }, data: { remainingKg: b.kg, usedKg: b.usedKg, remainingPieces: b.pieces, usedPieces: b.usedPieces, ...(exhausted ? { status: "EXPIRED" } : {}) } })
