@@ -52,7 +52,16 @@ export async function processExpiry(subscriptionId: string, opts: { actorName?: 
   const sub = await loadSub(subscriptionId)
   if (!sub) return { ok: false as const, error: "Subscription not found" }
   const now = opts.now || new Date()
-  if (sub.status === "CANCELLED" || sub.status === "SUSPENDED") return { ok: true as const, status: sub.status, changed: false }
+  // Already exhausted (remainingPieces === 0 for piece plan) or cancelled/suspended — no further processing
+  const exhausted = sub.plan.allowancePieces && sub.plan.allowancePieces > 0 && sub.remainingPieces <= 0
+  if (sub.status === "EXPIRED" || sub.status === "CANCELLED" || sub.status === "SUSPENDED" || exhausted) {
+    if (exhausted && sub.status !== "EXPIRED") {
+      // Mark as EXPIRED if exhausted but not yet marked
+      await prisma.customerSubscription.update({ where: { id: sub.id }, data: { status: "EXPIRED" } })
+      return { ok: true as const, status: "EXPIRED", changed: true, action: "EXHAUSTED" as const }
+    }
+    return { ok: true as const, status: sub.status, changed: false }
+  }
   if (now <= sub.currentPeriodEnd) return { ok: true as const, status: sub.status, changed: false } // still within cycle
 
   // Cycle has lapsed.
@@ -122,8 +131,14 @@ export async function processDueSubscriptions(platformBusinessId: string, opts: 
     where: { businessId: platformBusinessId, status: { in: ["ACTIVE", "GRACE"] }, currentPeriodEnd: { lt: now } },
     select: { id: true },
   })
+  // Also check for exhausted piece-based subscriptions (remainingPieces === 0)
+  const exhausted = await prisma.customerSubscription.findMany({
+    where: { businessId: platformBusinessId, status: "ACTIVE", allowancePieces: { gt: 0 }, remainingPieces: { lte: 0 } },
+    select: { id: true },
+  })
+  const allDue = [...due, ...exhausted]
   const results: { id: string; action: string }[] = []
-  for (const s of due) {
+  for (const s of allDue) {
     const r = await processExpiry(s.id, { actorName: opts.actorName, now })
     if (r.ok && r.changed) results.push({ id: s.id, action: (r as { action?: string }).action || r.status })
   }

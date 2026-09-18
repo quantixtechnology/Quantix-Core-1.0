@@ -12,6 +12,7 @@ import { X, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
 
 export interface SubUsage {
   active: boolean
+  exhausted?: boolean
   planName?: string
   planPrice?: number
   billingCycle?: string
@@ -94,9 +95,21 @@ export function SubscriptionUsageSheet({
         <div className="px-5 pb-5 pt-4">
           {loading ? (
             <div className="py-10 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>
-          ) : failed || !data?.active ? (
+          ) : failed ? (
             <p className="py-8 text-center text-sm text-gray-500">
-              {failed ? "Could not load your subscription just now." : "You do not have an active subscription."}
+              Could not load your subscription just now.
+            </p>
+          ) : data?.exhausted ? (
+            <div className="py-8 text-center">
+              <AlertCircle className="h-10 w-10 text-rose-600 mx-auto mb-3" />
+              <p className="text-base font-semibold text-rose-700">Subscription exhausted</p>
+              <p className="mt-2 text-sm text-gray-600">
+                You have used all garments included in your subscription. Please renew your subscription to continue.
+              </p>
+            </div>
+          ) : !data?.active ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              You do not have an active subscription.
             </p>
           ) : (
             <>

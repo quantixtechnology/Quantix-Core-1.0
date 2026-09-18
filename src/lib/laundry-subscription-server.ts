@@ -186,10 +186,15 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
       }
     }
     // Persist decremented balances + a usage row per subscription touched.
+    // If a piece-based subscription reaches 0 remaining pieces, immediately expire it.
     for (const [subId, b] of bal) {
       const touched = result.lines.some((l) => l.subscriptionId === subId)
       if (!touched) continue
-      await tx.customerSubscription.update({ where: { id: subId }, data: { remainingKg: b.kg, usedKg: b.usedKg, remainingPieces: b.pieces, usedPieces: b.usedPieces } })
+      // Check if this subscription is piece-based and has exhausted its allowance
+      const sub = subs.find((s) => s.id === subId)
+      const isPiecePlan = sub?.coverageUnit === "PER_PIECE"
+      const exhausted = isPiecePlan && b.pieces <= 0
+      await tx.customerSubscription.update({ where: { id: subId }, data: { remainingKg: b.kg, usedKg: b.usedKg, remainingPieces: b.pieces, usedPieces: b.usedPieces, ...(exhausted ? { status: "EXPIRED" } : {}) } })
       const pcs = result.perSub[subId]?.consumedPieces || 0
       await tx.subscriptionUsage.create({ data: { subscriptionId: subId, orderId, creditsUsed: pcs, description: `Order coverage · ${r2(result.perSub[subId]?.consumedKg || 0)}kg / ${pcs}pc` } }).catch(() => {})
     }

@@ -185,16 +185,19 @@ export async function applyPaymentToPurchase(purchaseId: string, amount: number)
 // The customer's current subscription financial picture: active plan (if any)
 // plus any pending purchase due. Used by My Account + admin customer detail.
 export async function customerSubscriptionSummary(businessId: string, customerId: string) {
-  const [activeSub, pending] = await Promise.all([
+  const [activeSub, exhaustedSub, pending] = await Promise.all([
     prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true, totalCredits: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
+    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: "EXPIRED", allowancePieces: { gt: 0 }, remainingPieces: { lte: 0 } }, include: { plan: { select: { name: true, totalCredits: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
     prisma.subscriptionPurchase.findFirst({ where: { businessId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING"] } }, orderBy: { createdAt: "desc" } }),
   ])
   let pendingPlanName: string | null = null
   if (pending) { const p = await prisma.subscriptionPlan.findUnique({ where: { id: pending.planId }, select: { name: true } }); pendingPlanName = p?.name || null }
   // Same function the pickup-scheduling entitlement check uses, so the
   // storefront card and the usage popup can never show different figures.
-  const balance = activeSub
-    ? subscriptionBalance({ totalCredits: activeSub.totalCredits, planTotalCredits: activeSub.plan.totalCredits, usages: activeSub.usages })
+  const sub = activeSub || exhaustedSub
+  const isExhausted = exhaustedSub && !activeSub
+  const balance = sub
+    ? subscriptionBalance({ totalCredits: sub.totalCredits, planTotalCredits: sub.plan.totalCredits, usages: sub.usages })
     : null
   return {
     active: activeSub && balance ? {
@@ -203,6 +206,13 @@ export async function customerSubscriptionSummary(businessId: string, customerId
       fullyUsed: balance.fullyUsed,
       maxOrders: activeSub.plan.maxOrdersPerCycle,
       cycleStart: activeSub.currentPeriodStart, cycleEnd: activeSub.currentPeriodEnd,
+    } : null,
+    exhausted: isExhausted && balance ? {
+      planName: exhaustedSub!.plan.name, status: "EXPIRED",
+      allowance: balance.allowance, used: balance.used, remaining: balance.remaining,
+      fullyUsed: balance.fullyUsed,
+      maxOrders: exhaustedSub!.plan.maxOrdersPerCycle,
+      cycleStart: exhaustedSub!.currentPeriodStart, cycleEnd: exhaustedSub!.currentPeriodEnd,
     } : null,
     pending: pending ? {
       purchaseId: pending.id, planId: pending.planId, planName: pendingPlanName, amount: pending.amount, amountPaid: pending.amountPaid,

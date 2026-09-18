@@ -42,17 +42,27 @@ export async function POST(request: Request) {
     if (!customer && phone) customer = await prisma.customer.findFirst({ where: { businessId: platformId, phone }, select: { id: true } })
     if (!customer) return NextResponse.json({ success: true, data: { active: false } })
 
-    const sub = await prisma.customerSubscription.findFirst({
+    const activeSub = await prisma.customerSubscription.findFirst({
       where: { businessId: platformId, customerId: customer.id, status: "ACTIVE" },
       include: {
         plan: { select: { name: true, price: true, billingCycle: true, totalCredits: true, maxOrdersPerCycle: true } },
-        // orderId + createdAt come from the SAME rows the balance is summed
-        // from, so "last updated" cannot drift from the figures above.
         usages: { select: { creditsUsed: true, orderId: true, createdAt: true }, orderBy: { createdAt: "desc" } },
       },
     })
+
+    // Also check for exhausted piece subscription (EXPIRED with remainingPieces=0 and allowancePieces>0)
+    const exhaustedSub = await prisma.customerSubscription.findFirst({
+      where: { businessId: platformId, customerId: customer.id, status: "EXPIRED", allowancePieces: { gt: 0 }, remainingPieces: { lte: 0 } },
+      include: {
+        plan: { select: { name: true, price: true, billingCycle: true, totalCredits: true, maxOrdersPerCycle: true } },
+        usages: { select: { creditsUsed: true, orderId: true, createdAt: true }, orderBy: { createdAt: "desc" } },
+      },
+    })
+
+    const sub = activeSub || exhaustedSub
     if (!sub) return NextResponse.json({ success: true, data: { active: false } })
 
+    const isExhausted = exhaustedSub && !activeSub
     const balance = subscriptionBalance({ totalCredits: sub.totalCredits, planTotalCredits: sub.plan.totalCredits, usages: sub.usages })
 
     // When the balance last moved, and for which order. Store Audit is where a
@@ -76,7 +86,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, data: {
-      active: true, subscriptionId: sub.id, planName: sub.plan.name,
+      active: !isExhausted, subscriptionId: sub.id, planName: sub.plan.name,
       planPrice: sub.plan.price, billingCycle: sub.plan.billingCycle,
       allowance: balance.allowance, used: balance.used, remaining: balance.remaining,
       fullyUsed: balance.fullyUsed, percentUsed: balance.percentUsed,
@@ -85,6 +95,7 @@ export async function POST(request: Request) {
       lastUpdatedAt: lastService?.at ?? lastUsage?.createdAt ?? null,
       lastUpdatedAfterAudit: !!lastService?.audited,
       lastService,
+      exhausted: isExhausted,
     } })
   } catch (e) {
     console.error("[laundry-subscription/status] POST", e)

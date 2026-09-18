@@ -24,6 +24,7 @@ import type { DeliveryAddress } from "@/stores/cart-store"
 import { effectiveTatHours, hasCustomTat, tatLabel, earliestDeliveryAt, dayKey, hasMixedDeliveryTypes, MIXED_DELIVERY_MESSAGE } from "@/lib/laundry-tat"
 import { cartTatHours } from "@/lib/laundry-cart"
 import { slotIsPast, slotHasEnded } from "@/lib/laundry-slots"
+import { slotDatesToFetch, slotListFor, slotPlaceholder, reconcileSlotSelection, type SlotDayMap } from "@/lib/laundry-slot-picker"
 import { resolvePickupLocation, buildStructuredPickupAddress, isUnpinnedAddress, UNPINNED_ADDRESS_BADGE } from "@/lib/laundry-pickup-location"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
@@ -72,7 +73,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
   // Authenticated customer identity (reused from the shared Quantix session — no
   // laundry-specific login, no re-entering name/phone).
   const authCustomer = isAuthenticated && user ? { name: user.name, phone: user.phone || "", email: user.email || "" } : null
-  const [subSummary, setSubSummary] = useState<{ active: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; pending: { planId: string; purchaseId: string; planName: string | null; due: number; createdAt: string } | null } | null>(null)
+  const [subSummary, setSubSummary] = useState<{ active: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; exhausted: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; pending: { planId: string; purchaseId: string; planName: string | null; due: number; createdAt: string } | null } | null>(null)
   const [cancelingPending, setCancelingPending] = useState(false)
   const [services, setServices] = useState<Service[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
@@ -261,6 +262,7 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
                 {plans.map((p) => {
                   const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
+                  const isExhaustedPlan = subSummary?.exhausted && subSummary.exhausted.planName === p.name
                   const pendingForPlan = subSummary?.pending && subSummary.pending.planId === p.id ? subSummary.pending : null
                   const btn = isActivePlan ? (
                     <div className="space-y-1">
@@ -269,6 +271,11 @@ export function StorefrontLaundryHome({ brandColor, nav, storeClosed }: { brandC
                       {subSummary?.active?.remaining != null && (
                         <p className="text-[10px] text-center font-medium text-gray-500">{subSummary.active.remaining} clothes remaining</p>
                       )}
+                    </div>
+                  ) : isExhaustedPlan ? (
+                    <div className="space-y-1">
+                      <button className="w-full rounded-lg h-9 text-xs font-semibold border border-rose-300 text-rose-700 bg-rose-50 active:opacity-80" disabled>Subscription exhausted</button>
+                      <p className="text-[10px] text-center font-medium text-rose-600">You have used all garments. Please renew.</p>
                     </div>
                   ) : pendingForPlan ? (
                     // One pending request per plan — Subscribe is replaced by Pay Now + Cancel.
@@ -419,11 +426,12 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   })
   const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
-  const [pickupSlots, setPickupSlots] = useState<string[]>([]); const [deliverySlots, setDeliverySlots] = useState<string[]>([])
-  // An empty slot list used to render as a permanent "Loading…", because the
-  // dropdown could not tell "not fetched yet" from "this date has none".
-  const [slotsLoading, setSlotsLoading] = useState(false)
-  const emptySlotLabel = (noun: string) => (slotsLoading ? "Loading…" : `No ${noun} slots available for this date`)
+  // Slots are held PER DATE. The endpoint answers per date — a closure empties
+  // the day, store hours clip the window — so keeping one date-less answer for
+  // the whole sheet (which is what Standard and Backup delivery used to share)
+  // both threw that answer away and made a single failed request look like
+  // "this date has no slots". See src/lib/laundry-slot-picker.
+  const [slotDays, setSlotDays] = useState<SlotDayMap>({})
   const [deliveryDate, setDeliveryDate] = useState(""); const [deliverySlot, setDeliverySlot] = useState("")
   const [backupDate, setBackupDate] = useState(""); const [backupSlot, setBackupSlot] = useState("")
   const [backupTouched, setBackupTouched] = useState(false)
@@ -446,50 +454,66 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
   const isPerKg = service.pricingMode === "PER_KG"
   const isBag = service.orderMode === "BAG" // Pickup-First: book the service only, no garments
 
-  useEffect(() => {
-    if (!businessId) return
-    fetch(`/api/core/storefront/laundry-slots?businessId=${businessId}`).then((r) => r.json()).then((j) => {
-      if (j.success) {
-        setPickupSlots(j.data.pickup.slots || [])
-        setDeliverySlots(j.data.delivery.slots || [])
-        if (!slot && j.data.pickup.slots?.[0]) setSlot(j.data.pickup.slots[0])
-        if (!deliverySlot && j.data.delivery.slots?.[0]) setDeliverySlot(j.data.delivery.slots[0])
-        if (!backupSlot && j.data.delivery.slots?.[0]) setBackupSlot(j.data.delivery.slots[0])
-      }
-    }).catch(() => {})
-  }, [businessId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Pickup date availability + working-hours slot filtering ───────────────
+  // ── Per-date pickup/delivery slots + date availability ────────────────────
   // The public slots endpoint validates the chosen date (weekly off / holiday /
-  // past) and returns slots restricted to that day's working hours. Unavailable
-  // dates are rejected client-side and never offered (server re-validates).
+  // past) and returns the slots that date actually offers. EVERY date in play
+  // gets its own request — the pickup date, the Standard delivery date and the
+  // Backup delivery date are three different days and can offer three different
+  // lists. The date-less baseline ("") is the configured window, shown before a
+  // date exists. A request that fails is recorded as an error, not as an empty
+  // day, so the dropdown can offer Retry instead of claiming the date is full.
   const todayIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split("T")[0]
+  const dateFieldFor = useCallback((d: string) => (d === date ? "pickup" : d === deliveryDate ? "delivery" : d === backupDate ? "backup" : null), [date, deliveryDate, backupDate])
+
   useEffect(() => {
     if (!businessId) return
-    const d = date || deliveryDate || backupDate
-    if (!d) return
-    const ctl = new AbortController()
-    setSlotsLoading(true)
-    fetch(`/api/core/storefront/laundry-slots?businessId=${encodeURIComponent(businessId)}&date=${encodeURIComponent(d)}`, { signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.success && j.dateAvailable === false) {
-          if (d === date) { toast.error(j.dateReason || "Pickup is not available on this date."); setDate("") }
-          else if (d === deliveryDate) { toast.error(j.dateReason || "Standard delivery is not available on this date."); setDeliveryDate("") }
-          else if (d === backupDate) { toast.error(j.dateReason || "Backup delivery is not available on this date."); setBackupDate("") }
-          return
-        }
-        if (j.success && d === date) {
-          setPickupSlots(j.data.pickup.slots || [])
-          if (!j.data.pickup.slots?.includes(slot)) setSlot(j.data.pickup.slots?.[0] || "")
-        }
-      })
-      .catch(() => { /* keep whatever is already listed */ })
-      // An aborted request must not clear the flag — the replacement fetch
-      // owns it, otherwise switching dates quickly flashes the empty state.
-      .finally(() => { if (!ctl.signal.aborted) setSlotsLoading(false) })
-    return () => ctl.abort()
-  }, [businessId, date, deliveryDate, backupDate])
+    const pending = slotDatesToFetch([date, deliveryDate, backupDate], slotDays)
+    if (pending.length === 0) return
+    // Claim them first so a re-render mid-flight does not fire them again.
+    setSlotDays((prev) => {
+      const next = { ...prev }
+      for (const k of pending) if (!next[k]) next[k] = { status: "loading", pickup: [], delivery: [] }
+      return next
+    })
+    for (const key of pending) {
+      const q = `businessId=${encodeURIComponent(businessId)}${key ? `&date=${encodeURIComponent(key)}` : ""}`
+      fetch(`/api/core/storefront/laundry-slots?${q}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j?.success) throw new Error(j?.error || "Slots unavailable")
+          setSlotDays((prev) => ({ ...prev, [key]: { status: "ready", pickup: j.data?.pickup?.slots || [], delivery: j.data?.delivery?.slots || [] } }))
+          // "Can this date be ordered for" is a SEPARATE question from "which
+          // slots does it offer" — a 24/7 tenant answers yes to the first with
+          // a full list for the second, and a closed day answers no. Only a no
+          // clears the field; an empty list never does.
+          if (key && j.dateAvailable === false) {
+            // Cleared functionally: the customer may have moved the field on
+            // while this request was in flight, and a late answer about a date
+            // they have left must not wipe the date they are now on.
+            const field = dateFieldFor(key)
+            if (field === "pickup") { toast.error(j.dateReason || "Pickup is not available on this date."); setDate((cur) => (cur === key ? "" : cur)) }
+            else if (field === "delivery") { toast.error(j.dateReason || "Standard delivery is not available on this date."); setDeliveryDate((cur) => (cur === key ? "" : cur)) }
+            else if (field === "backup") { toast.error(j.dateReason || "Backup delivery is not available on this date."); setBackupDate((cur) => (cur === key ? "" : cur)) }
+          }
+        })
+        // A failure is recorded AS a failure. Swallowing it is what left the
+        // delivery dropdowns permanently reading "no slots available".
+        .catch(() => setSlotDays((prev) => ({ ...prev, [key]: { status: "error", pickup: [], delivery: [] } })))
+    }
+  }, [businessId, date, deliveryDate, backupDate, slotDays, dateFieldFor])
+
+  // Retry drops every failed day so the effect above re-requests it.
+  const retrySlots = useCallback(() => {
+    setSlotDays((prev) => Object.fromEntries(Object.entries(prev).filter(([, v]) => v.status !== "error")))
+  }, [])
+
+  const pickupListing = useMemo(() => slotListFor(slotDays, date, "pickup"), [slotDays, date])
+  const deliveryListing = useMemo(() => slotListFor(slotDays, deliveryDate, "delivery"), [slotDays, deliveryDate])
+  const backupListing = useMemo(() => slotListFor(slotDays, backupDate, "delivery"), [slotDays, backupDate])
+  const pickupSlots = pickupListing.slots
+  const deliverySlots = deliveryListing.slots
+  const backupSlots = backupListing.slots
+  const slotsErrored = pickupListing.status === "error" || deliveryListing.status === "error" || backupListing.status === "error"
 
   // ── Delivery slot capacity ───────────────────────────────────────────────────
   // Full slots are per (date + time slot). Refetch whenever the Standard or
@@ -510,21 +534,17 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     }
   }, [businessId, deliveryDate, backupDate])
 
-  // If the currently-selected Standard/Backup slot becomes FULL, move to the
-  // first remaining available slot instead of submitting a blocked slot.
+  // A SELECTION MUST BE VALID FOR THE DATE IT SITS BESIDE.
+  //
+  // A dropdown value survives a date change on its own, so a slot the new date
+  // does not offer — or one that has since become FULL, or is earlier than the
+  // turnaround allows — stayed selected and was submitted. Each leg is
+  // reconciled against the list its OWN date returned; while that date is still
+  // loading or has failed the current value is kept, so a network hiccup never
+  // discards a valid choice.
   useEffect(() => {
-    const full = fullSlotsByDate[deliveryDate] || []
-    if (deliverySlot && full.includes(deliverySlot)) {
-      setDeliverySlot(deliverySlots.find((s) => !full.includes(s) && !slotTooEarly(s, deliveryDate)) || "")
-    }
-  }, [fullSlotsByDate, deliveryDate, deliverySlot, deliverySlots]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const full = fullSlotsByDate[backupDate] || []
-    if (backupSlot && full.includes(backupSlot)) {
-      setBackupSlot(deliverySlots.find((s) => !full.includes(s)) || "")
-    }
-  }, [fullSlotsByDate, backupDate, backupSlot, deliverySlots]) // eslint-disable-line react-hooks/exhaustive-deps
+    setSlot((cur) => reconcileSlotSelection(cur, pickupListing))
+  }, [pickupListing])
 
   // Scheduling: Standard Delivery defaults to Pickup + 24h; Backup Delivery
   // defaults to Standard Delivery + 24h. Standard date is editable (min = pickup
@@ -616,6 +636,20 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
     (s: string, forDate: string) => !!earliestAt && slotIsPast(s, forDate, earliestAt),
     [earliestAt],
   )
+
+  // The two delivery legs, reconciled once the turnaround floor above exists.
+  // Blocked here means: not offered by THIS date, already FULL, or earlier than
+  // the cart's turnaround allows. Backup has no turnaround floor of its own —
+  // it is always at least a day after Standard.
+  useEffect(() => {
+    const full = fullSlotsByDate[deliveryDate] || []
+    setDeliverySlot((cur) => reconcileSlotSelection(cur, deliveryListing, (sl) => full.includes(sl) || slotTooEarly(sl, deliveryDate)))
+  }, [deliveryListing, fullSlotsByDate, deliveryDate, slotTooEarly])
+
+  useEffect(() => {
+    const full = fullSlotsByDate[backupDate] || []
+    setBackupSlot((cur) => reconcileSlotSelection(cur, backupListing, (sl) => full.includes(sl)))
+  }, [backupListing, fullSlotsByDate, backupDate])
 
   useEffect(() => {
     if (minDeliveryDate) setDeliveryDate(minDeliveryDate)
@@ -1425,7 +1459,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Pickup Date"><input type="date" value={date} min={todayIst()} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={slot} onChange={(e) => setSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {pickupSlots.length === 0 ? <option value="">{emptySlotLabel("pickup")}</option> : pickupSlots.map((s) => {
+                  {pickupSlots.length === 0 ? <option value="">{slotPlaceholder(pickupListing, "pickup")}</option> : pickupSlots.map((s) => {
                     // Only a slot that has completely ENDED is unavailable. At
                     // 16:47 the 16:00-17:00 slot is still live and bookable.
                     const over = slotHasEnded(s, date)
@@ -1438,7 +1472,7 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Standard Delivery *"><input type="date" value={deliveryDate} min={minDeliveryDate || undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={deliverySlot} onChange={(e) => setDeliverySlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option value="">{emptySlotLabel("delivery")}</option> : deliverySlots.map((s) => {
+                  {deliverySlots.length === 0 ? <option value="">{slotPlaceholder(deliveryListing, "delivery")}</option> : deliverySlots.map((s) => {
                     const isFull = (fullSlotsByDate[deliveryDate] || []).includes(s)
                     const tooEarly = slotTooEarly(s, deliveryDate)
                     return <option key={s} value={s} disabled={isFull || tooEarly} className={isFull || tooEarly ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : tooEarly ? " — too early" : ""}</option>
@@ -1454,13 +1488,19 @@ function ServiceSheet({ allServices, service, businessId, brandColor, nav, plans
               <Field label="Backup Delivery *"><input type="date" value={backupDate} min={deliveryDate ? addDays(deliveryDate, 1) : undefined} onChange={(e) => { setBackupDate(e.target.value); setBackupTouched(true) }} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
                 <select value={backupSlot} onChange={(e) => setBackupSlot(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white">
-                  {deliverySlots.length === 0 ? <option value="">{emptySlotLabel("delivery")}</option> : deliverySlots.map((s) => {
+                  {backupSlots.length === 0 ? <option value="">{slotPlaceholder(backupListing, "delivery")}</option> : backupSlots.map((s) => {
                     const isFull = (fullSlotsByDate[backupDate] || []).includes(s)
                     return <option key={s} value={s} disabled={isFull} className={isFull ? "bg-gray-100 text-gray-400" : ""}>{s}{isFull ? " — FULL" : ""}</option>
                   })}
                 </select>
               </Field>
             </div>
+            {slotsErrored && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <span className="flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> We couldn&apos;t load the time slots. This is a connection problem, not a closed date.</span>
+                <button type="button" onClick={retrySlots} className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-800">Retry</button>
+              </div>
+            )}
             {!subscriptionInCart && (
               <div>
                 <label className={`flex items-center gap-2 text-sm ${subEligible ? "text-gray-700" : "text-gray-400 cursor-not-allowed"}`}>

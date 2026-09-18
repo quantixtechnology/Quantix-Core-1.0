@@ -13,14 +13,25 @@ export async function GET(request: Request) {
   const sess = await resolveSession(request)
   if (!sess) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
 
-  const subs = await prisma.customerSubscription.findMany({
+  // Active/GRACE subscriptions first
+  const activeSubs = await prisma.customerSubscription.findMany({
     where: { customerId: sess.customerId, status: { in: ["ACTIVE", "GRACE"] } },
     orderBy: { createdAt: "desc" },
     include: { plan: { select: { name: true, autoRenew: true, coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } } },
   })
+
+  // Also check for exhausted piece subscription (EXPIRED with remainingPieces=0 and allowancePieces>0)
+  const exhaustedSubs = await prisma.customerSubscription.findMany({
+    where: { customerId: sess.customerId, status: "EXPIRED", allowancePieces: { gt: 0 }, remainingPieces: { lte: 0 } },
+    orderBy: { createdAt: "desc" },
+    include: { plan: { select: { name: true, autoRenew: true, coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } } },
+  })
+
+  const subs = [...activeSubs, ...exhaustedSubs]
   if (subs.length === 0) return NextResponse.json({ success: true, data: { active: null, history: [] } })
 
   const primary = subs[0]
+  const isExhausted = exhaustedSubs.some(s => s.id === primary.id)
   const serviceIds = [...new Set(primary.plan.coverageRules.map((r) => r.serviceId))]
   const services = serviceIds.length ? await prisma.laundryService.findMany({ where: { id: { in: serviceIds } }, select: { id: true, name: true } }) : []
   const svcName = new Map(services.map((s) => [s.id, s.name]))
@@ -33,9 +44,10 @@ export async function GET(request: Request) {
       allowancePieces: primary.allowancePieces, remainingPieces: primary.remainingPieces, usedPieces: primary.usedPieces,
       cycleStart: primary.currentPeriodStart, expiry: primary.currentPeriodEnd, renewalDate: primary.nextBillingDate, graceEndsAt: primary.graceEndsAt,
       eligibleServices: [...new Set(primary.plan.coverageRules.map((r) => svcName.get(r.serviceId)).filter(Boolean))],
+      exhausted: isExhausted,
     },
     // Consumption history / ledger (append-only).
     ledger: entries.map((e) => ({ at: e.createdAt, type: e.entryType, unit: e.unit, delta: e.delta, balanceAfter: e.balanceAfter, note: e.note })),
-    others: subs.slice(1).map((s) => ({ id: s.id, planName: s.plan.name, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, expiry: s.currentPeriodEnd })),
+    others: subs.slice(1).map((s) => ({ id: s.id, planName: s.plan.name, remainingKg: s.remainingKg, remainingPieces: s.remainingPieces, expiry: s.currentPeriodEnd, exhausted: exhaustedSubs.some(e => e.id === s.id) })),
   } })
 }

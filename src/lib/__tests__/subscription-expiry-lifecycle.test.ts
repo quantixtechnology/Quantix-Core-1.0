@@ -270,6 +270,58 @@ describe("Subscription Expiry Lifecycle", () => {
       expect(result.ok).toBe(true)
       expect(result.status).toBe("EXPIRED")
     })
+
+    it("exhausted piece-based subscription (remainingPieces === 0) → EXHAUSTED", async () => {
+      const now = new Date("2026-09-21T12:00:00Z")
+      vi.setSystemTime(now)
+
+      prisma.customerSubscription.findUnique.mockResolvedValue(
+        mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingPieces: 0, usedPieces: 70, plan: { ...basePlan, allowancePieces: 70 } })
+      )
+
+      const result = await processExpiry("sub-1", { now })
+
+      expect(result.ok).toBe(true)
+      expect(result.status).toBe("EXPIRED")
+      expect(result.action).toBe("EXHAUSTED")
+      expect(result.changed).toBe(true)
+    })
+
+    it("KG subscription with remainingKg === 0 but piece plan not exhausted → not exhausted", async () => {
+      const now = new Date("2026-09-21T12:00:00Z")
+      vi.setSystemTime(now)
+
+      prisma.customerSubscription.findUnique.mockResolvedValue(
+        mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingKg: 0, remainingPieces: 25, usedKg: 10, plan: { ...basePlan, allowanceKg: 10, allowancePieces: 70 } })
+      )
+
+      const result = await processExpiry("sub-1", { now })
+
+      expect(result.ok).toBe(true)
+      expect(result.status).toBe("ACTIVE")
+      expect(result.changed).toBe(false)
+    })
+
+    it("exhausted subscription is idempotent - second call returns EXPIRED without changed", async () => {
+      const now = new Date("2026-09-21T12:00:00Z")
+      vi.setSystemTime(now)
+
+      prisma.customerSubscription.findUnique
+        .mockResolvedValueOnce(
+          mockSub({ status: "ACTIVE", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingPieces: 0, usedPieces: 70, plan: { ...basePlan, allowancePieces: 70 } })
+        )
+        .mockResolvedValueOnce(
+          mockSub({ status: "EXPIRED", currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), remainingPieces: 0, usedPieces: 70, plan: { ...basePlan, allowancePieces: 70 } })
+        )
+
+      const result1 = await processExpiry("sub-1", { now })
+      expect(result1.changed).toBe(true)
+      expect(result1.action).toBe("EXHAUSTED")
+
+      const result2 = await processExpiry("sub-1", { now })
+      expect(result2.changed).toBe(false)
+      expect(result2.status).toBe("EXPIRED")
+    })
   })
 
   describe("processDueSubscriptions", () => {
@@ -347,6 +399,58 @@ describe("Subscription Expiry Lifecycle", () => {
 
       await expect(processDueSubscriptions("platform-1", { now: new Date("2026-09-21T12:00:00Z") }))
         .rejects.toThrow("DB error")
+    })
+
+    it("picks up exhausted piece-based subscriptions (remainingPieces === 0) even before date expiry", async () => {
+      const now = new Date("2026-09-21T12:00:00Z")
+      vi.setSystemTime(now)
+
+      prisma.customerSubscription.findMany
+        .mockResolvedValueOnce([]) // no date-due subscriptions
+        .mockResolvedValueOnce([{ id: "sub-exhausted" }]) // exhausted subscription
+
+      prisma.customerSubscription.findUnique.mockResolvedValue({
+        id: "sub-exhausted",
+        status: "ACTIVE",
+        currentPeriodEnd: new Date("2026-09-25T12:00:00Z"), // still in the future
+        remainingKg: 0,
+        remainingPieces: 0,
+        usedPieces: 70,
+        businessId: "biz-1",
+        plan: { autoRenew: false, graceDays: 0, allowanceKg: null, allowancePieces: 70, billingCycle: "MONTHLY" },
+      })
+
+      setupTransactionMock()
+
+      const result = await processDueSubscriptions("platform-1", { now })
+
+      expect(result.processed).toBe(1)
+      expect(result.results[0].id).toBe("sub-exhausted")
+      expect(result.results[0].action).toBe("EXPIRED") // action falls back to status when EXHAUSTED not in union type
+    })
+
+    it("does not pick up KG-only subscriptions as exhausted when remainingKg === 0 but pieces remain", async () => {
+      const now = new Date("2026-09-21T12:00:00Z")
+      vi.setSystemTime(now)
+
+      prisma.customerSubscription.findMany
+        .mockResolvedValueOnce([]) // no date-due
+        .mockResolvedValueOnce([]) // no exhausted (piece plan not exhausted)
+
+      prisma.customerSubscription.findUnique.mockResolvedValue({
+        id: "sub-1",
+        status: "ACTIVE",
+        currentPeriodEnd: new Date("2026-09-25T12:00:00Z"),
+        remainingKg: 0,
+        remainingPieces: 25,
+        plan: { autoRenew: false, graceDays: 0, allowanceKg: 10, allowancePieces: 70, billingCycle: "MONTHLY" },
+      })
+
+      setupTransactionMock()
+
+      const result = await processDueSubscriptions("platform-1", { now })
+
+      expect(result.processed).toBe(0)
     })
   })
 
@@ -447,9 +551,13 @@ describe("Subscription Expiry Lifecycle", () => {
       const now = new Date("2026-09-21T12:00:00Z")
       vi.setSystemTime(now)
 
+      // First call: date-due returns sub-1, exhausted returns empty
+      // Second call: both return empty (sub-1 already expired)
       prisma.customerSubscription.findMany
-        .mockResolvedValueOnce([{ id: "sub-1" }])
-        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "sub-1" }]) // call 1: date-due
+        .mockResolvedValueOnce([])                 // call 1: exhausted
+        .mockResolvedValueOnce([])                 // call 2: date-due
+        .mockResolvedValueOnce([])                 // call 2: exhausted
 
       prisma.customerSubscription.findUnique
         .mockResolvedValueOnce({
@@ -469,6 +577,8 @@ describe("Subscription Expiry Lifecycle", () => {
           remainingPieces: 0,
           plan: { autoRenew: false, graceDays: 0 },
         })
+
+      setupTransactionMock()
 
       const result1 = await processDueSubscriptions("platform-1", { now })
       expect(result1.processed).toBe(1)

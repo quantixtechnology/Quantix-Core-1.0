@@ -6,13 +6,13 @@
 // business logic — every number comes from the frozen engines via the API.
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock, Star, Send } from "lucide-react"
+import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock, Star, Send, AlertCircle } from "lucide-react"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
 
 const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`
 type View = "home" | "order" | "subscription" | "orders" | "orderDetail" | "profile"
-interface Me { id: string; name: string; phone: string; email: string | null; customerCode: string; walletBalance: number; company?: string | null; comm?: Record<string, boolean>; addresses: Addr[]; stats: Stats; subscription: { id: string; planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string } | null }
+interface Me { id: string; name: string; phone: string; email: string | null; customerCode: string; walletBalance: number; company?: string | null; comm?: Record<string, boolean>; addresses: Addr[]; stats: Stats; subscription: { id: string; planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string; exhausted?: boolean } | null }
 interface Stats { totalOrders: number; completed: number; cancelled: number; grossValue: number; outstanding: number; avgOrderValue: number }
 interface Addr { id: string; addressType?: string; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; isDefault?: boolean; isPickupDefault?: boolean; isDeliveryDefault?: boolean }
 interface Garment { garmentId: string; name: string; price: number; pricingType: string }
@@ -167,10 +167,18 @@ function HomeView({ me, go }: { me: Me; go: (v: View) => void }) {
         ))}
       </div>
       {me.subscription ? (
-        <button onClick={() => go("subscription")} className="w-full text-left rounded-xl bg-blue-600 text-white p-4">
-          <div className="flex items-center justify-between"><p className="font-semibold flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {me.subscription.planName}</p><ChevronRight className="h-4 w-4 opacity-70" /></div>
-          <div className="mt-2 flex gap-3 text-sm opacity-90">{me.subscription.remainingKg > 0 && <span>{me.subscription.remainingKg} KG left</span>}{me.subscription.remainingPieces > 0 && <span>{me.subscription.remainingPieces} pieces left</span>}</div>
-        </button>
+        (me.subscription as any).exhausted ? (
+          <div className="rounded-xl bg-rose-50 border border-rose-200 p-4">
+            <div className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-rose-600" /><p className="font-semibold text-rose-700">Subscription exhausted</p></div>
+            <p className="mt-2 text-sm text-rose-600">You have used all garments included in your subscription. Please renew your subscription to continue.</p>
+            <button onClick={() => go("subscription")} className="mt-3 w-full rounded-lg border border-rose-300 text-rose-700 py-2 text-sm font-medium">View Details</button>
+          </div>
+        ) : (
+          <button onClick={() => go("subscription")} className="w-full text-left rounded-xl bg-blue-600 text-white p-4">
+            <div className="flex items-center justify-between"><p className="font-semibold flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {me.subscription.planName}</p><ChevronRight className="h-4 w-4 opacity-70" /></div>
+            <div className="mt-2 flex gap-3 text-sm opacity-90">{me.subscription.remainingKg > 0 && <span>{me.subscription.remainingKg} KG left</span>}{me.subscription.remainingPieces > 0 && <span>{me.subscription.remainingPieces} pieces left</span>}</div>
+          </button>
+        )
       ) : (
         <div className="rounded-xl bg-white border border-slate-100 p-4 text-center text-sm text-slate-400">No active subscription</div>
       )}
@@ -298,12 +306,33 @@ function OrderView({ api, onPlaced, businessId }: { api: (p: string, o?: Request
 }
 
 function SubscriptionView({ api }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: unknown }> }) {
-  const [data, setData] = useState<{ active: { planName: string; status: string; remainingKg: number; allowanceKg: number; remainingPieces: number; allowancePieces: number; expiry: string; renewalDate: string; autoRenew: boolean; eligibleServices: string[] } | null; ledger?: { at: string; type: string; unit: string; delta: number; balanceAfter: number; note: string | null }[] } | null>(null)
+  const [data, setData] = useState<{ active: { planName: string; status: string; remainingKg: number; allowanceKg: number; remainingPieces: number; allowancePieces: number; expiry: string; renewalDate: string; autoRenew: boolean; eligibleServices: string[]; exhausted?: boolean } | null; ledger?: { at: string; type: string; unit: string; delta: number; balanceAfter: number; note: string | null }[] } | null>(null)
   const [loading, setLoading] = useState(true)
   useEffect(() => { api("/subscription").then((j) => setData(j.data as never)).finally(() => setLoading(false)) }, [api])
   if (loading) return <Center><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></Center>
   const a = data?.active
   if (!a) return <div className="p-6 text-center text-slate-400">No active subscription.</div>
+  if (a.exhausted) {
+    return (
+      <div className="p-4 space-y-4">
+        <div className="rounded-xl bg-rose-50 border border-rose-200 p-4">
+          <div className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-rose-600" /><p className="font-semibold text-rose-700">Subscription exhausted</p></div>
+          <p className="mt-2 text-sm text-rose-600">You have used all garments included in your subscription. Please renew your subscription to continue.</p>
+        </div>
+        <div className="rounded-xl bg-white border border-slate-100 p-3">
+          <p className="text-sm font-medium text-slate-700 mb-2">Consumption History</p>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {(data?.ledger || []).map((l, i) => (
+              <div key={i} className="flex items-center justify-between text-xs border-b border-slate-50 pb-1">
+                <div><p className="text-slate-600 capitalize">{l.type.toLowerCase()} · {l.unit}</p><p className="text-[10px] text-slate-400">{new Date(l.at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}{l.note ? ` · ${l.note}` : ""}</p></div>
+                <span className={l.delta < 0 ? "text-rose-600" : "text-emerald-600"}>{l.delta > 0 ? "+" : ""}{l.delta} → {l.balanceAfter}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="p-4 space-y-4">
       <div className="rounded-xl bg-blue-600 text-white p-4">
