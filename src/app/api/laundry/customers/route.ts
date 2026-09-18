@@ -35,9 +35,15 @@ export async function GET(request: Request) {
     if (subscription === "active") {
       const subCustomers = await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId, status: { in: ["ACTIVE", "GRACE"] } }, select: { customerId: true } })
       where.id = { in: [...new Set(subCustomers.map((s) => s.customerId))] }
+    } else if (subscription === "inactive") {
+      const subCustomers = await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId, status: { in: ["EXPIRED", "CANCELLED", "PAUSED", "SUSPENDED"] } }, select: { customerId: true } })
+      where.id = { in: [...new Set(subCustomers.map((s) => s.customerId))] }
+    } else if (subscription === "not_subscribed") {
+      const subCustomers = await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId }, select: { customerId: true } })
+      where.id = { notIn: [...new Set(subCustomers.map((s) => s.customerId))] }
     }
 
-    const [rows, total, totalCustomers, activeCustomers, activeMemberships] = await Promise.all([
+    const [rows, total, totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, noSubscriptionCustomers] = await Promise.all([
       prisma.customer.findMany({
         where: where as never,
         select: {
@@ -54,6 +60,13 @@ export async function GET(request: Request) {
       // Real count of customers with an ACTIVE subscription — not a page count,
       // not fabricated. Read-only; does not touch subscription logic.
       prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "ACTIVE" } }),
+      prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "EXPIRED" } }),
+      prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "CANCELLED" } }),
+      prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "PAUSED" } }),
+      prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "SUSPENDED" } }),
+      prisma.customer.count({
+        where: { businessId: biz.platformBusinessId, NOT: { id: { in: await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId }, select: { customerId: true } }).then((s) => s.map((x) => x.customerId)) } } },
+      }),
     ])
     // ── Membership state for the rows on THIS page ──────────────────────────
     // The list showed loyaltyTier ("BRONZE"), which says nothing about whether
@@ -91,7 +104,7 @@ export async function GET(request: Request) {
       }
     })
 
-    return NextResponse.json({ success: true, data, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships } })
+    return NextResponse.json({ success: true, data, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, inactiveMemberships: expiredMemberships + cancelledMemberships + pausedMemberships + suspendedMemberships, noSubscriptionCustomers } })
   } catch (e) {
     console.error("[laundry-customers] GET list", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

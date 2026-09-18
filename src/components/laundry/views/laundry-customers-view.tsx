@@ -123,13 +123,14 @@ export function LaundryCustomersView() {
   }, [])
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
-  const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0 })
+  const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0, expiredMemberships: 0, cancelledMemberships: 0, pausedMemberships: 0, suspendedMemberships: 0, inactiveMemberships: 0, noSubscriptionCustomers: 0 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(50)
   const [showArchived, setShowArchived] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [subTab, setSubTab] = useState<"all" | "active" | "inactive" | "not_subscribed">("all")
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -217,11 +218,12 @@ export function LaundryCustomersView() {
       const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(pageSize), offset: String(page * pageSize) })
       if (search.trim()) params.set("q", search.trim())
       if (showArchived) params.set("includeArchived", "1")
+      if (subTab !== "all") params.set("subscription", subTab)
       const json = await fetch(`/api/laundry/customers?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
       if (json.summary) setSummary(json.summary)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, pageSize, search, showArchived])
+  }, [currentBusinessId, page, pageSize, search, showArchived, subTab])
   useEffect(() => { load() }, [load])
 
   // ── Customer 360 lazy loaders (first activation of a tab only) ─────────────
@@ -520,9 +522,24 @@ export function LaundryCustomersView() {
 
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardContent className="p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="relative max-w-md flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search by name, mobile, email or customer ID…" className="pl-9 h-9 bg-slate-50 border-slate-200" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} /></div>
-            <label className="flex items-center gap-2 text-xs text-slate-500 shrink-0 cursor-pointer select-none"><input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0) }} /> Show Archived</label>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative max-w-md flex-1 min-w-0"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search by name, mobile, email or customer ID…" className="pl-9 h-9 bg-slate-50 border-slate-200" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} /></div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="flex items-center gap-2 text-xs text-slate-500 shrink-0 cursor-pointer select-none"><input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0) }} /> Show Archived</label>
+              <div className="flex items-center gap-1 border border-slate-200 rounded-lg bg-white p-1" role="tablist" aria-label="Subscription status">
+                {[
+                  { key: "all", label: "All", count: summary.totalCustomers },
+                  { key: "active", label: "Subscribed – Active", count: summary.activeMemberships },
+                  { key: "inactive", label: "Subscribed – Inactive", count: summary.inactiveMemberships || 0 },
+                  { key: "not_subscribed", label: "Not Subscribed", count: summary.noSubscriptionCustomers || 0 },
+                ].map((t) => (
+                  <button key={t.key} role="tab" aria-selected={subTab === t.key} onClick={() => { setSubTab(t.key as any); setPage(0) }} className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${subTab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+                    {t.label}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${subTab === t.key ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"}`}>{t.count || 0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
