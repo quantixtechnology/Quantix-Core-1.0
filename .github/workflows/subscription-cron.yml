@@ -1,0 +1,86 @@
+name: Subscription Expiry Cron
+
+# Runs daily at 03:00 UTC to process subscription expiries/renewals for all Laundry businesses.
+# Calls the internal /api/laundry/subscriptions/process-due endpoint secured by CRON_SECRET.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # 03:00 UTC daily
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  process-due-subscriptions:
+    name: Process Due Subscriptions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate secrets
+        run: |
+          MISSING=""
+          [ -z "${{ secrets.CRON_SECRET }}" ] && MISSING="$MISSING CRON_SECRET"
+          [ -z "${{ secrets.DEPLOY_APP_URL }}" ] && MISSING="$MISSING DEPLOY_APP_URL"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
+            echo ""
+            echo "Add these in: GitHub repo → Settings → Secrets → Actions"
+            echo "  CRON_SECRET          random 32-char string (same value in VPS .env)"
+            echo "  DEPLOY_APP_URL       e.g. https://app.quantixtechnology.in"
+            exit 1
+          fi
+          echo "✅ Secrets present"
+
+      - name: Call subscription expiry endpoint
+        id: cron
+        run: |
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.CRON_SECRET }}"
+          VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
+
+          RESOLVE_FLAG=""
+          if [ -n "$VPS_IP" ]; then
+            HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
+            if echo "$VPS_IP" | grep -q ':'; then
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
+            else
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            fi
+          fi
+
+          echo "POST ${APP_URL}/api/laundry/subscriptions/process-due"
+          echo ""
+
+          curl -i --max-time 60 \
+            $RESOLVE_FLAG \
+            -X POST \
+            -H "Authorization: Bearer ${SECRET}" \
+            -H "Content-Type: application/json" \
+            "${APP_URL}/api/laundry/subscriptions/process-due" > /tmp/cron_response.txt 2>&1
+
+          HTTP_CODE=$(head -1 /tmp/cron_response.txt | grep -oE '[0-9]+' | head -1)
+          echo "HTTP Status: ${HTTP_CODE}"
+          echo ""
+          echo "Response body:"
+          tail -n +2 /tmp/cron_response.txt | head -c 2000
+          echo ""
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Cron job completed successfully"
+            exit 0
+          else
+            echo "❌ Cron job failed (HTTP ${HTTP_CODE})"
+            exit 1
+          fi
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  CRON RESPONSE (Raw)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -f /tmp/cron_response.txt ]; then
+            head -100 /tmp/cron_response.txt
+          else
+            echo "No response captured"
+          fi
