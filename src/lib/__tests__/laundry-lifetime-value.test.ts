@@ -113,6 +113,10 @@ describe("Laundry Customers API - Lifetime Value", () => {
       { id: "cust-1", name: "John Doe", phone: "9999999999", email: "john@test.com", customerCode: "CUST001", loyaltyTier: "SILVER", walletBalance: 0, totalOrders: 5, totalSpent: 70, status: "ACTIVE", isActive: true, lastOrderAt: new Date(), createdAt: new Date() },
       { id: "cust-2", name: "Jane Smith", phone: "8888888888", email: "jane@test.com", customerCode: "CUST002", loyaltyTier: "BRONZE", walletBalance: 0, totalOrders: 2, totalSpent: 150, status: "ACTIVE", isActive: true, lastOrderAt: new Date(), createdAt: new Date() },
     ])
+    prisma.laundryOrder.findMany.mockResolvedValue([
+      { customerId: "cust-1", amountPaid: 70, grandTotal: 70, status: "DELIVERED", paymentStatus: "PAID" },
+      { customerId: "cust-2", amountPaid: 150, grandTotal: 150, status: "DELIVERED", paymentStatus: "PAID" },
+    ])
     prisma.customer.count
       .mockResolvedValueOnce(2) // total
       .mockResolvedValueOnce(2) // activeCustomers
@@ -170,6 +174,7 @@ describe("Laundry Customers API - Lifetime Value", () => {
     prisma.customer.findMany.mockResolvedValue([
       { id: "cust-3", name: "New Customer", phone: "7777777777", email: "new@test.com", customerCode: "CUST003", loyaltyTier: "BRONZE", walletBalance: 0, totalOrders: 0, totalSpent: 0, status: "ACTIVE", isActive: true, lastOrderAt: null, createdAt: new Date() },
     ])
+    prisma.laundryOrder.findMany.mockResolvedValue([])
     prisma.customer.count
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(1)
@@ -199,6 +204,11 @@ describe("Laundry Customers API - Lifetime Value", () => {
   it("accumulates multiple Laundry orders correctly", async () => {
     prisma.customer.findMany.mockResolvedValue([
       { id: "cust-4", name: "Multi Order Customer", phone: "6666666666", email: "multi@test.com", customerCode: "CUST004", loyaltyTier: "GOLD", walletBalance: 0, totalOrders: 3, totalSpent: 210, status: "ACTIVE", isActive: true, lastOrderAt: new Date(), createdAt: new Date() },
+    ])
+    prisma.laundryOrder.findMany.mockResolvedValue([
+      { customerId: "cust-4", amountPaid: 70, grandTotal: 70, status: "DELIVERED", paymentStatus: "PAID" },
+      { customerId: "cust-4", amountPaid: 70, grandTotal: 70, status: "DELIVERED", paymentStatus: "PAID" },
+      { customerId: "cust-4", amountPaid: 70, grandTotal: 70, status: "DELIVERED", paymentStatus: "PAID" },
     ])
     prisma.customer.count
       .mockResolvedValueOnce(1)
@@ -251,6 +261,9 @@ describe("Laundry Customers API - Lifetime Value", () => {
       { customerId: "cust-5", amountPaid: 499 },
       { customerId: "cust-5", amountPaid: 499 }, // two subscription purchases
     ])
+    prisma.laundryOrder.findMany.mockResolvedValue([
+      { customerId: "cust-5", amountPaid: 200, grandTotal: 200, status: "DELIVERED", paymentStatus: "PAID" },
+    ])
     prisma.customerSubscription.findMany.mockResolvedValue([
       {
         customerId: "cust-5",
@@ -296,6 +309,9 @@ describe("Laundry Customers API - Lifetime Value", () => {
       .mockResolvedValueOnce([])
     prisma.subscriptionPurchase.findMany.mockResolvedValue([
       { customerId: "cust-6", amountPaid: 499 },
+    ])
+    prisma.laundryOrder.findMany.mockResolvedValue([
+      { customerId: "cust-6", amountPaid: 499, grandTotal: 499, status: "DELIVERED", paymentStatus: "PAID" },
     ])
     prisma.customerSubscription.findMany.mockResolvedValue([
       {

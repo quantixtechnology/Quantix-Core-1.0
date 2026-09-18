@@ -103,9 +103,28 @@ export async function GET(request: Request) {
       if (!held || (live(s) && !live(held))) subByCustomer.set(s.customerId, s)
     }
 
+    // Calculate actual collected amount from normal laundry orders (amountPaid) for each customer on this page
+    const collectedByCustomer = new Map<string, number>()
+    if (pageIds.length > 0) {
+      const paidOrders = await prisma.laundryOrder.findMany({
+        where: {
+          businessId: biz.platformBusinessId,
+          customerId: { in: pageIds },
+          status: { notIn: ["CANCELLED"] },
+        },
+        select: { customerId: true, amountPaid: true },
+      })
+      for (const o of paidOrders) {
+        if (!o.customerId) continue
+        const current = collectedByCustomer.get(o.customerId) || 0
+        collectedByCustomer.set(o.customerId, current + (o.amountPaid || 0))
+      }
+    }
+
     // Calculate subscription purchase totals per customer for Lifetime Value
     const subscriptionSpentByCustomer = new Map<string, number>()
     for (const p of subscriptionPurchases) {
+      if (!p.customerId) continue
       const current = subscriptionSpentByCustomer.get(p.customerId) || 0
       subscriptionSpentByCustomer.set(p.customerId, current + (p.amountPaid || 0))
     }
@@ -113,8 +132,9 @@ export async function GET(request: Request) {
     const now = new Date()
     const data = rows.map((r) => {
       const s = subByCustomer.get(r.id)
+      const collectedFromOrders = collectedByCustomer.get(r.id) || 0
       const subSpent = subscriptionSpentByCustomer.get(r.id) || 0
-      const lifetimeValue = (r.totalSpent || 0) + subSpent
+      const lifetimeValue = collectedFromOrders + subSpent
       const subscription = s ? {
         id: s.id,
         status: s.status,
