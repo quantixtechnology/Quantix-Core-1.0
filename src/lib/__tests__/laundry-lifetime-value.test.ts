@@ -166,8 +166,23 @@ describe("Laundry Customers API - Lifetime Value", () => {
     const cust1 = data.data.find((c) => c.id === "cust-1")
     const cust2 = data.data.find((c) => c.id === "cust-2")
 
-    expect(cust1.lifetimeValue).toBe(569) // 70 (totalSpent) + 499 (subscription)
-    expect(cust2.lifetimeValue).toBe(150) // 150 (totalSpent) + 0 (no subscription)
+    expect(cust1.lifetimeValue).toBe(569) // 70 (amountPaid) + 499 (subscription)
+    expect(cust2.lifetimeValue).toBe(150) // 150 (amountPaid) + 0 (no subscription)
+  })
+
+  it("scopes the Lifetime Value order query by LaundryBusiness id, not platformBusinessId (real data path)", async () => {
+    // Regression guard for the production bug that showed ₹0 for customers with
+    // paid orders: LaundryOrder.businessId stores the LaundryBusiness id (what
+    // Payment Collection reads), while Customer.businessId stores the platform
+    // Business id. The old query filtered orders by platformBusinessId, which
+    // matched zero rows → collected contribution was always 0.
+    setupMocks()
+
+    await GET( mockRequest({ businessId: "biz-1" }) )
+
+    const orderWhere = (prisma.laundryOrder.findMany as unknown as { mock: { calls: Array<Array<{ where?: Record<string, unknown> }>> } }).mock.calls[0][0]?.where
+    expect(orderWhere?.businessId).toBe("biz-1")
+    expect(orderWhere?.customerId).toEqual({ in: ["cust-1", "cust-2"] })
   })
 
   it("shows 0 for customer with no orders and no subscription", async () => {
