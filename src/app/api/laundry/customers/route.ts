@@ -104,11 +104,13 @@ export async function GET(request: Request) {
     }
 
     // Calculate actual collected amount from normal laundry orders (amountPaid) for each customer on this page
+    // LaundryOrder.businessId stores the LaundryBusiness id (same scoping Payment
+    // Collection uses) — the platform Business id would match zero orders.
     const collectedByCustomer = new Map<string, number>()
     if (pageIds.length > 0) {
       const paidOrders = await prisma.laundryOrder.findMany({
         where: {
-          businessId: biz.platformBusinessId,
+          businessId: biz.id,
           customerId: { in: pageIds },
           status: { notIn: ["CANCELLED"] },
         },
