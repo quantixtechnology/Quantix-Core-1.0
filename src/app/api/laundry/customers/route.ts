@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       where.id = { notIn: [...new Set(subCustomers.map((s) => s.customerId))] }
     }
 
-    const [rows, total, totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, noSubscriptionCustomers] = await Promise.all([
+    const [rows, total, totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, noSubscriptionCustomers, subscriptionPurchases] = await Promise.all([
       prisma.customer.findMany({
         where: where as never,
         select: {
@@ -67,20 +67,27 @@ export async function GET(request: Request) {
       prisma.customer.count({
         where: { businessId: biz.platformBusinessId, NOT: { id: { in: await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId }, select: { customerId: true } }).then((s) => s.map((x) => x.customerId)) } } },
       }),
+      // Fetch subscription purchases to calculate Lifetime Value including subscription purchases
+      prisma.subscriptionPurchase.findMany({
+        where: { businessId: biz.platformBusinessId, status: "ACTIVATED" },
+        select: { customerId: true, amountPaid: true },
+      }),
     ])
-    // ── Membership state for the rows on THIS page ──────────────────────────
+    // ── Membership state & subscription allowance for the rows on THIS page ──────────────────────────
     // The list showed loyaltyTier ("BRONZE"), which says nothing about whether
     // the customer holds a subscription. One query for the page's customers —
     // not one per row — and the state is decided by membershipState(), the same
     // branches processExpiry() applies. Read-only: nothing here renews, expires
     // or cancels anything.
     const pageIds = rows.map((r) => r.id)
-    const subs = pageIds.length
+    const subscriptionDetails = pageIds.length
       ? await prisma.customerSubscription.findMany({
           where: { businessId: biz.platformBusinessId, customerId: { in: pageIds } },
           select: {
             customerId: true, status: true, currentPeriodEnd: true, graceEndsAt: true,
-            plan: { select: { name: true, autoRenew: true, graceDays: true } },
+            plan: { select: { name: true, autoRenew: true, graceDays: true, allowanceKg: true, allowancePieces: true } },
+            usedKg: true, usedPieces: true, remainingKg: true, remainingPieces: true,
+            allowanceKg: true, allowancePieces: true,
           },
           orderBy: { currentPeriodEnd: "desc" },
         })
@@ -88,17 +95,44 @@ export async function GET(request: Request) {
     // A customer may hold more than one row over time. Prefer the one the rest
     // of the system treats as live (ACTIVE/GRACE); otherwise the most recent,
     // which is what "has/had a subscription" means on this screen.
-    const subByCustomer = new Map<string, (typeof subs)[number]>()
-    for (const s of subs) {
+    const subByCustomer = new Map<string, (typeof subscriptionDetails)[number]>()
+    for (const s of subscriptionDetails) {
       const held = subByCustomer.get(s.customerId)
-      const live = (x: (typeof subs)[number]) => x.status === "ACTIVE" || x.status === "GRACE"
+      const live = (x: (typeof subscriptionDetails)[number]) => x.status === "ACTIVE" || x.status === "GRACE"
       if (!held || (live(s) && !live(held))) subByCustomer.set(s.customerId, s)
     }
+
+    // Calculate subscription purchase totals per customer for Lifetime Value
+    const subscriptionSpentByCustomer = new Map<string, number>()
+    for (const p of subscriptionPurchases) {
+      const current = subscriptionSpentByCustomer.get(p.customerId) || 0
+      subscriptionSpentByCustomer.set(p.customerId, current + (p.amountPaid || 0))
+    }
+
     const now = new Date()
     const data = rows.map((r) => {
       const s = subByCustomer.get(r.id)
+      const subSpent = subscriptionSpentByCustomer.get(r.id) || 0
+      const lifetimeValue = (r.totalSpent || 0) + subSpent
+      const subscription = s ? {
+        id: s.id,
+        status: s.status,
+        planName: s.plan?.name ?? null,
+        allowanceKg: s.allowanceKg,
+        usedKg: s.usedKg,
+        remainingKg: s.remainingKg,
+        allowancePieces: s.allowancePieces,
+        usedPieces: s.usedPieces,
+        remainingPieces: s.remainingPieces,
+        currentPeriodEnd: s.currentPeriodEnd,
+        graceEndsAt: s.graceEndsAt,
+        plan: s.plan,
+      } : null
+
       return {
         ...r,
+        lifetimeValue,
+        subscription,
         membershipState: membershipState(s ? { ...s, autoRenew: s.plan?.autoRenew, graceDays: s.plan?.graceDays } : null, now),
         membershipPlanName: s?.plan?.name ?? null,
       }

@@ -38,6 +38,14 @@ interface Row {
   status: string; isActive: boolean; lastOrderAt: string | null; createdAt: string
   /** Decided by the API through membershipState() — never from loyaltyTier. */
   membershipState?: MembershipState; membershipPlanName?: string | null
+  lifetimeValue?: number
+  subscription?: {
+    id: string; status: string; planName: string | null
+    allowanceKg: number | null; usedKg: number; remainingKg: number
+    allowancePieces: number | null; usedPieces: number; remainingPieces: number
+    currentPeriodEnd: string | null; graceEndsAt: string | null
+    plan: { name: string; autoRenew: boolean; graceDays: number; allowanceKg: number | null; allowancePieces: number | null } | null
+  } | null
 }
 interface Addr { id: string; addressType?: string; label?: string | null; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; country: string; isDefault?: boolean; isPickupDefault?: boolean; isDeliveryDefault?: boolean }
 interface CustStats { totalOrders: number; completed: number; cancelled: number; grossValue: number; collected: number; outstanding: number; subsidised?: number; avgOrderValue: number; lastOrderAt: string | null; activeOrders?: number; memberSince?: string | null; subscription?: { planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string } | null }
@@ -554,11 +562,39 @@ export function LaundryCustomersView() {
             <Table>
               <TableHeader><TableRow className="text-[11px] uppercase tracking-wide">
                 <TableHead className="w-[26%]">Customer</TableHead><TableHead className="w-[22%]">Contact</TableHead><TableHead className="hidden md:table-cell">Created Date</TableHead><TableHead>Membership</TableHead>
-                <TableHead className="text-right">Wallet</TableHead>
+                <TableHead className="text-right">Subscription Usage</TableHead>
                 <TableHead className="text-right">Lifetime Value</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {rows.map((c) => (
+                {rows.map((c) => {
+                  const sub = c.subscription
+                  let usageText = "—"
+                  let usageColor = "text-slate-400"
+                  if (sub) {
+                    const usedPieces = (sub.allowancePieces || 0) - (sub.remainingPieces || 0)
+                    const usedKg = Math.max(0, (sub.allowanceKg || 0) - (sub.remainingKg || 0))
+                    const hasPieces = (sub.allowancePieces || 0) > 0
+                    const hasKg = (sub.allowanceKg || 0) > 0
+
+                    if (hasPieces && hasKg) {
+                      usageText = `${usedPieces} / ${sub.allowancePieces} Clothes · ${usedKg.toFixed(1)} / ${sub.allowanceKg} KG`
+                    } else if (hasPieces) {
+                      usageText = `${usedPieces} / ${sub.allowancePieces} Clothes`
+                    } else if (hasKg) {
+                      usageText = `${usedKg.toFixed(1)} / ${sub.allowanceKg} KG`
+                    } else {
+                      usageText = "—"
+                    }
+
+                    // Color based on subscription status
+                    if (sub.status === "ACTIVE" || sub.status === "GRACE") {
+                      usageColor = "text-emerald-700"
+                    } else if (sub.status === "EXPIRED" || sub.status === "CANCELLED" || sub.status === "PAUSED" || sub.status === "SUSPENDED") {
+                      usageColor = "text-rose-600"
+                    }
+                  }
+
+                  return (
                   <TableRow key={c.id} className={c.isActive ? "" : "opacity-60 bg-slate-50/50"}>
                     <TableCell><div className="flex items-center gap-2.5"><Avatar className="h-9 w-9"><AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">{initials(c.name)}</AvatarFallback></Avatar><div><p className="text-sm font-medium text-slate-800">{c.name}</p><p className="text-[11px] text-slate-400 font-mono">{c.customerCode || "—"}</p></div></div></TableCell>
                     <TableCell><p className="text-sm text-slate-600">{c.phone || "—"}</p><p className="text-[11px] text-slate-400">{c.email || ""}</p></TableCell>
@@ -575,8 +611,8 @@ export function LaundryCustomersView() {
                         {M_ROW_STATE[c.membershipState || "NONE"].label}
                       </p>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{inr(c.walletBalance)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{inr(c.totalSpent)}</TableCell>
+                    <TableCell className="text-right tabular-nums"><span className={usageColor}>{usageText}</span></TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">{inr((c.lifetimeValue ?? c.totalSpent))}</TableCell>
                     <TableCell><Badge variant="outline" className={c.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-amber-300 text-amber-600 bg-amber-50"}>{c.isActive ? "Active" : c.status === "MERGED" ? "Archived · Merged" : "Archived"}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -591,7 +627,8 @@ export function LaundryCustomersView() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}
