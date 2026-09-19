@@ -43,6 +43,22 @@ export async function GET(request: Request) {
       where.id = { notIn: [...new Set(subCustomers.map((s) => s.customerId))] }
     }
 
+    // Part 10: Ordered / Not Ordered — based ONLY on whether the customer has
+    // any LaundryOrder row (not payment status, not Lifetime Value, not
+    // subscription state, not outstanding balance). The same real-order source
+    // Payment Collection uses: LaundryOrder is scoped by the LaundryBusiness id
+    // (biz.id), which is what the fix for Lifetime Value reads too. A single
+    // business-wide groupBy feeds BOTH the page filter and the chip counts, so
+    // there is no second query and the chips are never a page count.
+    const ordered = sp.get("ordered") // "1" = has >=1 order, "0" = no orders
+    const orderedRows = ((await (prisma.laundryOrder.groupBy as any)?.({ by: ["customerId"], where: { businessId: biz.id }, _count: { _all: true } })) || []) as { customerId: string }[]
+    const orderedCustomers = [...new Set(orderedRows.map((o) => o.customerId).filter(Boolean))] as string[]
+    if (ordered === "1" || ordered === "0") {
+      const orderedIds = new Set(orderedCustomers)
+      const clause = ordered === "1" ? { id: { in: orderedIds } } : { id: { notIn: orderedIds } }
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause]
+    }
+
     const [rows, total, totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, noSubscriptionCustomers, subscriptionPurchases] = await Promise.all([
       prisma.customer.findMany({
         where: where as never,
@@ -161,7 +177,7 @@ export async function GET(request: Request) {
       }
     })
 
-    return NextResponse.json({ success: true, data, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, inactiveMemberships: expiredMemberships + cancelledMemberships + pausedMemberships + suspendedMemberships, noSubscriptionCustomers } })
+    return NextResponse.json({ success: true, data, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships, expiredMemberships, cancelledMemberships, pausedMemberships, suspendedMemberships, inactiveMemberships: expiredMemberships + cancelledMemberships + pausedMemberships + suspendedMemberships, noSubscriptionCustomers, orderedCustomers: orderedCustomers.length, notOrderedCustomers: totalCustomers - orderedCustomers.length } })
   } catch (e) {
     console.error("[laundry-customers] GET list", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

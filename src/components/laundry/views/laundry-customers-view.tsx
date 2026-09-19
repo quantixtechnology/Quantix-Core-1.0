@@ -131,7 +131,7 @@ export function LaundryCustomersView() {
   }, [])
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
-  const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0, expiredMemberships: 0, cancelledMemberships: 0, pausedMemberships: 0, suspendedMemberships: 0, inactiveMemberships: 0, noSubscriptionCustomers: 0 })
+  const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0, expiredMemberships: 0, cancelledMemberships: 0, pausedMemberships: 0, suspendedMemberships: 0, inactiveMemberships: 0, noSubscriptionCustomers: 0, orderedCustomers: 0, notOrderedCustomers: 0 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
@@ -139,6 +139,7 @@ export function LaundryCustomersView() {
   const [showArchived, setShowArchived] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [subTab, setSubTab] = useState<"all" | "active" | "inactive" | "not_subscribed">("all")
+  const [orderTab, setOrderTab] = useState<"all" | "ordered" | "not_ordered">("all")
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -227,11 +228,12 @@ export function LaundryCustomersView() {
       if (search.trim()) params.set("q", search.trim())
       if (showArchived) params.set("includeArchived", "1")
       if (subTab !== "all") params.set("subscription", subTab)
+      if (orderTab !== "all") params.set("ordered", orderTab === "ordered" ? "1" : "0")
       const json = await fetch(`/api/laundry/customers?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
       if (json.summary) setSummary(json.summary)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, pageSize, search, showArchived, subTab])
+  }, [currentBusinessId, page, pageSize, search, showArchived, subTab, orderTab])
   useEffect(() => { load() }, [load])
 
   // ── Customer 360 lazy loaders (first activation of a tab only) ─────────────
@@ -546,14 +548,22 @@ export function LaundryCustomersView() {
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${subTab === t.key ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"}`}>{t.count || 0}</span>
                   </button>
                 ))}
+              <div className="flex items-center gap-1 border border-slate-200 rounded-lg bg-white p-1 mt-2" role="tablist" aria-label="Order status">
+                {[
+                  { key: "all", label: "All", count: summary.totalCustomers },
+                  { key: "ordered", label: "Ordered", count: summary.orderedCustomers || 0 },
+                  { key: "not_ordered", label: "Not Ordered", count: summary.notOrderedCustomers || 0 },
+                ].map((t) => (
+                  <button key={t.key} role="tab" aria-selected={orderTab === t.key} onClick={() => { setOrderTab(t.key as any); setPage(0) }} className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${orderTab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
+                    {t.label}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${orderTab === t.key ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"}`}>{t.count || 0}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          </div>
 
-      <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-slate-400 gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
           ) : rows.length === 0 ? (
