@@ -101,11 +101,15 @@ trap 'code=$?; cleanup_candidate; if [ "$code" != "0" ]; then status "$CURRENT_S
 # concurrent invocation must never delete the running deploy's lock.
 trap 'cleanup_candidate; [ -n "$LOCK_ACQUIRED" ] && rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$ROUTE_LOCK_FILE" 2>/dev/null; true' EXIT
 
-# Handle stale lock directory: if it exists but is >30 min old, assume previous deploy crashed and clean it
+# Handle stale lock directory: if it exists but route lock file is missing,
+# the previous deploy's route lock was cleaned up but script lock remains — clean it.
+# Also clean if directory is >30 min old (crashed deploy).
 if [ -d "$LOCK_DIR" ]; then
   LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
-  if [ "$LOCK_AGE" -gt 1800 ]; then
-    log "⚠️  Stale lock directory found (age ${LOCK_AGE}s) — removing"
+  ROUTE_LOCK_EXISTS=0
+  [ -f "$ROUTE_LOCK_FILE" ] && ROUTE_LOCK_EXISTS=1
+  if [ "$LOCK_AGE" -gt 1800 ] || [ "$ROUTE_LOCK_EXISTS" -eq 0 ]; then
+    log "⚠️  Stale/orphaned lock directory found (age ${LOCK_AGE}s, route_lock=${ROUTE_LOCK_EXISTS}) — removing"
     rmdir "$LOCK_DIR" 2>/dev/null || true
   fi
 fi
