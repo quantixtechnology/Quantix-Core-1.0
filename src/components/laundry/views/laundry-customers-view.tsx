@@ -548,17 +548,15 @@ export function LaundryCustomersView() {
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${subTab === t.key ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"}`}>{t.count || 0}</span>
                   </button>
                 ))}
-              <div className="flex items-center gap-1 border border-slate-200 rounded-lg bg-white p-1 mt-2" role="tablist" aria-label="Order status">
-                {[
-                  { key: "all", label: "All", count: summary.totalCustomers },
-                  { key: "ordered", label: "Ordered", count: summary.orderedCustomers || 0 },
-                  { key: "not_ordered", label: "Not Ordered", count: summary.notOrderedCustomers || 0 },
-                ].map((t) => (
-                  <button key={t.key} role="tab" aria-selected={orderTab === t.key} onClick={() => { setOrderTab(t.key as any); setPage(0) }} className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${orderTab === t.key ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
-                    {t.label}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${orderTab === t.key ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"}`}>{t.count || 0}</span>
-                  </button>
-                ))}
+              <div className="mt-2">
+                <label htmlFor="order-status-filter" className="flex items-center gap-2 text-xs text-slate-500">
+                  Order Status:
+                  <select id="order-status-filter" value={orderTab} onChange={(e) => { setOrderTab(e.target.value as any); setPage(0) }} className="h-9 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                    <option value="all">All Customers ({summary.totalCustomers})</option>
+                    <option value="ordered">Ordered ({summary.orderedCustomers || 0})</option>
+                    <option value="not_ordered">Not Ordered ({summary.notOrderedCustomers || 0})</option>
+                  </select>
+                </label>
               </div>
             </div>
           </div>
