@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     ])
     const orderedCustomers = [...new Set([...lvOrderRows, ...lvSubRows].map((o) => o.customerId).filter(Boolean))] as string[]
     if (ordered === "1" || ordered === "0") {
-      const orderedIds = new Set(orderedCustomers)
+      const orderedIds = [...new Set(orderedCustomers)]
       const clause = ordered === "1" ? { id: { in: orderedIds } } : { id: { notIn: orderedIds } }
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), clause]
     }
