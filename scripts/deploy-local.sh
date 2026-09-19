@@ -31,9 +31,12 @@
 
 set -euo pipefail
 
+# ─── Earliest test — verify script execution ──────────────────────────────────
+touch /tmp/quantix-deploy-test.$(date +%s)
+
 # ─── Earliest status write — before any git operations ─────────────────────────
 START_EPOCH=$(date +%s)
-STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ")
 CURRENT_STEP="pre-init"
 COMMIT="unknown"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
