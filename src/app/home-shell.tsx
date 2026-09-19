@@ -43,6 +43,7 @@ function StorefrontContextLoader({
     setOrderStages, setImageConfig, setBusinessTheme,
     setStorefrontWhyChooseUs, setStorefrontPromiseBar,
     setPwaAppearance,
+    setStorefrontSupportContact,
   } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
   const { isAuthenticated, currentRole } = useAuthStore()
@@ -94,6 +95,12 @@ function StorefrontContextLoader({
         // Business-controlled homepage content — always set (empty = hide section)
         setStorefrontWhyChooseUs(json.data.whyChooseUs || [])
         setStorefrontPromiseBar(json.data.promiseBar || [])
+        // Save support contact for Customer Profile page
+        setStorefrontSupportContact(
+          biz.supportPhone ?? null,
+          biz.supportPhone2 ?? null,
+          biz.supportEmail ?? null
+        )
         setViewMode("customer")
         onLoaded()
       })

@@ -579,6 +579,12 @@ interface AdminState {
   currentPwaAppearance: PwaAppearance
   setPwaAppearance: (appearance: Partial<PwaAppearance>) => void
 
+  // ── Storefront support contact (hydrated from store-context API) ───────────
+  storefrontSupportPhone: string | null
+  storefrontSupportPhone2: string | null
+  storefrontSupportEmail: string | null
+  setStorefrontSupportContact: (phone: string | null, phone2: string | null, email: string | null) => void
+
   // ── Customer invoice navigation ─────────────────────────────────────────
   selectedInvoiceId: string | null
   setSelectedInvoiceId: (id: string | null) => void
@@ -826,6 +832,16 @@ export const useAdminStore = create<AdminState>((set) => ({
   setPwaAppearance: (appearance) => set((s) => ({
     currentPwaAppearance: { ...s.currentPwaAppearance, ...appearance },
   })),
+
+  // Storefront support contact
+  storefrontSupportPhone: null,
+  storefrontSupportPhone2: null,
+  storefrontSupportEmail: null,
+  setStorefrontSupportContact: (phone, phone2, email) => set({
+    storefrontSupportPhone: phone,
+    storefrontSupportPhone2: phone2,
+    storefrontSupportEmail: email,
+  }),
 
   // Customer invoice navigation
   selectedInvoiceId: null,

@@ -10,6 +10,7 @@ import { showSuccess, showError } from "@/lib/toast-utils"
 import {
   ChevronRight, Package, MapPin, Heart, HeadphonesIcon, Info,
   LogOut, User, Shield, Store, Settings, Edit2, Check, X, Loader2, Tag, FileText,
+  Phone, Mail,
 } from "lucide-react"
 
 interface CustomerProfile {
@@ -30,6 +31,7 @@ export function CustomerProfile() {
   const {
     currentBusinessId, currentBusinessName, currentBusinessPrimaryColor,
     setCustomerLoggedIn, setCustomerName, setCustomerPage, setViewMode,
+  storefrontSupportPhone, storefrontSupportPhone2, storefrontSupportEmail,
   } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { user, logout, token } = useAuthStore()
@@ -238,6 +240,62 @@ export function CustomerProfile() {
           </div>
         </div>
       </div>
+
+      {/* Customer Support Section */}
+      {(storefrontSupportPhone || storefrontSupportPhone2 || storefrontSupportEmail) && (
+        <div className="mx-4 mt-4 bg-white border border-gray-100 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <h3 className="text-sm font-semibold text-gray-800">Customer Support</h3>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {storefrontSupportPhone && (
+              <a
+                href={`tel:${storefrontSupportPhone}`}
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-9 h-9 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Phone className="w-4 h-4 text-green-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-800">Customer Service Number</p>
+                  <p className="text-sm text-gray-600">{storefrontSupportPhone}</p>
+                </div>
+                <span className="text-xs font-medium text-green-600">Call</span>
+              </a>
+            )}
+            {storefrontSupportPhone2 && (
+              <a
+                href={`tel:${storefrontSupportPhone2}`}
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-9 h-9 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Phone className="w-4 h-4 text-green-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-800">Customer Service Number 2</p>
+                  <p className="text-sm text-gray-600">{storefrontSupportPhone2}</p>
+                </div>
+                <span className="text-xs font-medium text-green-600">Call</span>
+              </a>
+            )}
+            {storefrontSupportEmail && (
+              <a
+                href={`mailto:${storefrontSupportEmail}`}
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Mail className="w-4 h-4 text-blue-600" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-800">Support Email</p>
+                  <p className="text-sm text-gray-600 break-all">{storefrontSupportEmail}</p>
+                </div>
+                <span className="text-xs font-medium text-blue-600">Email</span>
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Form */}
       {editMode && (
