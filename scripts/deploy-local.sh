@@ -37,8 +37,7 @@ STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STEP="pre-init"
 COMMIT="unknown"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
-printf '{"status":"running","step":"pre-init","message":"Deploy script started","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":0}
-'   "$STARTED_AT" "$STARTED_AT" "$COMMIT" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
+printf '{"status":"running","step":"pre-init","message":"Deploy script started","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":0}\n'   "$STARTED_AT" "$STARTED_AT" "$COMMIT" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
 chmod 644 "$STATUS_FILE" 2>/dev/null || true
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
