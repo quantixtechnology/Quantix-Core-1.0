@@ -50,9 +50,25 @@ export async function GET(request: Request) {
     // (biz.id), which is what the fix for Lifetime Value reads too. A single
     // business-wide groupBy feeds BOTH the page filter and the chip counts, so
     // there is no second query and the chips are never a page count.
-    const ordered = sp.get("ordered") // "1" = has >=1 order, "0" = no orders
-    const orderedRows = ((await (prisma.laundryOrder.groupBy as any)?.({ by: ["customerId"], where: { businessId: biz.id }, _count: { _all: true } })) || []) as { customerId: string }[]
-    const orderedCustomers = [...new Set(orderedRows.map((o) => o.customerId).filter(Boolean))] as string[]
+    const ordered = sp.get("ordered") // "1" = has Lifetime Value > 0, "0" = Lifetime Value = 0
+    // The chips and the filter are decided by the SAME Lifetime Value shown in
+    // each customer row — nothing else (no membership state, no subscription
+    // status, no payment status, no balance). Lifetime Value on this screen is
+    // the sum of (a) amountPaid across non-cancelled LaundryOrder rows and
+    // (b) amountPaid across ACTIVATED subscription purchases, both already
+    // computed below for the page and summary. Reuse those two sources here,
+    // business-wide, so ordered/not_ordered is a strict LV > 0 / LV = 0 split.
+    const [lvOrderRows, lvSubRows] = await Promise.all([
+      prisma.laundryOrder.findMany({
+        where: { businessId: biz.id, status: { notIn: ["CANCELLED"] }, NOT: { amountPaid: 0 } },
+        select: { customerId: true },
+      }),
+      prisma.subscriptionPurchase.findMany({
+        where: { businessId: biz.platformBusinessId, status: "ACTIVATED", NOT: { amountPaid: 0 } },
+        select: { customerId: true },
+      }),
+    ])
+    const orderedCustomers = [...new Set([...lvOrderRows, ...lvSubRows].map((o) => o.customerId).filter(Boolean))] as string[]
     if (ordered === "1" || ordered === "0") {
       const orderedIds = new Set(orderedCustomers)
       const clause = ordered === "1" ? { id: { in: orderedIds } } : { id: { notIn: orderedIds } }
