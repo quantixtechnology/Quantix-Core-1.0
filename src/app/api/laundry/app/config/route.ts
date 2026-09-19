@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   // already talks to — the tenant's own supportPhone, never a Quantix/hardcoded
   // number)SkipQuery. It rides the same row that decided businessId, so a
   // different tenant on this platform always gets its own number.
-  const biz = await prisma.business.findFirst({ where: { id: lb.platformBusinessId }, select: { supportPhone: true } })
+  const biz = await prisma.business.findFirst({ where: { id: lb.platformBusinessId }, select: { supportEmail: true, supportPhone: true, supportPhone2: true } })
 
-  return NextResponse.json({ success: true, data: { businessId: lb.platformBusinessId, name: lb.businessName || "Laundry", currency: "INR", supportPhone: biz?.supportPhone ?? null } })
+  return NextResponse.json({ success: true, data: { businessId: lb.platformBusinessId, name: lb.businessName || "Laundry", currency: "INR", supportEmail: biz?.supportEmail ?? null, supportPhone: biz?.supportPhone ?? null, supportPhone2: biz?.supportPhone2 ?? null } })
 }

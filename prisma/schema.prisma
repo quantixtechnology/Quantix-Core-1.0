@@ -650,6 +650,7 @@ model Business {
   contactPhone           String?
   supportEmail           String?
   supportPhone           String?
+  supportPhone2          String?
   defaultCurrency        String                  @default("INR")
   defaultLocale          String                  @default("en-IN")
   timezone               String                  @default("Asia/Kolkata")

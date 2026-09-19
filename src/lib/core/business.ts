@@ -268,6 +268,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         contactPhone: data.contactPhone,
         supportEmail: data.supportEmail,
         supportPhone: data.supportPhone,
+        supportPhone2: data.supportPhone2,
         salesRepId: data.salesRepId,
         settings: JSON.stringify({
           ecommerceConfig: {
@@ -659,7 +660,7 @@ export async function updateBusiness(
     'name', 'description', 'logo', 'favicon', 'primaryColor', 'secondaryColor',
     'tagline', 'address', 'city', 'state', 'pincode', 'country', 'gstNumber', 'panNumber',
     'cinNumber', 'fssaiLicense', 'contactEmail', 'contactPhone', 'supportEmail',
-    'supportPhone', 'timezone', 'defaultCurrency', 'defaultLocale',
+    'supportPhone', 'supportPhone2', 'timezone', 'defaultCurrency', 'defaultLocale',
   ] as const;
 
   for (const field of stringFields) {
