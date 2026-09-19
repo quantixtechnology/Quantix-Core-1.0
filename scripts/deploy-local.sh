@@ -40,7 +40,11 @@ STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ")
 CURRENT_STEP="pre-init"
 COMMIT="unknown"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
-echo '{"status":"running","step":"pre-init","message":"Deploy script started","startedAt":"'"$STARTED_AT"'","updatedAt":"'"$STARTED_AT"'","commit":"'"$COMMIT"'","durationSeconds":0}" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
+# Use heredoc for robust JSON writing (avoids quoting/escaping issues)
+cat > "${STATUS_FILE}.tmp" <<EOF
+{"status":"running","step":"pre-init","message":"Deploy script started","startedAt":"$STARTED_AT","updatedAt":"$STARTED_AT","commit":"$COMMIT","durationSeconds":0}
+EOF
+mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
 chmod 644 "$STATUS_FILE" 2>/dev/null || true
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
