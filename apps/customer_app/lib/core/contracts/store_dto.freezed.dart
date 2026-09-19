@@ -888,7 +888,7 @@ as bool,
 /// @nodoc
 mixin _$BusinessBranding {
 
- String get id; String get name; String get slug; String get businessType; bool get isOnline; String? get logo; String? get favicon; String? get primaryColor; String? get secondaryColor; bool get darkMode; String? get tagline; String? get description; String? get contactEmail; String? get contactPhone; String? get supportEmail; String? get supportPhone;
+ String get id; String get name; String get slug; String get businessType; bool get isOnline; String? get logo; String? get favicon; String? get primaryColor; String? get secondaryColor; bool get darkMode; String? get tagline; String? get description; String? get contactEmail; String? get contactPhone; String? get supportEmail; String? get supportPhone; String? get supportPhone2;
 /// Create a copy of BusinessBranding
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -901,16 +901,16 @@ $BusinessBrandingCopyWith<BusinessBranding> get copyWith => _$BusinessBrandingCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BusinessBranding&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.businessType, businessType) || other.businessType == businessType)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.logo, logo) || other.logo == logo)&&(identical(other.favicon, favicon) || other.favicon == favicon)&&(identical(other.primaryColor, primaryColor) || other.primaryColor == primaryColor)&&(identical(other.secondaryColor, secondaryColor) || other.secondaryColor == secondaryColor)&&(identical(other.darkMode, darkMode) || other.darkMode == darkMode)&&(identical(other.tagline, tagline) || other.tagline == tagline)&&(identical(other.description, description) || other.description == description)&&(identical(other.contactEmail, contactEmail) || other.contactEmail == contactEmail)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.supportEmail, supportEmail) || other.supportEmail == supportEmail)&&(identical(other.supportPhone, supportPhone) || other.supportPhone == supportPhone));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BusinessBranding&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.businessType, businessType) || other.businessType == businessType)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.logo, logo) || other.logo == logo)&&(identical(other.favicon, favicon) || other.favicon == favicon)&&(identical(other.primaryColor, primaryColor) || other.primaryColor == primaryColor)&&(identical(other.secondaryColor, secondaryColor) || other.secondaryColor == secondaryColor)&&(identical(other.darkMode, darkMode) || other.darkMode == darkMode)&&(identical(other.tagline, tagline) || other.tagline == tagline)&&(identical(other.description, description) || other.description == description)&&(identical(other.contactEmail, contactEmail) || other.contactEmail == contactEmail)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.supportEmail, supportEmail) || other.supportEmail == supportEmail)&&(identical(other.supportPhone, supportPhone) || other.supportPhone == supportPhone)&&(identical(other.supportPhone2, supportPhone2) || other.supportPhone2 == supportPhone2));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,slug,businessType,isOnline,logo,favicon,primaryColor,secondaryColor,darkMode,tagline,description,contactEmail,contactPhone,supportEmail,supportPhone);
+int get hashCode => Object.hash(runtimeType,id,name,slug,businessType,isOnline,logo,favicon,primaryColor,secondaryColor,darkMode,tagline,description,contactEmail,contactPhone,supportEmail,supportPhone,supportPhone2);
 
 @override
 String toString() {
-  return 'BusinessBranding(id: $id, name: $name, slug: $slug, businessType: $businessType, isOnline: $isOnline, logo: $logo, favicon: $favicon, primaryColor: $primaryColor, secondaryColor: $secondaryColor, darkMode: $darkMode, tagline: $tagline, description: $description, contactEmail: $contactEmail, contactPhone: $contactPhone, supportEmail: $supportEmail, supportPhone: $supportPhone)';
+  return 'BusinessBranding(id: $id, name: $name, slug: $slug, businessType: $businessType, isOnline: $isOnline, logo: $logo, favicon: $favicon, primaryColor: $primaryColor, secondaryColor: $secondaryColor, darkMode: $darkMode, tagline: $tagline, description: $description, contactEmail: $contactEmail, contactPhone: $contactPhone, supportEmail: $supportEmail, supportPhone: $supportPhone, supportPhone2: $supportPhone2)';
 }
 
 
@@ -921,7 +921,7 @@ abstract mixin class $BusinessBrandingCopyWith<$Res>  {
   factory $BusinessBrandingCopyWith(BusinessBranding value, $Res Function(BusinessBranding) _then) = _$BusinessBrandingCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String slug, String businessType, bool isOnline, String? logo, String? favicon, String? primaryColor, String? secondaryColor, bool darkMode, String? tagline, String? description, String? contactEmail, String? contactPhone, String? supportEmail, String? supportPhone
+ String id, String name, String slug, String businessType, bool isOnline, String? logo, String? favicon, String? primaryColor, String? secondaryColor, bool darkMode, String? tagline, String? description, String? contactEmail, String? contactPhone, String? supportEmail, String? supportPhone, String? supportPhone2
 });
 
 
@@ -938,7 +938,7 @@ class _$BusinessBrandingCopyWithImpl<$Res>
 
 /// Create a copy of BusinessBranding
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? slug = null,Object? businessType = null,Object? isOnline = null,Object? logo = freezed,Object? favicon = freezed,Object? primaryColor = freezed,Object? secondaryColor = freezed,Object? darkMode = null,Object? tagline = freezed,Object? description = freezed,Object? contactEmail = freezed,Object? contactPhone = freezed,Object? supportEmail = freezed,Object? supportPhone = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? slug = null,Object? businessType = null,Object? isOnline = null,Object? logo = freezed,Object? favicon = freezed,Object? primaryColor = freezed,Object? secondaryColor = freezed,Object? darkMode = null,Object? tagline = freezed,Object? description = freezed,Object? contactEmail = freezed,Object? contactPhone = freezed,Object? supportEmail = freezed,Object? supportPhone = freezed,Object? supportPhone2 = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -956,6 +956,7 @@ as String?,contactEmail: freezed == contactEmail ? _self.contactEmail : contactE
 as String?,contactPhone: freezed == contactPhone ? _self.contactPhone : contactPhone // ignore: cast_nullable_to_non_nullable
 as String?,supportEmail: freezed == supportEmail ? _self.supportEmail : supportEmail // ignore: cast_nullable_to_non_nullable
 as String?,supportPhone: freezed == supportPhone ? _self.supportPhone : supportPhone // ignore: cast_nullable_to_non_nullable
+as String?,supportPhone2: freezed == supportPhone2 ? _self.supportPhone2 : supportPhone2 // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }
@@ -1041,10 +1042,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone,  String? supportPhone2)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BusinessBranding() when $default != null:
-return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone);case _:
+return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone,_that.supportPhone2);case _:
   return orElse();
 
 }
@@ -1062,10 +1063,10 @@ return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone,  String? supportPhone2)  $default,) {final _that = this;
 switch (_that) {
 case _BusinessBranding():
-return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone);case _:
+return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone,_that.supportPhone2);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1082,10 +1083,10 @@ return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String slug,  String businessType,  bool isOnline,  String? logo,  String? favicon,  String? primaryColor,  String? secondaryColor,  bool darkMode,  String? tagline,  String? description,  String? contactEmail,  String? contactPhone,  String? supportEmail,  String? supportPhone,  String? supportPhone2)?  $default,) {final _that = this;
 switch (_that) {
 case _BusinessBranding() when $default != null:
-return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone);case _:
+return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline,_that.logo,_that.favicon,_that.primaryColor,_that.secondaryColor,_that.darkMode,_that.tagline,_that.description,_that.contactEmail,_that.contactPhone,_that.supportEmail,_that.supportPhone,_that.supportPhone2);case _:
   return null;
 
 }
@@ -1097,7 +1098,7 @@ return $default(_that.id,_that.name,_that.slug,_that.businessType,_that.isOnline
 @JsonSerializable()
 
 class _BusinessBranding implements BusinessBranding {
-  const _BusinessBranding({required this.id, required this.name, required this.slug, required this.businessType, this.isOnline = true, this.logo, this.favicon, this.primaryColor, this.secondaryColor, this.darkMode = false, this.tagline, this.description, this.contactEmail, this.contactPhone, this.supportEmail, this.supportPhone});
+  const _BusinessBranding({required this.id, required this.name, required this.slug, required this.businessType, this.isOnline = true, this.logo, this.favicon, this.primaryColor, this.secondaryColor, this.darkMode = false, this.tagline, this.description, this.contactEmail, this.contactPhone, this.supportEmail, this.supportPhone, this.supportPhone2});
   factory _BusinessBranding.fromJson(Map<String, dynamic> json) => _$BusinessBrandingFromJson(json);
 
 @override final  String id;
@@ -1116,6 +1117,7 @@ class _BusinessBranding implements BusinessBranding {
 @override final  String? contactPhone;
 @override final  String? supportEmail;
 @override final  String? supportPhone;
+@override final  String? supportPhone2;
 
 /// Create a copy of BusinessBranding
 /// with the given fields replaced by the non-null parameter values.
@@ -1130,16 +1132,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BusinessBranding&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.businessType, businessType) || other.businessType == businessType)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.logo, logo) || other.logo == logo)&&(identical(other.favicon, favicon) || other.favicon == favicon)&&(identical(other.primaryColor, primaryColor) || other.primaryColor == primaryColor)&&(identical(other.secondaryColor, secondaryColor) || other.secondaryColor == secondaryColor)&&(identical(other.darkMode, darkMode) || other.darkMode == darkMode)&&(identical(other.tagline, tagline) || other.tagline == tagline)&&(identical(other.description, description) || other.description == description)&&(identical(other.contactEmail, contactEmail) || other.contactEmail == contactEmail)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.supportEmail, supportEmail) || other.supportEmail == supportEmail)&&(identical(other.supportPhone, supportPhone) || other.supportPhone == supportPhone));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BusinessBranding&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.businessType, businessType) || other.businessType == businessType)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.logo, logo) || other.logo == logo)&&(identical(other.favicon, favicon) || other.favicon == favicon)&&(identical(other.primaryColor, primaryColor) || other.primaryColor == primaryColor)&&(identical(other.secondaryColor, secondaryColor) || other.secondaryColor == secondaryColor)&&(identical(other.darkMode, darkMode) || other.darkMode == darkMode)&&(identical(other.tagline, tagline) || other.tagline == tagline)&&(identical(other.description, description) || other.description == description)&&(identical(other.contactEmail, contactEmail) || other.contactEmail == contactEmail)&&(identical(other.contactPhone, contactPhone) || other.contactPhone == contactPhone)&&(identical(other.supportEmail, supportEmail) || other.supportEmail == supportEmail)&&(identical(other.supportPhone, supportPhone) || other.supportPhone == supportPhone)&&(identical(other.supportPhone2, supportPhone2) || other.supportPhone2 == supportPhone2));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,slug,businessType,isOnline,logo,favicon,primaryColor,secondaryColor,darkMode,tagline,description,contactEmail,contactPhone,supportEmail,supportPhone);
+int get hashCode => Object.hash(runtimeType,id,name,slug,businessType,isOnline,logo,favicon,primaryColor,secondaryColor,darkMode,tagline,description,contactEmail,contactPhone,supportEmail,supportPhone,supportPhone2);
 
 @override
 String toString() {
-  return 'BusinessBranding(id: $id, name: $name, slug: $slug, businessType: $businessType, isOnline: $isOnline, logo: $logo, favicon: $favicon, primaryColor: $primaryColor, secondaryColor: $secondaryColor, darkMode: $darkMode, tagline: $tagline, description: $description, contactEmail: $contactEmail, contactPhone: $contactPhone, supportEmail: $supportEmail, supportPhone: $supportPhone)';
+  return 'BusinessBranding(id: $id, name: $name, slug: $slug, businessType: $businessType, isOnline: $isOnline, logo: $logo, favicon: $favicon, primaryColor: $primaryColor, secondaryColor: $secondaryColor, darkMode: $darkMode, tagline: $tagline, description: $description, contactEmail: $contactEmail, contactPhone: $contactPhone, supportEmail: $supportEmail, supportPhone: $supportPhone, supportPhone2: $supportPhone2)';
 }
 
 
@@ -1150,7 +1152,7 @@ abstract mixin class _$BusinessBrandingCopyWith<$Res> implements $BusinessBrandi
   factory _$BusinessBrandingCopyWith(_BusinessBranding value, $Res Function(_BusinessBranding) _then) = __$BusinessBrandingCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String slug, String businessType, bool isOnline, String? logo, String? favicon, String? primaryColor, String? secondaryColor, bool darkMode, String? tagline, String? description, String? contactEmail, String? contactPhone, String? supportEmail, String? supportPhone
+ String id, String name, String slug, String businessType, bool isOnline, String? logo, String? favicon, String? primaryColor, String? secondaryColor, bool darkMode, String? tagline, String? description, String? contactEmail, String? contactPhone, String? supportEmail, String? supportPhone, String? supportPhone2
 });
 
 
@@ -1167,7 +1169,7 @@ class __$BusinessBrandingCopyWithImpl<$Res>
 
 /// Create a copy of BusinessBranding
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? slug = null,Object? businessType = null,Object? isOnline = null,Object? logo = freezed,Object? favicon = freezed,Object? primaryColor = freezed,Object? secondaryColor = freezed,Object? darkMode = null,Object? tagline = freezed,Object? description = freezed,Object? contactEmail = freezed,Object? contactPhone = freezed,Object? supportEmail = freezed,Object? supportPhone = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? slug = null,Object? businessType = null,Object? isOnline = null,Object? logo = freezed,Object? favicon = freezed,Object? primaryColor = freezed,Object? secondaryColor = freezed,Object? darkMode = null,Object? tagline = freezed,Object? description = freezed,Object? contactEmail = freezed,Object? contactPhone = freezed,Object? supportEmail = freezed,Object? supportPhone = freezed,Object? supportPhone2 = freezed,}) {
   return _then(_BusinessBranding(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -1185,6 +1187,7 @@ as String?,contactEmail: freezed == contactEmail ? _self.contactEmail : contactE
 as String?,contactPhone: freezed == contactPhone ? _self.contactPhone : contactPhone // ignore: cast_nullable_to_non_nullable
 as String?,supportEmail: freezed == supportEmail ? _self.supportEmail : supportEmail // ignore: cast_nullable_to_non_nullable
 as String?,supportPhone: freezed == supportPhone ? _self.supportPhone : supportPhone // ignore: cast_nullable_to_non_nullable
+as String?,supportPhone2: freezed == supportPhone2 ? _self.supportPhone2 : supportPhone2 // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }

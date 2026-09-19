@@ -76,6 +76,7 @@ class BusinessBranding with _$BusinessBranding {
     String? contactPhone,
     String? supportEmail,
     String? supportPhone,
+    String? supportPhone2,
   }) = _BusinessBranding;
 
   factory BusinessBranding.fromJson(Map<String, dynamic> json) =>

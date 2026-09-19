@@ -90,6 +90,7 @@ export async function GET(request: Request) {
         contactPhone: true,
         supportEmail: true,
         supportPhone: true,
+        supportPhone2: true,
         settings: true,
         domain: {
           select: { domain: true, subdomain: true, status: true },
@@ -213,6 +214,7 @@ export async function GET(request: Request) {
           contactPhone: business.contactPhone,
           supportEmail: business.supportEmail,
           supportPhone: business.supportPhone,
+          supportPhone2: business.supportPhone2,
           domain: business.domain,
         },
         ecommerceConfig,

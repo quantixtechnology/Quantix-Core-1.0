@@ -103,6 +103,7 @@ _BusinessBranding _$BusinessBrandingFromJson(Map<String, dynamic> json) =>
       contactPhone: json['contactPhone'] as String?,
       supportEmail: json['supportEmail'] as String?,
       supportPhone: json['supportPhone'] as String?,
+      supportPhone2: json['supportPhone2'] as String?,
     );
 
 Map<String, dynamic> _$BusinessBrandingToJson(_BusinessBranding instance) =>
@@ -123,6 +124,7 @@ Map<String, dynamic> _$BusinessBrandingToJson(_BusinessBranding instance) =>
       'contactPhone': instance.contactPhone,
       'supportEmail': instance.supportEmail,
       'supportPhone': instance.supportPhone,
+      'supportPhone2': instance.supportPhone2,
     };
 
 _StoreContextDTO _$StoreContextDTOFromJson(
