@@ -101,8 +101,21 @@ trap 'code=$?; cleanup_candidate; if [ "$code" != "0" ]; then status "$CURRENT_S
 # concurrent invocation must never delete the running deploy's lock.
 trap 'cleanup_candidate; [ -n "$LOCK_ACQUIRED" ] && rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$ROUTE_LOCK_FILE" 2>/dev/null; true' EXIT
 
+# Handle stale lock directory: if it exists but is >30 min old, assume previous deploy crashed and clean it
+if [ -d "$LOCK_DIR" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ "$LOCK_AGE" -gt 1800 ]; then
+    log "⚠️  Stale lock directory found (age ${LOCK_AGE}s) — removing"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+  fi
+fi
+
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then log "⚠️  Another deploy is in progress. Aborting."; exit 0; fi
 LOCK_ACQUIRED=1
+
+# Write initial status IMMEDIATELY after acquiring locks — visible even if script exits early
+status "init" "Deploy acquired locks, starting" "running"
+
 [ -f "$LOG_FILE" ] && { tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"; } || true
 
 log "============================================================"
