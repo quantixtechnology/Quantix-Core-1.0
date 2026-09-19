@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Image as ImageIcon, Loader2, Upload, RotateCcw, CheckCircle2, Circle } from "lucide-react"
+import { Image as ImageIcon, Loader2, Upload, RotateCcw, CheckCircle2, Circle, Phone } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { BrandAssetCropper, CROP_PRESETS } from "@/components/branding/brand-asset-cropper"
@@ -123,6 +123,20 @@ export function AppBrandingDialog({
 
   useEffect(() => { if (open) loadState() }, [open, loadState])
 
+  // The Customer App also carries the tenant's Customer Service Number. It does
+  // not live on the branded app (per-app artwork); it is a field of the CORE
+  // business the whole app already talks to, so it rides the SAME update
+  // mechanism as the rest of the business record — nothing new is invented. A
+  // blank value is valid and simply hides the block in the PWA.
+  const [supportPhone, setSupportPhone] = useState("")
+  useEffect(() => {
+    if (!open || appKey !== "customer") return
+    fetch(`/api/core/businesses/${businessId}`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((j) => { if (j?.success && typeof j?.data?.supportPhone === "string") setSupportPhone(j.data.supportPhone) })
+      .catch(() => {})
+  }, [open, appKey, businessId])
+
   const save = async (file: File | null) => {
     setBusy(true)
     try {
@@ -144,6 +158,7 @@ export function AppBrandingDialog({
         if (!up.ok || !uj.success) throw new Error((uj.error as string) || "Upload failed")
         url = uj.url as string
       }
+      // Icon first (per-app) …
       const res = await fetch(`/api/core/businesses/${businessId}/app-branding`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -151,6 +166,18 @@ export function AppBrandingDialog({
       })
       const json = await readJson(res)
       if (!res.ok || json.success === false) throw new Error((json.error as string) || "Could not save")
+      // … then the Customer Service Number via the existing business update
+      // route, which already accepts supportPhone. Tenant's own number — never
+      // a Quantix/hardcoded one.
+      if (appKey === "customer") {
+        const nr = await fetch(`/api/core/businesses/${businessId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ supportPhone: supportPhone.trim() || null }),
+        })
+        const nj = await readJson(nr)
+        if (!nr.ok || nj.success === false) throw new Error((nj.error as string) || "Could not save the customer service number")
+      }
       await loadState()
       setV((n) => n + 1)
       toast.success(file ? `${appLabel} icon updated` : `${appLabel} icon reset to default`)
@@ -218,6 +245,23 @@ export function AppBrandingDialog({
           <p className="text-[11px] text-slate-400">
             Changing this affects {appLabel} only. Your website logo and the other apps are untouched.
           </p>
+
+          {/* The Customer App also carries the tenant's Customer Service Number —
+              shown right here in App Branding, saved to the same core business
+              record via the existing update route. Blank hides the block in the
+              PWA; only the tenant's own number is ever shown, never a Quantix one. */}
+          {appKey === "customer" && (
+            <label className="block">
+              <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Customer Service Number</span>
+              <input
+                type="tel"
+                value={supportPhone}
+                onChange={(e) => setSupportPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+                className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm"
+              />
+            </label>
+          )}
         </div>
       </DialogContent>
 
