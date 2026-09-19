@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Image as ImageIcon, Loader2, Upload, RotateCcw, CheckCircle2, Circle, Phone } from "lucide-react"
+import { Image as ImageIcon, Loader2, Upload, RotateCcw, CheckCircle2, Circle, Phone, PhoneCall, Mail } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { BrandAssetCropper, CROP_PRESETS } from "@/components/branding/brand-asset-cropper"
@@ -129,11 +129,13 @@ export function AppBrandingDialog({
   // mechanism as the rest of the business record — nothing new is invented. A
   // blank value is valid and simply hides the block in the PWA.
   const [supportPhone, setSupportPhone] = useState("")
+  const [supportPhone2, setSupportPhone2] = useState("")
+  const [supportEmail, setSupportEmail] = useState("")
   useEffect(() => {
     if (!open || appKey !== "customer") return
     fetch(`/api/core/businesses/${businessId}`, { headers: getAuthHeaders() })
       .then((r) => r.json())
-      .then((j) => { if (j?.success && typeof j?.data?.supportPhone === "string") setSupportPhone(j.data.supportPhone) })
+      .then((j) => { if (j?.success && typeof j?.data?.supportPhone === "string") setSupportPhone(j.data.supportPhone); if (j?.success && typeof j?.data?.supportPhone2 === "string") setSupportPhone2(j.data.supportPhone2); if (j?.success && typeof j?.data?.supportEmail === "string") setSupportEmail(j.data.supportEmail) })
       .catch(() => {})
   }, [open, appKey, businessId])
 
@@ -173,7 +175,7 @@ export function AppBrandingDialog({
         const nr = await fetch(`/api/core/businesses/${businessId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ supportPhone: supportPhone.trim() || null }),
+          body: JSON.stringify({ supportPhone: supportPhone.trim() || null, supportPhone2: supportPhone2.trim() || null, supportEmail: supportEmail.trim() || null }),
         })
         const nj = await readJson(nr)
         if (!nr.ok || nj.success === false) throw new Error((nj.error as string) || "Could not save the customer service number")
@@ -251,16 +253,39 @@ export function AppBrandingDialog({
               record via the existing update route. Blank hides the block in the
               PWA; only the tenant's own number is ever shown, never a Quantix one. */}
           {appKey === "customer" && (
-            <label className="block">
-              <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Customer Service Number</span>
-              <input
-                type="tel"
-                value={supportPhone}
-                onChange={(e) => setSupportPhone(e.target.value)}
-                placeholder="+91 98765 43210"
-                className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm"
-              />
-            </label>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Customer Service Number 1</span>
+                <input
+                  type="tel"
+                  value={supportPhone}
+                  onChange={(e) => setSupportPhone(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5"><PhoneCall className="h-3.5 w-3.5 text-slate-400" /> Customer Service Number 2</span>
+                <input
+                  type="tel"
+                  value={supportPhone2}
+                  onChange={(e) => setSupportPhone2(e.target.value)}
+                  placeholder="+91 91234 56789"
+                  className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5"><Mail className="h-3.5 w-3.5 text-slate-400" /> Support Email</span>
+                <input
+                  type="email"
+                  value={supportEmail}
+                  onChange={(e) => setSupportEmail(e.target.value)}
+                  placeholder="support@yourlaundry.in"
+                  className="w-full h-9 rounded-lg border border-slate-200 px-3 text-sm"
+                />
+              </label>
+              <Button variant="default" size="sm" className="w-full" disabled={busy} onClick={() => save(null)}>Save Changes</Button>
+            </div>
           )}
         </div>
       </DialogContent>

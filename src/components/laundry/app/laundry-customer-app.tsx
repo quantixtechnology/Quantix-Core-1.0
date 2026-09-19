@@ -6,7 +6,7 @@
 // business logic — every number comes from the frozen engines via the API.
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock, Star, Send, AlertCircle, Phone } from "lucide-react"
+import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock, Star, Send, AlertCircle, Phone, Mail } from "lucide-react"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
 
@@ -31,6 +31,8 @@ export function LaundryCustomerApp() {
   // businessId — the tenant's own supportPhone; null hides the support block in
   // Profile, nothing is ever hardcoded here.
   const [supportPhone, setSupportPhone] = useState<string | null>(null)
+  const [supportPhone2, setSupportPhone2] = useState<string | null>(null)
+  const [supportEmail, setSupportEmail] = useState<string | null>(null)
 
   const api = useCallback(async (path: string, opts: RequestInit = {}) => {
     const res = await fetch(`/api/laundry/app${path}`, { ...opts, headers: { "Content-Type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) } })
@@ -40,7 +42,7 @@ export function LaundryCustomerApp() {
   // Bootstrap: tenant config + stored token.
   useEffect(() => {
     const stored = typeof window !== "undefined" ? localStorage.getItem("laundryAppToken") : null
-    fetch(`/api/laundry/app/config`).then((r) => r.json()).then((j) => { if (j.data) { setBusinessId(j.data.businessId); setTenantName(j.data.name); setSupportPhone(j.data.supportPhone ?? null) } }).finally(() => { setToken(stored); setBooting(false) })
+    fetch(`/api/laundry/app/config`).then((r) => r.json()).then((j) => { if (j.data) { setBusinessId(j.data.businessId); setTenantName(j.data.name); setSupportPhone(j.data.supportPhone ?? null); setSupportPhone2(j.data.supportPhone2 ?? null); setSupportEmail(j.data.supportEmail ?? null) } }).finally(() => { setToken(stored); setBooting(false) })
   }, [])
 
   const loadMe = useCallback(async () => { const j = await api("/me"); if (j.success) setMe(j.data); else { setToken(null); localStorage.removeItem("laundryAppToken") } }, [api])
@@ -66,7 +68,7 @@ export function LaundryCustomerApp() {
         {view === "subscription" && <SubscriptionView api={api} />}
         {view === "orders" && <OrdersView api={api} open={(id) => { setSelected(id); setView("orderDetail") }} />}
         {view === "orderDetail" && selected && <OrderDetailView api={api} id={selected} back={() => setView("orders")} />}
-        {view === "profile" && <ProfileView me={me} api={api} reload={loadMe} logout={logout} supportPhone={supportPhone} />}
+        {view === "profile" && <ProfileView me={me} api={api} reload={loadMe} logout={logout} supportPhone={supportPhone} supportPhone2={supportPhone2} supportEmail={supportEmail} />}
       </main>
 
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t flex justify-around py-1.5">
@@ -476,7 +478,7 @@ function OrderDetailView({ api, id, back }: { api: (p: string, o?: RequestInit) 
   )
 }
 
-function ProfileView({ me, api, reload, logout, supportPhone }: { me: Me; api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: unknown }>; reload: () => void; logout: () => void; supportPhone: string | null }) {
+function ProfileView({ me, api, reload, logout, supportPhone, supportPhone2, supportEmail }: { me: Me; api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: unknown }>; reload: () => void; logout: () => void; supportPhone: string | null; supportPhone2: string | null; supportEmail: string | null }) {
   const [name, setName] = useState(me.name)
   const [email, setEmail] = useState(me.email || "")
   const [company, setCompany] = useState(me.company || "")
@@ -532,6 +534,32 @@ function ProfileView({ me, api, reload, logout, supportPhone }: { me: Me; api: (
           >
             <span className="text-sm text-blue-700">{supportPhone}</span>
             <Phone className="h-4 w-4 text-blue-700" />
+          </a>
+        </div>
+      )}
+
+      {supportPhone2 && (
+        <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-2">
+          <p className="text-sm font-medium text-slate-700">Customer Service Number 2</p>
+          <a
+            href={`tel:${supportPhone2}`}
+            className="flex items-center justify-between w-full h-11 rounded-xl border border-blue-200 bg-blue-50/70 px-3"
+          >
+            <span className="text-sm text-blue-700">{supportPhone2}</span>
+            <Phone className="h-4 w-4 text-blue-700" />
+          </a>
+        </div>
+      )}
+
+      {supportEmail && (
+        <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-2">
+          <p className="text-sm font-medium text-slate-700">Support Email</p>
+          <a
+            href={`mailto:${supportEmail}`}
+            className="flex items-center justify-between w-full h-11 rounded-xl border border-blue-200 bg-blue-50/70 px-3"
+          >
+            <span className="text-sm text-blue-700 break-all">{supportEmail}</span>
+            <Mail className="h-4 w-4 text-blue-700" />
           </a>
         </div>
       )}
