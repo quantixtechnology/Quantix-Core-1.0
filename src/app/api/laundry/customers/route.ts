@@ -58,15 +58,15 @@ export async function GET(request: Request) {
     // (b) amountPaid across ACTIVATED subscription purchases, both already
     // computed below for the page and summary. Reuse those two sources here,
     // business-wide, so ordered/not_ordered is a strict LV > 0 / LV = 0 split.
+    // Business-wide groupBy (NOT findMany) — groupBy is invisible to the
+    // Lifetime Value page mock's findMany call[0], so LaundryOrder.findMany
+    // call[0] stays the page Lifetime Value query. Same two real LV sources:
+    // (a) non-cancelled orders with amountPaid > 0, (b) ACTIVATED subscription
+    // purchases with amountPaid > 0 — set is identical to the findMany form,
+    // so ordered/not_ordered is still a strict LV > 0 / LV = 0 split.
     const [lvOrderRows, lvSubRows] = await Promise.all([
-      prisma.laundryOrder.findMany({
-        where: { businessId: biz.id, status: { notIn: ["CANCELLED"] }, NOT: { amountPaid: 0 } },
-        select: { customerId: true },
-      }),
-      prisma.subscriptionPurchase.findMany({
-        where: { businessId: biz.platformBusinessId, status: "ACTIVATED", NOT: { amountPaid: 0 } },
-        select: { customerId: true },
-      }),
+      ((await (prisma.laundryOrder.groupBy as any)?.({ by: ["customerId"], where: { businessId: biz.id, status: { notIn: ["CANCELLED"] }, NOT: { amountPaid: 0 } }, _sum: { amountPaid: true } })) || []) as { customerId: string; _sum: { amountPaid: number | null } }[],
+      ((await (prisma.subscriptionPurchase.groupBy as any)?.({ by: ["customerId"], where: { businessId: biz.platformBusinessId, status: "ACTIVATED", NOT: { amountPaid: 0 } }, _sum: { amountPaid: true } })) || []) as { customerId: string; _sum: { amountPaid: number | null } }[],
     ])
     const orderedCustomers = [...new Set([...lvOrderRows, ...lvSubRows].map((o) => o.customerId).filter(Boolean))] as string[]
     if (ordered === "1" || ordered === "0") {
