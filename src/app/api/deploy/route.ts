@@ -316,8 +316,6 @@ export async function POST(req: Request) {
       const projectDir = path.dirname(path.dirname(scriptPath))
       const syncScript = [
         `cd "${projectDir}" 2>/dev/null || true`,
-        `timeout 15 git fetch origin --quiet 2>/dev/null || true`,
-        `timeout 15 git checkout --quiet origin/main -- scripts/deploy-local.sh 2>/dev/null || true`,
         `exec /bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown`,
       ].join('; ')
 
