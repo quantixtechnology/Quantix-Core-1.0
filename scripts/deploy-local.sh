@@ -52,24 +52,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"                 # git source + deploy script
 
 # ─── 0. Self-update from origin/main ───────────────────────────────────────────
-# The /api/deploy webhook executes THIS file from the VPS git working tree, and
-# nothing else updates that tree — so a stale copy silently misses pipeline fixes
-# (e.g. the Google Maps key injection block in c744bf1). Re-exec the latest copy
-# of this script from origin/main whenever it differs. Runs before the lock/traps
-# so an exec never leaks a lock. (The webhook route also syncs this file before
-# spawning; this guards manual `bash scripts/deploy-local.sh` runs.)
-if [ "${QUANTIX_DEPLOY_UPDATED:-0}" != "1" ]; then
-  if timeout 15 git -C "$REPO" fetch origin --quiet 2>/dev/null \
-     && timeout 15 git -C "$REPO" show "origin/main:scripts/deploy-local.sh" >/tmp/quantix-deploy-local.latest.sh 2>/dev/null; then
-    if [ -s /tmp/quantix-deploy-local.latest.sh ] && ! cmp -s /tmp/quantix-deploy-local.latest.sh "$SCRIPT_DIR/deploy-local.sh"; then
-      chmod +x /tmp/quantix-deploy-local.latest.sh
-      export QUANTIX_DEPLOY_UPDATED=1
-      echo "[$(date '+%H:%M:%S')] ↻ deploy-local.sh updated from origin/main — re-executing" >> /tmp/quantix-deploy.log 2>/dev/null || true
-      exec bash /tmp/quantix-deploy-local.latest.sh "$@"
-    fi
-    rm -f /tmp/quantix-deploy-local.latest.sh
-  fi
-fi
 RELEASES_DIR="/home/ubuntu/quantix-releases"          # immutable, built-in-place
 CURRENT_LINK="/home/ubuntu/quantix-current"           # symlink → active release
 PM2_APP="quantix-core"
@@ -135,6 +117,25 @@ LOCK_ACQUIRED=1
 
 # Write initial status IMMEDIATELY after acquiring locks — visible even if script exits early
 status "init" "Deploy acquired locks, starting" "running"
+
+# ─── Self-update from origin/main (after locks, so status is visible) ──────────
+# The /api/deploy webhook executes THIS file from the VPS git working tree, and
+# nothing else updates that tree — so a stale copy silently misses pipeline fixes
+# (e.g. the Google Maps key injection block in c744bf1). Re-exec the latest copy
+# of this script from origin/main whenever it differs.
+if [ "${QUANTIX_DEPLOY_UPDATED:-0}" != "1" ]; then
+  if timeout 15 git -C "$REPO" fetch origin --quiet 2>/dev/null \
+     && timeout 15 git -C "$REPO" show "origin/main:scripts/deploy-local.sh" >/tmp/quantix-deploy-local.latest.sh 2>/dev/null; then
+    if [ -s /tmp/quantix-deploy-local.latest.sh ] && ! cmp -s /tmp/quantix-deploy-local.latest.sh "$SCRIPT_DIR/deploy-local.sh"; then
+      chmod +x /tmp/quantix-deploy-local.latest.sh
+      export QUANTIX_DEPLOY_UPDATED=1
+      echo "[$(date '+%H:%M:%S')] ↻ deploy-local.sh updated from origin/main — re-executing" >> /tmp/quantix-deploy.log 2>/dev/null || true
+      exec bash /tmp/quantix-deploy-local.latest.sh "$@"
+    fi
+    rm -f /tmp/quantix-deploy-local.latest.sh
+  fi
+fi
+
 
 [ -f "$LOG_FILE" ] && { tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"; } || true
 
@@ -328,3 +329,4 @@ printf '{"status":"success","step":"done","message":"Deploy complete","startedAt
   > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
 chmod 644 "$STATUS_FILE" 2>/dev/null || true
 ( sleep 900; rm -f "$LOG_FILE"; ) & disown
+
