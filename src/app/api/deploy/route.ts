@@ -313,16 +313,19 @@ export async function POST(req: Request) {
       // fixes (e.g. the Google Maps key injection block). Before running, sync
       // that single file from origin/main so the deploy ALWAYS executes the
       // latest script. Falls back to the existing file if git is unavailable.
-      const projectDir = path.dirname(path.dirname(scriptPath))
-      const syncScript = [
-        `cd "${projectDir}" 2>/dev/null || true`,
-        `exec /bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown`,
-      ].join('; ')
+      // Spawn scripts/deploy-local.sh DIRECTLY as the detached child process —
+      // no intermediate shell, no nested `& disown` backgrounding. The script
+      // performs its own origin/main self-sync and all pipeline work, reading
+      // the Google Maps key from QUANTIX_MAPS_KEY (forwarded below only when the
+      // x-maps-key header is present). All child stdout/stderr go to the shared
+      // deploy log so failures stay diagnosable; stdin is ignored because the
+      // detached child must never block on a terminal.
+      const deployLogFd = openSync('/tmp/quantix-deploy.log', 'a')
 
-      const intermediate = spawn('/bin/bash', ['-c', syncScript], {
+      const intermediate = spawn('/bin/bash', [scriptPath], {
         detached: true,
-        stdio: 'ignore',
-        env: { ...buildEnv, DEPLOY_SCRIPT: scriptPath },
+        stdio: ['ignore', deployLogFd, deployLogFd],
+        env: buildEnv,
       })
 
       intermediate.on('error', (err) => {
