@@ -41,7 +41,7 @@ export function StorefrontLayout({
   onOpenAddressSheet,
   storeClosed,
 }: StorefrontLayoutProps) {
-  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentBusinessSlug, currentPwaAppearance, currentBusinessType } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentBusinessSlug, currentPwaAppearance, currentBusinessType, storefrontSupportPhone, storefrontSupportPhone2, storefrontSupportEmail } = useAdminStore()
 
   /**
    * The SQUARE Customer App icon — used on PHONES only.
@@ -785,6 +785,34 @@ export function StorefrontLayout({
               <p className="text-sm text-gray-400 mb-4">
                 Quality products, delivered to your door.
               </p>
+              {storefrontSupportPhone || storefrontSupportPhone2 || storefrontSupportEmail ? (
+                <div>
+                  <h4 className="text-sm font-semibold mb-3 text-gray-200">Customer Support</h4>
+                  <ul className="space-y-2 text-sm text-gray-400">
+                    {storefrontSupportPhone && (
+                      <li>
+                        <a href={`tel:${storefrontSupportPhone}`} className="hover:text-white transition-colors">
+                          {storefrontSupportPhone}
+                        </a>
+                      </li>
+                    )}
+                    {storefrontSupportPhone2 && (
+                      <li>
+                        <a href={`tel:${storefrontSupportPhone2}`} className="hover:text-white transition-colors">
+                          {storefrontSupportPhone2}
+                        </a>
+                      </li>
+                    )}
+                    {storefrontSupportEmail && (
+                      <li>
+                        <a href={`mailto:${storefrontSupportEmail}`} className="hover:text-white transition-colors">
+                          {storefrontSupportEmail}
+                        </a>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              ) : null}
             </div>
             <div>
               <h4 className="text-sm font-semibold mb-3 text-gray-200">Shop</h4>
