@@ -1,11 +1,13 @@
 "use client"
 
+import { useState } from "react"
+
 // Generic Customer Account Center — reusable by EVERY Quantix workspace
 // (Laundry, Commerce, Pharmacy…). The menu is module-driven: each product only
 // changes the AccountModules config; the Account Center itself never changes.
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store"
 import { useAdminStore } from "@/stores/admin-store"
-import { User, ShoppingBag, Repeat, MapPin, FileText, CreditCard, KeyRound, LogOut, ChevronRight } from "lucide-react"
+import { User, ShoppingBag, Repeat, MapPin, FileText, CreditCard, KeyRound, LogOut, ChevronRight, HeadphonesIcon, Phone, Mail, X } from "lucide-react"
 import type { WebNav, WebPage } from "../storefront-website"
 
 export interface AccountModules {
@@ -46,8 +48,9 @@ const MENU: MenuDef[] = [
 
 export function CustomerAccountCenter({ brandColor, nav }: { brandColor: string; nav: WebNav }) {
   const { isAuthenticated, user, logout } = useAuthStore()
-  const { currentBusinessType } = useAdminStore()
+  const { currentBusinessType, storefrontSupportPhone, storefrontSupportPhone2, storefrontSupportEmail } = useAdminStore()
   const modules = accountModulesFor(currentBusinessType)
+  const [serviceOpen, setServiceOpen] = useState(false)
 
   if (!isAuthenticated || !user) {
     return (
@@ -89,12 +92,62 @@ export function CustomerAccountCenter({ brandColor, nav }: { brandColor: string;
             <ChevronRight className="h-4 w-4 text-gray-300" />
           </button>
         ))}
+        {/* Customer Service — opens the tenant's support contacts dialog */}
+        <button onClick={() => setServiceOpen(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-gray-50">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: `${brandColor}12` }}><HeadphonesIcon className="h-4 w-4" style={{ color: brandColor }} /></span>
+          <span className="flex-1 text-sm font-semibold text-gray-900">Customer Service</span>
+          <ChevronRight className="h-4 w-4 text-gray-300" />
+        </button>
       </div>
 
       <button onClick={() => { logout(); nav.go("home") }} className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3.5 text-left shadow-sm active:bg-gray-50">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50"><LogOut className="h-4 w-4 text-red-500" /></span>
         <span className="flex-1 text-sm font-semibold text-red-600">Sign Out</span>
       </button>
+
+      {/* Customer Service dialog — tenant's own support contacts, hidden when unset */}
+      {serviceOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setServiceOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between px-5 pt-5">
+              <p className="text-base font-bold text-gray-900">Customer Service</p>
+              <button onClick={() => setServiceOpen(false)} aria-label="Close" className="rounded-full p-1 text-gray-400 hover:bg-gray-100"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3 px-5 pb-5 pt-4">
+              {storefrontSupportPhone && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500">Customer Service Number 1</p>
+                  <a href={`tel:${storefrontSupportPhone}`} className="mt-1 flex items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm font-semibold text-gray-900 active:bg-gray-50">
+                    {storefrontSupportPhone}
+                    <Phone className="h-4 w-4" style={{ color: brandColor }} />
+                  </a>
+                </div>
+              )}
+              {storefrontSupportPhone2 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500">Customer Service Number 2</p>
+                  <a href={`tel:${storefrontSupportPhone2}`} className="mt-1 flex items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm font-semibold text-gray-900 active:bg-gray-50">
+                    {storefrontSupportPhone2}
+                    <Phone className="h-4 w-4" style={{ color: brandColor }} />
+                  </a>
+                </div>
+              )}
+              {storefrontSupportEmail && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500">Support Email</p>
+                  <a href={`mailto:${storefrontSupportEmail}`} className="mt-1 flex items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm font-semibold text-gray-900 break-all active:bg-gray-50">
+                    {storefrontSupportEmail}
+                    <Mail className="h-4 w-4 shrink-0" style={{ color: brandColor }} />
+                  </a>
+                </div>
+              )}
+              {!storefrontSupportPhone && !storefrontSupportPhone2 && !storefrontSupportEmail && (
+                <p className="py-6 text-center text-sm text-gray-400">No contact information available.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
