@@ -110,6 +110,7 @@ const AUTH_ERRORS = {
   NO_TOKEN:    'Session not found. Please sign in.',
   EXPIRED:     'Session expired. Please sign in again.',
   INACTIVE:    'Account is inactive or suspended.',
+  SUSPENDED:   'Account Suspended. The business account is temporarily suspended. Please contact your administrator.',
 } as const
 type AuthError = typeof AUTH_ERRORS[keyof typeof AUTH_ERRORS]
 
@@ -143,7 +144,7 @@ async function extractUserFromRequest(
               where: { isActive: true },
               include: {
                 business: {
-                  select: { id: true, name: true, businessType: true, slug: true },
+                  select: { id: true, name: true, businessType: true, slug: true, isOnline: true },
                 },
               },
             },
@@ -190,6 +191,19 @@ async function extractUserFromRequest(
         role = effectiveBU.role;
         businessId = effectiveBU.business.id;
         storeId = effectiveBU.storeId || undefined;
+
+        // Business account suspension: when the business has Online = OFF, its
+        // business/tenant STAFF lose authenticated access immediately (401 →
+        // the client's existing clearSession → login page). Two explicit skips:
+        //   • Platform roles (Super Admin etc.) — they resolved in the
+        //     `platRoles` block above and never reach this branch.
+        //   • CUSTOMER-role memberships — storefront customers are NOT business
+        //     staff; "Store Closed" is already gatekept by checkStoreOpen() in
+        //     lib/core/store.ts, so their authenticated read access (orders,
+        //     profile) keeps working exactly as before suspension.
+        if (role !== 'CUSTOMER' && effectiveBU.business.isOnline === false) {
+          return AUTH_ERRORS.SUSPENDED;
+        }
       }
     }
 

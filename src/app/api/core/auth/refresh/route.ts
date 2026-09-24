@@ -81,6 +81,14 @@ export async function POST(request: Request) {
           select: {
             id: true,
             isActive: true,
+            platformRole: true,
+            businessUsers: {
+              where: { isActive: true },
+              select: {
+                role: true,
+                business: { select: { id: true, isOnline: true } },
+              },
+            },
           },
         },
       },
@@ -110,6 +118,30 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: 'Account is deactivated.' },
         { status: 403 }
+      );
+    }
+
+    // ── Business isOnline suspension check (CRITICAL) ────────────────────
+    // A suspended business's STAFF must not be able to keep their session
+    // alive via token rotation. When the user's RESOLVED business (first active
+    // membership, mirroring the login route's primaryBU) has Online = OFF, the
+    // refresh is rejected and NO new access/refresh token is minted. The
+    // existing client then treats the failed refresh as session death and
+    // clearSession() → login page. Explicit skips: platform roles (Super Admin
+    // etc.) resolve via platformRole; and CUSTOMER-role memberships — storefront
+    // customers are NOT business staff and keep their token rotation so their
+    // authenticated read access survives a suspension.
+    const user = tokenRecord.user;
+    const PLATFORM_ROLES: string[] = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
+    const isPlatformSession = !!user.platformRole && PLATFORM_ROLES.includes(user.platformRole);
+    const primaryBU = user.businessUsers.length > 0 ? user.businessUsers[0] : null;
+    const isTenantStaff = !!primaryBU && primaryBU.role !== 'CUSTOMER';
+    if (!isPlatformSession && isTenantStaff && primaryBU?.business.isOnline === false) {
+      // Delete the token so it cannot be retried or exchanged later.
+      await db.refreshToken.delete({ where: { id: tokenRecord.id } }).catch(() => {});
+      return NextResponse.json(
+        { success: false, error: 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.' },
+        { status: 401 }
       );
     }
 

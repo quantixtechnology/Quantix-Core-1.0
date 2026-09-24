@@ -115,6 +115,27 @@ export async function POST(request: Request) {
     if (matched.lockedUntil && matched.lockedUntil > now) return NextResponse.json({ error: "Too many attempts. Try again later or contact your admin." }, { status: 403 })
     if (!matched.storeId) return NextResponse.json({ error: "No store assigned. Contact your admin." }, { status: 403 })
 
+    // Business account suspension (Online = OFF). The executive's LaundryBusiness
+    // links back to a platform Business whose Online toggle is controlled by
+    // Business Management; a suspended business stops its delivery executives
+    // from signing in as well. Executives are always business-scoped, so this
+    // check does not affect platform/cross-tenant access.
+    {
+      const execLaundry = await prisma.laundryBusiness.findUnique({
+        where: { id: matched.businessId },
+        select: { platformBusinessId: true },
+      })
+      if (execLaundry?.platformBusinessId) {
+        const execPlatformBusiness = await prisma.business.findUnique({
+          where: { id: execLaundry.platformBusinessId },
+          select: { isOnline: true },
+        })
+        if (execPlatformBusiness && execPlatformBusiness.isOnline === false) {
+          return NextResponse.json({ error: "Account Suspended. The business account is temporarily suspended. Please contact your administrator." }, { status: 403 })
+        }
+      }
+    }
+
     // Capture device + IP for the admin's login-attempt view.
     const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || request.headers.get("x-real-ip") || null
     const device = (request.headers.get("user-agent") || "").slice(0, 180) || null

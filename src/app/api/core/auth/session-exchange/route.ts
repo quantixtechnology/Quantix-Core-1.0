@@ -51,7 +51,22 @@ export async function POST(request: Request) {
     // Validate the presented token (access OR refresh — both live in this table).
     const tokenRecord = await db.refreshToken.findUnique({
       where: { token: presented },
-      include: { user: { select: { id: true, isActive: true, platformRole: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            isActive: true,
+            platformRole: true,
+            businessUsers: {
+              where: { isActive: true },
+              select: {
+                role: true,
+                business: { select: { id: true, isOnline: true } },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!tokenRecord) {
@@ -85,6 +100,26 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: 'Account is deactivated.' },
         { status: 403 }
+      );
+    }
+
+    // ── Business isOnline suspension check ────────────────────────────────
+    // A suspended business STAFF member must not be able to use a valid token
+    // to mint a brand-new INDEPENDENT session on another origin. When the
+    // user's RESOLVED business (first active membership, mirroring the login
+    // route's primaryBU) has Online = OFF, the exchange is refused and no
+    // tokens are created. Platform roles resolve via platformRole above
+    // (isPlatformUser); CUSTOMER-role memberships (storefront shoppers) are
+    // NOT business staff and keep exchanging as before.
+    const exchangeUser = tokenRecord.user;
+    const isPlatformSession =
+      (!!exchangeUser.platformRole && platformRoles.includes(exchangeUser.platformRole));
+    const primaryBU = exchangeUser.businessUsers.length > 0 ? exchangeUser.businessUsers[0] : null;
+    const isTenantStaff = !!primaryBU && primaryBU.role !== 'CUSTOMER';
+    if (!isPlatformSession && isTenantStaff && primaryBU?.business.isOnline === false) {
+      return NextResponse.json(
+        { success: false, error: 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.' },
+        { status: 401 }
       );
     }
 

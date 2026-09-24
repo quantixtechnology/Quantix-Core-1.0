@@ -56,6 +56,7 @@ export async function GET(request: Request) {
                     slug: true,
                     businessType: true,
                     status: true,
+                    isOnline: true,
                     primaryColor: true,
                     logo: true,
                   },
@@ -77,6 +78,25 @@ export async function GET(request: Request) {
     }
 
     const user = session.user;
+
+    // ── Business isOnline suspension check ────────────────────────────────
+    // A business-user session whose RESOLVED business (first active membership,
+    // mirroring the login route's primaryBU) has Online = OFF is invalidated.
+    // Returns 401 (not 403) so the existing client bootstrap treats it as a
+    // dead session and clearSession() → login page — no client change needed.
+    // Explicit skips: platform roles (Super Admin etc.) resolve via
+    // platformRole / owner email; and CUSTOMER-role memberships — storefront
+    // customers are NOT business staff and keep their authenticated read
+    // access while "Store Closed" (checkStoreOpen) gates ordering — exactly as
+    // before suspension.
+    const SUSPENDED_BUSINESS = 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.';
+    const primaryBU = user.businessUsers.length > 0 ? user.businessUsers[0] : null;
+    const isTenantStaff = !!primaryBU && primaryBU.role !== 'CUSTOMER';
+    const isPlatformSession =
+      (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) || isPlatformOwnerEmail(user.email);
+    if (isTenantStaff && !isPlatformSession && primaryBU?.business.isOnline === false) {
+      return NextResponse.json({ success: false, error: SUSPENDED_BUSINESS }, { status: 401 });
+    }
 
     // Legacy callers may pass ?userId= — only honoured if it matches the
     // token holder. A mismatched userId is treated as an auth failure, never

@@ -89,6 +89,20 @@ export async function POST(request: Request) {
     const biz = await resolveLaundryBusiness(assign.businessId)
     if (!biz) return NextResponse.json({ error: "Business not found" }, { status: 404 })
 
+    // Business account suspension (Online = OFF). Store staff are business
+    // users of the linked platform Business, so a suspended business stops their
+    // sign-in too. QUANTIX Super Admin / Platform Admin returned in the
+    // cross-tenant branch above and are unaffected.
+    if (biz.platformBusinessId) {
+      const platformBusiness = await prisma.business.findUnique({
+        where: { id: biz.platformBusinessId },
+        select: { isOnline: true },
+      })
+      if (platformBusiness && platformBusiness.isOnline === false) {
+        return NextResponse.json({ error: "Account Suspended. The business account is temporarily suspended. Please contact your administrator." }, { status: 403 })
+      }
+    }
+
     // The host is the tenant boundary, and it applies at LOGIN — otherwise a
     // Business A store admin gets a valid token on store.<B> and only discovers
     // it when every subsequent call 401s. Platform administrators returned

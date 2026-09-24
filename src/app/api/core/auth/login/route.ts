@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         select: {
           role: true, storeId: true,
           business: {
-            select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true, productCode: true },
+            select: { id: true, name: true, slug: true, businessType: true, status: true, isOnline: true, primaryColor: true, logo: true, productCode: true },
           },
           store: { select: { id: true, name: true } },
         },
@@ -215,6 +215,22 @@ export async function POST(request: Request) {
       const validStatuses = ['ONBOARDING', 'ACTIVE'];
       if (!validStatuses.includes(primaryBU.business.status)) {
         return NextResponse.json({ success: false, error: 'Your business account is not active. Please contact Quantix support.' }, { status: 403 });
+      }
+      // Business account suspension: when the business has Online = OFF, its
+      // owner/staff (non-CUSTOMER) users cannot sign in. HTTP 403 "Account
+      // Suspended". This sits BEFORE any access/refresh token is minted, so no
+      // session is ever created while suspended. Reverting Online = ON allows
+      // the SAME credentials to work again immediately — no user/password/
+      // BusinessUser change, no manual reactivation. Super Admin resolves via
+      // the platform role branch above and never reaches this member-only
+      // block. CUSTOMER-role memberships are storefront shoppers, not business
+      // staff, so they are deliberately exempt (their storefront shows "Store
+      // Closed" via checkStoreOpen, exactly as before suspension).
+      if (role !== 'CUSTOMER' && primaryBU.business.isOnline === false) {
+        return NextResponse.json(
+          { success: false, error: 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.' },
+          { status: 403 }
+        );
       }
     } else if (isPlatformOwnerEmail(user.email)) {
       // Safety-net fallback: ONLY the single canonical platform owner is

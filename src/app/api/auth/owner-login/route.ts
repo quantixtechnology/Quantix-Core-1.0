@@ -43,6 +43,13 @@ export async function POST(req: Request) {
       )
     }
 
+    if (businessUser.business.isOnline === false) {
+      return NextResponse.json(
+        { success: false, error: 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.' },
+        { status: 403 }
+      )
+    }
+
     // Generate OTP (6 digits)
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
     const otpExpiry = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
@@ -148,6 +155,13 @@ export async function PUT(req: Request) {
       where: { userId: user.id, role: 'CLIENT_OWNER' },
       include: { business: true },
     })
+
+    if (!businessUser || businessUser.business.isOnline === false) {
+      return NextResponse.json(
+        { success: false, error: 'Account Suspended. The business account is temporarily suspended. Please contact your administrator.' },
+        { status: 403 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
