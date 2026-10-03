@@ -31,6 +31,28 @@
 
 set -euo pipefail
 
+# ─── Detach from the requester BEFORE any deployment work ──────────────────────
+# deploy-local.sh is spawned by the quantix-core app (/api/deploy), so it is a
+# descendant of the PM2 process tree. The later `pm2 restart quantix-core`
+# reaps that old tree, killing this script before it can run verification and
+# write the terminal DEPLOY COMPLETE status. Re-exec ourselves as a fully
+# detached session (setsid) that is reparented to init — a restart of the old
+# app tree cannot reach it. Env is inherited unchanged; the detached process
+# runs the ENTIRE existing pipeline below unmodified (self-update included).
+# QUANTIX_DEPLOY_DAEMONIZED prevents recursive daemonization.
+if [ "${QUANTIX_DEPLOY_DAEMONIZED:-0}" != "1" ]; then
+  export QUANTIX_DEPLOY_DAEMONIZED=1
+  setsid /bin/bash "$0" "$@" </dev/null >>"/tmp/quantix-deploy.log" 2>&1 &
+  disown 2>/dev/null || true
+  exit 0
+fi
+# Wait until we are reparented (PPID=1) so no reaping of the old app tree can
+# reach us once the pipeline starts.
+for _ in $(seq 1 100); do
+  [ "$(awk '{print $4}' /proc/$$/stat 2>/dev/null)" = "1" ] && break
+  sleep 0.05
+done
+
 # ─── Earliest test — verify script execution ──────────────────────────────────
 touch /tmp/quantix-deploy-test.$(date +%s)
 
@@ -96,8 +118,10 @@ cleanup_candidate() {
 LOCK_ACQUIRED=""
 trap 'code=$?; cleanup_candidate; if [ "$code" != "0" ]; then status "$CURRENT_STEP" "Unexpected error (exit $code)" "failed"; fi' ERR
 # Only remove the lock if THIS process actually acquired it — an aborting
-# concurrent invocation must never delete the running deploy's lock.
-trap 'cleanup_candidate; [ -n "$LOCK_ACQUIRED" ] && rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$ROUTE_LOCK_FILE" 2>/dev/null; true' EXIT
+# concurrent invocation must never delete the running deploy's lock, and the
+# early (non-daemonized) parent must never remove the route lock that the
+# detached deployment still owns for its full pipeline.
+trap 'cleanup_candidate; [ -n "$LOCK_ACQUIRED" ] && rmdir "$LOCK_DIR" 2>/dev/null && rm -f "$ROUTE_LOCK_FILE" 2>/dev/null; true' EXIT
 
 # Handle stale lock directory: if it exists but route lock file is missing,
 # the previous deploy's route lock was cleaned up but script lock remains — clean it.
@@ -249,8 +273,11 @@ CURRENT_STEP="assemble"; status "assemble" "Finalising release"
 CURRENT_STEP="candidate-health"; status "candidate-health" "Validating candidate on :$CAND_PORT"
 # Free the candidate port in case a previous aborted run left a listener.
 fuser -k "${CAND_PORT}/tcp" 2>/dev/null || true; sleep 1
+# `exec` makes the recorded PID ($!) the actual node candidate process rather
+# than the wrapping subshell, so cleanup_candidate terminates the real server
+# and never leaves orphaned node processes behind.
 ( cd "$NEW_RELEASE" && PORT="$CAND_PORT" HOSTNAME="127.0.0.1" NODE_ENV="production" \
-    DATABASE_URL="file:$DB_FILE" node .next/standalone/server.js >/tmp/quantix-candidate.log 2>&1 ) &
+    DATABASE_URL="file:$DB_FILE" exec node .next/standalone/server.js >/tmp/quantix-candidate.log 2>&1 ) &
 CAND_PID=$!
 CAND_OK=""
 for attempt in $(seq 1 20); do
