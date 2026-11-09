@@ -136,8 +136,17 @@ if [ -d "$LOCK_DIR" ]; then
   fi
 fi
 
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then log "⚠️  Another deploy is in progress. Aborting."; exit 0; fi
-LOCK_ACQUIRED=1
+if [ "${QUANTIX_DEPLOY_UPDATED:-0}" = "1" ] && [ -d "$LOCK_DIR" ]; then
+  # The previous script acquired the lock, then re-exec'd this updated copy.
+  # The lock is still held by this same deployment, so retain it.
+  LOCK_ACQUIRED=1
+  log "↻ Self-update re-exec: retaining existing deploy lock"
+elif ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  log "⚠️  Another deploy is in progress. Aborting."
+  exit 0
+else
+  LOCK_ACQUIRED=1
+fi
 
 # Write initial status IMMEDIATELY after acquiring locks — visible even if script exits early
 status "init" "Deploy acquired locks, starting" "running"
