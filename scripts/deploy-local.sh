@@ -71,7 +71,15 @@ chmod 644 "$STATUS_FILE" 2>/dev/null || true
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$SCRIPT_DIR/.." && pwd)"                 # git source + deploy script
+if [ -n "${QUANTIX_DEPLOY_REPO:-}" ]; then
+  REPO="$QUANTIX_DEPLOY_REPO"
+elif [ -n "${QUANTIX_PROJECT_DIR:-}" ] && [ -d "$QUANTIX_PROJECT_DIR/.git" ]; then
+  REPO="$QUANTIX_PROJECT_DIR"
+elif [ -d "$SCRIPT_DIR/../.git" ]; then
+  REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  REPO="/home/ubuntu/Quantix-Core-1.0"
+fi
 
 # ─── 0. Self-update from origin/main ───────────────────────────────────────────
 RELEASES_DIR="/home/ubuntu/quantix-releases"          # immutable, built-in-place
@@ -162,6 +170,7 @@ if [ "${QUANTIX_DEPLOY_UPDATED:-0}" != "1" ]; then
     if [ -s /tmp/quantix-deploy-local.latest.sh ] && ! cmp -s /tmp/quantix-deploy-local.latest.sh "$SCRIPT_DIR/deploy-local.sh"; then
       chmod +x /tmp/quantix-deploy-local.latest.sh
       export QUANTIX_DEPLOY_UPDATED=1
+      export QUANTIX_DEPLOY_REPO="$REPO"
       echo "[$(date '+%H:%M:%S')] ↻ deploy-local.sh updated from origin/main — re-executing" >> /tmp/quantix-deploy.log 2>/dev/null || true
       exec bash /tmp/quantix-deploy-local.latest.sh "$@"
     fi
