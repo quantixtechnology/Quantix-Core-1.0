@@ -65,34 +65,70 @@ function getRateLimitInfo(ip: string): { allowed: boolean; remaining: number; re
 }
 
 if (typeof globalThis !== 'undefined') {
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of rateLimitMap) {
       if (now > entry.resetAt) rateLimitMap.delete(key);
     }
   }, RATE_LIMIT_WINDOW_MS);
+  (cleanupTimer as { unref?: () => void }).unref?.();
 }
 
 // ============================================================================
 // CLOUDFLARE TURNSTILE VERIFICATION
 // ============================================================================
 
-async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean> {
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const TURNSTILE_TIMEOUT_MS = 5000;
+
+type TurnstileVerification =
+  | { ok: true }
+  | { ok: false; reason: 'invalid' | 'unavailable' };
+
+async function verifyTurnstileToken(token: string, ip?: string): Promise<TurnstileVerification> {
   const secret = process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) return true;
+  if (!secret) {
+    console.error('[PUBLIC_LEADS] TURNSTILE_SECRET_KEY is not configured');
+    return { ok: false, reason: 'unavailable' };
+  }
 
   const formData = new URLSearchParams();
   formData.append('secret', secret);
   formData.append('response', token);
   if (ip) formData.append('remoteip', ip);
 
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TURNSTILE_TIMEOUT_MS);
 
-  const data = await res.json() as { success?: boolean };
-  return data.success === true;
+  try {
+    const res = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      console.error(`[PUBLIC_LEADS] Turnstile siteverify returned HTTP ${res.status}`);
+      return { ok: false, reason: 'unavailable' };
+    }
+
+    const data = await res.json() as { success?: boolean; 'error-codes'?: string[] };
+    if (data.success === true) return { ok: true };
+
+    const codes = Array.isArray(data['error-codes']) ? data['error-codes'] : [];
+    if (codes.length) {
+      console.warn('[PUBLIC_LEADS] Turnstile rejected token:', codes.join(','));
+    }
+    return { ok: false, reason: 'invalid' };
+  } catch (error) {
+    console.error(
+      '[PUBLIC_LEADS] Turnstile verification unavailable:',
+      error instanceof Error ? error.message : 'unknown error',
+    );
+    return { ok: false, reason: 'unavailable' };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ============================================================================
@@ -100,7 +136,8 @@ async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean
 // ============================================================================
 
 function normalizePhone(phone: string): string {
-  return phone.replace(/\s/g, '').replace(/^\+91/, '').replace(/^91/, '');
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
 }
 
 const VALID_BUSINESS_TYPES = [
@@ -108,6 +145,12 @@ const VALID_BUSINESS_TYPES = [
   'HOME_SERVICES', 'ECOMMERCE', 'COSMETICS', 'MEAT_DELIVERY',
   'FURNITURE', 'DIRECTORY',
 ] as const;
+
+type BusinessTypeValue = (typeof VALID_BUSINESS_TYPES)[number];
+
+function isValidBusinessType(value: unknown): value is BusinessTypeValue {
+  return typeof value === 'string' && (VALID_BUSINESS_TYPES as readonly string[]).includes(value);
+}
 
 // ============================================================================
 // OPTIONS — CORS preflight
@@ -143,7 +186,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Parse body ─────────────────────────────────────────────────────
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ success: false, error: 'Invalid request body' }, { status: 400, headers: addCors(origin) });
+    }
+    if (!body || typeof body !== 'object') {
+      return Response.json({ success: false, error: 'Invalid request body' }, { status: 400, headers: addCors(origin) });
+    }
 
     // ── Honeypot — silently succeed so bots don't know they're blocked ─
     if (body._hp) {
@@ -158,39 +209,43 @@ export async function POST(request: NextRequest) {
     // ── Validate fields ────────────────────────────────────────────────
     const { name, businessName, phone, businessType, city, captchaToken } = body;
 
-    if (!name?.trim() || name.trim().length < 2) {
+    if (typeof name !== 'string' || name.trim().length < 2) {
       return Response.json({ success: false, error: 'Please enter your full name' }, { status: 400, headers: addCors(origin) });
     }
-    if (!businessName?.trim() || businessName.trim().length < 2) {
+    if (typeof businessName !== 'string' || businessName.trim().length < 2) {
       return Response.json({ success: false, error: 'Please enter your business name' }, { status: 400, headers: addCors(origin) });
     }
-    if (!phone) {
+    if (typeof phone !== 'string' || !phone.trim()) {
       return Response.json({ success: false, error: 'Please enter your phone number' }, { status: 400, headers: addCors(origin) });
     }
     const normalizedPhone = normalizePhone(phone);
     if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
       return Response.json({ success: false, error: 'Please enter a valid 10-digit mobile number' }, { status: 400, headers: addCors(origin) });
     }
-    if (!businessType || !VALID_BUSINESS_TYPES.includes(businessType)) {
+    if (!isValidBusinessType(businessType)) {
       return Response.json({ success: false, error: 'Please select a valid business type' }, { status: 400, headers: addCors(origin) });
     }
-    if (!city?.trim() || city.trim().length < 2) {
+    if (typeof city !== 'string' || city.trim().length < 2) {
       return Response.json({ success: false, error: 'Please enter your city' }, { status: 400, headers: addCors(origin) });
     }
 
     // ── Turnstile verification ─────────────────────────────────────────
-    // Only enforced when TURNSTILE_SECRET_KEY is configured in the backend.
-    // The website conditionally renders the widget based on
-    // NEXT_PUBLIC_TURNSTILE_SITE_KEY; if that env var is missing no token
-    // is sent and this check is skipped.
-    if (process.env.TURNSTILE_SECRET_KEY) {
-      if (!captchaToken || typeof captchaToken !== 'string') {
-        return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
+    // Fail closed: every lead must carry a valid, single-use token verified
+    // with Cloudflare before any duplicate check or database write occurs.
+    const token = typeof captchaToken === 'string' ? captchaToken.trim() : '';
+    if (!token) {
+      return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
+    }
+
+    const captcha = await verifyTurnstileToken(token, ip);
+    if (!captcha.ok) {
+      if (captcha.reason === 'unavailable') {
+        return Response.json(
+          { success: false, error: 'CAPTCHA verification is temporarily unavailable. Please try again.' },
+          { status: 503, headers: addCors(origin, { 'Retry-After': '60' }) },
+        );
       }
-      const captchaValid = await verifyTurnstileToken(captchaToken, ip);
-      if (!captchaValid) {
-        return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
-      }
+      return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
     }
 
     // ── Duplicate phone detection ──────────────────────────────────────

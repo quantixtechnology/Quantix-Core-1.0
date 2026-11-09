@@ -195,6 +195,14 @@ NEW_RELEASE="$RELEASES_DIR/${COMMIT}-$(date +%s)"
 git clone --local --quiet "$REPO" "$NEW_RELEASE" || fail "release clone failed"
 git -C "$NEW_RELEASE" checkout --quiet "$TARGET_SHA" || fail "release checkout failed"
 [ -f "$REPO/.env" ] && cp "$REPO/.env" "$NEW_RELEASE/.env"   # secrets are not in git
+
+# The public lead endpoint fails closed without this secret. Refuse to deploy a
+# release that would reject every website lead before the build starts.
+TURNSTILE_SECRET_VALUE="$(grep -E '^TURNSTILE_SECRET_KEY=' "$NEW_RELEASE/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+if [ -z "$TURNSTILE_SECRET_VALUE" ] || [ "$TURNSTILE_SECRET_VALUE" = "your-turnstile-secret" ]; then
+  fail "TURNSTILE_SECRET_KEY is not configured in $REPO/.env — refusing to deploy a fail-closed lead endpoint"
+fi
+
 # Optional: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY forwarded from the deploy webhook
 # (GitHub Actions secret → x-maps-key header → QUANTIX_MAPS_KEY). Written into
 # the release .env so `next build` inlines it into the client bundle. Never
